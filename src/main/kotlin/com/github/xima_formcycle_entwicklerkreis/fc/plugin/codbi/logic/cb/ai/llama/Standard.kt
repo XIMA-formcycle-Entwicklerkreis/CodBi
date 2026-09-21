@@ -9,6 +9,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.MailBr
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.UrlFetcher
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.*
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
@@ -117,6 +118,13 @@ class Standard : LLAMA() {
     private const val DEFAULT_IP_GEOLOCATION_DOMAIN = "ipwho.is"
 
     /**
+     * Plugin property toggling Brave Search web access for the **design-time** AI assistant passes
+     * (form and workflow building). It does NOT affect the runtime chat/QA, which keeps web access.
+     * Enabled unless the value is `false`/`0`/`no`/`off`/`disabled` (case-insensitive).
+     */
+    const val WEB_ACCESS_PROPERTY = "AI_FormAssistant_WebAccess"
+
+    /**
      * Represents a model available for AI Form Assistance, with a routing [id] and a user-facing
      * [label].
      */
@@ -179,6 +187,16 @@ class Standard : LLAMA() {
   @Volatile private var loadError: Throwable? = null
   /** Whether the standard model server is ready to accept requests. */
   @Volatile private var serverReady = false
+
+  /**
+   * Whether the design-time AI assistant passes (form/workflow building) may use Brave Search. Set
+   * from the plugin property [WEB_ACCESS_PROPERTY] (`AI_FormAssistant_WebAccess`); the runtime
+   * chat/QA keeps web access regardless of this switch.
+   */
+  @Volatile
+  var webAccessEnabled: Boolean = true
+    private set
+
   // endregion Model state
   // region Thread pool
   /** Counter for active threads in the executor service. */
@@ -285,6 +303,17 @@ class Standard : LLAMA() {
     BraveSearch.filterResults =
         props.getProperty("AI_BraveSearch_FilterResults")?.trim()?.lowercase() in
             listOf("true", "1", "yes")
+
+    // Web access for the DESIGN-TIME assistant passes (Brave Search round-trips). Enabled by
+    // default; only an explicit false/0/no/off/disabled turns it off. The runtime chat/QA is not
+    // affected by this switch.
+    webAccessEnabled =
+        props.getProperty(WEB_ACCESS_PROPERTY)?.trim()?.lowercase() !in
+            listOf("false", "0", "no", "off", "disabled")
+    log(
+        LogLevel.INFO,
+        "Design-time assistant web access ($WEB_ACCESS_PROPERTY): " +
+            (if (webAccessEnabled) "enabled" else "disabled"))
 
     // Configure MailBridge from plugin properties (enabled by default unless explicitly disabled)
     props.getProperty("AI_Mail_Enabled")?.trim()?.lowercase()?.let { value ->
@@ -991,6 +1020,14 @@ class Standard : LLAMA() {
   /**
    * Routes a form-assist request to the appropriate AI model and returns the raw completion text.
    *
+   * When a Brave Search API key is configured, the model gains design-time web access: it may reply
+   * with ONLY a `CALL:search(query='…')` (or `CALL:fetch(url='…')`) marker, which is executed here
+   * and whose results are fed back before the model produces its normal output — so it can look up
+   * current API documentation instead of inventing endpoints. The marker protocol is injected into
+   * the conversation's system message by [injectWebAccessInstruction], so it works with the
+   * DB-seeded prompts as they are. Without a key — or when the plugin property
+   * [WEB_ACCESS_PROPERTY] (`AI_FormAssistant_WebAccess`) is set to `false` — nothing changes.
+   *
    * @param modelId One of: `"standard"`, `"thinking"`, `"specialist:<name>"`,
    *   `"ext-specialist:<name>"`.
    * @param messagesJson A JSON array of chat-completion messages (system + user roles).
@@ -1008,35 +1045,184 @@ class Standard : LLAMA() {
             "Local AI model is not ready. It may still be loading or the server process has stopped.")
       }
     }
-    return when {
-      modelId == "thinking" -> svc.chatCompletion(messagesJson, enableThinking = true)
-      modelId.startsWith("specialist:") -> {
-        val name = modelId.removePrefix("specialist:")
-        val port = specialistServers[name]?.port ?: error("Specialist '$name' not ready")
-        svc.chatCompletion(messagesJson, overridePort = port)
-      }
-      modelId.startsWith("ext-specialist:") -> {
-        val name = modelId.removePrefix("ext-specialist:")
-        val client =
-            externalSpecialistClients[name] ?: error("External specialist '$name' not found")
-        val specialistMaxTokens =
-            config.externalSpecialists.entries
-                .firstOrNull { it.key.equals(name, ignoreCase = true) }
-                ?.value
-                ?.maxTokens
-        svc.chatCompletion(
-            messagesJson, overrideExternalClient = client, overrideMaxTokens = specialistMaxTokens)
-      }
-      // For form-assist the response is a full form JSON, which can be large.
-      // Local models default to AI_LLAMA_STD_MaxTokens (default 2048), which is too small for
-      // complex multi-page forms. Force a larger budget for local models only.
-      // External APIs (e.g. Groq) use their own generous defaults and count requested max_tokens
-      // toward rate limits, so we do not override them here.
-      else -> {
-        val formMaxTokens = if (config.isExternalMode) null else 16384
-        svc.chatCompletion(messagesJson, overrideMaxTokens = formMaxTokens)
-      }
+    // region Design-time web access (Brave Search). Disabled without an API key or when the
+    // `AI_FormAssistant_WebAccess` plugin property turns it off for the assistant passes.
+    if (!BraveSearch.isAvailable || !webAccessEnabled) {
+      return callFormAssistModel(svc, modelId, messagesJson)
     }
+    var roundMessages = injectWebAccessInstruction(messagesJson)
+    var answer = callFormAssistModel(svc, modelId, roundMessages)
+    for (round in 1..maxWebAccessRoundTrips) {
+      val request = resolveWebAccessRequest(answer) ?: break
+      log(
+          LogLevel.INFO,
+          "Web access enabled — feeding the tool result back to the model " +
+              "(round $round/$maxWebAccessRoundTrips): ${request.first.take(120)}")
+      roundMessages = appendWebAccessMessages(roundMessages, request.second, request.first)
+      answer = callFormAssistModel(svc, modelId, roundMessages)
+    }
+    return stripWebAccessMarkers(answer)
+    // endregion Design-time web access
+  }
+
+  /**
+   * Sends one chat-completion request for [messagesJson] through the route selected by [modelId]
+   * (the original [performFormAssist] routing, shared by every web-access round).
+   */
+  private fun callFormAssistModel(
+      svc: ChatCompletionService,
+      modelId: String,
+      messagesJson: String
+  ): String =
+      when {
+        modelId == "thinking" -> svc.chatCompletion(messagesJson, enableThinking = true)
+        modelId.startsWith("specialist:") -> {
+          val name = modelId.removePrefix("specialist:")
+          val port = specialistServers[name]?.port ?: error("Specialist '$name' not ready")
+          svc.chatCompletion(messagesJson, overridePort = port)
+        }
+        modelId.startsWith("ext-specialist:") -> {
+          val name = modelId.removePrefix("ext-specialist:")
+          val client =
+              externalSpecialistClients[name] ?: error("External specialist '$name' not found")
+          val specialistMaxTokens =
+              config.externalSpecialists.entries
+                  .firstOrNull { it.key.equals(name, ignoreCase = true) }
+                  ?.value
+                  ?.maxTokens
+          svc.chatCompletion(
+              messagesJson,
+              overrideExternalClient = client,
+              overrideMaxTokens = specialistMaxTokens)
+        }
+        // For form-assist the response is a full form JSON, which can be large.
+        // Local models default to AI_LLAMA_STD_MaxTokens (default 2048), which is too small for
+        // complex multi-page forms. Force a larger budget for local models only.
+        // External APIs (e.g. Groq) use their own generous defaults and count requested max_tokens
+        // toward rate limits, so we do not override them here.
+        else -> {
+          val formMaxTokens = if (config.isExternalMode) null else 16384
+          svc.chatCompletion(messagesJson, overrideMaxTokens = formMaxTokens)
+        }
+      }
+
+  /** Maximum web-access tool round-trips per form-assist request (mirrors the chat/proxy cap). */
+  private val maxWebAccessRoundTrips = 2
+
+  /**
+   * The design-time web-access protocol, appended to the conversation's system message. It is an
+   * extra, self-contained paragraph so the model can use web access regardless of which DB-seeded
+   * form prompt is active, and it is deliberately strict about emitting the marker ALONE so the
+   * strict-JSON output format is never mixed with a tool call.
+   */
+  private val WEB_ACCESS_INSTRUCTION =
+      "\n\nWEB ACCESS (available: Brave web search): if you need external, current or verifiable " +
+          "information that you do not know reliably — e.g. the CURRENT documentation, endpoint " +
+          "URL or parameters of a third-party API, or current data such as weather, prices or " +
+          "opening hours — NEVER guess and NEVER invent a URL or endpoint. Instead reply with " +
+          "EXACTLY this and NOTHING else: CALL:search(query='your search query') — the system runs " +
+          "the search and sends you the results, then you answer again with your normal output. To " +
+          "read ONE specific page whose URL is already known (e.g. an API documentation page) " +
+          "reply with ONLY: CALL:fetch(url='https://…'). Never combine a CALL: marker with your " +
+          "normal JSON answer, never emit more than one marker, and use web access at most twice " +
+          "per request."
+
+  /**
+   * Appends [WEB_ACCESS_INSTRUCTION] to the first `system` message of the conversation, or prepends
+   * a new system message when none exists (or its content is not a plain string, e.g. vision
+   * parts).
+   *
+   * @return The re-serialized messages array, or [messagesJson] unchanged when it cannot be parsed.
+   */
+  private fun injectWebAccessInstruction(messagesJson: String): String {
+    return try {
+      val messages = JsonParser.parseString(messagesJson) as? JsonArray ?: return messagesJson
+      val system =
+          messages
+              .firstOrNull { it.isJsonObject && it.asJsonObject.get("role")?.asString == "system" }
+              ?.asJsonObject
+      val content = system?.get("content")
+      if (system != null && content != null && content.isJsonPrimitive) {
+        system.addProperty("content", content.asString + WEB_ACCESS_INSTRUCTION)
+      } else {
+        val withInstruction = JsonArray()
+        withInstruction.add(
+            JsonObject().apply {
+              addProperty("role", "system")
+              addProperty("content", WEB_ACCESS_INSTRUCTION.trim())
+            })
+        messages.forEach { withInstruction.add(it) }
+        return withInstruction.toString()
+      }
+      messages.toString()
+    } catch (_: Exception) {
+      messagesJson
+    }
+  }
+
+  /**
+   * Detects and executes a tool request in the model's answer.
+   *
+   * @param answer The model's raw answer.
+   * @return A pair of (result context fed back to the model, the model's tool-request answer), or
+   *   `null` when the answer asks for no tool (the normal case).
+   */
+  private fun resolveWebAccessRequest(answer: String): Pair<String, String>? {
+    UrlFetcher.CALL_FETCH_PATTERN.find(answer)?.let { match ->
+      val url = match.groupValues[1]
+      log(LogLevel.INFO, "Web access: fetching URL requested by the model: '$url'")
+      return UrlFetcher.formatResultForModel(UrlFetcher.fetch(url)) to answer
+    }
+    BraveSearch.CALL_SEARCH_PATTERN.find(answer)?.let { match ->
+      val query = BraveSearch.sanitizeQuery(match.groupValues[1])
+      log(LogLevel.INFO, "Web access: searching the web for: '$query'")
+      val results = BraveSearch.search(query)
+      if (results.isEmpty()) {
+        log(LogLevel.WARNING, "Web access: the search returned no results for '$query'")
+        return "The web search returned no results. Answer with your normal output now." to answer
+      }
+      return BraveSearch.formatResultsForModel(results) to answer
+    }
+    return null
+  }
+
+  /**
+   * Appends the model's tool request and the tool's result as two extra conversation messages so
+   * the model can answer again with its normal output.
+   */
+  private fun appendWebAccessMessages(
+      messagesJson: String,
+      assistantContent: String,
+      toolResult: String
+  ): String {
+    return try {
+      val messages = JsonParser.parseString(messagesJson) as? JsonArray ?: return messagesJson
+      messages.add(
+          JsonObject().apply {
+            addProperty("role", "assistant")
+            addProperty("content", assistantContent)
+          })
+      messages.add(
+          JsonObject().apply {
+            addProperty("role", "user")
+            addProperty(
+                "content",
+                "$toolResult\n\nNow produce your normal output for the original request (strict " +
+                    "JSON where the task requires it). Do NOT emit another CALL: marker unless it " +
+                    "is really necessary.")
+          })
+      messages.toString()
+    } catch (_: Exception) {
+      messagesJson
+    }
+  }
+
+  /** Removes leftover tool markers so a `CALL:…` can never leak into the persisted form JSON. */
+  private fun stripWebAccessMarkers(answer: String): String {
+    var cleaned = BraveSearch.CALL_SEARCH_PATTERN.replace(answer, "")
+    cleaned = UrlFetcher.CALL_FETCH_PATTERN.replace(cleaned, "")
+    val trimmed = cleaned.trim()
+    return if (trimmed.isEmpty()) answer.trim() else trimmed
   }
 
   /**

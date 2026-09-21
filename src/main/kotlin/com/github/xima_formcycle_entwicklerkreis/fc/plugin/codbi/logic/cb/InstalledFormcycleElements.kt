@@ -423,6 +423,14 @@ internal object InstalledFormcycleElements {
             .firstOrNull { it.parameterTypes[0].isAssignableFrom(mandant.javaClass) }
     if (oneArg != null) {
       return try {
+        // `getAllKnown` is declared by FORMCYCLE's NON-PUBLIC `AWorkflowElementRegistry` base
+        // class,
+        // so reflection rejects the call with `IllegalAccessException: … cannot access a member of
+        // class … with modifiers "public final"` unless the language-level access check is lifted.
+        // Without this, the snapshot reports 0 nodes/triggers and (with "Nicht installierte
+        // Elemente
+        // erstellen" active) NO workflow element is ever transmitted to the AI.
+        oneArg.trySetAccessible()
         oneArg.invoke(registry, mandant) as? Collection<*>
       } catch (e: Exception) {
         logger.warn(
@@ -435,7 +443,9 @@ internal object InstalledFormcycleElements {
       }
     }
     return try {
-      registry.javaClass.getMethod("getAllKnown").invoke(registry) as? Collection<*>
+      val noArg = registry.javaClass.getMethod("getAllKnown")
+      noArg.trySetAccessible()
+      noArg.invoke(registry) as? Collection<*>
     } catch (e: Exception) {
       logger.warn(
           "[InstalledFormcycleElements] getAllKnown() invocation failed on {}: {}",

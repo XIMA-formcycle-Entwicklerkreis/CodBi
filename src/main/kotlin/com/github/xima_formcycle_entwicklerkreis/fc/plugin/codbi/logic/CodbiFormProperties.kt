@@ -17,27 +17,10 @@ import java.util.Locale.ROOT
  * @since 1.0.0
  */
 internal class CodbiFormProperties(private val properties: XFormProperties) {
-  companion object {
-    /**
-     * Form property holding an AI-generated, form-level inline `<script>` (custom JavaScript such
-     * as a calculator). The AI form assistant writes it into the persist JSON under this key (via
-     * the `_customScript` output marker) and [FormRenderCallback] injects it into every rendered
-     * form.
-     */
-    const val CUSTOM_SCRIPT_PROPERTY = "codbi-prop-custom-script"
-  }
-
   /** Whether the code library is enabled for the form. */
   val enabled
     get(): Boolean =
         booleanProperty(DESIGNER_PROPERTY_ENABLE_CODBI, DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT)
-
-  /**
-   * The form-level custom JavaScript (an inline script, without the surrounding `<script>` tags)
-   * that was configured for this form, or an empty string when none is set.
-   */
-  val customScript
-    get(): String = stringProperty(CUSTOM_SCRIPT_PROPERTY, "")
 
   /** The configuration template for the code library, if any. */
   val configTemplate

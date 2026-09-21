@@ -26,7 +26,7 @@ CRITICAL — A LITERAL NAME IS NOT A VARIABLE: a person's/authority's NAME is NE
 
 ## AI.LLAMA.STD.QA
 
-This EP queries an AI to answer a question. USE for weather/AI/knowledge queries. Param[1]=question, Param[2]=UseInternet ("true"). CRITICAL: trailing semicolons for unused params.
+This EP queries an AI to answer a question. USE for weather/AI/knowledge queries. Param[1]=question, Param[2]=UseInternet ("true"). CRITICAL: trailing semicolons for unused params.  This EP is a RUNTIME AI answer; it is only usable when the environment has a suitable AI engine (otherwise the codbi data-cb-Specialist parameter must name a specialist, which the AI cannot know). Do NOT make a live-data widget depend on it — prefer self-contained JavaScript that fetches a CORS-ENABLED endpoint (see the custom-JavaScript rules).
 Example: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }"
 
 ## Date.Today
@@ -67,7 +67,7 @@ Wraps another EP result as CSV output. Use only when the prompt explicitly menti
 
 ## Net.URL
 
-Fetches content from a URL. Use for any prompt asking to retrieve web content.
+Fetches content from a URL client-side, inside the BROWSER of the form visitor (a jQuery `$.get`). CONSEQUENCE: it only works for a URL that is PUBLICLY reachable AND returns CORS headers (Access-Control-Allow-Origin) — the browser SILENTLY BLOCKS a cross-origin response without them, so NOTHING is injected. A DWD/opendata URL such as https://opendata.dwd.de/weather/forecast/7day can therefore NEVER work (that endpoint does not exist either, and it sends no CORS headers). NEVER use Net.URL with a guessed or invented URL — only with a URL the USER explicitly provided or that the web-access tool verified. For live data (weather, prices, news, …) prefer self-contained JavaScript in the element that fetches a CORS-ENABLED endpoint (verified endpoints and examples are in the custom-JavaScript rules). NEVER wire `Net.URL` for weather/forecast/live data and NEVER ask the user for an API URL or an endpoint — that question is ALWAYS a FAIL. Those requests are solved with self-contained JavaScript in the element's own HTML-taking property against the VERIFIED CORS-enabled endpoints: `https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FBerlin&forecast_days=7` (7-day forecast), `https://geocoding-api.open-meteo.com/v1/search?name=CITY&count=1&language=de` (city → latitude/longitude) and `https://api.brightsky.dev/weather?lat=LAT&lon=LON&date=YYYY-MM-DD` (DWD open data via Bright Sky). A `Net.URL` value like `https://example.com/...` is an invented URL and is INVALID. Net.URL also returns the RAW response body, so it is only useful when that body is display-ready text or when it is refined with JSON.Path.
 
 ## DOM.Query
 

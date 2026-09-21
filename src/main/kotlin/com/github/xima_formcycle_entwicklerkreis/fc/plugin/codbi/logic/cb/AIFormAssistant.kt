@@ -279,7 +279,12 @@ class AIFormAssistant : IPluginServletAction {
                 val itemName =
                     item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
                         ?: continue
-                if (itemId in targetElementIds) {
+                // The applicability report may name a target by its element NAME ("spWeatherDay1")
+                // or by its id ("xi-spWeatherDay1") — accept BOTH. Matching the id only made a
+                // name-based target select nothing, so pass 2 received an EMPTY item list and the
+                // model then invented element wiring instead of using the templates it was sent.
+                if (itemId in targetElementIds || itemName in targetElementIds) {
+                  expandedIds.add(itemId)
                   // Step 1: Expand children of targeted containers
                   val elements =
                       item.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")
@@ -916,15 +921,14 @@ class AIFormAssistant : IPluginServletAction {
           "base")
 
   /**
-   * The top-level output marker the AI can emit to provide a form-level custom JavaScript (e.g. a
-   * calculator). It is extracted in [restoreStrippedFields] and persisted as the
-   * [CUSTOM_SCRIPT_PROPERTY] form property, from where it is injected into every rendered form as
-   * an inline `<script>`.
+   * Top-level keys the AI must never contribute to the persisted form. `_customScript` is the
+   * REMOVED form-level-JavaScript marker (JavaScript now lives on the element that supports it) and
+   * is dropped here so a stale model response can never smuggle code into the form JSON. The other
+   * top-level markers the AI may emit (`_removedItems`, `_removeAll`, `_codbiApplicability`,
+   * `_workflowMailLanguages`) are consumed by dedicated server passes and must keep flowing
+   * through.
    */
-  private val CUSTOM_SCRIPT_MARKER = "_customScript"
-
-  /** The form property key under which an AI-generated form-level script is persisted. */
-  private val CUSTOM_SCRIPT_PROPERTY = "codbi-prop-custom-script"
+  private val IGNORED_AI_MARKERS = setOf("_customScript")
 
   /**
    * Item-level property keys that are always stripped from each item's `properties` object before
@@ -1201,19 +1205,11 @@ class AIFormAssistant : IPluginServletAction {
     // separately (by name) so pre-existing entries the AI did not touch are preserved.
     for (entry in aiObj.entrySet()) {
       if (entry.key == "variables") continue
-      if (entry.key == CUSTOM_SCRIPT_MARKER) continue // handled below — persisted as form property
+      if (entry.key in IGNORED_AI_MARKERS)
+          continue // never form data (e.g. the removed _customScript)
       if (entry.key !in STRIPPED_FIELDS) {
         result.add(entry.key, entry.value)
       }
-    }
-    // Persist an AI-generated form-level custom script (e.g. a JS calculator). The AI emits it as
-    // the `_customScript` marker; store it as the `codbi-prop-custom-script` form property so the
-    // render callback can inject it via an inline <script>. Only set it when the AI explicitly
-    // provides a non-empty script to avoid clearing an existing script on ordinary edits.
-    val aiCustomScript =
-        aiObj.get(CUSTOM_SCRIPT_MARKER)?.takeIf { it.isJsonPrimitive }?.asString?.trim()
-    if (aiCustomScript != null && aiCustomScript.isNotEmpty()) {
-      result.addProperty(CUSTOM_SCRIPT_PROPERTY, aiCustomScript)
     }
     mergeFormVariables(result, aiObj)
     // result.items is now the AI's items array (if AI included it) or the original (if not)

@@ -74,6 +74,10 @@ class DuplicateTextSpanGuardTest {
 
   private fun form(items: List<String>) = """{"items":[${items.joinToString(",")}]}"""
 
+  /** A text INPUT (XTextArea) — the duplicate the model added alongside the designed XSpan. */
+  private fun textarea(name: String, value: String, label: String = "Vorteile der KI") =
+      """{"className":"XTextArea","properties":{"name":"$name","id":"xi-$name","label":"$label","value":"$value","fullwidth":"1"}}"""
+
   @Test
   fun `a new copy of an existing text span is dropped`() {
     val original = form(listOf(page(listOf("spAdvantages")), span("spAdvantages", designedText)))
@@ -111,6 +115,74 @@ class DuplicateTextSpanGuardTest {
                 span("spOther", otherText)))
     val json = guard(result, """{"items":[]}""")
     assertEquals(listOf("p1", "spAdvantages", "spOther"), names(json))
+  }
+
+  @Test
+  fun `a new textarea duplicating a new designed-text span is dropped`() {
+    // Observed bug: pass-2 produced
+    // `elements:["spKIIllustration","taKIAdvantages","spKIAdvantages"]`
+    // — the model emitted the bullet-point advantages BOTH as the designed/animated XSpan
+    // (`spKIAdvantages`) AND as an XTextArea (`taKIAdvantages`) carrying the same content.
+    val result =
+        form(
+            listOf(
+                page(listOf("spKIIllustration", "taKIAdvantages", "spKIAdvantages")),
+                span("spKIIllustration", "<div class='cbIllu'>Illustration</div>"),
+                span("spKIAdvantages", designedText),
+                textarea(
+                    "taKIAdvantages",
+                    "<ul><li>Vorteile der KI Punkt eins</li><li>Punkt zwei und vieles mehr</li></ul>")))
+    val json = guard(result, """{"items":[]}""")
+    // The duplicate input is dropped; the designed XSpan and the illustration survive.
+    assertEquals(listOf("p1", "spKIIllustration", "spKIAdvantages"), names(json))
+    assertEquals(listOf("spKIIllustration", "spKIAdvantages"), pageElements(json))
+  }
+
+  @Test
+  fun `a new text area with genuinely different content is kept`() {
+    // An input that does NOT repeat a designed XSpan must never be dropped.
+    val result =
+        form(
+            listOf(
+                page(listOf("spDesign", "taUserInput")),
+                span("spDesign", designedText),
+                textarea(
+                    "taUserInput", "Bitte hier Ihre Nachricht an uns eintragen…", "Nachricht")))
+    val json = guard(result, """{"items":[]}""")
+    assertEquals(listOf("p1", "spDesign", "taUserInput"), names(json))
+  }
+
+  @Test
+  fun `a pre-existing text area is never touched`() {
+    // The absolute preserve rule: an input present in the ORIGINAL form is never dropped, even if
+    // its content happens to overlap a designed XSpan.
+    val original =
+        form(
+            listOf(
+                page(listOf("spDesign", "taExisting")),
+                textarea("taExisting", "<ul><li>Punkt eins</li><li>Punkt zwei</li></ul>")))
+    val result =
+        form(
+            listOf(
+                page(listOf("spDesign", "taExisting")),
+                span("spDesign", designedText),
+                textarea("taExisting", "<ul><li>Punkt eins</li><li>Punkt zwei</li></ul>")))
+    val json = guard(result, original)
+    assertEquals(listOf("p1", "spDesign", "taExisting"), names(json))
+  }
+
+  @Test
+  fun `a short input without real content is not dropped`() {
+    // A short label-only input (`normalized.length < 20`) is not treated as a duplicate of a
+    // designed paragraph.
+    val result =
+        form(
+            listOf(
+                page(listOf("spDesign", "taName")),
+                span("spDesign", designedText),
+                textarea("taName", "", "Name")))
+    val json = guard(result, """{"items":[]}""")
+    assertEquals(listOf("p1", "spDesign", "taName"), names(json))
   }
 
   @Test

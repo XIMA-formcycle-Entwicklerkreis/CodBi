@@ -3768,6 +3768,44 @@ class AICodBiAssistant : IPluginServletAction {
           knownTexts.add(key)
         }
       }
+      // 2b) Drop a NEW text INPUT (XTextArea / XTextField) that only duplicates the content of a
+      //     NEW designed-text XSpan. When the user asks for a designed/illustrated text, the model
+      //     sometimes ALSO emits an input field carrying the same text (satisfying a literal
+      //     "Textfeld" while the XSpan covers the design/animation) — observed: a page gained BOTH
+      //     `taKIAdvantages` (XTextArea) and `spKIAdvantages` (XSpan) with identical bullet-point
+      //     content. The XSpan is the surviving designed text; a text input with the same content
+      //     is a DUPLICATE and is dropped.
+      val spanContentKeys = mutableListOf<String>()
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val o = item.asJsonObject
+        if (o.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSpan") continue
+        val name = o.getAsJsonObject("properties")?.stringProp("name") ?: continue
+        if (name in originalNames) continue // only NEW XSpans
+        val key = textSpanContentKey(o) ?: continue
+        spanContentKeys.add(key)
+      }
+      if (spanContentKeys.isNotEmpty()) {
+        for (item in items) {
+          if (!item.isJsonObject) continue
+          val o = item.asJsonObject
+          val cls = o.get("className")?.takeIf { it.isJsonPrimitive }?.asString
+          if (cls != "XTextArea" && cls != "XTextField" && cls != "XTextfieldAdvanced") continue
+          val props = o.getAsJsonObject("properties") ?: continue
+          val name = props.stringProp("name") ?: continue
+          if (name in droppedNames) continue
+          if (name in originalNames) continue // only NEW inputs
+          if (hasCodbiFunction(o)) continue // runtime-wired element — keep it
+          val inputKey = textInputContentKey(props) ?: continue
+          if (spanContentKeys.any { tokensOverlap(inputKey, it) }) {
+            droppedNames.add(name)
+            logger.warn(
+                "[AICodBiAssistant] Dropping duplicate text input '{}' — a '{}' repeats the content already rendered as the designed-text XSpan (the same text must live in exactly ONE element)",
+                name,
+                cls)
+          }
+        }
+      }
       if (droppedNames.isEmpty() &&
           !svgRenamed &&
           !transformBoxRepaired &&
@@ -4106,6 +4144,37 @@ class AICodBiAssistant : IPluginServletAction {
     return if (normalized.length < 20) null else normalized
   }
 
+  /**
+   * The dedupe key of a text INPUT (XTextArea / XTextField / XTextfieldAdvanced): its content from
+   * `properties.value` (with `label` as a fallback), normalised like an XSpan key (tags stripped,
+   * all non-alphanumerics folded to single spaces, lowercased). Returns `null` for a blank or
+   * too-short content — a short label is not a duplicate of a designed paragraph.
+   */
+  private fun textInputContentKey(props: JsonObject): String? {
+    val value =
+        props.stringProp("value")?.takeIf { it.isNotBlank() }
+            ?: props.stringProp("label")?.takeIf { it.isNotBlank() }
+            ?: return null
+    val textOnly = Regex("<[^>]*>").replace(value, " ")
+    val normalized = textOnly.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+    return if (normalized.length < 20) null else normalized
+  }
+
+  /**
+   * `true` when two single-space-normalized, lowercased text keys share a high fraction of their
+   * word tokens — used to decide that a text input duplicates a designed-text XSpan. Requires a
+   * substantial intersection (>= 70% of the smaller set) so a heading-only XSpan never swallows an
+   * unrelated short label, and at least 5 tokens on both sides to ignore repetitive short text.
+   */
+  private fun tokensOverlap(a: String, b: String): Boolean {
+    val at = a.split(" ").filter { it.isNotBlank() }.toSet()
+    val bt = b.split(" ").filter { it.isNotBlank() }.toSet()
+    if (at.size < 5 || bt.size < 5) return false
+    val inter = at.intersect(bt).size
+    val min = minOf(at.size, bt.size)
+    return inter.toDouble() / min >= 0.7
+  }
+
   private val KNOWN_CLASS_NAMES =
       setOf(
           "XAppointment",
@@ -4151,6 +4220,17 @@ class AICodBiAssistant : IPluginServletAction {
           "formI18n",
           "metadata",
           "base")
+
+  /**
+   * The top-level output marker the AI can emit to provide a form-level custom JavaScript (e.g. a
+   * calculator). It is extracted in [restoreStrippedFields] and persisted as the
+   * [CUSTOM_SCRIPT_PROPERTY] form property, from where it is injected into every rendered form as
+   * an inline `<script>`.
+   */
+  private val CUSTOM_SCRIPT_MARKER = "_customScript"
+
+  /** The form property key under which an AI-generated form-level script is persisted. */
+  private val CUSTOM_SCRIPT_PROPERTY = "codbi-prop-custom-script"
 
   private val STRIPPED_ITEM_PROPS =
       setOf(
@@ -5040,9 +5120,19 @@ class AICodBiAssistant : IPluginServletAction {
     val originalItems = result.getAsJsonArray("items")
     for (entry in aiObj.entrySet()) {
       if (entry.key == "variables") continue
+      if (entry.key == CUSTOM_SCRIPT_MARKER) continue // handled below — persisted as form property
       if (entry.key !in STRIPPED_FIELDS) {
         result.add(entry.key, entry.value)
       }
+    }
+    // Persist an AI-generated form-level custom script (e.g. a JS calculator). The AI emits it as
+    // the `_customScript` marker; store it as the `codbi-prop-custom-script` form property so the
+    // render callback can inject it via an inline <script>. Only set it when the AI explicitly
+    // provides a non-empty script to avoid clearing an existing script on ordinary edits.
+    val aiCustomScript =
+        aiObj.get(CUSTOM_SCRIPT_MARKER)?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+    if (aiCustomScript != null && aiCustomScript.isNotEmpty()) {
+      result.addProperty(CUSTOM_SCRIPT_PROPERTY, aiCustomScript)
     }
     mergeFormVariables(result, aiObj)
     val resultItems: JsonArray =

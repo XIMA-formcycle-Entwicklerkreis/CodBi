@@ -916,6 +916,17 @@ class AIFormAssistant : IPluginServletAction {
           "base")
 
   /**
+   * The top-level output marker the AI can emit to provide a form-level custom JavaScript (e.g. a
+   * calculator). It is extracted in [restoreStrippedFields] and persisted as the
+   * [CUSTOM_SCRIPT_PROPERTY] form property, from where it is injected into every rendered form as
+   * an inline `<script>`.
+   */
+  private val CUSTOM_SCRIPT_MARKER = "_customScript"
+
+  /** The form property key under which an AI-generated form-level script is persisted. */
+  private val CUSTOM_SCRIPT_PROPERTY = "codbi-prop-custom-script"
+
+  /**
    * Item-level property keys that are always stripped from each item's `properties` object before
    * sending to the AI. These are styling/print directives, permission conditions, and the like —
    * none of which the AI needs to understand form structure.
@@ -1190,9 +1201,19 @@ class AIFormAssistant : IPluginServletAction {
     // separately (by name) so pre-existing entries the AI did not touch are preserved.
     for (entry in aiObj.entrySet()) {
       if (entry.key == "variables") continue
+      if (entry.key == CUSTOM_SCRIPT_MARKER) continue // handled below — persisted as form property
       if (entry.key !in STRIPPED_FIELDS) {
         result.add(entry.key, entry.value)
       }
+    }
+    // Persist an AI-generated form-level custom script (e.g. a JS calculator). The AI emits it as
+    // the `_customScript` marker; store it as the `codbi-prop-custom-script` form property so the
+    // render callback can inject it via an inline <script>. Only set it when the AI explicitly
+    // provides a non-empty script to avoid clearing an existing script on ordinary edits.
+    val aiCustomScript =
+        aiObj.get(CUSTOM_SCRIPT_MARKER)?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+    if (aiCustomScript != null && aiCustomScript.isNotEmpty()) {
+      result.addProperty(CUSTOM_SCRIPT_PROPERTY, aiCustomScript)
     }
     mergeFormVariables(result, aiObj)
     // result.items is now the AI's items array (if AI included it) or the original (if not)

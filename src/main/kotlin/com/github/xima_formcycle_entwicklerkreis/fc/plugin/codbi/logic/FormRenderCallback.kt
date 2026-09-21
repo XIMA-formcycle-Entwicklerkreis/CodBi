@@ -91,6 +91,13 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
     val properties = params?.xForm?.formProperties?.let { CodbiFormProperties(it) }
     val renderProcessor = params?.let { FormRenderProcessor(it) }
 
+    // Inject the form-level custom JavaScript (if any). This is the script that the AI form
+    // assistant may generate (e.g. a JS calculator) and persists as the `codbi-prop-custom-script`
+    // form property. It is injected regardless of whether the CodBi code library is enabled.
+    if (renderProcessor != null && properties != null && properties.customScript.isNotBlank()) {
+      renderProcessor.insertInlineScript("codbi-custom-script", properties.customScript)
+    }
+
     if (renderProcessor != null && properties?.enabled == true) {
       val usedFunctionalities = mutableSetOf<String>()
       val usedEPs = mutableSetOf<String>()

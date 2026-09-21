@@ -88,6 +88,48 @@ class FormRenderCallbackTest {
     assertNull(result)
   }
 
+  @Test
+  fun injectsCustomScriptWhenPropertySetEvenIfCodBiDisabled() {
+    val params = AfterRenderFormParams()
+    params.xForm.formProperties.setProperty("codbi-prop-custom-script", "console.log('calc');")
+
+    FormRenderCallback.onAfterRenderForm(params)
+
+    val script =
+        matching(params.doc.form, Script::class.java, { attr(it, "id") == "codbi-custom-script" })
+    assertEquals("codbi-custom-script", attr(script, "id"))
+    assertEquals("codbi-custom-script", attr(script, "name"))
+    assertTrue(text(script).contains("console.log('calc')"))
+  }
+
+  @Test
+  fun injectsCustomScriptAlongsideCodeLibraryWhenEnabled() {
+    val params = AfterRenderFormParams()
+    params.xForm.formProperties.setProperty("codbi-prop-enable", "1")
+    params.xForm.formProperties.setProperty("codbi-prop-custom-script", "alert(1);")
+
+    FormRenderCallback.onAfterRenderForm(params)
+
+    val custom =
+        matching(params.doc.form, Script::class.java, { attr(it, "id") == "codbi-custom-script" })
+    assertEquals("codbi-custom-script", attr(custom, "id"))
+    assertTrue(text(custom).contains("alert(1);"))
+
+    val codbi = matching(params.doc.form, Script::class.java, { attr(it, "id") == "codbi-script" })
+    assertEquals("codbi-script", attr(codbi, "id"))
+  }
+
+  @Test
+  fun doesNotInjectCustomScriptWhenPropertyBlank() {
+    val params = AfterRenderFormParams()
+    params.xForm.formProperties.setProperty("codbi-prop-custom-script", "   ")
+
+    FormRenderCallback.onAfterRenderForm(params)
+
+    assertNull(
+        matching(params.doc.form, Script::class.java, { attr(it, "id") == "codbi-custom-script" }))
+  }
+
   // endregion
 
   // region extractEPs

@@ -272,10 +272,10 @@ when CodBi searches within the shared parent container.
   - Placeholder: Configures 'Placeholder' for this functionality.
   - ShowHint: Configures 'ShowHint' for this functionality.
   - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
-- Media.MultipleUpload: Provides the HTML_Select_Injection.functionality .
-  - Maximum: The number of files that may be uploaded.
-  - PostfixTooMany: The message that is displayed after the Maximum if too many files were selected.
-  - PrefixTooMany: The message that is displayed before the Maximum if too many files were selected.
+- Media.MultipleUpload: Enables a file upload to support selecting multiple files for upload. USE on an XUpload whenever the user wants SEVERAL files ("mehrere Dateien", "multiple files", "auch mehrere Dateien"). Apply it ON that XUpload: data-cb-func="Media.MultipleUpload" plus the Formcycle native multiple-file property "uploadMultiple":"1".
+  - Maximum: The number of files that may be uploaded (data-cb-Maximum). Omit it → the functionality's default of 2.
+  - PostfixTooMany: The message that is displayed after the Maximum if too many files were selected (data-cb-PostfixTooMany).
+  - PrefixTooMany: The message that is displayed before the Maximum if too many files were selected (data-cb-PrefixTooMany).
 - OnChange.Conditional: This functionality applies a certain functionality onto the object toProcess depending on whether.
   - Candidate: The Element where to get the value to be compared or a CSS-Selector.
   - DateFormat: A optional string specifying the format the candidate is of.

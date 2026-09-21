@@ -319,9 +319,19 @@ Applicable on any form to add Matomo/Piwik analytics event tracking. **REQUIRES*
 
 ## Media.Image.Cropper
 
+A plain "Vorschau"/"preview"/"Bildvorschau" request (see the chosen file/image before/after selecting it) is NOT a cropper — it is the FORMCYCLE preview configuration, the DIRECT XUpload property `"filepreview":"1"`. NEVER tag the upload with data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) for a preview.
+
 TWO DISTINCT USES — pick by the request, NEVER apply both:
 - (a) CROP DIALOG ON THE UPLOAD: an upload for an image/ID card with a cropper ("Bild-Cropper", "with crop", "Upload-Feld für den Personalausweis mit Bild-Cropper") → set data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) on that XUpload. NEVER omit it.
 - (b) FOTOCROPPER BOARD / "Fotocropper-Board" / "Bild-Cropper vor dem Upload X" (a full photo-cropper setup placed BEFORE an upload) → build the COMPLETE `CodBi_Fotocropper` group (see codbi-standard-configurations / codbi.general Fotocropper) BEFORE the referenced upload — wrapper container `CodBi_Fotocropper` + `CodBi_Fotocropper_Board` + `CodBi_Fotocropper_Uploader` (XUpload) + `CodBi_Fotocropper_Update` (button) + `CodBi_Fotocropper_ImageURL` (hidden field) + `CodBi_Fotocropper_Foto` (XImage). The referenced upload itself gets NO cropper functionality. An EMPTY board or a bare data-cb-func="Media.Image.Cropper" on the target upload is a FAIL (Media.Image.Cropper requires the Container/File/Updater/ImageURL/Target selectors, which only the full Fotocropper group provides).
+
+## Media.MultipleUpload
+
+USE whenever the request wants the user to upload SEVERAL files into ONE upload field: "mehrere Dateien hochladen", "multiple files", "mehrere Bilder/Anhänge", "mehrere Dateien können hochgeladen werden", "auch mehrere Dateien", "Upload mehrerer Dateien". This is the CODBI MULTIPLE-UPLOAD functionality (verified in the source: it sets the `multiple` attribute on the file input, limits the number of files and shows the selected filenames in the label). Apply it ON that XUpload:
+- set `data-cb-func="Media.MultipleUpload"`,
+- `data-cb-Maximum` = the number of files the user may upload (e.g. `"5"`) — when the request does NOT state a count, keep the functionality's default of `2` and OMIT the parameter (do NOT invent a number),
+- optionally `data-cb-PrefixTooMany` / `data-cb-PostfixTooMany` (the messages shown before/after the number when too many files are selected) when the request states them.
+ALSO set the Formcycle native multiple-file flag on the SAME XUpload: the DIRECT property `"uploadMultiple":"1"` (so the upload pipeline accepts/keeps all selected files, complementing the CodBi UI functionality). MISSING: an upload that should accept multiple files WITHOUT `data-cb-func="Media.MultipleUpload"` (+ `uploadMultiple:"1"`) is a FAIL. Do NOT confuse the multiple-upload functionality with the CROPPER or the PREVIEW — a "mehrere Dateien" request applies ONLY Media.MultipleUpload. CRITICAL — SINGLE FIELD ONLY: "mehrere Dateien"/"multiple files" means several FILES IN THE ONE upload field, NOT several upload FIELDS — apply Media.MultipleUpload on the ONE requested XUpload and NEVER create a second / "Weiteres ... hochladen" / "another" upload element.
 
 ## MEDIA.INPUT.SPEECH
 

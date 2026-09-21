@@ -2347,8 +2347,19 @@ class AICodBiAssistant : IPluginServletAction {
               }
             }
 
+        // The DETAILED XSpan template (the illustration rules with the worked example and the
+        // forbidden-composition list) is otherwise only sent when the model itself asked for
+        // `XSpan`
+        // in pass 1 — yet THIS is the pass that builds the form. A request for a designed/animated
+        // text or an inline SVG illustration therefore forces the section in, so the rules always
+        // reach the pass that emits the markup.
+        val widgetsForDetails = DesignedTextDetector.withXSpan(widgets, prompt)
+        if (widgetsForDetails != widgets) {
+          logger.info(
+              "[AICodBiAssistant] Forcing the detailed XSpan template into pass-2 (request needs the designed-text/illustration rules)")
+        }
         val applySystemPrompt =
-            loadCodbiApplyPrompt(requested, widgets, useCodbi, useBuergerserviceNaming) +
+            loadCodbiApplyPrompt(requested, widgetsForDetails, useCodbi, useBuergerserviceNaming) +
                 historySection +
                 clarificationSection +
                 chatSection +
@@ -2731,7 +2742,11 @@ class AICodBiAssistant : IPluginServletAction {
       // elements are never touched.
       val guardedForm =
           applyNewDatasourceSelectGuards(finalForm, persistJson, availableDatasourceNames)
-      Triple(guardedForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+      // Drop a duplicate TEXT element (XSpan) a "rebuild" pass re-created for the SAME content, so
+      // one request never yields the designed/interactive text twice. Pre-existing elements are the
+      // survivor and are never touched — only a NEW copy is dropped.
+      val dedupedForm = dropDuplicateTextSpans(guardedForm, persistJson)
+      Triple(dedupedForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
     } catch (e: Exception) {
       logger.warn(
           "[AICodBiAssistant] Form AI returned unparseable response ({} chars): {}",
@@ -3666,6 +3681,431 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Sanitises the TEXT ELEMENTS (XSpan) of the AI form:
+   * 1. Drops EMPTY text elements — an XSpan whose `rtevalue` is blank carries no content and
+   *    renders as a stray "Text" node. Observed: a rebuild pass emptied the two older designed-text
+   *    spans (`"rtevalue":""`) and put the content into a THIRD one, so the form showed the real
+   *    text plus two senseless "Text" placeholders. An element whose content arrives at RUNTIME
+   *    (HTML.Text.Injector/Mapper, HTML.CSS, Sys.Log.Console) always has a `data-cb-func` and a
+   *    placeholder/label in `rtevalue`, so both are exempt and never dropped.
+   * 2. Drops DUPLICATE text elements the AI created for the SAME content — a designed/"interactive"
+   *    text is written as ONE XSpan whose `rtevalue` carries the styled HTML (and, for the
+   *    animation, an in-`rtevalue` `<style>` block). The forced widget-template pass (the pass that
+   *    re-sends a widget's exact JSON template after an element was created without a details
+   *    request) regularly re-emits that text as a SECOND XSpan under a NEW name — observed:
+   *    `spAdvantages` (the designed text) plus a `spKIVorteile` / `spKIVorteileDesign` carrying the
+   *    SAME heading and bullet list (one run with a byte-identical `rtevalue`, one with only a
+   *    re-named keyframes/class prefix and different colours), so a single request produced the
+   *    same text element TWICE.
+   *
+   * Duplicates are matched by their NORMALIZED VISIBLE TEXT (the `<style>` block and every tag
+   * stripped, whitespace collapsed, lowercased), so two copies that differ only in a class prefix,
+   * a colour or an element/attribute name are recognised as the same content. Only the FIRST
+   * occurrence survives; every later duplicate is removed from the root `items` array AND from its
+   * parent's `properties.elements` array. A PRE-EXISTING text is the survivor, so a NEW copy of an
+   * already-present text is dropped instead of doubling it. Too-short texts are never deduplicated
+   * (a repeated short label could be legitimate) — but an EMPTY one is always dropped.
+   *
+   * Pure (parses/serialises JSON and logs; no DB/IO). On ANY failure [formJson] is returned
+   * unchanged.
+   */
+  private fun dropDuplicateTextSpans(formJson: String, originalJson: String): String {
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return formJson
+      val originalNames = collectItemNames(originalJson)
+      val knownTexts = mutableSetOf<String>()
+      val droppedNames = LinkedHashSet<String>()
+      // 0) Repair the SVG name casing. SVG is CASE-SENSITIVE and a lowercased name is silently
+      //    ignored by the browser: `viewbox` discards the canvas (the drawing is cut off or
+      //    misplaced) and `animatetransform`/`attributename`/`repeatcount` discard the animation,
+      // so
+      //    the "animated" illustration renders static — observed in a real run.
+      val svgRenamed = normalizeSvgAttributeNames(items)
+      // 0b) Repair the missing `transform-box`. A CSS rule with `transform-origin:center` inside an
+      //     inline SVG resolves against the whole VIEWPORT unless `transform-box:fill-box` is set,
+      // so
+      //     a "rotating globe" visibly ORBITS instead of spinning in place — observed in a real run
+      //     ("der Globus soll sich um die eigene Achse drehen"). Shared with [AIFormAssistant].
+      val transformBoxRepaired = SvgNameRepair.repairTransformBoxes(items)
+      // 0c) A CSS animation of `transform` REPLACES the `transform` ATTRIBUTE of the same element,
+      // so
+      //     `<g class='spGlobe' transform='translate(340,30)'>` loses its translate for the whole
+      //     animation and renders at the SVG ORIGIN, overlapping the other shapes — observed in a
+      //     real run. The attribute is moved into a wrapping <g>. Shared with [AIFormAssistant].
+      val animatedTransformRepaired = SvgNameRepair.repairAnimatedTransforms(items)
+      // 1) Empty text elements (no content -> stray "Text" node).
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val o = item.asJsonObject
+        if (o.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSpan") continue
+        val props = o.getAsJsonObject("properties") ?: continue
+        val name = props.stringProp("name") ?: continue
+        if (props.stringProp("rtevalue")?.isNotBlank() == true) continue
+        if (hasCodbiFunction(o)) continue // runtime-wired element — keep it
+        droppedNames.add(name)
+        logger.warn(
+            "[AICodBiAssistant] Dropping EMPTY text element '{}' — an XSpan without content renders as a stray \"Text\" node",
+            name)
+      }
+      // 2) Duplicate text elements (same visible content).
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val o = item.asJsonObject
+        if (o.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSpan") continue
+        val key = textSpanContentKey(o) ?: continue
+        val props = o.getAsJsonObject("properties") ?: continue
+        val name = props.stringProp("name") ?: continue
+        if (name in droppedNames) continue
+        val isNew = name !in originalNames
+        if (isNew && !knownTexts.add(key)) {
+          droppedNames.add(name)
+          logger.warn(
+              "[AICodBiAssistant] Dropping duplicate text element '{}' — the same text already exists in the form (the model re-emitted the designed text instead of modifying the existing element)",
+              name)
+        } else {
+          knownTexts.add(key)
+        }
+      }
+      if (droppedNames.isEmpty() &&
+          !svgRenamed &&
+          !transformBoxRepaired &&
+          !animatedTransformRepaired)
+          return formJson
+      val keep = JsonArray()
+      for (item in items) {
+        val name =
+            if (item.isJsonObject)
+                item.asJsonObject.getAsJsonObject("properties")?.stringProp("name")
+            else null
+        if (name != null && name in droppedNames) continue
+        keep.add(item)
+      }
+      root.add("items", keep)
+      // Remove references to the dropped texts from every parent's "properties.elements".
+      for (item in keep) {
+        if (!item.isJsonObject) continue
+        val props = item.asJsonObject.getAsJsonObject("properties") ?: continue
+        val elements = props.getAsJsonArray("elements") ?: continue
+        val clean = JsonArray()
+        for (ref in elements) {
+          if (ref.isJsonPrimitive && ref.asString in droppedNames) continue
+          clean.add(ref)
+        }
+        props.add("elements", clean)
+      }
+      logger.warn(
+          "[AICodBiAssistant] Dropped {} duplicate text element(s): {}",
+          droppedNames.size,
+          droppedNames.joinToString(", "))
+      gson.toJson(root)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Duplicate text-element guard failed: {}", e.message)
+      formJson
+    }
+  }
+
+  /**
+   * The COMPLETE set of camelCase SVG/SMIL ELEMENT names (SVG 1.1 + SVG 2 + SMIL, including the
+   * deprecated `animateColor` / `altGlyph*` / `hKern` / `vKern`). Only names that are NOT already
+   * all-lowercase are listed — every other element name (`svg`, `g`, `defs`, `rect`, `circle`,
+   * `path`, `line`, `ellipse`, `polygon`, `polyline`, `text`, `tspan`, `use`, `symbol`, `marker`,
+   * `mask`, `pattern`, `filter`, `image`, `animate`, `set`, `stop`, `a`, `switch`, `view`,
+   * `metadata`, `title`, `desc`, `style`, `script`, `mpath`, `cursor`, ...) is already correct.
+   *
+   * SVG markup is CASE-SENSITIVE and an unknown element is simply NOT RENDERED — a model writing
+   * `<lineargradient>`/`<clippath>`/`<fegaussianblur>` therefore silently loses that part of the
+   * drawing.
+   */
+  private val SVG_CANONICAL_ELEMENTS =
+      listOf(
+          "altGlyph",
+          "altGlyphDef",
+          "altGlyphItem",
+          "animateColor",
+          "animateMotion",
+          "animateTransform",
+          "clipPath",
+          "feBlend",
+          "feColorMatrix",
+          "feComponentTransfer",
+          "feComposite",
+          "feConvolveMatrix",
+          "feDiffuseLighting",
+          "feDisplacementMap",
+          "feDistantLight",
+          "feDropShadow",
+          "feFlood",
+          "feFuncA",
+          "feFuncB",
+          "feFuncG",
+          "feFuncR",
+          "feGaussianBlur",
+          "feImage",
+          "feMerge",
+          "feMergeNode",
+          "feMorphology",
+          "feOffset",
+          "fePointLight",
+          "feSpecularLighting",
+          "feSpotLight",
+          "feTile",
+          "feTurbulence",
+          "foreignObject",
+          "glyphRef",
+          "hKern",
+          "linearGradient",
+          "radialGradient",
+          "textPath",
+          "vKern")
+
+  /** Canonical element name by normalized key (lowercased, hyphens removed). */
+  private val SVG_ELEMENT_BY_KEY = SVG_CANONICAL_ELEMENTS.associateBy { it.svgNameKey() }
+
+  /**
+   * `<name` / `</name` followed by whitespace / `>` / `/` — an ELEMENT position (the CLOSING tag
+   * must be repaired too, otherwise `<feGaussianBlur>…</fegaussianblur>` stays broken).
+   */
+  private val SVG_ELEMENT_NAME_RX = Regex("(?i)(</?)([a-z][a-z0-9-]*)(?=[\\s/>])")
+
+  /** Whitespace + `name` + `=` — an ATTRIBUTE position. */
+  private val SVG_ATTRIBUTE_NAME_RX = Regex("(?i)(\\s)([a-z][a-z0-9-]*)(\\s*=)")
+
+  /**
+   * Lookup key of an SVG name: lowercased with the spec's hyphens removed (`stroke-width` →
+   * `strokewidth`, so the hyphen-omission variants resolve to the same canonical name).
+   */
+  private fun String.svgNameKey(): String = lowercase().replace("-", "")
+
+  /**
+   * The COMPLETE set of NON-lowercase SVG/SMIL ATTRIBUTE names (SVG 1.1 + SVG 2 + SMIL) — the
+   * camelCase attributes (`viewBox`, `attributeName`, `repeatCount`, `gradientUnits`,
+   * `stdDeviation`, `clipPathUnits`, `stitchTiles`, ...) AND the hyphenated presentation attributes
+   * (`stroke-width`, `stroke-dashoffset`, `stop-color`, `font-size`, `text-anchor`,
+   * `color-interpolation-filters`, ...). Every attribute that is already all-lowercase (`x`, `d`,
+   * `id`, `class`, `href`, `offset`, `stop`, `order`, `mode`, `type`, ...) needs no entry.
+   *
+   * The lookup key drops the hyphens, so the very common HYPHEN-OMISSION mistake resolves to the
+   * same entry (`strokewidth` → `stroke-width`, `stopcolor` → `stop-color`, `fontsize` →
+   * `font-size`, `textanchor` → `text-anchor`).
+   *
+   * All of these are silently IGNORED when misspelled: a wrong `viewbox` drops the canvas (the
+   * drawing is cut off / misplaced), a wrong `animatetransform`/`attributename`/`repeatcount` drops
+   * the animation entirely (an "animated" illustration renders static), and a wrong `stopcolor` /
+   * `strokewidth` leaves the shape unstyled — each observed in a real run.
+   */
+  private val SVG_CANONICAL_ATTRIBUTES =
+      listOf(
+          "alignment-baseline",
+          "attributeName",
+          "attributeType",
+          "baseFrequency",
+          "baseProfile",
+          "baseline-shift",
+          "calcMode",
+          "clip-rule",
+          "clipPathUnits",
+          "color-interpolation",
+          "color-interpolation-filters",
+          "color-rendering",
+          "contentScriptType",
+          "contentStyleType",
+          "diffuseConstant",
+          "dominant-baseline",
+          "edgeMode",
+          "enable-background",
+          "externalResourcesRequired",
+          "fill-opacity",
+          "fill-rule",
+          "filterRes",
+          "filterUnits",
+          "flood-color",
+          "flood-opacity",
+          "font-family",
+          "font-size",
+          "font-size-adjust",
+          "font-stretch",
+          "font-style",
+          "font-variant",
+          "font-weight",
+          "glyph-orientation-horizontal",
+          "glyph-orientation-vertical",
+          "glyphRef",
+          "gradientTransform",
+          "gradientUnits",
+          "horizAdvX",
+          "horizOriginX",
+          "horizOriginY",
+          "image-rendering",
+          "kernelMatrix",
+          "kernelUnitLength",
+          "keyPoints",
+          "keySplines",
+          "keyTimes",
+          "lengthAdjust",
+          "letter-spacing",
+          "lighting-color",
+          "markerHeight",
+          "markerUnits",
+          "markerWidth",
+          "maskContentUnits",
+          "maskUnits",
+          "numOctaves",
+          "paint-order",
+          "pathLength",
+          "patternContentUnits",
+          "patternTransform",
+          "patternUnits",
+          "pointer-events",
+          "preserveAlpha",
+          "preserveAspectRatio",
+          "primitiveUnits",
+          "refX",
+          "refY",
+          "rendering-intent",
+          "repeatCount",
+          "repeatDur",
+          "requiredExtensions",
+          "requiredFeatures",
+          "shape-rendering",
+          "specularConstant",
+          "specularExponent",
+          "spreadMethod",
+          "startOffset",
+          "stdDeviation",
+          "stitchTiles",
+          "stop-color",
+          "stop-opacity",
+          "stroke-dasharray",
+          "stroke-dashoffset",
+          "stroke-linecap",
+          "stroke-linejoin",
+          "stroke-miterlimit",
+          "stroke-opacity",
+          "stroke-width",
+          "surfaceScale",
+          "systemLanguage",
+          "tableValues",
+          "targetX",
+          "targetY",
+          "text-anchor",
+          "text-decoration",
+          "text-rendering",
+          "textLength",
+          "unicode-bidi",
+          "vector-effect",
+          "vertAdvY",
+          "vertOriginX",
+          "vertOriginY",
+          "viewBox",
+          "viewTarget",
+          "word-spacing",
+          "writing-mode",
+          "xChannelSelector",
+          "yChannelSelector",
+          "zoomAndPan")
+
+  /** Canonical attribute name by normalized key (lowercased, hyphens removed). */
+  private val SVG_ATTRIBUTE_BY_KEY = SVG_CANONICAL_ATTRIBUTES.associateBy { it.svgNameKey() }
+
+  /**
+   * Repairs the SVG name casing of every `XSpan.rtevalue` IN PLACE (returns `true` when something
+   * was renamed), so a hand-written illustration actually renders and animates.
+   *
+   * The replacement is POSITION-AWARE and therefore conservative:
+   * - an ELEMENT name is only rewritten right after `<` and before whitespace / `>` / `/`
+   *   (`<lineargradient ...>` → `<linearGradient ...>`);
+   * - an ATTRIBUTE name is only rewritten after whitespace and before `=` (`stopcolor='…'` →
+   *   `stop-color='…'`, `animatetransform attributename=…` → `… attributeName=…`).
+   *
+   * A name that merely OCCURS in the visible text ("viewbox", "fontsize") is therefore never
+   * touched. Every element/attribute name of the SVG/SMIL standard — and the hyphen-omission
+   * variants of its hyphenated attributes — is in the registry; a name outside it is left as-is, so
+   * the prompt rules remain the primary mechanism.
+   */
+  private fun normalizeSvgAttributeNames(items: JsonArray): Boolean {
+    var changed = false
+    for (item in items) {
+      if (!item.isJsonObject) continue
+      val o = item.asJsonObject
+      if (o.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSpan") continue
+      val props = o.getAsJsonObject("properties") ?: continue
+      val rte = props.stringProp("rtevalue") ?: continue
+      if (rte.indexOf('<') < 0) continue
+      var fixed = rte
+      fixed =
+          SVG_ELEMENT_NAME_RX.replace(fixed) { m ->
+            val canonical = SVG_ELEMENT_BY_KEY[m.groupValues[2].svgNameKey()]
+            if (canonical == null) m.value else m.groupValues[1] + canonical
+          }
+      fixed =
+          SVG_ATTRIBUTE_NAME_RX.replace(fixed) { m ->
+            val canonical = SVG_ATTRIBUTE_BY_KEY[m.groupValues[2].svgNameKey()]
+            if (canonical == null) m.value else m.groupValues[1] + canonical + m.groupValues[3]
+          }
+      if (fixed != rte) {
+        props.addProperty("rtevalue", fixed)
+        changed = true
+      }
+    }
+    if (changed) {
+      logger.info("[AICodBiAssistant] Repaired misspelled SVG names in the text element(s)")
+    }
+    return changed
+  }
+
+  /**
+   * True when the element carries a non-blank `data-cb-func` — as a direct `data-cb-*` key of its
+   * `properties`, or as a `{"text":"data-cb-…","value":…}` entry of its `attributes` array. The AI
+   * emits that array at the ITEM level (as in the Sys.Log.Console template), while the persisted
+   * form keeps it inside `properties`, so BOTH locations are checked. Such an element gets its
+   * content at RUNTIME (HTML.Text.Injector / HTML.Text.Mapper / HTML.CSS / Sys.Log.Console), so it
+   * must never be dropped merely because its `rtevalue` is blank.
+   */
+  private fun hasCodbiFunction(span: JsonObject): Boolean {
+    val props = span.getAsJsonObject("properties")
+    if (props != null) {
+      val direct =
+          props.entrySet().any { entry ->
+            entry.key.startsWith("data-cb-") &&
+                entry.value.isJsonPrimitive &&
+                entry.value.asString.isNotBlank()
+          }
+      if (direct) return true
+    }
+    return attributeArrayHasCodbiFunc(span.getAsJsonArray("attributes")) ||
+        attributeArrayHasCodbiFunc(props?.getAsJsonArray("attributes"))
+  }
+
+  /** True when [attrs] holds a `{"text":"data-cb-…", …}` entry. */
+  private fun attributeArrayHasCodbiFunc(attrs: JsonArray?): Boolean {
+    if (attrs == null) return false
+    return attrs.any { attr ->
+      attr.isJsonObject &&
+          attr.asJsonObject
+              .get("text")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.startsWith("data-cb-") == true
+    }
+  }
+
+  /**
+   * The dedupe key of an XSpan: its NORMALIZED VISIBLE TEXT (the animation `<style>` block and
+   * every tag stripped, all non-alphanumerics folded to single spaces, lowercased). Returns `null`
+   * for a blank text and for a text shorter than 20 normalized characters — a repeated short label
+   * is not a duplicate element.
+   */
+  private fun textSpanContentKey(span: JsonObject): String? {
+    val rte = span.getAsJsonObject("properties")?.stringProp("rtevalue") ?: return null
+    if (rte.isBlank()) return null
+    val withoutStyle = Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE).replace(rte, " ")
+    val textOnly = Regex("<[^>]*>").replace(withoutStyle, " ")
+    val normalized = textOnly.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+    return if (normalized.length < 20) null else normalized
+  }
+
   private val KNOWN_CLASS_NAMES =
       setOf(
           "XAppointment",
@@ -3799,17 +4239,88 @@ class AICodBiAssistant : IPluginServletAction {
         "readonly_viewstatus",
         "readonly_viewusergroup" -> {
           if (!value.isJsonArray) null
-          else
-              JsonArray().also { sanitized ->
-                for (entry in value.asJsonArray) {
+          else {
+            val raw =
+                value.asJsonArray.mapNotNull { entry ->
                   if (entry.isJsonPrimitive && entry.asJsonPrimitive.isString) {
-                    sanitized.add(entry)
-                  }
+                    entry.asJsonPrimitive.asString
+                  } else null
                 }
-              }
+            JsonArray().also { sanitized ->
+              for (name in normalizeStateArrayEntries(raw)) sanitized.add(name)
+            }
+          }
         }
         else -> null
       }
+
+  /**
+   * The `" + "` glue of a string-CONCATENATION expression a model sometimes emits instead of the
+   * single `[!]`-prefixed array entry the designer expects (e.g. `"[!]" + "GOGO"`). The lenient
+   * JSON reader turns such an expression into either the glue text `[!]" + "GOGO"` or the two
+   * separate entries `["[!]", "GOGO"]`.
+   */
+  private val statusConcatenationGlue = Regex("\"\\s*\\+\\s*\"")
+
+  /**
+   * Canonicalizes the `[!]` EXCLUSION marker of a state/user-group availability entry.
+   *
+   * Verified against the Formcycle 8.5.3 jars: `XItemDefaultRenderedEvaluator` /
+   * `XItemDefaultReadOnlyEvaluator.statusEval` treat an entry that `startsWith("[!]")` as a
+   * NEGATION (they compare the record's state UUID with the entry after prepending the marker to
+   * that UUID), and the designer's own state list builds the VALUE of its "not in state <name>"
+   * option exactly the same way (`DefaultFD2StatusProvider.createStatusJson` concatenates the
+   * marker with the state id; the option's LABEL is the localized `fd2.status.notstatus`, e.g. "not
+   * in state …"), so the marker is the PREFIX `[!]` of the value, e.g. `[!]GOGO`.
+   *
+   * Models regularly misplace the brackets (`[!GOGO]`), keep only the exclamation mark (`!GOGO`),
+   * or leave a space after the marker. Every such variant is folded to the canonical `[!]<name>`
+   * here - otherwise the value is unknown to the designer, which then shows NOTHING selected in the
+   * "Available only if" / "Disabled if" property and the negation does not work at all.
+   */
+  private fun canonicalizeStateEntry(entry: String): String {
+    val trimmed = entry.trim()
+    return when {
+      trimmed.startsWith("[!]") -> "[!]" + trimmed.removePrefix("[!]").trim()
+      trimmed.length >= 4 && trimmed.startsWith("[!") && trimmed.endsWith("]") ->
+          "[!]" + trimmed.substring(2, trimmed.length - 1).trim()
+      trimmed.startsWith("!") -> "[!]" + trimmed.removePrefix("!").trim()
+      else -> trimmed
+    }
+  }
+
+  /**
+   * Normalizes the raw string entries of a state/user-group availability array (`viewstatus`,
+   * `readonly_viewstatus`, `viewusergroup`, `readonly_viewusergroup`).
+   *
+   * The `[!]` EXCLUSION marker must be part of ONE string value (`"[!]GOGO"` = "in every state
+   * EXCEPT GOGO"). Models sometimes write it the way a program would CONCATENATE it - `["[!]" +
+   * "GOGO"]` - and the lenient JSON reader then yields either the glue text `[!]" + "GOGO"` or the
+   * TWO entries `["[!]", "GOGO"]`. Unrepaired, the state-name resolution later turns the second
+   * entry into a PLAIN entry, which means the element is available/read-only IN that state instead
+   * of in every state EXCEPT it - the exact opposite of the request. Both malformed shapes are
+   * therefore collapsed here into the single entry `"[!]GOGO"` (the later name resolution then
+   * produces `"[!]<stateUuid>"`). A `[!]` fragment that cannot be merged with a following name is
+   * dropped, because a bare `[!]` would satisfy the condition in EVERY state.
+   */
+  private fun normalizeStateArrayEntries(raw: List<String>): List<String> {
+    val entries = mutableListOf<String>()
+    var excludeNext = false
+    for (rawEntry in raw) {
+      var entry = rawEntry.replace(statusConcatenationGlue, "").replace("\"", "").trim()
+      if (excludeNext) {
+        entry = "[!]" + entry.removePrefix("+").trim()
+        excludeNext = false
+      }
+      entry = canonicalizeStateEntry(entry)
+      if (entry == "[!]") {
+        excludeNext = true
+        continue
+      }
+      if (entry.isNotEmpty()) entries.add(entry)
+    }
+    return entries
+  }
 
   /**
    * Normalizes a state/user-group availability FLAG to the design-time STRING form Formcycle
@@ -13710,6 +14221,32 @@ class AICodBiAssistant : IPluginServletAction {
       buttonName: String
   ): Boolean {
     if (parentId.isNullOrBlank() || buttonName.isBlank()) return false
+    // A BUTTON is not an item: a container's "elements" array may only list ITEM names, so the name
+    // of the OWNING XButtonList has to be referenced here — NOT the button's own name. Writing the
+    // button name produced a dangling reference (nothing ever rendered it), and because this repair
+    // runs AFTER the dangling-reference cleanup of sanitizeAiFormItems it even survived into the
+    // PUBLISHED form, where the next AI run reproduced it, so the form accumulated such entries on
+    // every run.
+    val ownerListName =
+        items
+            .firstOrNull { el ->
+              if (!el.isJsonObject) return@firstOrNull false
+              val obj = el.asJsonObject
+              if (obj.get("className")?.asString != "XButtonList") return@firstOrNull false
+              val buttons = obj.getAsJsonObject("properties")?.getAsJsonArray("buttons")
+              buttons != null &&
+                  buttons.any { btn ->
+                    btn.isJsonObject &&
+                        btn.asJsonObject.get("name")?.takeIf { it.isJsonPrimitive }?.asString ==
+                            buttonName
+                  }
+            }
+            ?.asJsonObject
+            ?.getAsJsonObject("properties")
+            ?.get("name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+    if (ownerListName.isNullOrBlank()) return false
     for (el in items) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
@@ -13717,10 +14254,11 @@ class AICodBiAssistant : IPluginServletAction {
       if (id != parentId) continue
       val elements =
           props.getAsJsonArray("elements") ?: JsonArray().also { props.add("elements", it) }
-      if (elements.none { it.isJsonPrimitive && it.asString == buttonName }) {
-        elements.add(buttonName)
+      if (elements.none { it.isJsonPrimitive && it.asString == ownerListName }) {
+        elements.add(ownerListName)
         logger.info(
-            "[AICodBiAssistant] Referenced submit button '{}' from container '{}' (properties.elements)",
+            "[AICodBiAssistant] Referenced button list '{}' (holding button '{}') from container '{}' (properties.elements)",
+            ownerListName,
             buttonName,
             parentId)
         return true
@@ -13778,6 +14316,40 @@ class AICodBiAssistant : IPluginServletAction {
               cls,
               parentId)
         }
+      }
+      // Additionally PRUNE references that match no item at all: a container's "elements" array may
+      // only list existing item names, so a leftover entry (e.g. a BUTTON name written by an older
+      // plugin version) is dangling - it can never render, and the next AI run would faithfully
+      // reproduce it because it sees it in the provided form data. Removing it stops the form from
+      // accumulating junk entries run after run.
+      val itemNames =
+          items
+              .mapNotNull { el ->
+                if (!el.isJsonObject) null
+                else
+                    el.asJsonObject
+                        .getAsJsonObject("properties")
+                        ?.get("name")
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.asString
+              }
+              .toSet()
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+        val elements = props.getAsJsonArray("elements") ?: continue
+        val clean = JsonArray()
+        for (reference in elements) {
+          if (reference.isJsonPrimitive && reference.asString in itemNames) clean.add(reference)
+          else if (reference.isJsonPrimitive) {
+            changed = true
+            logger.info(
+                "[AICodBiAssistant] Removed dangling container reference '{}' from '{}' (properties.elements) — no such item exists",
+                reference.asString,
+                props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "?")
+          }
+        }
+        if (clean.size() != elements.size()) props.add("elements", clean)
       }
       if (changed) gson.toJson(root) else null
     } catch (e: Exception) {
@@ -17153,7 +17725,26 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  private fun extractJson(text: String): String {
+  /**
+   * Repairs a JS/Java-style string CONCATENATION the model sometimes emits where ONE JSON string
+   * value belongs - e.g. `"readonly_viewstatus":["[!]" + "GOGO"]` instead of
+   * `"readonly_viewstatus":["[!]GOGO"]`. Such a `+` makes the WHOLE response unparseable (gson:
+   * `MalformedJsonException: Unterminated array`), so the entire form update is silently discarded
+   * and the previous form is kept - which showed up as the requested "usable only in state GOGO"
+   * condition keeping the INVERTED value of an earlier form. An unescaped `" + "` sequence can
+   * never occur INSIDE a JSON string value (there the quotes would have to be escaped as `\"`), so
+   * joining two adjacent literals is always the single value that was meant. This runs on EVERY
+   * model response; the availability-array sanitizer normalizes the result (`[!]GOGO`) further.
+   */
+  private fun repairStringConcatenations(json: String): String =
+      json.replace(Regex("\"\\s*\\+\\s*\""), "")
+
+  /**
+   * Extracts the first JSON object/array from [text] and repairs any string concatenations in it.
+   */
+  private fun extractJson(text: String): String = repairStringConcatenations(extractJsonRaw(text))
+
+  private fun extractJsonRaw(text: String): String {
     val start = text.indexOfFirst { it == '{' || it == '[' }
     if (start < 0) return text
     val opener = text[start]
@@ -17794,16 +18385,28 @@ class AICodBiAssistant : IPluginServletAction {
           } else {
             ""
           }
-      return PromptLoader.resolvePlaceholders(
-          taskInstruction +
-              "\n\n" +
-              (loadPromptWithClasspathFallback("codbi.form_structure_rules") ?: "") +
-              "\n\n" +
-              (fc["formcycle.general"] ?: "") +
-              "\n\n" +
-              "{{FORMCYCLE_WIDGETS_SECTION}}" +
-              codbiPart +
-              buergerserviceNamingPart)
+      val system =
+          PromptLoader.resolvePlaceholders(
+              taskInstruction +
+                  "\n\n" +
+                  (loadPromptWithClasspathFallback("codbi.form_structure_rules") ?: "") +
+                  "\n\n" +
+                  (fc["formcycle.general"] ?: "") +
+                  "\n\n" +
+                  "{{FORMCYCLE_WIDGETS_SECTION}}" +
+                  codbiPart +
+                  buergerserviceNamingPart)
+      // Support diagnosis: make the composition of the delivered pass-1 prompt visible in the log,
+      // so a report about a missing/ignored rule can be answered from the log alone (e.g. whether
+      // the designed-text/illustration rules actually reached the model).
+      logger.info(
+          "[AICodBiAssistant] Pass-1 system prompt: {} chars (structure rules: {}, designed-text rules: {}, illustration checklist: {}, compact widget reference: {})",
+          system.length,
+          system.contains("RICH/DESIGNED/INTERACTIVE TEXT"),
+          system.contains("in schönem Design"),
+          system.contains("FORBIDDEN COMPOSITIONS"),
+          system.contains("### XSpan"))
+      return system
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load form system prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_form_system") ?: ""
@@ -17956,11 +18559,19 @@ class AICodBiAssistant : IPluginServletAction {
   private fun buildWidgetDetailsSection(em: EntityManager, widgetIds: List<String>): String {
     if (widgetIds.isEmpty()) {
       // Full-widget fallback — scrub out widgets not allowed for the current request.
-      return FormcycleElementFilter.scrubWidgetSections(
-          PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
+      val full =
+          FormcycleElementFilter.scrubWidgetSections(
+              PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
+      logger.info(
+          "[AICodBiAssistant] Pass-2 widget details: FULL reference ({} chars, XSpan section included: {}, illustration checklist included: {})",
+          full.length,
+          full.contains("## XSpan"),
+          full.contains("FORBIDDEN COMPOSITIONS"))
+      return full
     }
     val all = PromptLoader.loadSectionMap(em, "formcycle.widgets.")
     val sb = StringBuilder("\nFORMCYCLE WIDGET DETAILS (requested)\n")
+    val sent = ArrayList<String>()
     for (id in widgetIds) {
       // "Nicht installierte Elemente erstellen": skip requested widgets not in the allowed set.
       if (!FormcycleElementFilter.isWidgetAllowed(id)) continue
@@ -17974,7 +18585,16 @@ class AICodBiAssistant : IPluginServletAction {
                   ?.value
               ?: continue
       sb.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+      sent.add(id.trim())
     }
+    // Support diagnosis: the pass that BUILDS the form must be seen to carry the designed-text /
+    // illustration rules (the XSpan section). A run that builds a naive drawing without them
+    // requested XSpan can be told apart from a model that simply ignored the rules.
+    logger.info(
+        "[AICodBiAssistant] Pass-2 widget details: requested=[{}] sent=[{}] (illustration checklist included: {})",
+        widgetIds.joinToString(", "),
+        if (sent.isEmpty()) "<none>" else sent.joinToString(", "),
+        sb.contains("FORBIDDEN COMPOSITIONS"))
     return sb.toString().trimEnd()
   }
 

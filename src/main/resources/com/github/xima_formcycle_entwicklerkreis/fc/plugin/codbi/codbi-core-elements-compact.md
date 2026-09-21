@@ -104,7 +104,7 @@ Applicable on a text input that should autocomplete entries from an LDAP directo
 Applicable on any form to add Matomo/Piwik analytics event tracking.
 
 ### Media.Image.Cropper
-Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
+Applicable on an XUpload field for images; adds an interactive crop dialog before upload. ONLY for actual image cropping ("Bild-Cropper", "with crop") — a plain "Vorschau"/"preview" request is the FORMCYCLE preview, set the DIRECT XUpload property `"filepreview":"1"` instead and do NOT tag the upload with the cropper.
 
 ### MEDIA.INPUT.SPEECH
 Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.
@@ -113,7 +113,7 @@ Applicable on a text input field to enable speech-to-text dictation via the Web 
 Applicable on a text input field or textarea to enable speech-to-text dictation via a self-hosted Whisper model on the Formcycle server. DSGVO/GDPR-compliant as no audio data leaves the server.
 
 ### Media.MultipleUpload
-Provides the HTML_Select_Injection.functionality .
+Enables a file upload to support selecting multiple files for upload. USE on an XUpload whenever several files shall be uploadable ("mehrere Dateien", "multiple files"). Apply it ON that XUpload: data-cb-func="Media.MultipleUpload" (+ data-cb-Maximum when a file count is named) AND the Formcycle native multiple-file property "uploadMultiple":"1".
 
 ### OnChange.Conditional
 This functionality applies a certain functionality onto the object toProcess depending on whether.

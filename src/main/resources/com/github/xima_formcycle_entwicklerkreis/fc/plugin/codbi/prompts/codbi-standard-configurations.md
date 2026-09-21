@@ -38,7 +38,7 @@ For email addresses.
 For phone numbers.
 
 ### CodBi_People_PLZ
-For German postal codes. Use ALONE — do not combine with other People classes.
+For German postal codes (PLZ input formatting / Cleave plzDE). Combine it with the OpenPLZ class on an address field — the PLZ field carries BOTH `CodBi_People_PLZ` AND `CodBi_OpenPLZ_AC_SET_PLZ` in its cssclasses. The "alone" rule ONLY means: do not put TWO different People_* field classes on ONE field (a field is either a PLZ OR a building number, not both); it does NOT prevent adding an OpenPLZ_AC_SET_* / other-standard class.
 
 ### CodBi_People_18plus
 For date-of-birth fields (min age 18).
@@ -47,7 +47,7 @@ For date-of-birth fields (min age 18).
 For date fields (min age 16).
 
 ### CodBi_People_BuildingNumber
-For building/house numbers.
+For building/house numbers (Cleave building-number formatting). Combine it with the OpenPLZ class on an address field — the building-number field carries BOTH `CodBi_OpenPLZ_AC_SET_BuildingNumber` AND `CodBi_People_BuildingNumber` in its cssclasses.
 
 ## Fotocropper
 

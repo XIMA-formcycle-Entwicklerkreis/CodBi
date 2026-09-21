@@ -333,7 +333,18 @@ class AIFormAssistant : IPluginServletAction {
               }
             }
 
-        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgets)
+        // The DETAILED XSpan template (the illustration rules with the worked example and the
+        // forbidden-composition list) is otherwise only sent when the model itself asked for
+        // `XSpan`
+        // in pass 1 — yet THIS is the pass that builds the form. A request for a designed/animated
+        // text or an inline SVG illustration therefore forces the section in, so the rules always
+        // reach the pass that emits the markup.
+        val widgetsForDetails = DesignedTextDetector.withXSpan(widgets, prompt)
+        if (widgetsForDetails != widgets) {
+          logger.info(
+              "[AIFormAssistant] Forcing the detailed XSpan template into pass-2 (request needs the designed-text/illustration rules)")
+        }
+        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgetsForDetails)
         val pass2UserContent =
             "Original user request: ${gson.toJson(prompt)}\n\n" +
                 "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
@@ -507,7 +518,13 @@ class AIFormAssistant : IPluginServletAction {
     return try {
       val parsed = JsonParser.parseString(sanitizedCleaned)
       warnUnknownClassNames(parsed)
-      val merged = restoreStrippedFields(sanitizedCleaned, persistJson)
+      // Deterministic SVG repair on the FINAL form: SVG names are case-SENSITIVE and a lowercased
+      // `viewbox` / `animatetransform` / `attributename` / `radialgradient` / `preserveaspectratio`
+      // (or a hyphen-omitted `strokewidth`) is silently IGNORED by the browser — the canvas is
+      // dropped and NOTHING animates. Runs after the field restore so restored elements are
+      // covered.
+      val merged =
+          SvgNameRepair.repairXSpanRtevalues(restoreStrippedFields(sanitizedCleaned, persistJson))
       jsonResponse(stripWorkflowMailLanguagesMarker(merged))
     } catch (_: Exception) {
       jsonResponse(
@@ -975,17 +992,88 @@ class AIFormAssistant : IPluginServletAction {
         "readonly_viewstatus",
         "readonly_viewusergroup" -> {
           if (!value.isJsonArray) null
-          else
-              JsonArray().also { sanitized ->
-                for (entry in value.asJsonArray) {
+          else {
+            val raw =
+                value.asJsonArray.mapNotNull { entry ->
                   if (entry.isJsonPrimitive && entry.asJsonPrimitive.isString) {
-                    sanitized.add(entry)
-                  }
+                    entry.asJsonPrimitive.asString
+                  } else null
                 }
-              }
+            JsonArray().also { sanitized ->
+              for (name in normalizeStateArrayEntries(raw)) sanitized.add(name)
+            }
+          }
         }
         else -> null
       }
+
+  /**
+   * The `" + "` glue of a string-CONCATENATION expression a model sometimes emits instead of the
+   * single `[!]`-prefixed array entry the designer expects (e.g. `"[!]" + "GOGO"`). The lenient
+   * JSON reader turns such an expression into either the glue text `[!]" + "GOGO"` or the two
+   * separate entries `["[!]", "GOGO"]`.
+   */
+  private val statusConcatenationGlue = Regex("\"\\s*\\+\\s*\"")
+
+  /**
+   * Canonicalizes the `[!]` EXCLUSION marker of a state/user-group availability entry.
+   *
+   * Verified against the Formcycle 8.5.3 jars: `XItemDefaultRenderedEvaluator` /
+   * `XItemDefaultReadOnlyEvaluator.statusEval` treat an entry that `startsWith("[!]")` as a
+   * NEGATION (they compare the record's state UUID with the entry after prepending the marker to
+   * that UUID), and the designer's own state list builds the VALUE of its "not in state <name>"
+   * option exactly the same way (`DefaultFD2StatusProvider.createStatusJson` concatenates the
+   * marker with the state id; the option's LABEL is the localized `fd2.status.notstatus`, e.g. "not
+   * in state …"), so the marker is the PREFIX `[!]` of the value, e.g. `[!]GOGO`.
+   *
+   * Models regularly misplace the brackets (`[!GOGO]`), keep only the exclamation mark (`!GOGO`),
+   * or leave a space after the marker. Every such variant is folded to the canonical `[!]<name>`
+   * here - otherwise the value is unknown to the designer, which then shows NOTHING selected in the
+   * "Available only if" / "Disabled if" property and the negation does not work at all.
+   */
+  private fun canonicalizeStateEntry(entry: String): String {
+    val trimmed = entry.trim()
+    return when {
+      trimmed.startsWith("[!]") -> "[!]" + trimmed.removePrefix("[!]").trim()
+      trimmed.length >= 4 && trimmed.startsWith("[!") && trimmed.endsWith("]") ->
+          "[!]" + trimmed.substring(2, trimmed.length - 1).trim()
+      trimmed.startsWith("!") -> "[!]" + trimmed.removePrefix("!").trim()
+      else -> trimmed
+    }
+  }
+
+  /**
+   * Normalizes the raw string entries of a state/user-group availability array (`viewstatus`,
+   * `readonly_viewstatus`, `viewusergroup`, `readonly_viewusergroup`).
+   *
+   * The `[!]` EXCLUSION marker must be part of ONE string value (`"[!]GOGO"` = "in every state
+   * EXCEPT GOGO"). Models sometimes write it the way a program would CONCATENATE it - `["[!]" +
+   * "GOGO"]` - and the lenient JSON reader then yields either the glue text `[!]" + "GOGO"` or the
+   * TWO entries `["[!]", "GOGO"]`. Unrepaired, the state-name resolution later turns the second
+   * entry into a PLAIN entry, which means the element is available/read-only IN that state instead
+   * of in every state EXCEPT it - the exact opposite of the request. Both malformed shapes are
+   * therefore collapsed here into the single entry `"[!]GOGO"` (the later name resolution then
+   * produces `"[!]<stateUuid>"`). A `[!]` fragment that cannot be merged with a following name is
+   * dropped, because a bare `[!]` would satisfy the condition in EVERY state.
+   */
+  private fun normalizeStateArrayEntries(raw: List<String>): List<String> {
+    val entries = mutableListOf<String>()
+    var excludeNext = false
+    for (rawEntry in raw) {
+      var entry = rawEntry.replace(statusConcatenationGlue, "").replace("\"", "").trim()
+      if (excludeNext) {
+        entry = "[!]" + entry.removePrefix("+").trim()
+        excludeNext = false
+      }
+      entry = canonicalizeStateEntry(entry)
+      if (entry == "[!]") {
+        excludeNext = true
+        continue
+      }
+      if (entry.isNotEmpty()) entries.add(entry)
+    }
+    return entries
+  }
 
   /**
    * Normalizes a state/user-group availability FLAG to the design-time STRING form Formcycle
@@ -1955,18 +2043,30 @@ class AIFormAssistant : IPluginServletAction {
       // elements/widgets it needs, and the server returns only those in pass-2. Sending the full
       // detailed sections here would roughly double the token usage per request without changing
       // the outcome (the AI requests details regardless).
-      return PromptLoader.resolvePlaceholders(
-          taskInstruction +
-              "\n\n" +
-              (categories["codbi.form_structure_rules"] ?: "") +
-              "\n\n" +
-              (categories["formcycle.general"] ?: "") +
-              "\n" +
-              "{{FORMCYCLE_WIDGETS_SECTION}}" +
-              "\n" +
-              (categories["codbi.general"] ?: "") +
-              "\n" +
-              "{{CODBI_ELEMENTS_SECTION}}")
+      val system =
+          PromptLoader.resolvePlaceholders(
+              taskInstruction +
+                  "\n\n" +
+                  (categories["codbi.form_structure_rules"] ?: "") +
+                  "\n\n" +
+                  (categories["formcycle.general"] ?: "") +
+                  "\n" +
+                  "{{FORMCYCLE_WIDGETS_SECTION}}" +
+                  "\n" +
+                  (categories["codbi.general"] ?: "") +
+                  "\n" +
+                  "{{CODBI_ELEMENTS_SECTION}}")
+      // Support diagnosis: make the composition of the delivered pass-1 prompt visible in the log,
+      // so a report about a missing/ignored rule can be answered from the log alone (e.g. whether
+      // the designed-text/illustration rules actually reached the model).
+      logger.info(
+          "[AIFormAssistant] Pass-1 system prompt: {} chars (structure rules: {}, designed-text rules: {}, illustration checklist: {}, widget reference: {})",
+          system.length,
+          system.contains("RICH/DESIGNED/INTERACTIVE TEXT"),
+          system.contains("in schönem Design"),
+          system.contains("FORBIDDEN COMPOSITIONS"),
+          system.contains("### XSpan"))
+      return system
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load prompts from DB", e)
       return loadFallbackPrompt("codbi.fallback_form_system")
@@ -2072,11 +2172,19 @@ class AIFormAssistant : IPluginServletAction {
   private fun buildWidgetDetailsSection(em: EntityManager, widgetIds: List<String>): String {
     if (widgetIds.isEmpty()) {
       // Full-widget fallback — scrub out widgets not allowed for the current request.
-      return FormcycleElementFilter.scrubWidgetSections(
-          PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
+      val full =
+          FormcycleElementFilter.scrubWidgetSections(
+              PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
+      logger.info(
+          "[AIFormAssistant] Pass-2 widget details: FULL reference ({} chars, XSpan section included: {}, illustration checklist included: {})",
+          full.length,
+          full.contains("## XSpan"),
+          full.contains("FORBIDDEN COMPOSITIONS"))
+      return full
     }
     val all = PromptLoader.loadSectionMap(em, "formcycle.widgets.")
     val sb = StringBuilder("\nFORMCYCLE WIDGET DETAILS (requested)\n")
+    val sent = ArrayList<String>()
     for (id in widgetIds) {
       // "Nicht installierte Elemente erstellen": skip requested widgets not in the allowed set.
       if (!FormcycleElementFilter.isWidgetAllowed(id)) continue
@@ -2090,7 +2198,16 @@ class AIFormAssistant : IPluginServletAction {
                   ?.value
               ?: continue
       sb.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+      sent.add(id.trim())
     }
+    // Support diagnosis: the pass that BUILDS the form must be seen to carry the designed-text /
+    // illustration rules (the XSpan section). A run that builds a naive drawing without them
+    // requested XSpan can be told apart from a model that simply ignored the rules.
+    logger.info(
+        "[AIFormAssistant] Pass-2 widget details: requested=[{}] sent=[{}] (illustration checklist included: {})",
+        widgetIds.joinToString(", "),
+        if (sent.isEmpty()) "<none>" else sent.joinToString(", "),
+        sb.contains("FORBIDDEN COMPOSITIONS"))
     return sb.toString().trimEnd()
   }
 

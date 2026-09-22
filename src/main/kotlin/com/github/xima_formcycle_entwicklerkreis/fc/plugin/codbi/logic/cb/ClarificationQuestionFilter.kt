@@ -4,10 +4,11 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
  * Enforces ONE rule of the clarification prompt in code: a question must never be asked twice.
  *
  * A small local model tends to re-ask a detail it has already received — or that the target element
- * already contains (observed: "Wie viele Tage sollen angezeigt werden?" asked twice and "Für
- * welchen Ort (Stadtname oder Koordinaten) soll die Wettervorhersage abgerufen werden?" three times
- * in one session). The prompts carry the rule, and this filter is the deterministic backstop for
- * it: when the round only repeats itself, the caller BUILDS instead of opening the popup again.
+ * already contains (observed: "Welche Art von Taschenrechner ..." asked round after round, "Wie
+ * viele Tage sollen angezeigt werden?" twice, "Für welchen Ort ...?" three times and "Wie heißt das
+ * vorhandene Video-Element ...?" twice). The prompts carry the rule, and this filter is the
+ * deterministic backstop for it: when the round only repeats itself, the caller BUILDS instead of
+ * opening the popup again.
  *
  * There is deliberately NO round limit here — how many rounds are sensible is a judgement call the
  * prompt instructions make ("take everything that exists out of the existing element"), not a fixed
@@ -15,19 +16,32 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
  */
 object ClarificationQuestionFilter {
 
+  /** Strips a leading enumeration such as "1 ", "1. " or "2) ". */
+  private val LEADING_NUMBERING = Regex("^\\d+\\.?\\s+")
+
+  /** Collapses runs of whitespace. */
+  private val WHITESPACE = Regex("\\s+")
+
   /**
-   * Normalizes a question for comparison: lower case and every non-letter/digit character (question
-   * marks, dashes, brackets, non-breaking hyphens from the model, ...) collapsed to a single space.
-   * Umlauts are letters and are KEPT.
+   * Normalizes a question for comparison: lower case, every non-letter/digit character (question
+   * marks, dashes, brackets, non-breaking hyphens from the model, ...) collapsed to a single space,
+   * and a leading enumeration removed.
+   *
+   * The enumeration matters: the popup delivers the earlier round back as a NUMBERED BLOB ("1.
+   * <question 1> 2. <question 2> 3. <question 3>"), while the model re-asks a single one of them
+   * later on — without stripping the "1 " the two texts differ in their very first character and
+   * the duplicate would not be recognized. Umlauts are letters and are KEPT.
    */
-  fun normalizeQuestion(text: String): String =
-      text
-          .lowercase()
-          .map { if (it.isLetterOrDigit()) it else ' ' }
-          .joinToString("")
-          .split(' ')
-          .filter { it.isNotBlank() }
-          .joinToString(" ")
+  fun normalizeQuestion(text: String): String {
+    val cleaned =
+        text
+            .lowercase()
+            .map { if (it.isLetterOrDigit()) it else ' ' }
+            .joinToString("")
+            .replace(WHITESPACE, " ")
+            .trim()
+    return cleaned.replace(LEADING_NUMBERING, "").trim().ifEmpty { cleaned }
+  }
 
   /**
    * True when [question] was already asked: either the normalized texts are IDENTICAL, or they

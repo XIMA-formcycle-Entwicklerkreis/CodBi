@@ -23,6 +23,16 @@ class ClarificationQuestionFilterTest {
   }
 
   @Test
+  fun `normalizeQuestion strips a leading enumeration`() {
+    assertEquals(
+        "wie viele tage sollen angezeigt werden",
+        ClarificationQuestionFilter.normalizeQuestion("1. Wie viele Tage sollen angezeigt werden?"))
+    assertEquals(
+        "wie viele tage sollen angezeigt werden",
+        ClarificationQuestionFilter.normalizeQuestion("2) Wie viele Tage sollen angezeigt werden?"))
+  }
+
+  @Test
   fun `a verbatim re-ask is detected`() {
     assertTrue(
         ClarificationQuestionFilter.isAlreadyAsked(
@@ -45,6 +55,21 @@ class ClarificationQuestionFilterTest {
   }
 
   @Test
+  fun `a re-ask of one question out of an earlier numbered blob is detected`() {
+    // The popup hands the previous round back as ONE numbered blob; the model later re-asks a
+    // single
+    // question from it (observed with "Wie hei\u00DFt das vorhandene Video-Element ...?").
+    val asked =
+        listOf(
+            "1. Wie hei\u00DFt das vorhandene Video-Element, das angepasst werden soll? (z.B. tfVideo, video1)\n" +
+                "2. Welche Video-Quelle (URL) soll verwendet werden, damit der Player korrekt konfiguriert ist?")
+    assertTrue(
+        ClarificationQuestionFilter.isAlreadyAsked(
+            "Wie hei\u00DFt das vorhandene Video-Element, das angepasst werden soll? (z.B. tfVideo, video1)",
+            asked))
+  }
+
+  @Test
   fun `a genuinely different question is kept`() {
     val asked = listOf("Wie viele Tage sollen angezeigt werden?")
     assertFalse(
@@ -61,7 +86,7 @@ class ClarificationQuestionFilterTest {
         listOf(
             "Wie viele Tage sollen angezeigt werden?",
             "Soll das Ergebnis schreibgesch\u00FCtzt sein?")
-    val asked = listOf("wie viele tage sollen angezeigt werden")
+    val asked = listOf("1. wie viele tage sollen angezeigt werden")
     assertEquals(
         listOf("Soll das Ergebnis schreibgesch\u00FCtzt sein?"),
         ClarificationQuestionFilter.dropAlreadyAsked(questions, asked) { it })

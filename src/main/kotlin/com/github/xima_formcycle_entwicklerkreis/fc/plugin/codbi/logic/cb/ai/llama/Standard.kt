@@ -1059,10 +1059,40 @@ class Standard : LLAMA() {
           "Web access enabled — feeding the tool result back to the model " +
               "(round $round/$maxWebAccessRoundTrips): ${request.first.take(120)}")
       roundMessages = appendWebAccessMessages(roundMessages, request.second, request.first)
+      // Remember what was just looked up: a LATER pass of the SAME request (the build pass that
+      // follows this one) receives these notes through [takeWebAccessNotes], so a URL found here is
+      // not thrown away.
+      webAccessNotes.set((webAccessNotes.get()?.plus("\n\n") ?: "") + request.second)
       answer = callFormAssistModel(svc, modelId, roundMessages)
     }
     return stripWebAccessMarkers(answer)
     // endregion Design-time web access
+  }
+
+  /**
+   * Web-search/fetch results collected by an EARLIER pass of the CURRENT request on this thread.
+   *
+   * The assistant runs SEVERAL passes per request (intent classification, chat classification, the
+   * clarification/history round, then the form/workflow build) and web access is enabled for all of
+   * them. The model regularly looks something up in an early pass and then never sees it again:
+   * observed — the clarification round searched for a browser-game page and restated the working
+   * URL in its answer, but a clarification answer that is not a question is DISCARDED (it is not a
+   * form), so the build pass re-emitted the OLD iframe `src` that led to a 404. These notes are
+   * handed to the build pass instead (see `AICodBiAssistant`).
+   */
+  private val webAccessNotes = ThreadLocal<String?>()
+
+  /**
+   * Returns the web-access transcript collected on THIS thread since the last call and clears it.
+   *
+   * A request that never builds anything (e.g. it ends in the clarification popup) leaves its notes
+   * behind; the next request on the same pooled thread drains them when it starts, so notes can
+   * only ever come from the run that consumes them.
+   */
+  internal fun takeWebAccessNotes(): String? {
+    val notes = webAccessNotes.get()
+    webAccessNotes.remove()
+    return notes?.takeIf { it.isNotBlank() }
   }
 
   /**

@@ -559,6 +559,11 @@ class AICodBiAssistant : IPluginServletAction {
 
     val instance = Standard.instance ?: return jsonResponse("""{"error":"AI service not ready"}""")
 
+    // Drop any web-access notes left over from an EARLIER request that ran on this pooled thread,
+    // so
+    // the notes handed to this run's build pass can only come from THIS run.
+    instance.takeWebAccessNotes()
+
     val phase = params.requestParameters["phase"]?.firstOrNull() ?: "1"
 
     // When false, no CodBi prompts are sent to the AI in any pass — the AI only receives Formcycle
@@ -966,6 +971,12 @@ class AICodBiAssistant : IPluginServletAction {
       // again - repeating questions is what looped the popup through eight rounds for a single
       // restyle request. When nothing new remains, BUILD the form instead of asking once more.
       val requestedQuestions = check.questions?.questions.orEmpty()
+      if (requestedQuestions.isEmpty()) {
+        // The round produced no readable question at all (the model answered with a form patch or a
+        // marker the parser could not read) — there is nothing to ask, so build instead.
+        clarification = null
+        break
+      }
       val freshQuestions =
           ClarificationQuestionFilter.dropAlreadyAsked(
               requestedQuestions, clarificationHistory.map { it.question }) {
@@ -2093,6 +2104,28 @@ class AICodBiAssistant : IPluginServletAction {
     // one (the .md prompts carry the rule: use a listed name, otherwise ASK instead of inventing).
     if (!availableDatasources.isNullOrBlank()) {
       effectiveSystemPrompt += "\n\n" + availableDatasources.trim()
+    }
+    // Web results that an EARLIER pass of THIS run already looked up (e.g. during the clarification
+    // round). Without them the model cannot act on its own finding: observed — it searched for a
+    // browser game, restated the working URL in the clarification answer, that answer was discarded
+    // (it is not a form), and the build pass then re-emitted the OLD iframe src, so "the embed
+    // leads
+    // to a 404, use the URL you found instead of the one inside" ended with the unchanged 404 URL.
+    val webLookupNotes = instance.takeWebAccessNotes()
+    if (!webLookupNotes.isNullOrBlank()) {
+      logger.info(
+          "[AICodBiAssistant] Handing {} chars of web-lookup results from an earlier pass to the build pass",
+          webLookupNotes.length)
+      effectiveSystemPrompt +=
+          "\n\n## WEB RESULTS ALREADY LOOKED UP IN THIS RUN (authoritative — do NOT search again)\n\n" +
+              "These results were already retrieved for the user's request; they are real, not invented. " +
+              "When the request asks to fix/replace a URL — e.g. an `<iframe src>` / `<object data>` / " +
+              "link inside an existing element's HTML that leads to a 404, or one the user says you " +
+              "already found — take the matching URL from HERE and write it into the VALUE of that " +
+              "EXISTING attribute: keep the element, keep every other part of its HTML (`rtevalue`) " +
+              "byte-for-byte, and change ONLY that URL. NEVER invent a URL, NEVER keep the old one, " +
+              "NEVER create a new element for it, and NEVER replace the embed with a plain link.\n\n" +
+              webLookupNotes
     }
     val imageHint =
         if (imageParts.isNotEmpty()) {

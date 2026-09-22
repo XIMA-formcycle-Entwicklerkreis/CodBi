@@ -343,6 +343,26 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   };
 
+  /** ESC key: close the Form Assistant dialog and its chat popup. The main dialog is kept MOUNTED
+   *  (hidden via display:none) so a subsequent ALT+A / open reopens it with a fast pure-CSS flip —
+   *  this mirrors the close() behaviour. When only the chat popup is open, pressing ESC closes the
+   *  chat and leaves the assistant dialog alone. */
+  private readonly escapeHandler = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape") return;
+    const target = event.target as HTMLElement | null;
+    // Skip the binding while the user is typing in an input/textarea/contentEditable so ESC does
+    // not yank focus away mid-edit inside the form designer.
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable === true)) {
+      return;
+    }
+    // Close the chat popup first (it is the top-most surface); then close the assistant dialog.
+    if (this.chatVisible) {
+      this.closeChat();
+    } else {
+      this.close();
+    }
+  };
+
   /** ALT+A+S hotkey (speech): open the assistant and start voice input when speech is available. */
   private readonly speechHandler = (): void => {
     this.open();
@@ -897,6 +917,8 @@ export class AiAssistant implements OnInit, OnDestroy {
     void this.ensureElementsLoaded();
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);
     document.addEventListener("codbi:ai-assistant:speech", this.speechHandler);
+    // ESC closes the assistant dialog / chat popup (see escapeHandler for the full behaviour).
+    document.addEventListener("keydown", this.escapeHandler);
     // Persist the chat before ANY reload so it re-opens afterwards (our own reload or Formcycle's).
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
     // On window resizes, re-clamp the change-log panel (25%-75% of the actual dialog width) and
@@ -973,6 +995,7 @@ export class AiAssistant implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     document.removeEventListener("codbi:ai-assistant:open", this.openHandler);
     document.removeEventListener("codbi:ai-assistant:speech", this.speechHandler);
+    document.removeEventListener("keydown", this.escapeHandler);
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     window.removeEventListener("resize", this.onWindowResize);
     this.stopSpeech();

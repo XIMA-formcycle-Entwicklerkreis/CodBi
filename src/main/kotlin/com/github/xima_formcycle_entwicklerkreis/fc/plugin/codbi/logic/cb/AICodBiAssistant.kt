@@ -2126,6 +2126,7 @@ class AICodBiAssistant : IPluginServletAction {
             "REMINDER 2: when the request is a WHOLE-FORM TRANSLATION that adds another language, your JSON MUST ALSO end with the " +
             "top-level \"_workflowMailLanguages\": [\"<baseLanguageCode>\", \"<addedLanguageCode>\", ...] marker (base language first) " +
             "and set \"_codbiApplicability.codbiVerdict\" to \"none\".\n" +
+            "CRITICAL — AN EXISTING ELEMENT'S OWN HTML (properties.rtevalue) OFTEN HOLDS SEVERAL PARTS AT ONCE (static text/headings/bullets ABOVE OR BELOW an interactive widget such as a calculator with inputs + JS + <style>). When the request modifies something INSIDE that HTML (e.g. \"change the calculator\"), EDIT ONLY THAT PART and return the element's rtevalue COMPLETE — the target part changed plus EVERY other paragraph, list, <style>/<script> block, and surrounding markup EXACTLY as before. What the user names in the request is only the PART of that HTML property they want changed — NEVER \"replace the whole rtevalue with a brand-new, unrelated piece of HTML\".\n" +
             "If the user asks to REMOVE/DELETE elements, OMIT them from \"items\" AND list their names in a " +
             "top-level \"_removedItems\": [\"elementName\", ...] array so the server removes them completely " +
             "(including any references in container \"elements\" arrays)."
@@ -2266,7 +2267,9 @@ class AICodBiAssistant : IPluginServletAction {
                   "Modify the form below according to that request. If the user asked to REMOVE or " +
                   "DELETE fields/elements, honor it: drop those items from the root \"items\" array AND " +
                   "from their parent container's \"elements\" array (clear to [] for \"remove all " +
-                  "fields\"). Form data: $formJson"
+                  "fields\"). " +
+                  "CRITICAL — AN EXISTING ELEMENT'S OWN HTML (properties.rtevalue) OFTEN HOLDS SEVERAL PARTS AT ONCE (static text/headings/bullets ABOVE OR BELOW an interactive widget such as a calculator). When the request modifies something INSIDE that HTML (e.g. \"change the calculator\"), EDIT ONLY THAT PART and return the element's rtevalue COMPLETE — target part changed plus EVERY other paragraph, list, <style>/<script> block, and markup EXACTLY as before. What the user names in the request is only the PART of that HTML property they want changed — NEVER \"replace the whole rtevalue with a brand-new, unrelated piece of HTML\". " +
+                  "Form data: $formJson"
           append("""{"role":"user","content":${gson.toJson(userContent)}}""")
           append("]")
         }
@@ -2417,7 +2420,22 @@ class AICodBiAssistant : IPluginServletAction {
                 "REBUILD any formcycle widgets you created in the previous step so they exactly match the JSON " +
                 "templates provided.\n" +
                 "Return the COMPLETE modified form JSON with ALL items. Keep every element UNLESS the user " +
-                "explicitly asked to remove/delete it. When a removal is requested, honor it fully: OMIT those " +
+                "explicitly asked to remove/delete it. When the request only MODIFIES an existing widget " +
+                "(e.g. change a calculator or a field), modify ONLY that element IN PLACE keeping its same " +
+                "name/id, and NEVER merge/combine separate existing elements into one (e.g. do NOT collapse a " +
+                "dedicated text element plus a calculator element into a single new element), NEVER drop other " +
+                "untouched elements, and NEVER restructure the form beyond the request. CRITICAL — WHEN THE " +
+                "ELEMENT'S OWN CONTENT IS AN HTML STRING (properties.rtevalue) THAT CONTAINS MULTIPLE PARTS " +
+                "(e.g. static text/headings/bullets ABOVE OR BELOW an interactive calculator with inputs and " +
+                "JS), EDIT ONLY THE PART THE USER ASKED TO CHANGE AND KEEP EVERY OTHER PART OF THAT HTML " +
+                "VERBATIM — NEVER delete, truncate, or replace the untouched text just because you rewrote the " +
+                "calculator. The element's rtevalue must be returned COMPLETE (target part changed + every " +
+                "other paragraph, list, <style>/<script> block, and markup exactly as before). IMPORTANT: what " +
+                "the user names in the request (e.g. \"the calculator\", \"der Rechner\") is only the PART of " +
+                "that HTML property they want changed — it NEVER means \"replace the whole rtevalue with a " +
+                "brand-new, unrelated piece of HTML\". Translate the request into targeted edits of just that " +
+                "sub-markup and keep all surrounding text/markup byte-for-byte intact. When a removal is " +
+                "requested, honor it fully: OMIT those " +
                 "items from the root \"items\" array AND remove their names from their parent container's " +
                 "\"elements\" array (e.g. clearing it to [] when the user said \"remove all fields\"). Also list " +
                 "every removed element's name in a top-level \"_removedItems\": [\"elementName\", ...] array so " +
@@ -2521,7 +2539,8 @@ class AICodBiAssistant : IPluginServletAction {
                 "above must remain in your output, unchanged and in its original container, plus only " +
                 "the additions/modifications the user requested. Never omit, drop, or remove an " +
                 "existing element or functionality that the user did not explicitly ask to remove — " +
-                "an omitted existing element is lost from the published form (data loss = FAIL)."
+                "an omitted existing element is lost from the published form (data loss = FAIL). " +
+                "ALSO — AN EXISTING ELEMENT'S OWN HTML (properties.rtevalue) OFTEN HOLDS SEVERAL PARTS AT ONCE (static text/headings/bullets ABOVE OR BELOW an interactive widget such as a calculator). When the request modifies something INSIDE that HTML (e.g. \"change the calculator\"), EDIT ONLY THAT PART and return the element's rtevalue COMPLETE — target part changed plus EVERY other paragraph, list, <style>/<script> block, and markup EXACTLY as before. What the user names in the request is only the PART of that HTML property they want changed — NEVER \"replace the whole rtevalue with a brand-new, unrelated piece of HTML\"."
         val finalMessagesJson =
             "[{\"role\":\"system\",\"content\":${gson.toJson(finalSystemPrompt)}}," +
                 "{\"role\":\"user\",\"content\":${gson.toJson(finalUserContent)}}]"
@@ -3190,12 +3209,17 @@ class AICodBiAssistant : IPluginServletAction {
         pass1Obj.add("items", newItems)
       }
 
-      // Honor element REMOVALS from pass-2: pass-2's container "elements" arrays are
-      // authoritative. When pass-2 removed an element from a container (e.g. the user asked to
-      // "remove all fields" and the page's "elements" became []), drop the now-orphaned items
-      // from the merged result so removed fields are not silently re-added. Only applies when
-      // pass-2 actually returned at least one container with an "elements" array (i.e. it made a
-      // definitive statement about the form structure).
+      // Honor element REMOVALS from pass-2: pass-2's container "elements" arrays can signal that
+      // an element was removed from a container. HOWEVER, an element is only dropped from the
+      // merged result when pass-2 EXPLICITLY requested its removal via the `_removedItems` list.
+      // Guard: we must NOT drop a pre-existing pass-1 child merely because a re-shaped container's
+      // "elements" array no longer references it — the AI frequently "merges" separate existing
+      // widgets into one new element (e.g. collapsing a dedicated text element `spKIAdvantages`
+      // plus a calculator `spCalculator` into a single new `spKIAIAdvantagesCalculator`), which
+      // would otherwise silently delete the untouched originals. Explicit `_removedItems` names
+      // are still honored so genuine user-requested removals ("remove all fields") keep working.
+      // Only applies when pass-2 actually returned at least one container with an "elements"
+      // array (i.e. it made a definitive statement about the form structure).
       val pass2ContainersWithElements = mutableSetOf<String>()
       pass2Obj.getAsJsonArray("items")?.forEach { item ->
         if (!item.isJsonObject) return@forEach
@@ -3205,58 +3229,58 @@ class AICodBiAssistant : IPluginServletAction {
         val elements = props.getAsJsonArray("elements") ?: return@forEach
         pass2ContainersWithElements.add(containerName)
       }
+      val explicitlyRemoved = mutableSetOf<String>()
+      pass2Obj.getAsJsonArray("_removedItems")?.forEach { el ->
+        if (el.isJsonPrimitive) explicitlyRemoved.add(el.asString)
+      }
       if (pass2ContainersWithElements.isNotEmpty()) {
-        val finalItems = pass1Obj.getAsJsonArray("items") ?: JsonArray()
-        // Names that were children of a container in the ORIGINAL pass-1 form (candidates for
-        // removal). Computed from the untouched pass-1 JSON, NOT the merged result — the merged
-        // containers may already have had their "elements" emptied by pass-2, which would wrongly
-        // make every field look like a "standalone" item that must be kept.
-        val pass1ChildNames = mutableSetOf<String>()
+        // Compare the pass-2 containers against the ORIGINAL pass-1 form to detect which children
+        // were *explicitly dropped* by pass-2's container "elements" array. A child is only
+        // considered removed when pass-2 re-authored that same container's "elements" list AND
+        // the child is named in `_removedItems`. Omitting a child from a re-authored "elements"
+        // array is NOT by itself a removal (it is almost always an accidental merge/omission).
+        val pass1ChildByContainer = mutableMapOf<String, MutableSet<String>>()
         try {
           JsonParser.parseString(pass1Json).asJsonObject.getAsJsonArray("items")?.forEach { item ->
             if (item.isJsonObject) {
-              item.asJsonObject
-                  .getAsJsonObject("properties")
-                  ?.getAsJsonArray("elements")
-                  ?.forEach { ref -> if (ref.isJsonPrimitive) pass1ChildNames.add(ref.asString) }
+              val props = item.asJsonObject.getAsJsonObject("properties") ?: return@forEach
+              val cName = props.get("name")?.asString ?: return@forEach
+              val children = pass1ChildByContainer.getOrPut(cName) { mutableSetOf() }
+              props.getAsJsonArray("elements")?.forEach { ref ->
+                if (ref.isJsonPrimitive) children.add(ref.asString)
+              }
             }
           }
         } catch (_: Exception) {}
-        // Names still referenced by ANY container in the merged result.
-        val referenced = mutableSetOf<String>()
-        finalItems.forEach { item ->
-          if (item.isJsonObject) {
-            item.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")?.forEach {
-                ref ->
-              if (ref.isJsonPrimitive) referenced.add(ref.asString)
-            }
-          }
-        }
-        // Items explicitly present in pass-2 as standalone items are always kept.
-        val pass2StandaloneNames = mutableSetOf<String>()
+        val elementsToDrop = mutableSetOf<String>()
         pass2Obj.getAsJsonArray("items")?.forEach { item ->
-          if (item.isJsonObject) {
-            item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString?.let {
-              pass2StandaloneNames.add(it)
-            }
+          if (!item.isJsonObject) return@forEach
+          val props = item.asJsonObject.getAsJsonObject("properties") ?: return@forEach
+          val cName = props.get("name")?.asString ?: return@forEach
+          val pass2Children = props.getAsJsonArray("elements") ?: return@forEach
+          val pass2Names = mutableSetOf<String>()
+          pass2Children.forEach { ref -> if (ref.isJsonPrimitive) pass2Names.add(ref.asString) }
+          // When pass-2 re-authored a container that existed in pass-1 and a former child that
+          // pass-2 explicitly listed in `_removedItems` is no longer referenced, treat it as a
+          // genuine removal. Children that were merely omitted (not in `_removedItems`) are kept.
+          val former = pass1ChildByContainer[cName] ?: return@forEach
+          for (child in former) {
+            if (child !in pass2Names && child in explicitlyRemoved) elementsToDrop.add(child)
           }
         }
-        // Keep containers, and items that are still referenced OR were never children OR are
-        // standalone in pass-2. Drop only items that pass-1 listed as children but pass-2
-        // removed (orphaned fields), so header/footer/standalone items are preserved.
         val filtered = JsonArray()
+        val finalItems = pass1Obj.getAsJsonArray("items") ?: JsonArray()
         finalItems.forEach { item ->
           if (item.isJsonObject) {
             val props = item.asJsonObject.getAsJsonObject("properties")
             val name = props?.get("name")?.asString
-            val isContainer = props?.has("elements") == true
-            val keep =
-                isContainer ||
-                    name == null ||
-                    name !in pass1ChildNames ||
-                    name in referenced ||
-                    name in pass2StandaloneNames
-            if (keep) filtered.add(item)
+            if (name != null && name in elementsToDrop) {
+              logger.info(
+                  "[AICodBiAssistant] Dropping orphaned element '{}' (explicitly removed by pass-2)",
+                  name)
+            } else {
+              filtered.add(item)
+            }
           } else {
             filtered.add(item)
           }

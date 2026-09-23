@@ -652,6 +652,15 @@ class AICodBiAssistant : IPluginServletAction {
         if (intent == "form" || intent == "both") {
           buildFormStructureContext(params.requestParameters["persist"]?.firstOrNull())
         } else null
+    // XSpan TEXT-CONTENT digest: XSpans are design widgets, so they are NOT in the interactive
+    // FORM ELEMENTS list and their rtevalue HTML is omitted from the condensed FORM STRUCTURE. The
+    // clarification AI therefore could not see that e.g. the calculator text already lives inside a
+    // span and asked "which element contains X". This digest hands the clarification check the
+    // readable text of every XSpan so it can locate a referenced element by its content itself.
+    val textSpanContentContext: String? =
+        if (intent == "form" || intent == "both") {
+          buildTextSpanContentContext(params.requestParameters["persist"]?.firstOrNull())
+        } else null
     // COMPLETE form structure — the full persist JSON with EVERY detail (cssclasses, data-cb-func /
     // data-cb-* attributes, datatype, XSelect options, appointmentPlan, XButtonList action.page,
     // ...). The chat AI receives this so it can answer questions about or VERIFY the form against a
@@ -908,6 +917,7 @@ class AICodBiAssistant : IPluginServletAction {
                 intent,
                 latestFormElements,
                 formStructureContext,
+                textSpanContentContext,
                 clarificationContext,
                 chatContext,
                 changeHistoryContext,
@@ -2591,16 +2601,30 @@ class AICodBiAssistant : IPluginServletAction {
         if (isJsonObjectOrArray(finalCleaned) && extractCodbiDetailsRequest(finalCleaned) == null) {
           return splicePass2IntoPass1(formBase, finalCleaned)
         }
+        // Degeneration recovery: the final forced pass still produced no clean form. Before
+        // silently
+        // discarding the user's request, try to salvage whatever usable form JSON / rtevalue change
+        // the raw prose actually contains (the model often embeds the real form or the composed
+        // text even when it wraps it in prose). Only when nothing usable is found do we keep the
+        // unmodified previous form.
+        val salvagedFinal =
+            salvageFormJsonFromProse(finalRaw, formBase, prompt)
+                ?: salvageFormJsonFromProse(retryRaw, formBase, prompt)
+        if (salvagedFinal != null) return salvagedFinal
         logger.warn(
-            "[AICodBiAssistant] Final forced pass still returned no form - keeping the previous form")
+            "[AICodBiAssistant] Final forced pass still returned no form and no degradation recovery match - keeping the previous form")
         return formBase
       }
       // Splice into the form base (the original form when pass-1 was a details request) so new
       // widgets created in pass-2 are preserved in the returned form. When pass-2 returned PROSE
       // (no JSON at all) keep the previous form instead of corrupting it with non-JSON.
       if (!pass2IsJson) {
+        // Degeneration recovery for the non-JSON (prose) pass-2 result: try to salvage an embedded
+        // form JSON or a targeted rtevalue change from the raw prose before giving up on the form.
+        val salvagedPass2 = salvageFormJsonFromProse(retryRaw, formBase, prompt)
+        if (salvagedPass2 != null) return salvagedPass2
         logger.warn(
-            "[AICodBiAssistant] Pass-{} returned non-JSON prose — keeping the previous form",
+            "[AICodBiAssistant] Pass-{} returned non-JSON prose and no degradation recovery match - keeping the previous form",
             rerunCount + 2)
         return formBase
       }
@@ -3338,6 +3362,206 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (_: Exception) {
       pass2Json // fallback: return pass-2 as-is
     }
+  }
+
+  /**
+   * True when [candidate] parses as a JSON object that carries a top-level "items" array — i.e. it
+   * is a form-shaped response (an IPersistJson), not just a details request or some other object.
+   */
+  private fun hasTopLevelItems(candidate: String): Boolean {
+    if (!isJsonObjectOrArray(candidate)) return false
+    val trimmed = candidate.trim()
+    if (!trimmed.startsWith("{")) return false
+    return try {
+      val root = JsonParser.parseString(trimmed).asJsonObject
+      root.has("items") && root.get("items")?.isJsonArray == true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
+   * Scans [text] and returns every balanced JSON object/array substring that starts at a top-level
+   * structural character. Unlike [extractJsonRaw] (which only returns the FIRST such block and
+   * stops at its first balanced close), this finds ALL candidates so a usable form JSON embedded
+   * anywhere inside prose — before/after explanations, or between several braces — can be located.
+   */
+  private fun extractBalancedJsonCandidates(text: String): List<String> {
+    val out = ArrayList<String>()
+    if (text.isEmpty()) return out
+    var i = 0
+    while (i < text.length) {
+      val c = text[i]
+      if (c != '{' && c != '[') {
+        i++
+        continue
+      }
+      val opener = c
+      val closer = if (opener == '{') '}' else ']'
+      var depth = 0
+      var inString = false
+      var escape = false
+      var j = i
+      var closed = false
+      while (j < text.length) {
+        val ch = text[j]
+        if (escape) {
+          escape = false
+        } else if (ch == '\\' && inString) {
+          escape = true
+        } else if (ch == '"') {
+          inString = !inString
+        } else if (!inString) {
+          if (ch == opener) depth++
+          else if (ch == closer) {
+            depth--
+            if (depth == 0) {
+              closed = true
+              break
+            }
+          }
+        }
+        j++
+      }
+      if (closed) {
+        out.add(text.substring(i, j + 1))
+        i = j + 1
+      } else {
+        i++
+      }
+    }
+    return out
+  }
+
+  /**
+   * Degeneration recovery. When an AI pass returns only prose (non-JSON — e.g. the model answered
+   * "compose a description yourself" by writing paragraphs of prose instead of the form JSON), we
+   * do NOT want to silently discard the user's request. This attempts to salvage whatever usable
+   * change is embedded in the raw [rawResponse]:
+   * 1. The strongest case: the prose contains a complete, balanced form JSON object (top-level
+   *    "items") somewhere in it — splice that candidate into [formBase] so the requested changes
+   *    reach the published form instead of being dropped.
+   * 2. Otherwise, if the request targets modifying ONE existing element's own HTML (rtevalue) and
+   *    the prose carries a sizeable well-formed HTML fragment, apply that HTML to the element's
+   *    rtevalue only (targeted in-place change) — never touching any other element.
+   *
+   * Returns the recovered form JSON, or null when nothing usable could be salvaged (in which case
+   * the caller keeps [formBase] unchanged).
+   */
+  private fun salvageFormJsonFromProse(
+      rawResponse: String,
+      formBase: String,
+      prompt: String
+  ): String? {
+    val candidates = extractBalancedJsonCandidates(rawResponse)
+    for (c in candidates) {
+      if (!hasTopLevelItems(c)) continue
+      try {
+        val spliced = splicePass2IntoPass1(formBase, c)
+        logger.info(
+            "[AICodBiAssistant] Degeneration recovery: salvaged an embedded form JSON ({} chars) from prose",
+            c.length)
+        return spliced
+      } catch (e: Exception) {
+        logger.warn("[AICodBiAssistant] Salvaged form JSON candidate could not be spliced", e)
+      }
+    }
+    val targetName = guessRtevalueTargetName(formBase, prompt)
+    if (targetName != null) {
+      val executed = applySalvagedRtevalue(formBase, targetName, rawResponse)
+      if (executed != null) {
+        logger.info(
+            "[AICodBiAssistant] Degeneration recovery: applied salvaged rtevalue HTML to element '{}'",
+            targetName)
+        return executed
+      }
+    }
+    return null
+  }
+
+  /**
+   * Heuristic: guess the single existing element whose `rtevalue` the request asks to modify. We
+   * look for an element name (a camelCase/`tf...`/`sp...`-style token) that appears VERBATIM both
+   * in the raw user request AND in the current form base — i.e. only elements that already exist
+   * are ever considered, and only when the request and the form agree on it. Returns null when zero
+   * or more than one such name is found (ambiguous / not a single-element edit).
+   */
+  private fun guessRtevalueTargetName(formBase: String, prompt: String): String? {
+    val existingNames = collectItemNames(formBase)
+    val requestedNames = Regex("[A-Za-z][A-Za-z0-9_]*").findAll(prompt).map { it.value }.toList()
+    // Prefer names that look like element identifiers referenced in the current form.
+    val hits =
+        existingNames.filter { n -> requestedNames.any { r -> r.equals(n, ignoreCase = true) } }
+    return if (hits.size == 1) hits.single() else null
+  }
+
+  /**
+   * Conservative targeted rtevalue salvage: find the [targetName] element in [formBase] and, when
+   * the [rawResponse] contains a well-formed HTML fragment of substantial length, replace ONLY that
+   * element's `rtevalue` and return the updated form. The HTML fragment must actually LOOK like
+   * designed content (contains both opening and closing tags) and be well-formed enough to parse
+   * with gson after JSON-encoding — otherwise nothing is applied.
+   */
+  private fun applySalvagedRtevalue(
+      formBase: String,
+      targetName: String,
+      rawResponse: String
+  ): String? {
+    try {
+      val root = JsonParser.parseString(formBase).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return null
+      var target: JsonObject? = null
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        val o = el.asJsonObject
+        val props = o.getAsJsonObject("properties") ?: continue
+        val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        if (name == targetName) {
+          target = o
+          break
+        }
+      }
+      if (target == null) return null
+      // The target must actually hold an rtevalue (it is a text/span-ish element) for this recovery
+      // to be meaningful — don't inject HTML into a plain field.
+      val props = target.getAsJsonObject("properties")
+      if (!props.has("rtevalue")) return null
+      val html = extractWellFormedHtmlFragment(rawResponse) ?: return null
+      props.add("rtevalue", JsonParser.parseString(gson.toJson(html)))
+      return gson.toJson(root)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] rtevalue salvage failed for element '{}'", targetName, e)
+      return null
+    }
+  }
+
+  /**
+   * Extracts a substantial, well-formed HTML fragment from [rawResponse]. Returns null when the
+   * text contains no plausible designed-content HTML (a pair of matching, clearly-HTML tags with a
+   * total length above a small threshold) — prevents injecting random prose or a stray tag.
+   */
+  private fun extractWellFormedHtmlFragment(rawResponse: String): String? {
+    // Find a candidate HTML region: from the first '<' that is followed by a letter (a tag opener)
+    // through the matching closing of the same tag name, but only accept it when it contains at
+    // least two distinct HTML tags so it is designed content rather than a lone fragment.
+    val tagRe = Regex("<([a-zA-Z][a-zA-Z0-9]*)(\\s[^>]*)?>", RegexOption.DOT_MATCHES_ALL)
+    val matches = tagRe.findAll(rawResponse).toList()
+    if (matches.isEmpty()) return null
+    val start = matches.first().range.first
+    val end = rawResponse.lastIndexOf("</", rawResponse.length)
+    if (end <= start) return null
+    var candidate = rawResponse.substring(start, end + 2)
+    // Bail out when the candidate is too short to be designed content or does not close its tags.
+    if (candidate.length < 40) return null
+    val distinctTags = Regex("<\\s*([a-zA-Z][a-zA-Z0-9]*)(\\s|>)").findAll(candidate).count()
+    if (distinctTags < 2) return null
+    // Reject when it contains JSON structural braces that would break embedding (the model
+    // sometimes includes a JSON block right after the HTML).
+    candidate = candidate.trim()
+    // Stop at the end of the first chance the region becomes JSON again.
+    val jsonStart = candidate.indexOf("\"items\"")
+    if (jsonStart > 0) candidate = candidate.substring(0, jsonStart)
+    return candidate.trim().ifEmpty { null }
   }
 
   /**
@@ -7105,6 +7329,121 @@ class AICodBiAssistant : IPluginServletAction {
       if (lines.isEmpty()) null else lines.joinToString("\n")
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Could not build form structure context: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Builds a readable condensed digest of every XSpan's TEXT content (paragraphs/headings inside
+   * `properties.rtevalue`), paired with the element's `name`. XSpan elements are NOT part of the
+   * interactive "FORM ELEMENTS" list (they are layout/design widgets), and their `rtevalue` HTML is
+   * deliberately omitted from the condensed FORM STRUCTURE — so the CLARIFICATION check could not
+   * see that e.g. the calculator text ("Rechner für Ihre Mitteilung") already lives inside a span,
+   * and it wrongly asked the user WHICH element holds it. This digest hands the clarification AI
+   * exactly that content (stripped of markup and truncated) so it can locate a referenced element
+   * by its content and answer NO_CLARIFICATION instead of asking. Returns null when there is
+   * nothing to show.
+   */
+  private fun buildTextSpanContentContext(persistJson: String?): String? {
+    if (persistJson.isNullOrBlank()) {
+      logger.warn(
+          "[AICodBiAssistant] text-span digest skipped: persist JSON is missing/blank (len={})",
+          persistJson?.length ?: 0)
+      return null
+    }
+    val stripHtml = Regex("<[^>]*>")
+    // `stringProp` already converts the JSON primitive to a String, so we clean the String
+    // directly.
+    val cleanText: (String?) -> String = { raw ->
+      raw?.takeIf { it.isNotBlank() }
+          ?.let {
+            // Drop <style> blocks first so their CSS text never leaks into the digest.
+            val withoutStyle =
+                Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE).replace(it, " ")
+            stripHtml.replace(withoutStyle, " ").replace(Regex("\\s+"), " ").trim()
+          } ?: ""
+    }
+    return try {
+      val root = JsonParser.parseString(persistJson).asJsonObject
+      val items =
+          root.getAsJsonArray("items")
+              ?: run {
+                logger.warn(
+                    "[AICodBiAssistant] text-span digest: persist JSON has no top-level \"items\" array")
+                return null
+              }
+      val lines = mutableListOf<String>()
+      var scannedElements = 0
+      var xSpanCount = 0
+      var matchedCount = 0
+      // Kept for diagnosis when NO XSpan matches: record the first few non-XSpan elements that
+      // carry an rtevalue, so we can see what className actually holds free text like the
+      // calculator.
+      val rtevalueOwners = LinkedHashMap<String, String>()
+      // Per-XSpan diagnosis: record EVERY XSpan and whether it matched, so we can see explicitly
+      // which spans are surfaced in the digest and which are not (and why).
+      val xSpanDiagnostics = mutableListOf<String>()
+      fun walk(list: JsonArray) {
+        for (item in list) {
+          if (!item.isJsonObject) continue
+          val obj = item.asJsonObject
+          val className = obj.get("className")?.asString ?: continue
+          val props = obj.getAsJsonObject("properties") ?: continue
+          scannedElements++
+          if (className == "XSpan") {
+            xSpanCount++
+            val name = props.stringProp("name")
+            val rawRte = props.stringProp("rtevalue")
+            val rawLen = rawRte?.length ?: 0
+            val text = cleanText(rawRte)
+            // Only list spans with an actual name and a non-trivial amount of text, so the digest
+            // stays compact; short decorative separators/blank lines add no locating value.
+            if (!name.isNullOrBlank() && text.isNotBlank() && text.length >= 8) {
+              matchedCount++
+              // Show the FULL cleaned text (not a short 300-char slice): a described piece of
+              // content
+              // (e.g. "der Text zum Rechner") can sit anywhere in the span, and a truncated digest
+              // hid it from the clarification AI, which then wrongly asked WHICH element holds it.
+              // 4096 is well above the longest realistic span text (~2-3k cleared HTML chars for
+              // typical design paragraphs) while still keeping the prompt compact.
+              lines.add(
+                  "- XSpan '$name' contains text: \"${text.take(4096)}${
+                if (text.length > 4096) "…" else ""}\"")
+            } else if (rtevalueOwners.size < 5) {
+              rtevalueOwners["XSpan::$name"] = "raw=${rawLen},clean=" + text.take(40)
+            }
+            xSpanDiagnostics.add(
+                "$name{name=${name.isNullOrBlank()},raw=$rawLen,cleanLen=${text.length},matched=${
+                  (text.isNotBlank() && !name.isNullOrBlank() && text.length >= 8)}}")
+          } else {
+            val rawRte = props.stringProp("rtevalue")
+            if (!rawRte.isNullOrBlank() && rtevalueOwners.size < 5) {
+              rtevalueOwners[className + "::" + (props.stringProp("name") ?: "")] =
+                  "raw=" + rawRte.length
+            }
+          }
+          val elements = props.getAsJsonArray("elements")
+          if (elements != null && elements.size() > 0) walk(elements)
+        }
+      }
+      walk(items)
+      logger.info(
+          "[AICodBiAssistant] text-span digest: persist len={}, scanned={}, XSpans={}, matched={}, found={} lines; spans={}",
+          persistJson.length,
+          scannedElements,
+          xSpanCount,
+          matchedCount,
+          lines.size,
+          if (xSpanDiagnostics.isEmpty()) "<none>" else xSpanDiagnostics.joinToString(" | "))
+      if (lines.isEmpty()) {
+        logger.warn(
+            "[AICodBiAssistant] text-span digest is EMPTY — rtevalue-owning elements seen: {}",
+            if (rtevalueOwners.isEmpty()) "<none>"
+            else rtevalueOwners.entries.joinToString(" | ") { "${it.key}[${it.value}]" })
+        null
+      } else lines.joinToString("\n")
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not build text-span content context: {}", e.message)
       null
     }
   }
@@ -19001,6 +19340,7 @@ class AICodBiAssistant : IPluginServletAction {
       intent: String,
       formElements: String?,
       formStructureContext: String?,
+      textSpanContentContext: String?,
       clarificationContext: String,
       chatContext: String,
       changeHistoryContext: String?,
@@ -19049,6 +19389,29 @@ class AICodBiAssistant : IPluginServletAction {
                 "to resolve references to existing elements like \"the two fieldsets on the first " +
                 "page\"):\n" +
                 formStructureContext +
+                "\n"
+          } else ""
+      // Digest of every XSpan's readable TEXT content (from `properties.rtevalue`), paired with the
+      // element's name. XSpans are design widgets and therefore are NOT in FORM ELEMENTS (which
+      // only
+      // lists interactive inputs/buttons) and their HTML is omitted from the condensed FORM
+      // STRUCTURE
+      // above. Without it the clarification AI could not see that a described piece of content
+      // (e.g.
+      // "der Rechner" / "der Text zum Rechner") already lives inside a span and wrongly asked WHICH
+      // existing element holds it. With it, the AI locates the element by its content itself and
+      // answers NO_CLARIFICATION.
+      val textSpanContentBlock =
+          if (!textSpanContentContext.isNullOrBlank()) {
+            "\nEXISTING TEXT CONTENT INSIDE DESIGN SPANS (XSpan) — this is the span's technical `name` " +
+                "followed by its FULL readable text (each entry is \"- XSpan '<name>' contains text: \" + that " +
+                "span's entire cleaned text, up to a very large cap). When the request refers to content that " +
+                "is already IN the form (e.g. \"der Rechner\", \"der Text zum Rechner\", \"die Wettervorhersage\"), " +
+                "the described text IS in one of these entries whenever the content lives in a design span — scan " +
+                "the FULL text of every entry, find the span whose content contains the described thing, and target " +
+                "that EXACT span by its name. NEVER ask the user which existing element contains it; answer " +
+                "NO_CLARIFICATION unless a genuinely NEW value is missing:\n" +
+                textSpanContentContext +
                 "\n"
           } else ""
       val clarificationHistoryBlock =
@@ -19132,22 +19495,41 @@ class AICodBiAssistant : IPluginServletAction {
       // with an invented EP — ASK the user, offering these names as the question's options.
       val availableDatasourcesBlock =
           if (!availableDatasources.isNullOrBlank()) availableDatasources.trim() + "\n" else ""
-      return template
-          .replace("{{ACTION}}", action)
-          .replace("{{USER_REQUEST}}", gson.toJson(prompt))
-          .replace("{{QUESTION_COUNT_RULE}}", questionCountRule)
-          .replace("{{CURRENTLY_OPEN_FORM}}", currentlyOpenForm)
-          .replace("{{FORM_ELEMENTS}}", formElementsBlock)
-          .replace("{{FORM_STRUCTURE}}", formStructureBlock)
-          .replace("{{CLARIFICATION_HISTORY}}", clarificationHistoryBlock)
-          .replace("{{CHAT_HISTORY}}", chatHistoryBlock)
-          .replace("{{CHANGE_HISTORY_BLOCK}}", changeHistoryBlock)
-          .replace("{{FORM_LIST_BLOCK}}", formListBlock)
-          .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) +
-          completionPagesBlock +
-          formVariablesBlock +
-          workflowMailsBlock +
-          availableDatasourcesBlock
+      // Diagnosis for Request 3: confirm at runtime whether the loaded template actually contained
+      // the
+      //   {{TEXT_SPAN_CONTENT}} placeholder (i.e. the DB-seeded prompt matches the .md) and whether
+      // the
+      //   digest text actually reached the final system prompt. If the placeholder is missing from
+      // the
+      //   DB copy, .replace() silently no-ops and the AI never sees the span content.
+      val hasPlaceholder = template.contains("{{TEXT_SPAN_CONTENT}}")
+      val finalPrompt =
+          template
+              .replace("{{ACTION}}", action)
+              .replace("{{USER_REQUEST}}", gson.toJson(prompt))
+              .replace("{{QUESTION_COUNT_RULE}}", questionCountRule)
+              .replace("{{CURRENTLY_OPEN_FORM}}", currentlyOpenForm)
+              .replace("{{FORM_ELEMENTS}}", formElementsBlock)
+              .replace("{{FORM_STRUCTURE}}", formStructureBlock)
+              .replace("{{TEXT_SPAN_CONTENT}}", textSpanContentBlock)
+              .replace("{{CLARIFICATION_HISTORY}}", clarificationHistoryBlock)
+              .replace("{{CHAT_HISTORY}}", chatHistoryBlock)
+              .replace("{{CHANGE_HISTORY_BLOCK}}", changeHistoryBlock)
+              .replace("{{FORM_LIST_BLOCK}}", formListBlock)
+              .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) +
+              completionPagesBlock +
+              formVariablesBlock +
+              workflowMailsBlock +
+              availableDatasourcesBlock
+      logger.info(
+          "[AICodBiAssistant] clarification prompt assembly: placeholderPresent={}, textSpanBlockLen={}, digestInFinalPrompt={}, templateLen={}, finalLen={}",
+          hasPlaceholder,
+          textSpanContentBlock.length,
+          (!textSpanContentBlock.isNullOrBlank() &&
+              finalPrompt.contains(textSpanContentBlock.trim().take(40))),
+          template.length,
+          finalPrompt.length)
+      return finalPrompt
     }
     // No prompt text is embedded in the backend: the clarification prompt is sourced exclusively
     // from
@@ -19597,6 +19979,7 @@ class AICodBiAssistant : IPluginServletAction {
       intent: String,
       formElements: String?,
       formStructureContext: String?,
+      textSpanContentContext: String?,
       clarificationContext: String,
       chatContext: String,
       changeHistoryContext: String?,
@@ -19617,6 +20000,7 @@ class AICodBiAssistant : IPluginServletAction {
             intent,
             formElements,
             formStructureContext,
+            textSpanContentContext,
             clarificationContext,
             chatContext,
             changeHistoryContext,

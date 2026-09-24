@@ -802,6 +802,13 @@ class AICodBiAssistant : IPluginServletAction {
     if (chatAnswerResult != null && chatAnswerResult.hasQuestion) {
       pendingChatAnswer = chatAnswerResult.answer
     }
+    // The chat classification is a FULL inference of its own (its own system prompt + the form
+    // structure). It used to be counted only for pure chat turns, so every INSTRUCTION run was
+    // missing one whole inference from its token total.
+    if (chatAnswerResult != null) {
+      tokensIn += chatAnswerResult.tokensIn
+      tokensOut += chatAnswerResult.tokensOut
+    }
     // A chat turn that contains instructions must run with the correct intent (form / workflow /
     // both) — the frontend always sends "both" for chat turns, so re-classify before executing.
     if (chatMode) {
@@ -907,6 +914,11 @@ class AICodBiAssistant : IPluginServletAction {
     // out of the existing item", "never ask implementation trivia") — not by a fixed count. The
     // only
     // deterministic backstop is that a question already asked is never asked again (see below).
+    // Every clarification round is a full inference of its own, so its tokens belong to the run.
+    val countAssistUsage = { promptTokens: Int, completionTokens: Int ->
+      tokensIn += promptTokens
+      tokensOut += completionTokens
+    }
     for (round in 0 until 5) {
       val check =
           try {
@@ -930,7 +942,8 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationCompletionPages,
                 clarificationFormVariables,
                 clarificationWorkflowMails,
-                availableDatasources)
+                availableDatasources,
+                countAssistUsage)
           } catch (e: Exception) {
             logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
             null
@@ -1377,7 +1390,8 @@ class AICodBiAssistant : IPluginServletAction {
                   instance,
                   chatContext,
                   clarificationContext,
-                  changeHistoryContext)
+                  changeHistoryContext,
+                  countAssistUsage)
           if (wfMailMessage.isNotBlank()) {
             logger.info("[AICodBiAssistant] Workflow mail multilingualization: {}", wfMailMessage)
             wfMultilingualMessages.add(wfMailMessage)
@@ -1397,7 +1411,8 @@ class AICodBiAssistant : IPluginServletAction {
                   instance,
                   chatContext,
                   clarificationContext,
-                  changeHistoryContext)
+                  changeHistoryContext,
+                  countAssistUsage)
           if (wfEndPageMessage.isNotBlank()) {
             logger.info(
                 "[AICodBiAssistant] Workflow ending-page multilingualization: {}", wfEndPageMessage)
@@ -1734,7 +1749,11 @@ class AICodBiAssistant : IPluginServletAction {
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
     // Report the estimated tokens consumed by the classification call so the frontend token
     // counter reflects every inference, not just the phase-2 modifications.
-    val usage = TokenUsage(estimateTokens(messagesJson), estimateTokens(rawResponse))
+    val assistUsage = instance.takeLastAssistUsage()
+    val usage =
+        TokenUsage(
+            assistUsage?.promptTokens ?: estimateTokens(messagesJson),
+            assistUsage?.completionTokens ?: estimateTokens(rawResponse))
     val cleaned = extractJson(stripThinkTags(rawResponse))
 
     return try {
@@ -2186,8 +2205,9 @@ class AICodBiAssistant : IPluginServletAction {
         modelId,
         slimPersistJson(persistJson))
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
-    tokensIn += estimateTokens(messagesJson)
-    tokensOut += estimateTokens(rawResponse)
+    val assistUsage = instance.takeLastAssistUsage()
+    tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
+    tokensOut += assistUsage?.completionTokens ?: estimateTokens(rawResponse)
     var cleaned = extractJson(stripThinkTags(rawResponse))
 
     // The AI occasionally answers pass-1 with a clarifying QUESTION (a `need_clarification` meta
@@ -2508,8 +2528,9 @@ class AICodBiAssistant : IPluginServletAction {
       }
 
       val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
-      tokensIn += estimateTokens(retryMessagesJson)
-      tokensOut += estimateTokens(retryRaw)
+      val assistUsage = instance.takeLastAssistUsage()
+      tokensIn += assistUsage?.promptTokens ?: estimateTokens(retryMessagesJson)
+      tokensOut += assistUsage?.completionTokens ?: estimateTokens(retryRaw)
       val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
       logger.info(
           "[AICodBiAssistant] Pass-{} raw result: {}",
@@ -2588,8 +2609,9 @@ class AICodBiAssistant : IPluginServletAction {
             "[{\"role\":\"system\",\"content\":${gson.toJson(finalSystemPrompt)}}," +
                 "{\"role\":\"user\",\"content\":${gson.toJson(finalUserContent)}}]"
         val finalRaw = instance.performFormAssist(modelId, finalMessagesJson)
-        tokensIn += estimateTokens(finalMessagesJson)
-        tokensOut += estimateTokens(finalRaw)
+        val assistUsage = instance.takeLastAssistUsage()
+        tokensIn += assistUsage?.promptTokens ?: estimateTokens(finalMessagesJson)
+        tokensOut += assistUsage?.completionTokens ?: estimateTokens(finalRaw)
         val finalCleaned = extractJson(stripThinkTags(finalRaw))
         logger.info(
             "[AICodBiAssistant] Final forced pass raw result: {}",
@@ -2870,7 +2892,12 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  /** Rough token estimate for a text blob (chars / 4). Used for the assistant's token counter. */
+  /**
+   * Rough token estimate for a text blob (chars / 4). ONLY a fallback for servers that do not
+   * report their usage: JSON/HTML-heavy prompts (the norm here) tokenize at roughly 3 chars per
+   * token, so this under-counts the real consumption. Prefer [Standard.takeLastAssistUsage], which
+   * carries the provider-reported counters.
+   */
   private fun estimateTokens(text: String): Int =
       if (text.isBlank()) 0 else (text.length / 4).coerceAtLeast(1)
 
@@ -8919,8 +8946,9 @@ class AICodBiAssistant : IPluginServletAction {
       append("]")
     }
     val pass1Raw = instance.performFormAssist(modelId, messagesJson)
-    tokensIn += estimateTokens(messagesJson)
-    tokensOut += estimateTokens(pass1Raw)
+    val assistUsage = instance.takeLastAssistUsage()
+    tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
+    tokensOut += assistUsage?.completionTokens ?: estimateTokens(pass1Raw)
     var cleaned = extractJson(stripThinkTags(pass1Raw))
     logger.info(
         "[AICodBiAssistant] Workflow AI pass-1 raw response: {}", compactJsonForLog(cleaned))
@@ -8958,8 +8986,9 @@ class AICodBiAssistant : IPluginServletAction {
         append("]")
       }
       val pass2Raw = instance.performFormAssist(modelId, messagesJson)
-      tokensIn += estimateTokens(messagesJson)
-      tokensOut += estimateTokens(pass2Raw)
+      val assistUsage = instance.takeLastAssistUsage()
+      tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
+      tokensOut += assistUsage?.completionTokens ?: estimateTokens(pass2Raw)
       cleaned = extractJson(stripThinkTags(pass2Raw))
       logger.info(
           "[AICodBiAssistant] Workflow AI pass-2 raw response: {}", compactJsonForLog(cleaned))
@@ -9047,8 +9076,9 @@ class AICodBiAssistant : IPluginServletAction {
           append("]")
         }
         val pass2Raw = instance.performFormAssist(modelId, messagesJson)
-        tokensIn += estimateTokens(messagesJson)
-        tokensOut += estimateTokens(pass2Raw)
+        val assistUsage = instance.takeLastAssistUsage()
+        tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
+        tokensOut += assistUsage?.completionTokens ?: estimateTokens(pass2Raw)
         cleaned = extractJson(stripThinkTags(pass2Raw))
         safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
         logger.info(
@@ -9319,7 +9349,8 @@ class AICodBiAssistant : IPluginServletAction {
       instance: Standard,
       chatContext: String?,
       clarificationContext: String?,
-      changeHistoryContext: String?
+      changeHistoryContext: String?,
+      onUsage: ((Int, Int) -> Unit)? = null
   ): String {
     val langs = languages.filter { it.isNotBlank() }.distinct()
     if (langs.isEmpty()) return ""
@@ -9539,7 +9570,15 @@ class AICodBiAssistant : IPluginServletAction {
       append("""{"role":"user","content":${gson.toJson(userContent)}}""")
       append("]")
     }
+    fun reportUsage(messagesJson: String, response: String) {
+      val usage = instance.takeLastAssistUsage()
+      onUsage?.invoke(
+          usage?.promptTokens ?: estimateTokens(messagesJson),
+          usage?.completionTokens ?: estimateTokens(response))
+    }
+
     val raw = instance.performFormAssist(modelId, messagesJson)
+    reportUsage(messagesJson, raw)
     var cleaned = extractJson(stripThinkTags(raw))
     logger.info(
         "[AICodBiAssistant] Workflow mail multilingualization AI response ({} chars): {}",
@@ -9616,6 +9655,7 @@ class AICodBiAssistant : IPluginServletAction {
         append("]")
       }
       val retryRaw = instance.performFormAssist(modelId, retryMessages)
+      reportUsage(retryMessages, retryRaw)
       cleaned = extractJson(stripThinkTags(retryRaw))
       logger.info(
           "[AICodBiAssistant] Workflow mail multilingualization retry response ({} chars): {}",
@@ -10689,7 +10729,8 @@ class AICodBiAssistant : IPluginServletAction {
       instance: Standard,
       chatContext: String?,
       clarificationContext: String?,
-      changeHistoryContext: String?
+      changeHistoryContext: String?,
+      onUsage: ((Int, Int) -> Unit)? = null
   ): String {
     val langs = languages.filter { it.isNotBlank() }.distinct()
     if (langs.size < 2) return ""
@@ -10829,7 +10870,15 @@ class AICodBiAssistant : IPluginServletAction {
       append("""{"role":"user","content":${gson.toJson(userContent)}}""")
       append("]")
     }
+    fun reportUsage(messagesJson: String, response: String) {
+      val usage = instance.takeLastAssistUsage()
+      onUsage?.invoke(
+          usage?.promptTokens ?: estimateTokens(messagesJson),
+          usage?.completionTokens ?: estimateTokens(response))
+    }
+
     val raw = instance.performFormAssist(modelId, messagesJson)
+    reportUsage(messagesJson, raw)
     var cleaned = extractJson(stripThinkTags(raw))
     logger.info(
         "[AICodBiAssistant] Ending-page multilingualization AI response ({} chars): {}",
@@ -10894,6 +10943,7 @@ class AICodBiAssistant : IPluginServletAction {
         append("]")
       }
       val retryRaw = instance.performFormAssist(modelId, retryMessages)
+      reportUsage(retryMessages, retryRaw)
       cleaned = extractJson(stripThinkTags(retryRaw))
       entries = parseEntries(cleaned)
       missing = missingVerdictIds(entries)
@@ -11310,7 +11360,8 @@ class AICodBiAssistant : IPluginServletAction {
       instance: Standard,
       chatContext: String?,
       clarificationContext: String?,
-      changeHistoryContext: String?
+      changeHistoryContext: String?,
+      onUsage: ((Int, Int) -> Unit)? = null
   ): String {
     val langs = languages.filter { it.isNotBlank() }.distinct()
     if (langs.size < 2) return ""
@@ -11573,7 +11624,15 @@ class AICodBiAssistant : IPluginServletAction {
       append("""{"role":"user","content":${gson.toJson(userContent)}}""")
       append("]")
     }
+    fun reportUsage(messagesJson: String, response: String) {
+      val usage = instance.takeLastAssistUsage()
+      onUsage?.invoke(
+          usage?.promptTokens ?: estimateTokens(messagesJson),
+          usage?.completionTokens ?: estimateTokens(response))
+    }
+
     val raw = instance.performFormAssist(modelId, messagesJson)
+    reportUsage(messagesJson, raw)
     var cleaned = extractJson(stripThinkTags(raw))
     logger.info(
         "[AICodBiAssistant] Ending-page multilingualization AI response ({} chars): {}",
@@ -11639,6 +11698,7 @@ class AICodBiAssistant : IPluginServletAction {
         append("]")
       }
       val retryRaw = instance.performFormAssist(modelId, retryMessages)
+      reportUsage(retryMessages, retryRaw)
       cleaned = extractJson(stripThinkTags(retryRaw))
       logger.info(
           "[AICodBiAssistant] Ending-page multilingualization retry response ({} chars): {}",
@@ -19992,7 +20052,8 @@ class AICodBiAssistant : IPluginServletAction {
       completionPages: String? = null,
       formVariables: String? = null,
       workflowMails: String? = null,
-      availableDatasources: String? = null
+      availableDatasources: String? = null,
+      onUsage: ((Int, Int) -> Unit)? = null
   ): ClarificationCheck? {
     val system =
         buildClarificationSystemPrompt(
@@ -20020,6 +20081,13 @@ class AICodBiAssistant : IPluginServletAction {
       append("]")
     }
     val raw = instance.performFormAssist(modelId, messagesJson)
+    // The clarification check is a FULL inference (its own ~300k-char system prompt) and used to be
+    // missing from the run's token total entirely — report it (provider counters when available,
+    // otherwise the estimate) so the caller can count it.
+    val assistUsage = instance.takeLastAssistUsage()
+    onUsage?.invoke(
+        assistUsage?.promptTokens ?: estimateTokens(messagesJson),
+        assistUsage?.completionTokens ?: estimateTokens(raw))
     val cleaned = extractJson(stripThinkTags(raw)).trim()
     logger.info("[AICodBiAssistant] Clarification check response: {}", compactJsonForLog(cleaned))
     // Tolerate a trailing suffix on the sentinel (observed in production:
@@ -20132,8 +20200,9 @@ class AICodBiAssistant : IPluginServletAction {
         append("]")
       }
       val raw = instance.performFormAssist(modelId, messagesJson)
-      tokensIn += estimateTokens(messagesJson)
-      tokensOut += estimateTokens(raw)
+      val assistUsage = instance.takeLastAssistUsage()
+      tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
+      tokensOut += assistUsage?.completionTokens ?: estimateTokens(raw)
       return raw
     }
 

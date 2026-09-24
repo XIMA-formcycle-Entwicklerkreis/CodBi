@@ -1084,5 +1084,108 @@ class ChatCompletionServiceTest {
         log = { level, msg -> logMessages.add(level to msg) })
   }
 
+  // region chatCompletion — reported token usage
+
+  @Nested
+  inner class ReportedUsageTest {
+
+    @Test
+    fun reportsOpenAiCompatibleUsage() {
+      val service =
+          createLocalService(
+              responseJson =
+                  """{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":123,"completion_tokens":45}}""")
+      var promptTokens = 0
+      var completionTokens = 0
+
+      service.chatCompletion(
+          """[{"role":"user","content":"Hi"}]""",
+          onUsage = { p, c ->
+            promptTokens = p
+            completionTokens = c
+          })
+
+      assertEquals(123, promptTokens)
+      assertEquals(45, completionTokens)
+    }
+
+    @Test
+    fun reportsLlamaCppTimingsWhenUsageIsMissing() {
+      val service =
+          createLocalService(
+              responseJson =
+                  """{"choices":[{"message":{"content":"ok"}}],"timings":{"prompt_n":321,"predicted_n":12}}""")
+      var promptTokens = 0
+      var completionTokens = 0
+
+      service.chatCompletion(
+          """[{"role":"user","content":"Hi"}]""",
+          onUsage = { p, c ->
+            promptTokens = p
+            completionTokens = c
+          })
+
+      assertEquals(321, promptTokens)
+      assertEquals(12, completionTokens)
+    }
+
+    @Test
+    fun reportsNothingWhenTheServerSendsNoCounters() {
+      val service =
+          createLocalService(responseJson = """{"choices":[{"message":{"content":"ok"}}]}""")
+      var reported = false
+
+      service.chatCompletion(
+          """[{"role":"user","content":"Hi"}]""", onUsage = { _, _ -> reported = true })
+
+      assertFalse(reported)
+    }
+
+    @Test
+    fun reportsUsageForExternalProvidersToo() {
+      val service =
+          createExternalService(
+              externalPost = { _, _, _ ->
+                """{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":7,"completion_tokens":3}}"""
+              })
+      var promptTokens = 0
+      var completionTokens = 0
+
+      service.chatCompletion(
+          """[{"role":"user","content":"Hi"}]""",
+          onUsage = { p, c ->
+            promptTokens = p
+            completionTokens = c
+          })
+
+      assertEquals(7, promptTokens)
+      assertEquals(3, completionTokens)
+    }
+
+    @Test
+    fun reportsUsageFromTheFinalStreamingChunk() {
+      val service =
+          createStreamingLocalService(
+              sseChunks =
+                  listOf(
+                      """{"choices":[{"delta":{"content":"Hi"},"index":0}]}""",
+                      """{"choices":[{"delta":{},"index":0}],"timings":{"prompt_n":456,"predicted_n":78}}"""))
+      val session = StreamingSession()
+      var promptTokens = 0
+      var completionTokens = 0
+
+      service.streamChatCompletion(
+          """[{"role":"user","content":"Hi"}]""",
+          session,
+          onUsage = { p, c ->
+            promptTokens = p
+            completionTokens = c
+          })
+
+      assertEquals(456, promptTokens)
+      assertEquals(78, completionTokens)
+    }
+  }
+
   // endregion
 }

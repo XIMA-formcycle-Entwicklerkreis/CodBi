@@ -66,7 +66,10 @@ internal class ChatCompletionService(
       maxThinkingTokens: Int? = null,
       overridePort: Int? = null,
       overrideExternalClient: ExternalAiClient? = null,
-      overrideMaxTokens: Int? = null
+      overrideMaxTokens: Int? = null,
+      // The provider's OWN token counters (llama.cpp `timings`, OpenAI-compatible `usage`),
+      // reported back so a caller can record the REAL consumption instead of a chars/4 estimate.
+      onUsage: ((promptTokens: Int, completionTokens: Int) -> Unit)? = null
   ): String {
     val useExtSpecialist = overrideExternalClient != null
     val external = useExtSpecialist || isExternalMode()
@@ -127,6 +130,10 @@ internal class ChatCompletionService(
 
     return try {
       val json = com.google.gson.JsonParser.parseString(response).asJsonObject
+      // Report the authoritative token counts of this call when the server provides them.
+      extractUsage(json)?.let { (promptTokens, completionTokens) ->
+        onUsage?.invoke(promptTokens, completionTokens)
+      }
       val message = json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("message")
       var raw = message?.get("content")?.takeIf { it.isJsonPrimitive }?.asString ?: response
 
@@ -149,6 +156,48 @@ internal class ChatCompletionService(
   }
 
   /**
+   * Reads the token counts the SERVER itself reports for a completion, or null when it reports
+   * none.
+   *
+   * Supported shapes: llama.cpp's `timings` (`prompt_n`/`predicted_n`, older builds
+   * `tokens_evaluated`/`tokens_predicted`) and the OpenAI-compatible `usage`
+   * (`prompt_tokens`/`completion_tokens`, Anthropic-style `input_tokens`/`output_tokens`). These
+   * numbers are the only reliable source for the assistant's token counter: the chars/4 estimate
+   * under-counts JSON/HTML-heavy prompts noticeably.
+   */
+  private fun extractUsage(json: com.google.gson.JsonObject): Pair<Int, Int>? {
+    fun intOf(obj: com.google.gson.JsonObject?, vararg keys: String): Int {
+      if (obj == null) return 0
+      for (key in keys) {
+        val value = obj.get(key)?.takeIf { it.isJsonPrimitive } ?: continue
+        val n = runCatching { value.asInt }.getOrDefault(0)
+        if (n > 0) return n
+      }
+      return 0
+    }
+
+    json
+        .get("usage")
+        ?.takeIf { it.isJsonObject }
+        ?.asJsonObject
+        ?.let { usage ->
+          val promptTokens = intOf(usage, "prompt_tokens", "input_tokens")
+          val completionTokens = intOf(usage, "completion_tokens", "output_tokens")
+          if (promptTokens > 0 || completionTokens > 0) return promptTokens to completionTokens
+        }
+    json
+        .get("timings")
+        ?.takeIf { it.isJsonObject }
+        ?.asJsonObject
+        ?.let { timings ->
+          val promptTokens = intOf(timings, "prompt_n", "tokens_evaluated")
+          val completionTokens = intOf(timings, "predicted_n", "tokens_predicted")
+          if (promptTokens > 0 || completionTokens > 0) return promptTokens to completionTokens
+        }
+    return null
+  }
+
+  /**
    * Sends a streaming chat completion request. Text chunks are appended to the [session] as they
    * arrive via Server-Sent Events (SSE). Handles `<think>` tag filtering, logprob tracking, and
    * repetition detection.
@@ -168,7 +217,10 @@ internal class ChatCompletionService(
       enableThinking: Boolean = false,
       idSlot: Int = -1,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null
+      overrideExternalClient: ExternalAiClient? = null,
+      // Streaming providers report their counters in the FINAL chunk (llama.cpp: `timings`,
+      // OpenAI-compatible: `usage`) — reported back so a caller can record the real consumption.
+      onUsage: ((promptTokens: Int, completionTokens: Int) -> Unit)? = null
   ) {
     val useExtSpecialist = overrideExternalClient != null
     val external = useExtSpecialist || isExternalMode()
@@ -247,6 +299,10 @@ internal class ChatCompletionService(
               return@streamFn
             }
             val json = parsed.asJsonObject
+            // Collect the token counters when the stream carries them (usually the last chunk).
+            extractUsage(json)?.let { (promptTokens, completionTokens) ->
+              onUsage?.invoke(promptTokens, completionTokens)
+            }
             val delta =
                 json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("delta")
 

@@ -1035,6 +1035,10 @@ class Standard : LLAMA() {
    */
   internal fun performFormAssist(modelId: String, messagesJson: String): String {
     val svc = chatCompletionService ?: error("AI service not ready")
+    // Start a fresh usage accumulator: takeLastAssistUsage() must report exactly THIS call (with
+    // all
+    // of its web-access rounds), never a mixture with an earlier pass of the same run.
+    assistUsage.remove()
     // ext-specialist uses its own external client — skip local server readiness check.
     // In external-only mode (externalOnly) there is no local server at all.
     val usesLocalServer =
@@ -1048,10 +1052,10 @@ class Standard : LLAMA() {
     // region Design-time web access (Brave Search). Disabled without an API key or when the
     // `AI_FormAssistant_WebAccess` plugin property turns it off for the assistant passes.
     if (!BraveSearch.isAvailable || !webAccessEnabled) {
-      return callFormAssistModel(svc, modelId, messagesJson)
+      return callFormAssistModel(svc, modelId, messagesJson, ::accumulateAssistUsage)
     }
     var roundMessages = injectWebAccessInstruction(messagesJson)
-    var answer = callFormAssistModel(svc, modelId, roundMessages)
+    var answer = callFormAssistModel(svc, modelId, roundMessages, ::accumulateAssistUsage)
     for (round in 1..maxWebAccessRoundTrips) {
       val request = resolveWebAccessRequest(answer) ?: break
       log(
@@ -1063,7 +1067,7 @@ class Standard : LLAMA() {
       // follows this one) receives these notes through [takeWebAccessNotes], so a URL found here is
       // not thrown away.
       webAccessNotes.set((webAccessNotes.get()?.plus("\n\n") ?: "") + request.second)
-      answer = callFormAssistModel(svc, modelId, roundMessages)
+      answer = callFormAssistModel(svc, modelId, roundMessages, ::accumulateAssistUsage)
     }
     return stripWebAccessMarkers(answer)
     // endregion Design-time web access
@@ -1095,6 +1099,33 @@ class Standard : LLAMA() {
     return notes?.takeIf { it.isNotBlank() }
   }
 
+  /** Provider-reported token usage of one form-assist call, summed over all of its rounds. */
+  internal data class AssistUsage(val promptTokens: Int, val completionTokens: Int) {
+    val total: Int
+      get() = promptTokens + completionTokens
+  }
+
+  /** Accumulator for [assistUsage] — one entry per thread, reset at the start of each call. */
+  private val assistUsage = ThreadLocal<AssistUsage?>()
+
+  private fun accumulateAssistUsage(promptTokens: Int, completionTokens: Int) {
+    val current = assistUsage.get()
+    assistUsage.set(
+        AssistUsage(
+            (current?.promptTokens ?: 0) + promptTokens,
+            (current?.completionTokens ?: 0) + completionTokens))
+  }
+
+  /**
+   * The REAL, provider-reported token usage of the last [performFormAssist] call on THIS thread —
+   * including every web-access round it performed — or null when the server reported none (then the
+   * caller keeps its chars/4 estimate as a fallback).
+   *
+   * Must be read immediately after the matching [performFormAssist] call: it clears the
+   * accumulator.
+   */
+  internal fun takeLastAssistUsage(): AssistUsage? = assistUsage.get().also { assistUsage.remove() }
+
   /**
    * Sends one chat-completion request for [messagesJson] through the route selected by [modelId]
    * (the original [performFormAssist] routing, shared by every web-access round).
@@ -1102,14 +1133,16 @@ class Standard : LLAMA() {
   private fun callFormAssistModel(
       svc: ChatCompletionService,
       modelId: String,
-      messagesJson: String
+      messagesJson: String,
+      onUsage: ((Int, Int) -> Unit)? = null
   ): String =
       when {
-        modelId == "thinking" -> svc.chatCompletion(messagesJson, enableThinking = true)
+        modelId == "thinking" ->
+            svc.chatCompletion(messagesJson, enableThinking = true, onUsage = onUsage)
         modelId.startsWith("specialist:") -> {
           val name = modelId.removePrefix("specialist:")
           val port = specialistServers[name]?.port ?: error("Specialist '$name' not ready")
-          svc.chatCompletion(messagesJson, overridePort = port)
+          svc.chatCompletion(messagesJson, overridePort = port, onUsage = onUsage)
         }
         modelId.startsWith("ext-specialist:") -> {
           val name = modelId.removePrefix("ext-specialist:")
@@ -1123,7 +1156,8 @@ class Standard : LLAMA() {
           svc.chatCompletion(
               messagesJson,
               overrideExternalClient = client,
-              overrideMaxTokens = specialistMaxTokens)
+              overrideMaxTokens = specialistMaxTokens,
+              onUsage = onUsage)
         }
         // For form-assist the response is a full form JSON, which can be large.
         // Local models default to AI_LLAMA_STD_MaxTokens (default 2048), which is too small for
@@ -1132,7 +1166,7 @@ class Standard : LLAMA() {
         // toward rate limits, so we do not override them here.
         else -> {
           val formMaxTokens = if (config.isExternalMode) null else 16384
-          svc.chatCompletion(messagesJson, overrideMaxTokens = formMaxTokens)
+          svc.chatCompletion(messagesJson, overrideMaxTokens = formMaxTokens, onUsage = onUsage)
         }
       }
 
@@ -1985,7 +2019,13 @@ class Standard : LLAMA() {
             log(LogLevel.INFO, "Messages JSON (first 500): ${messages.take(500)}")
           }
           chatCompletionService!!.streamChatCompletion(
-              messages, session, ctx.enableThinking, ctx.slotId, specialistPort, specialistClient)
+              messages,
+              session,
+              ctx.enableThinking,
+              ctx.slotId,
+              specialistPort,
+              specialistClient,
+              onUsage = ::accumulateAssistUsage)
           val fullText = session.currentText()
           val thinkText = session.currentThinking()
           log(
@@ -2150,7 +2190,13 @@ class Standard : LLAMA() {
                   fallbackMessages
                 }
             chatCompletionService!!.streamChatCompletion(
-                messagesWithReasoning, session, false, ctx.slotId, specialistPort, specialistClient)
+                messagesWithReasoning,
+                session,
+                false,
+                ctx.slotId,
+                specialistPort,
+                specialistClient,
+                onUsage = ::accumulateAssistUsage)
             val fallbackText = session.currentText()
             if (ctx.searchEnabled &&
                 BraveSearch.isAvailable &&

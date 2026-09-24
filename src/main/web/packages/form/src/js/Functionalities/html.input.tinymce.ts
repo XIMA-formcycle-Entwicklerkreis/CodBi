@@ -284,8 +284,9 @@ export class HTML_Input_TinyMCE {
 
                   try {
                     const url = await fileUpload(file);
+                    const linkText = file.name.replace(/\.[^/.]+$/, "");
 
-                    editor.insertContent(`<a href="${url}" target="_blank">${file.name}</a>`);
+                    editor.insertContent(`<a href="${url}" target="_blank">${linkText}</a>`);
                   } catch (error) {
                     editor.notificationManager.open({
                       text: `Upload failed: ${(error as Error).message}`,

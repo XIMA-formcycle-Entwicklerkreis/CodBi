@@ -18938,21 +18938,27 @@ class AICodBiAssistant : IPluginServletAction {
     try {
       val fc = PromptLoader.loadCategory(em, "formcycle")
       val cb = if (useCodbi) PromptLoader.loadCategory(em, "codbi") else emptyMap()
-      val taskInstruction = loadPromptWithClasspathFallback("codbi.form_task_instruction") ?: ""
-      // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
-      // general rules. The parameter-complete sections (codbi.standard_configurations /
-      // codbi.functionalities / codbi.element_placeholders) are intentionally NOT included here:
-      // codbi-general.md tells the AI to request the exact JSON templates for exactly the
-      // elements/widgets it needs, and the server returns only those in pass-2. Sending the full
-      // detailed sections here would roughly double the token usage per request without changing
-      // the outcome (the AI requests details regardless).
+      val taskInstruction =
+          loadPromptWithClasspathFallback("codbi.form_task_instruction_decision") ?: ""
+      // Pass-1 uses ONLY the DECISION cores (the decision-critical rules + which details to
+      // request), NOT the full build sections. Each of the four prompt files is split into a
+      // "decision" core (kept here) and its full build appendix (injected in pass-2 after the
+      // AI's need_codbi_details request). The codbi.form_task_instruction_decision /
+      // codbi.form_structure_rules_decision / codbi.general_decision / formcycle.general_decision
+      // keys are seeded from the matching `*.decision.md` resources and registered in index.json.
+      // The parameter-complete sections (codbi.standard_configurations / codbi.functionalities /
+      // codbi.element_placeholders) are intentionally NOT included here: the decision core tells
+      // the AI to request the exact JSON templates for exactly the elements/widgets it needs, and
+      // the server returns only those in pass-2. Sending the full detailed sections here would
+      // roughly double the token usage per request without changing the outcome (the AI requests
+      // details regardless).
       val buergerserviceNamingPart =
           if (useCodbi && useBuergerserviceNaming)
               "\n" + (cb["codbi.buergerservice_naming"] ?: "") + "\n"
           else ""
       val codbiPart =
           if (useCodbi) {
-            "\n" + (cb["codbi.general"] ?: "") + "\n" + "{{CODBI_ELEMENTS_SECTION}}"
+            "\n" + (cb["codbi.general_decision"] ?: "") + "\n" + "{{CODBI_ELEMENTS_SECTION}}"
           } else {
             ""
           }
@@ -18960,23 +18966,24 @@ class AICodBiAssistant : IPluginServletAction {
           PromptLoader.resolvePlaceholders(
               taskInstruction +
                   "\n\n" +
-                  (loadPromptWithClasspathFallback("codbi.form_structure_rules") ?: "") +
+                  (loadPromptWithClasspathFallback("codbi.form_structure_rules_decision") ?: "") +
                   "\n\n" +
-                  (fc["formcycle.general"] ?: "") +
+                  (fc["formcycle.general_decision"] ?: "") +
                   "\n\n" +
                   "{{FORMCYCLE_WIDGETS_SECTION}}" +
                   codbiPart +
                   buergerserviceNamingPart)
       // Support diagnosis: make the composition of the delivered pass-1 prompt visible in the log,
       // so a report about a missing/ignored rule can be answered from the log alone (e.g. whether
-      // the designed-text/illustration rules actually reached the model).
+      // the designed-text illustrations / the state-availability distinction / the two-option rule
+      // actually reached the model from the decision cores).
       logger.info(
-          "[AICodBiAssistant] Pass-1 system prompt: {} chars (structure rules: {}, designed-text rules: {}, illustration checklist: {}, compact widget reference: {})",
+          "[AICodBiAssistant] Pass-1 system prompt: {} chars (designed-text rules: {}, detail-request protocol: {}, state-availability rules: {}, two-option rule: {})",
           system.length,
           system.contains("RICH/DESIGNED/INTERACTIVE TEXT"),
-          system.contains("in schönem Design"),
-          system.contains("FORBIDDEN COMPOSITIONS"),
-          system.contains("### XSpan"))
+          system.contains("MANDATORY CODBI DETAIL REQUEST"),
+          system.contains("STATE-BASED AVAILABILITY"),
+          system.contains("TWO-OPTION RULE"))
       return system
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load form system prompt", e)

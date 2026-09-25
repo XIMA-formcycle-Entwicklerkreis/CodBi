@@ -1,1 +1,1 @@
-IMPORTANT: Output ONLY the raw JSON object {"hasQuestion":true|false,"hasInstructions":true|false,"answer":"..."} — no explanation, no markdown, no surrounding text.
+IMPORTANT: Output ONLY the raw JSON object {"hasQuestion":true|false,"hasInstructions":true|false,"answer":"...","topics":[]} — no explanation, no markdown, no surrounding text. "topics" is an array of any of ["payment","livedata","http","approval"] that apply (or []).

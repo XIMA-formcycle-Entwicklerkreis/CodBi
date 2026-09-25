@@ -234,6 +234,61 @@ internal object CodbiCapabilities {
         load(FORMCYCLE_WIDGETS_ONLY_RESOURCE, "FORMCYCLE WIDGETS (COMPACT)"))
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // PASS-1 CONDENSED VARIANTS
+  //
+  // Pass-1 ONLY decides what to change and which details to request (see the "NO DIRECT WIDGET
+  // CREATION" rule) — the exact JSON specs arrive in pass-2. The same pass-1 prompt ALSO carries
+  // the
+  // decision cores, which already state the decision-critical rules. So pass-1 does not need the
+  // full per-entry build-syntax prose of the catalogs; it needs the element NAMES (to build a
+  // `need_codbi_details` request) plus a one-line "what it is". The variants below keep every
+  // heading and truncate each entry's prose to its first sentence, cutting the two catalogs roughly
+  // in half. The FULL catalogs remain in use everywhere else (pass-2 details, other paths).
+  // ---------------------------------------------------------------------------------------------
+
+  /** CONDENSED [buildSection] for pass-1 (heading + first sentence per element). */
+  fun buildSectionCondensed(): String = condenseEntryBodies(buildSection())
+
+  /** CONDENSED [buildWidgetsSection] for pass-1 (heading + first sentence per widget). */
+  fun buildWidgetsSectionCondensed(): String = condenseEntryBodies(buildWidgetsSection())
+
+  /**
+   * Truncates the BODY of each catalog ENTRY (the prose after a `### <name>` heading) to its FIRST
+   * SENTENCE, capped at [maxProseChars] (word-boundary safe). Everything else is kept VERBATIM:
+   * - every heading (`#` / `##` / `###`),
+   * - the section PREAMBLE (any text before the first entry heading — `##` in the widget catalog,
+   *   `###` in the elements catalog).
+   *
+   * The preamble is NOT truncated on purpose: it carries the decision-critical GENERAL RULES (e.g.
+   * the widget catalog's "LABELS — never use generic placeholders such as 'Label'" rule).
+   * Truncating it silently dropped that rule and the model emitted unlabelled fields (Formcycle
+   * then shows the default "Label"). Only the per-entry build-syntax prose is condensed here.
+   */
+  private fun condenseEntryBodies(text: String, maxProseChars: Int = 220): String {
+    var inEntry = false
+    return text.lines().joinToString("\n") { line ->
+      val t = line.trim()
+      when {
+        t.startsWith("#") -> {
+          // Any heading deeper than the file title (## or ###) starts an ENTRY — the widget catalog
+          // uses `## <WidgetName>`, the elements catalog `### <name>` under `## <Group>`. The
+          // preamble before the first such heading is kept verbatim.
+          inEntry = t.startsWith("##")
+          line
+        }
+        !inEntry || t.isEmpty() || t.length <= maxProseChars -> line
+        else -> {
+          val sentenceStop = t.indexOf(". ")
+          val cut =
+              if (sentenceStop in 20 until maxProseChars) sentenceStop + 1
+              else t.lastIndexOf(' ', maxProseChars).takeIf { it > 0 } ?: maxProseChars
+          t.substring(0, minOf(cut, t.length)).trimEnd() + " …"
+        }
+      }
+    }
+  }
+
   /**
    * Rebuilds the condensed CodBi elements section from the compact DB table (active prompts only),
    * grouped by Functionalities / Element Placeholders / Standard Configurations, so deactivating an

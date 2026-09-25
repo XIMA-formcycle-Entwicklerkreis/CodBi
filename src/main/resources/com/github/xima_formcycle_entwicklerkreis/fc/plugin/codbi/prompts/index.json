@@ -1,6 +1,8 @@
 [
   { "file": "formcycle-general.md", "key": "formcycle.general" },
   { "file": "formcycle-general.decision.md", "key": "formcycle.general_decision" },
+  { "file": "formcycle-general-workflow.md", "key": "formcycle.general_workflow" },
+  { "file": "formcycle-general-apply.md", "key": "formcycle.general_apply" },
   { "file": "formcycle-widgets.md", "key": "formcycle.widgets" },
   { "file": "formcycle-workflow-nodes.md", "key": "formcycle.workflow_nodes" },
   { "file": "codbi-functionalities.md", "key": "codbi.functionalities" },
@@ -9,6 +11,7 @@
   { "file": "codbi-standard-configurations.md", "key": "codbi.standard_configurations" },
   { "file": "codbi-general.md", "key": "codbi.general" },
   { "file": "codbi-general.decision.md", "key": "codbi.general_decision" },
+  { "file": "codbi-general-rethink.md", "key": "codbi.general_rethink" },
   { "file": "codbi-document-parsing.md", "key": "codbi.document_parsing" },
   { "file": "codbi-classify-intent.md", "key": "codbi.classify_intent" },
   { "file": "codbi-classify-intent-context.md", "key": "codbi.classify_intent_context" },

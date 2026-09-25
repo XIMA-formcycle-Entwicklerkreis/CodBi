@@ -25,6 +25,15 @@ import org.slf4j.LoggerFactory
  * AI Form Assistant — servlet that lets the form designer ask an AI to modify the current form
  * structure.
  *
+ * **DEPRECATED / SUPERSEDED** — this standalone form assistant is no longer used. The frontend
+ * dispatches ALL AI requests (form editing, workflow creation, chat, translation) to the unified
+ * `CodBi_AICodBiAssistant` servlet ([AICodBiAssistant], `name=CodBi_AICodBiAssistant`). There are
+ * no remaining references to `name=CodBi_AIFormAssistant` in the web layer or in this codebase.
+ * This class is kept only for backward compatibility with any out-of-band/legacy callers that may
+ * still invoke the old endpoint; it should NOT be extended or used for new functionality. Do not
+ * migrate code here — migrate to [AICodBiAssistant] instead. The class (and its
+ * `CodBi_AIFormAssistant` endpoint) can be removed once no external references remain.
+ *
  * Actions dispatched via the `X-Action` request header:
  * - **`Models`** (GET): returns the list of available AI models as a JSON array of
  *   `[{"id":"...","label":"..."}]`.
@@ -37,6 +46,8 @@ import org.slf4j.LoggerFactory
  *     GET   <fc>/plugin?name=CodBi_AIFormAssistant   (X-Action: Models)
  *     POST  <fc>/plugin?name=CodBi_AIFormAssistant   (X-Action: Run, X-Model: <modelId>)
  */
+@Deprecated(
+    "Superseded by AICodBiAssistant (CodBi_AICodBiAssistant). The frontend no longer calls CodBi_AIFormAssistant; kept only for backward compatibility with legacy callers. Remove once no external references remain.")
 class AIFormAssistant : IPluginServletAction {
 
   private val logger = LoggerFactory.getLogger(AIFormAssistant::class.java)

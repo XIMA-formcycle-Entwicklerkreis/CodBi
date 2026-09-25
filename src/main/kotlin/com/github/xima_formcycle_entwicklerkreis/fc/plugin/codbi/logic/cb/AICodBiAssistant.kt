@@ -11864,7 +11864,13 @@ class AICodBiAssistant : IPluginServletAction {
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
     try {
       val fc = PromptLoader.loadCategory(em, "formcycle")
-      val general = fc["formcycle.general"] ?: ""
+      // Use the lean workflow build reference (decision core + the EConditionType codes and the
+      // server-variable catalog) instead of the full formcycle.general for the {{GENERAL}} slot.
+      // The workflow step emits task JSON / references form elements (technicalId, buttonName),
+      // states and [%$...%] placeholders; it does NOT need the full form-building prose (CUSTOM
+      // JAVASCRIPT layout guidance, whole-form translation theory, part of REPEATABLE CONTAINERS)
+      // that the form pass requires. Saves ~36KB (~10K tokens) per workflow step.
+      val general = fc["formcycle.general_workflow"] ?: fc["formcycle.general"] ?: ""
       val pass2 = requestedNodes.isNotEmpty() || requestedTriggers.isNotEmpty()
       val workflowReference =
           if (pass2) {
@@ -19030,9 +19036,15 @@ class AICodBiAssistant : IPluginServletAction {
       // The detailed standards/functionalities are included in the DB-driven
       // {{CODBI_FULL_SECTION}},
       // so only the general rules, the widgets reference, and the full section are sent here.
+      // Use the lean rethink variant (decision core + cross-cutting build-syntax annex) instead
+      // of the full 86.4KB codbi.general, since {{CODBI_FULL_SECTION}} excludes codbi.general
+      // entirely and the rethink pass cannot rely on targeted per-element details being appended.
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
-              (categories["codbi.general"] ?: "") +
+              (categories["codbi.general_rethink"]
+                  ?: categories["codbi.general_decision"]
+                  ?: categories["codbi.general"]
+                  ?: "") +
               "\n" +
               FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: "") +
               "\n" +
@@ -19070,16 +19082,29 @@ class AICodBiAssistant : IPluginServletAction {
         return widgetPart
       }
       val categories = PromptLoader.loadCategory(em, "codbi")
-      // Only the cross-cutting general rules form the base — the detailed standard/functionality/
-      // EP sections are redundant with the targeted details below (or the full reference in the
-      // blind case) and would roughly double the token usage when duplicated here.
-      val base = CodBiElementAccess.scrub(categories["codbi.general"] ?: "")
+      // Only the cross-cutting general DECISION rules form the base — the detailed standard/
+      // functionality/EP sections are redundant with the targeted details below (or the full
+      // reference in the blind case) and would roughly double the token usage when duplicated
+      // here. Pass-1 already delivered the codbi.general decision core, so pass-2 re-uses the
+      // same (much smaller) decision core instead of the full codbi.general file: the exact build
+      // skeletons / EP chains / CSS lists that the full file appends are emitted on-demand from
+      // the requested details (buildFullSectionFor) below, and the decision core carries the same
+      // cross-cutting rules the model needs to build correctly in this fresh-conversation pass.
+      val base = CodBiElementAccess.scrub(categories["codbi.general_decision"] ?: "")
       // Cross-cutting Formcycle rules (form structure, repeatable containers, server variables,
       // element identifiers) MUST be carried into every rerun — the AI drops a repeatable
       // container otherwise, because the REPEATABLE CONTAINERS rule lives in formcycle.general and
       // this apply prompt is what replaces the full system prompt on pass-2/3/4 reruns.
       val fc = PromptLoader.loadCategory(em, "formcycle")
-      val formcycleGeneral = fc["formcycle.general"] ?: ""
+      // Use the lean apply variant (decision core + EConditionType codes + server-variable catalog)
+      // instead of the full 49.8KB formcycle.general — the full file's worked build examples are
+      // redundant in the pass-2 apply prompt where the model rebuilds the form from the requested
+      // details. Fall back gracefully for DB installs that have not yet seeded the new key.
+      val formcycleGeneral =
+          fc["formcycle.general_apply"]
+              ?: fc["formcycle.general_decision"]
+              ?: fc["formcycle.general"]
+              ?: ""
       // The Bürger-Services canonical field naming MUST also be carried into pass-2 — the model
       // actually builds the form in this apply pass, and without it the canonical tfAntragsteller*
       // /

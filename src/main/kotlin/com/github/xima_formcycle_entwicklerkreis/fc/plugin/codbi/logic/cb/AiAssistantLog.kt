@@ -50,8 +50,9 @@ object AiAssistantLog {
    * Inserts one inference record into `codbi_ai_assistant_log`. [formKey] is the technical name/key
    * of the form the inference was run on; [formChanges] and [workflowChanges] are stored as JSON
    * text (CLOB). [tokensIn] and [tokensOut] are the estimated input (prompt) and output
-   * (completion) tokens; the total is stored in the `tokens` column. Returns `true` when the insert
-   * succeeded.
+   * (completion) tokens; the total is stored in the `tokens` column. [trips] breaks that total down
+   * per AI call (one JSON object per inference: phase, model, tokens in/out, cost, currency).
+   * Returns `true` when the insert succeeded.
    */
   fun recordInference(
       emf: EntityManagerFactory?,
@@ -68,7 +69,8 @@ object AiAssistantLog {
       currency: String? = null,
       username: String? = null,
       clarification: JsonArray? = null,
-      chatReply: String? = null
+      chatReply: String? = null,
+      trips: JsonArray? = null
   ): Boolean {
     if (emf == null) return false
     return try {
@@ -91,7 +93,8 @@ object AiAssistantLog {
                 formChanges = formChanges?.toString(),
                 workflowChanges = workflowChanges?.toString(),
                 clarification = clarification?.takeIf { it.size() > 0 }?.toString(),
-                chatReply = chatReply))
+                chatReply = chatReply,
+                trips = trips?.takeIf { it.size() > 0 }?.toString()))
         em.transaction.commit()
         true
       } catch (e: Exception) {
@@ -346,6 +349,19 @@ object AiAssistantLog {
                   }
                 } catch (_: Exception) {
                   e.addProperty("chatReply", text)
+                }
+              }
+          // Per-inference token usage of this run (one entry per AI call) so the change log can
+          // show
+          // WHERE the run's total input/output tokens and cost went (e.g. 2 clarification rounds +
+          // pass-1 + pass-2 + a forced final pass) instead of only the run total.
+          entry.trips
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                try {
+                  e.add("trips", JsonParser.parseString(text))
+                } catch (_: Exception) {
+                  e.addProperty("trips", text)
                 }
               }
           out.add(e)

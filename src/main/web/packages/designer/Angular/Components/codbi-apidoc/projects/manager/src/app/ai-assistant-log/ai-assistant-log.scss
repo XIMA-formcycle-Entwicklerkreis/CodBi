@@ -308,6 +308,11 @@ cb-ai-assistant-log {
     display: flex;
     align-items: center;
     gap: 6px;
+    /* Flex items must be allowed to shrink BELOW their content width; otherwise a long value (e.g.
+       an element's `rtevalue`) or a long label overflows the row and visually overlaps its
+       neighbours. `overflow: hidden` additionally guarantees nothing paints outside the row. */
+    min-width: 0;
+    overflow: hidden;
     /* Extra left padding so the hover accent has breathing room before the unfold arrow. */
     padding: 3px 4px 3px 8px;
     border-radius: 4px;
@@ -380,14 +385,37 @@ cb-ai-assistant-log {
     font-size: 0.82em;
 }
 
+/* The label is a FLEX CONTAINER so that its text child becomes a flex item and can actually
+   shrink. An inline `<span>` ignores `overflow`/`text-overflow` entirely — which is why a long,
+   non-wrapping label used to paint straight OVER the sibling value (the rtevalue overlap). */
 .cb-log-node__label {
     font-weight: 500;
     min-width: 0;
+    max-width: 100%;
+    display: flex;
+    /* `center` (NOT `baseline`): the label row mixes fonts (proportional label text, monospace
+       values, badges) whose baselines sit at different heights, so baseline alignment made the
+       badges/text look vertically off against the sibling value. Centering the flex items — together
+       with the shared line-height below — aligns the text visually. */
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
 }
 
-/* Timestamp part of an inference label. */
+/* Timestamp / name part of a node label. A long label truncates with an ellipsis instead of
+   overflowing into the sibling value (the overlap seen with long element / attribute names).
+   The `--pre` variant below restores line breaks for multi-line labels. */
 .cb-log-node__label-text {
     font-weight: 500;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* Shared with `.cb-log-node__value`: identical line boxes are what makes the two texts appear
+       vertically centered against each other (the value uses a smaller monospace font). */
+    line-height: 1.3;
 }
 
 /* Clarification question labels keep their line breaks (questions + "- option" lines). */
@@ -428,28 +456,57 @@ cb-ai-assistant-log {
     background: rgba(59, 130, 246, 0.12);
 }
 
+/* Technical element id (e.g. `cbShowPersonData`) of a widget node — a darkorange rounded box so the
+   id is perceived right away instead of being buried in a `Type "id"` label string. */
+.cb-log-node__id-tag {
+    flex: 0 0 auto;
+    background: darkorange;
+    color: #fff;
+    border-radius: 9px;
+    padding: 0 7px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.78em;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
 .cb-log-node__value {
     color: #777;
     font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
     font-size: 0.82em;
+    /* Same line-height as the label text so both texts share one line box — otherwise the smaller
+       monospace value appears vertically offset from the label (see `.cb-log-node__label`). */
+    line-height: 1.3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 340px;
+    /* `flex-basis: 0` (NOT `auto`) is what keeps the label readable: with a content-sized basis a
+       long value (e.g. an element's `rtevalue`) claims its whole content width up front, so the
+       label is squeezed to a single character ("r…"). Growing from 0 makes the value take only the
+       space LEFT AFTER the label's intrinsic width. `min-width: 0` still lets it shrink inside the
+       row so it ellipsizes instead of overlapping the label or the trailing badges. */
+    min-width: 0;
+    flex: 1 1 0;
 }
 
-/* Nested (non-top-level) values wrap instead of being cut off, so long attribute values stay
-   fully readable even when they are much wider than the available space. The top-level rows keep
-   the compact single-line ellipsis. */
+/* Nested (non-top-level) values wrap instead of being cut off, so long attribute values (the
+   `rtevalue` HTML/CSS of a design span, for example) stay FULLY readable — the whole value is shown
+   across as many lines as it needs. The top-level rows keep the compact single-line ellipsis.
+   `overflow: hidden` (NOT visible) guarantees that even a value whose wrapping is prevented by an
+   exotic payload can never paint outside its own row and overlap the neighbouring nodes, and
+   `flex: 1 1 0` (NOT `auto`) keeps the sibling label at its intrinsic width instead of squeezing it
+   down to "r…" — it grows only into the space the label leaves. */
 .cb-log-node__children .cb-log-node__value {
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;
-    overflow: visible;
+    overflow: hidden;
     text-overflow: clip;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
-    max-width: none;
+    max-width: 100%;
 }
 
 /* Toggle button that expands/collapses a long node value (e.g. a clarification answer). */
@@ -475,10 +532,46 @@ cb-ai-assistant-log {
     color: #1b7a5e;
 }
 
+/* Copy button of a property value (every value row is copyable). Shares the toggle's look so the
+   trailing controls of a row stay uniform. `--pinned` pins it to the top-right corner of the
+   expanded full-value box. */
+.cb-log-node__value-copy {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 4px;
+    border: none;
+    background: transparent;
+    color: #5b6472;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.6em;
+    line-height: 1;
+}
+
+.cb-log-node__value-copy:hover {
+    background: #e3e6ea;
+    color: #c96a00;
+}
+
+.cb-log-node__value-copy--pinned {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    margin-left: 0;
+    background: #fff;
+    border: 1px solid #e3e6ea;
+}
+
 /* Complete (untruncated) value revealed when a long value is expanded. */
 .cb-log-node__value-full {
+    /* Hosts the pinned copy button of the expanded value. */
+    position: relative;
     margin: 4px 0 4px 28px;
-    padding: 8px 10px;
+    padding: 8px 30px 8px 10px;
     background: #f6f8fb;
     border: 1px solid #e3e6ea;
     border-left: 3px solid #5b6472;

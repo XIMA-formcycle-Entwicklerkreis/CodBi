@@ -184,6 +184,166 @@ class ChatCompletionServiceTest {
 
   // endregion
 
+  // region chatCompletion — reasoning-effort precedence
+
+  /**
+   * The reasoning-budget request-body fragment follows the precedence required by the assistant
+   * dialog: the PER-CALL `reasoningEffort` (the UI/`Standard.resolveReasoningEffort` result) wins
+   * when it is a real level, while `null`/blank/`default` fall back to the global companion field
+   * ([ChatCompletionService.reasoningEffort]).
+   */
+  @Nested
+  inner class ReasoningEffortTest {
+
+    private fun capturingService(): Pair<ChatCompletionService, MutableList<String>> {
+      val bodies = mutableListOf<String>()
+      val service =
+          createExternalService(
+              externalPost = { _, body, _ ->
+                bodies.add(body)
+                """{"choices":[{"message":{"content":"ok"}}]}"""
+              })
+      return service to bodies
+    }
+
+    @Test
+    fun perCallEffortIsSentAsReasoningEffort() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        ChatCompletionService.reasoningEffort = null
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""", reasoningEffort = "high")
+
+        assertTrue(bodies.single().contains("\"reasoning_effort\":\"high\""))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+
+    @Test
+    fun perCallOffIsCoercedToTheLowestSupportedLevel() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        ChatCompletionService.reasoningEffort = null
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""", reasoningEffort = "off")
+
+        // The provider accepts ONLY low/medium/high — an unsupported value gets it to answer
+        // `HTTP 400 … Unsupported reasoning effort` and aborts the whole run (observed with
+        // `none`).
+        // So `off` is mapped to the lowest supported level instead of being forwarded.
+        val body = bodies.single()
+        assertTrue(body.contains("\"reasoning_effort\":\"low\""))
+        assertFalse(body.contains("\"reasoning_effort\":\"off\""))
+        assertFalse(body.contains("disable_reasoning"))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+
+    @Test
+    fun unsupportedConfiguredEffortIsNeverForwardedVerbatim() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        // A misconfigured plugin property (e.g. `none`) must not reach the provider either — the
+        // same
+        // 400 aborted a real run and the request must stay valid no matter what is configured.
+        ChatCompletionService.reasoningEffort = "none"
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""")
+
+        val body = bodies.single()
+        assertTrue(body.contains("\"reasoning_effort\":\"low\""))
+        assertFalse(body.contains("\"reasoning_effort\":\"none\""))
+        assertFalse(body.contains("\"none\""))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+
+    @Test
+    fun perCallEffortOverridesCompanionField() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        ChatCompletionService.reasoningEffort = "low"
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""", reasoningEffort = "high")
+
+        assertTrue(bodies.single().contains("\"reasoning_effort\":\"high\""))
+        assertFalse(bodies.single().contains("\"reasoning_effort\":\"low\""))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+
+    @Test
+    fun nullPerCallFallsBackToCompanionField() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        ChatCompletionService.reasoningEffort = "low"
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""")
+
+        assertTrue(bodies.single().contains("\"reasoning_effort\":\"low\""))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+
+    @Test
+    fun defaultPerCallFallsBackToCompanionField() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        ChatCompletionService.reasoningEffort = "medium"
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""", reasoningEffort = "default")
+
+        assertTrue(bodies.single().contains("\"reasoning_effort\":\"medium\""))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+
+    @Test
+    fun blankPerCallFallsBackToCompanionField() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        ChatCompletionService.reasoningEffort = "medium"
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""", reasoningEffort = "  ")
+
+        assertTrue(bodies.single().contains("\"reasoning_effort\":\"medium\""))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+
+    @Test
+    fun nothingSentWhenNeitherConfigured() {
+      val previous = ChatCompletionService.reasoningEffort
+      try {
+        ChatCompletionService.reasoningEffort = null
+        val (service, bodies) = capturingService()
+
+        service.chatCompletion("""[{"role":"user","content":"x"}]""", reasoningEffort = "default")
+
+        assertFalse(bodies.single().contains("reasoning_effort"))
+        assertFalse(bodies.single().contains("disable_reasoning"))
+      } finally {
+        ChatCompletionService.reasoningEffort = previous
+      }
+    }
+  }
+
+  // endregion
+
   // region chatCompletion — thinking mode
 
   @Nested
@@ -1100,13 +1260,57 @@ class ChatCompletionServiceTest {
 
       service.chatCompletion(
           """[{"role":"user","content":"Hi"}]""",
-          onUsage = { p, c ->
+          onUsage = { p, c, _ ->
             promptTokens = p
             completionTokens = c
           })
 
       assertEquals(123, promptTokens)
       assertEquals(45, completionTokens)
+    }
+
+    @Test
+    fun reportsNestedCachedPromptTokens() {
+      // OpenAI/Cerebras shape: the prompt-cache hit lives in `usage.prompt_tokens_details`.
+      val service =
+          createLocalService(
+              responseJson =
+                  """{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1000,"completion_tokens":50,"prompt_tokens_details":{"cached_tokens":768}}}""")
+      var cached = -1
+
+      service.chatCompletion(
+          """[{"role":"user","content":"Hi"}]""", onUsage = { _, _, c -> cached = c })
+
+      assertEquals(768, cached)
+    }
+
+    @Test
+    fun reportsFlatCachedPromptTokens() {
+      // Anthropic-flavoured shape: the counter sits at the top level of `usage`.
+      val service =
+          createLocalService(
+              responseJson =
+                  """{"choices":[{"message":{"content":"ok"}}],"usage":{"input_tokens":900,"output_tokens":20,"cache_read_input_tokens":512}}""")
+      var cached = -1
+
+      service.chatCompletion(
+          """[{"role":"user","content":"Hi"}]""", onUsage = { _, _, c -> cached = c })
+
+      assertEquals(512, cached)
+    }
+
+    @Test
+    fun reportsZeroCachedTokensWhenTheProviderCachesNothing() {
+      val service =
+          createLocalService(
+              responseJson =
+                  """{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":123,"completion_tokens":45}}""")
+      var cached = -1
+
+      service.chatCompletion(
+          """[{"role":"user","content":"Hi"}]""", onUsage = { _, _, c -> cached = c })
+
+      assertEquals(0, cached)
     }
 
     @Test
@@ -1120,7 +1324,7 @@ class ChatCompletionServiceTest {
 
       service.chatCompletion(
           """[{"role":"user","content":"Hi"}]""",
-          onUsage = { p, c ->
+          onUsage = { p, c, _ ->
             promptTokens = p
             completionTokens = c
           })
@@ -1136,7 +1340,7 @@ class ChatCompletionServiceTest {
       var reported = false
 
       service.chatCompletion(
-          """[{"role":"user","content":"Hi"}]""", onUsage = { _, _ -> reported = true })
+          """[{"role":"user","content":"Hi"}]""", onUsage = { _, _, _ -> reported = true })
 
       assertFalse(reported)
     }
@@ -1153,7 +1357,7 @@ class ChatCompletionServiceTest {
 
       service.chatCompletion(
           """[{"role":"user","content":"Hi"}]""",
-          onUsage = { p, c ->
+          onUsage = { p, c, _ ->
             promptTokens = p
             completionTokens = c
           })
@@ -1177,7 +1381,7 @@ class ChatCompletionServiceTest {
       service.streamChatCompletion(
           """[{"role":"user","content":"Hi"}]""",
           session,
-          onUsage = { p, c ->
+          onUsage = { p, c, _ ->
             promptTokens = p
             completionTokens = c
           })

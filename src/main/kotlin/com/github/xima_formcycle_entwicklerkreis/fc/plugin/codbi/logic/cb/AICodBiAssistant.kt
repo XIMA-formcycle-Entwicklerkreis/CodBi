@@ -69,6 +69,222 @@ class AICodBiAssistant : IPluginServletAction {
   private val gson: Gson = GsonBuilder().create()
 
   /**
+   * One AI inference ("trip") of a run: its phase label, the provider-reported token usage, and the
+   * CHARACTER size of the transmitted payload / received response. The char sizes make a run's cost
+   * analysable from the change log alone (a trip whose payload doubled is visible even without the
+   * server log, and the char/token ratio reveals how much of the payload is JSON/HTML).
+   */
+  private data class InferenceTrip(
+      val phase: String,
+      val modelId: String,
+      val promptTokens: Int,
+      val completionTokens: Int,
+      /**
+       * Share of [promptTokens] the provider served from its OWN prompt cache (see
+       * `AI_Assistant_PromptCaching`), or 0 when the provider reports no caching. Makes a cache hit
+       * — or its absence — visible per AI call in the change log, so the cache-friendly prompt
+       * layout can be verified instead of assumed.
+       */
+      val cachedTokens: Int = 0,
+      val promptChars: Int = 0,
+      val completionChars: Int = 0
+  )
+
+  /**
+   * Trips recorded during the run executing on THIS thread. [handleRun] clears it when the run
+   * starts and serialises it ([tripsToJson]) into the change-log entry, so the log can break a
+   * run's total token usage and cost down PER AI CALL (e.g. 2 clarification rounds + pass-1 +
+   * pass-2 + a forced final pass) instead of showing only the run sum.
+   */
+  private val runTrips = ThreadLocal.withInitial { mutableListOf<InferenceTrip>() }
+
+  /**
+   * Optional prefix prepended to every trip label of the current run — used to attribute the nested
+   * passes of a sequential whole-form translation to the language handled in that iteration (e.g.
+   * "translate[en]/ form-pass-1").
+   */
+  private val runTripPrefix = ThreadLocal.withInitial { "" }
+
+  /** Records one AI inference of the current run from already-resolved token counts. */
+  private fun reportTrip(
+      phase: String,
+      modelId: String,
+      promptTokens: Int,
+      completionTokens: Int,
+      cachedTokens: Int = 0,
+      promptChars: Int = 0,
+      completionChars: Int = 0
+  ) {
+    runTrips
+        .get()
+        .add(
+            InferenceTrip(
+                runTripPrefix.get() + phase,
+                modelId,
+                promptTokens,
+                completionTokens,
+                cachedTokens,
+                promptChars,
+                completionChars))
+  }
+
+  /**
+   * Records one AI inference of the current run. [usage] is the provider-reported usage of the
+   * call; when the provider reports nothing, the char-based [estimateTokens] of the transmitted
+   * payloads is used so every trip still carries a number.
+   */
+  private fun reportTrip(
+      phase: String,
+      modelId: String,
+      usage: Standard.AssistUsage?,
+      promptFallback: String,
+      completionFallback: String
+  ) {
+    reportTrip(
+        phase,
+        modelId,
+        usage?.promptTokens ?: estimateTokens(promptFallback),
+        usage?.completionTokens ?: estimateTokens(completionFallback),
+        cachedTokens = usage?.cachedPromptTokens ?: 0,
+        promptChars = promptFallback.length,
+        completionChars = completionFallback.length)
+  }
+
+  /**
+   * Serialises the current run's trips as a JSON array, with the per-trip cost derived from the
+   * model price per 1M tokens (omitted when no price is configured for that model).
+   */
+  private fun tripsToJson(): JsonArray {
+    val arr = JsonArray()
+    val standard = Standard.instance
+    for (trip in runTrips.get()) {
+      val o = JsonObject()
+      o.addProperty("phase", trip.phase)
+      o.addProperty("modelId", trip.modelId)
+      o.addProperty("tokensIn", trip.promptTokens)
+      o.addProperty("tokensOut", trip.completionTokens)
+      o.addProperty("tokens", trip.promptTokens + trip.completionTokens)
+      // Provider-side prompt-cache hit of THIS call (see AI_Assistant_PromptCaching). Only present
+      // when the provider actually reported cached prompt tokens, so its absence is meaningful.
+      if (trip.cachedTokens > 0) o.addProperty("cachedIn", trip.cachedTokens)
+      if (trip.promptChars > 0) {
+        o.addProperty("promptChars", trip.promptChars)
+        o.addProperty("completionChars", trip.completionChars)
+      }
+      val price = standard?.priceForModel(trip.modelId)
+      // A cache hit is billed at the model's cached-input rate when one is configured
+      // (`..._PricePerMCachedInput_...`), otherwise at the full input rate.
+      price
+          ?.costFor(
+              trip.promptTokens.toLong(),
+              trip.completionTokens.toLong(),
+              trip.cachedTokens.toLong())
+          ?.let { o.addProperty("cost", it) }
+      price?.currency?.let { o.addProperty("currency", it) }
+      arr.add(o)
+    }
+    return arr
+  }
+
+  /**
+   * Support diagnostic: how much of an AI answer is RE-TRANSMITTED instead of changed?
+   *
+   * The diff protocol keeps untouched ITEMS out of the answer, but every item the AI does re-emit
+   * must be COMPLETE ("re-authored IN FULL" — see the pass-1 user content / REMINDER 3), so editing
+   * ONE property of an element makes the model regenerate all of that element's OTHER properties
+   * too. That costs output tokens (the expensive direction) and is the drift surface, because a
+   * property that travels through the model can come back subtly altered. This counts, per
+   * re-emitted item, how many of its properties are byte-identical to the pre-AI form versus
+   * actually changed or new — pure measurement; nothing is modified. Answer: `items re-emitted=…
+   * (existing=…, new=…), properties unchanged=…, changed=…, new=…`
+   */
+  private fun logReEmissionStats(pass: String, aiJson: String, originalJson: String) {
+    try {
+      fun indexByName(root: JsonObject): Map<String, JsonObject> {
+        val map = mutableMapOf<String, JsonObject>()
+        val items = root.getAsJsonArray("items") ?: return map
+        for (element in items) {
+          val item = element.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+          val name = itemNameOfProps(item)
+          if (!name.isNullOrBlank()) map[name] = item
+        }
+        return map
+      }
+
+      val emitted = JsonParser.parseString(aiJson).asJsonObject.getAsJsonArray("items")
+      if (emitted == null || emitted.size() == 0) {
+        logger.info("[AICodBiAssistant] {} re-emission stats: no items re-emitted", pass)
+        return
+      }
+      val originalByName = indexByName(JsonParser.parseString(originalJson).asJsonObject)
+      var existing = 0
+      var brandNew = 0
+      var unchangedProps = 0
+      var changedProps = 0
+      var newProps = 0
+      // Size of the pure re-transmission: the JSON chars of the properties that came back
+      // byte-identical. This is the upper bound of what a property-level patch would save (and, at
+      // the same time, the drift surface that disappears with it).
+      var unchangedChars = 0
+      for (element in emitted) {
+        val item = element.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        val before = itemNameOfProps(item)?.let { originalByName[it] }
+        if (before == null) {
+          brandNew++
+          continue
+        }
+        existing++
+        val afterProps = item.getAsJsonObject("properties") ?: continue
+        val beforeProps = before.getAsJsonObject("properties") ?: JsonObject()
+        for ((key, value) in afterProps.entrySet()) {
+          val beforeValue = beforeProps.get(key)
+          when {
+            beforeValue == null -> newProps++
+            beforeValue == value -> {
+              unchangedProps++
+              unchangedChars += gson.toJson(value).length
+            }
+            else -> changedProps++
+          }
+        }
+      }
+      logger.info(
+          "[AICodBiAssistant] {} re-emission stats: items re-emitted={} (existing={}, new={}), properties unchanged={} (~{} chars re-transmitted), changed={}, new={}",
+          pass,
+          emitted.size(),
+          existing,
+          brandNew,
+          unchangedProps,
+          unchangedChars,
+          changedProps,
+          newProps)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] {} re-emission stats failed: {}", pass, e.message)
+    }
+  }
+
+  /** The `properties.name` of a form item, or null when it is not a named element. */
+  private fun itemNameOfProps(item: JsonObject): String? =
+      item.getAsJsonObject("properties")?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+
+  /**
+   * The property names an AI item lists as REMOVED (`"_removeProps": ["hiddenif", …]`).
+   *
+   * The diff protocol needs this marker because OMISSION means "unchanged": a property the patch
+   * leaves out is restored from the baseline the AI was shown, so a removal has to be named
+   * explicitly. The merge honours the list AFTER restoring the omitted properties, so the restore
+   * cannot bring a removed property back.
+   */
+  private fun removePropsOf(item: JsonObject): List<String> =
+      item
+          .get("_removeProps")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.mapNotNull { el ->
+            el.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+          } ?: emptyList()
+
+  /**
    * Maximum additional detail-reruns for form modification. Configurable via
    * `AI_FormAssistant_MaxFormReruns`.
    */
@@ -79,6 +295,66 @@ class AICodBiAssistant : IPluginServletAction {
    * via `AI_FormAssistant_MaxFormReruns_<name>`.
    */
   private val specialistMaxFormReruns = mutableMapOf<String, Int>()
+
+  /**
+   * How the two big build prompts (pass-1 and the pass-2 apply prompt) are assembled, configurable
+   * via `AI_Assistant_PromptCaching`.
+   *
+   * `on`/`true` keeps the request-dependent `<!--SECTION:-->` gates out of the prompt (every
+   * section is kept — the raw marker comments are still stripped) and orders the blocks
+   * static-first, so every call starts with the same byte-identical STATIC prefix. A provider with
+   * automatic prefix caching (e.g. Cerebras) can then re-use the KV state of that prefix and bill
+   * it at a discount instead of the full input price. The trade-off is that the blocks the gates
+   * used to drop are transmitted again (roughly 6-10k input tokens more per pass-1), so the mode
+   * only pays off when the provider really caches and the run re-sends the prompt — the per-trip
+   * `cachedIn` counter in the change log shows whether the prefix was served from the provider's
+   * cache.
+   */
+  private enum class PromptCachingMode {
+    /** Never: the section gates prune every prompt per request (the default behaviour). */
+    OFF,
+    /** Always: cache-friendly assembly, regardless of the model's provider. */
+    ON,
+    /**
+     * Only when a cached-input rate is configured for the model (`..._PricePerMCachedInput_...`).
+     * That property is the deployment's own statement that the provider bills cache hits cheaper,
+     * so it is the honest signal for "the extra un-gated tokens are paid back by the discount".
+     * Without it — e.g. on Cerebras, which bills cached and fresh input tokens at the SAME rate —
+     * the cache-friendly layout would only add tokens, so `auto` stays off.
+     */
+    AUTO
+  }
+
+  /** The configured prompt-caching mode (see [PromptCachingMode]); re-read on re-initialization. */
+  private var promptCachingMode = PromptCachingMode.OFF
+
+  /**
+   * Whether the run executing on THIS thread uses the cache-friendly assembly. Decided once per run
+   * in [runFormModification] via [cacheFriendlyFor] — the assistant instance is shared between
+   * threads, so the decision cannot live in a plain field.
+   */
+  private val runCacheFriendly = ThreadLocal.withInitial { false }
+
+  /**
+   * [runCacheFriendly] of the current thread: the cache-friendly assembly is active for this run.
+   */
+  private val promptCachingEnabled: Boolean
+    get() = runCacheFriendly.get()
+
+  /**
+   * Resolves whether [modelId] is worth the cache-friendly assembly. `auto` requires a configured
+   * cached-input rate for the model: that is the deployment telling us the provider actually
+   * charges less for the tokens it serves from its prompt cache. Without such a rate — Cerebras,
+   * for example, bills cached and fresh input tokens identically — the layout would only add
+   * tokens.
+   */
+  private fun cacheFriendlyFor(modelId: String): Boolean =
+      when (promptCachingMode) {
+        PromptCachingMode.OFF -> false
+        PromptCachingMode.ON -> true
+        PromptCachingMode.AUTO ->
+            Standard.instance?.priceForModel(modelId)?.pricePerMCachedInput != null
+      }
 
   override fun getName(): String = "CodBi_AICodBiAssistant"
 
@@ -284,6 +560,25 @@ class AICodBiAssistant : IPluginServletAction {
         ?.toIntOrNull()
         ?.takeIf { it >= 0 }
         ?.let { maxFormReruns = it }
+    // Prompt-caching mode for the form-assistant build prompts (see [PromptCachingMode]). Re-read
+    // on
+    // every plugin re-initialization so a configuration change takes effect on the next request; an
+    // absent value restores the default (request-dependent section gating). `auto` decides per run
+    // from the model's provider (see [cacheFriendlyFor]).
+    promptCachingMode =
+        when (configData.properties
+            .getProperty("AI_Assistant_PromptCaching")
+            ?.trim()
+            ?.lowercase()) {
+          "1",
+          "true",
+          "yes",
+          "on",
+          "enabled",
+          "always" -> PromptCachingMode.ON
+          "auto" -> PromptCachingMode.AUTO
+          else -> PromptCachingMode.OFF
+        }
     // Per-specialist overrides of the rerun budget:
     // `AI_FormAssistant_MaxFormReruns_<specialistName>`
     // (e.g. `AI_FormAssistant_MaxFormReruns_cerebras`) wins over the global
@@ -329,17 +624,28 @@ class AICodBiAssistant : IPluginServletAction {
     }
     // Include the configured price (per 1M input/output tokens + currency) for each model so the
     // frontend can show it next to the model name in the assistant's model dropdown. Models
-    // without a configured price omit these fields.
+    // without a configured price omit these fields. The reasoning-effort option list and the
+    // effective configured default are also sent per model, so the assistant dialog does not
+    // hard-code either (precedence: request > specialist property > global property).
+    val reasoningOptions =
+        JsonArray().also { a -> Standard.REASONING_EFFORT_OPTIONS.forEach { a.add(it) } }
     val arr = JsonArray()
     for (m in models) {
       val o = JsonObject()
       o.addProperty("id", m.id)
       o.addProperty("label", m.label)
+      o.add("reasoningEffortOptions", reasoningOptions.deepCopy())
+      o.addProperty(
+          "reasoningEffort", Standard.instance?.reasoningEffortSelectionFor(m.id) ?: "default")
       val price = Standard.instance?.priceForModel(m.id)
       if (price != null) {
         price.currency?.let { o.addProperty("currency", it) }
         o.addProperty("pricePerMInput", price.pricePerMInput)
         o.addProperty("pricePerMOutput", price.pricePerMOutput)
+        // Discounted rate for prompt-cache hits, when the deployment configured one, so the
+        // frontend
+        // can show it next to the model's other prices.
+        price.pricePerMCachedInput?.let { o.addProperty("pricePerMCachedInput", it) }
       }
       arr.add(o)
     }
@@ -548,6 +854,12 @@ class AICodBiAssistant : IPluginServletAction {
         params.headerMap.entries.find { it.key.equals("X-Model", ignoreCase = true) }?.value
             ?: return jsonResponse("""{"error":"Missing X-Model header"}""")
 
+    // Start a fresh trip list for THIS run (the collector is thread-local; a prefix left over from
+    // a
+    // previously aborted run is cleared too) so the change-log entry records only this run's calls.
+    runTrips.get().clear()
+    runTripPrefix.set("")
+
     // Formcycle UI language (sent by the frontend) — used to localize stored change-log text such
     // as the "earlier chat turns" context label so it matches the Formcycle UI.
     val uiLang = params.requestParameters["lang"]?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }
@@ -563,6 +875,16 @@ class AICodBiAssistant : IPluginServletAction {
     // so
     // the notes handed to this run's build pass can only come from THIS run.
     instance.takeWebAccessNotes()
+
+    // Reasoning-budget override for THIS run (the assistant dialog's dropdown), applied with the
+    // precedence request > per-specialist property > global property. Set UNCONDITIONALLY (null
+    // included) so a pooled thread can never leak the previous run's value; `default`/blank/unknown
+    // means "no per-request override" and falls through to the configured properties.
+    val reasoningEffortRequest =
+        params.requestParameters["reasoningEffort"]?.firstOrNull()?.trim()?.lowercase()?.takeIf {
+          it in Standard.REASONING_EFFORT_OPTIONS && it != "default"
+        }
+    instance.setRequestReasoningEffort(reasoningEffortRequest)
 
     val phase = params.requestParameters["phase"]?.firstOrNull() ?: "1"
 
@@ -777,6 +1099,7 @@ class AICodBiAssistant : IPluginServletAction {
       // returns immediately here without applying any form/workflow change, so record the question
       // (the prompt) with the assistant's reply (with its tokens / cost / user) as its own entry.
       val chatReplyJson = buildChatReplyJson(answerText, matomoStatsJson)
+      reportTrip("chat-classify", modelId, chatAnswerResult.tokensIn, chatAnswerResult.tokensOut)
       try {
         AiAssistantLog.recordInference(
             CodbiEntities.entityManagerFactory,
@@ -792,7 +1115,8 @@ class AICodBiAssistant : IPluginServletAction {
             cost = chatCost,
             currency = chatPrice?.currency,
             username = currentUsername(params),
-            chatReply = chatReplyJson)
+            chatReply = chatReplyJson,
+            trips = tripsToJson())
       } catch (e: Exception) {
         logger.warn("[AICodBiAssistant] Failed to record chat change log: {}", e.message)
       }
@@ -806,6 +1130,7 @@ class AICodBiAssistant : IPluginServletAction {
     // structure). It used to be counted only for pure chat turns, so every INSTRUCTION run was
     // missing one whole inference from its token total.
     if (chatAnswerResult != null) {
+      reportTrip("chat-classify", modelId, chatAnswerResult.tokensIn, chatAnswerResult.tokensOut)
       tokensIn += chatAnswerResult.tokensIn
       tokensOut += chatAnswerResult.tokensOut
     }
@@ -915,11 +1240,17 @@ class AICodBiAssistant : IPluginServletAction {
     // only
     // deterministic backstop is that a question already asked is never asked again (see below).
     // Every clarification round is a full inference of its own, so its tokens belong to the run.
+    // The round number is part of the trip label — a run with 2+ rounds pays the (large)
+    // clarification
+    // prompt several times, which is exactly what the per-trip breakdown must make visible.
+    var clarifyRound = 0
     val countAssistUsage = { promptTokens: Int, completionTokens: Int ->
+      reportTrip("clarify-check#$clarifyRound", modelId, promptTokens, completionTokens)
       tokensIn += promptTokens
       tokensOut += completionTokens
     }
     for (round in 0 until 5) {
+      clarifyRound = round + 1
       val check =
           try {
             tryClarification(
@@ -1137,7 +1468,8 @@ class AICodBiAssistant : IPluginServletAction {
                   changeHistoryContext,
                   matomoStatsContext,
                   availableDatasources,
-                  availableDatasourceNames)
+                  availableDatasourceNames,
+                  chatAnswerResult?.sections ?: emptySet())
             }
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
@@ -1392,7 +1724,10 @@ class AICodBiAssistant : IPluginServletAction {
                   chatContext,
                   clarificationContext,
                   changeHistoryContext,
-                  countAssistUsage)
+                  { p, c ->
+                    reportTrip("workflow-mail-i18n", modelId, p, c)
+                    countAssistUsage(p, c)
+                  })
           if (wfMailMessage.isNotBlank()) {
             logger.info("[AICodBiAssistant] Workflow mail multilingualization: {}", wfMailMessage)
             wfMultilingualMessages.add(wfMailMessage)
@@ -1413,7 +1748,10 @@ class AICodBiAssistant : IPluginServletAction {
                   chatContext,
                   clarificationContext,
                   changeHistoryContext,
-                  countAssistUsage)
+                  { p, c ->
+                    reportTrip("workflow-endpage-i18n", modelId, p, c)
+                    countAssistUsage(p, c)
+                  })
           if (wfEndPageMessage.isNotBlank()) {
             logger.info(
                 "[AICodBiAssistant] Workflow ending-page multilingualization: {}", wfEndPageMessage)
@@ -1581,13 +1919,30 @@ class AICodBiAssistant : IPluginServletAction {
     // is
     // null otherwise), so a form is never echoed back without a change.
     if (resolvedFormJson != null) {
+      // Verification of the deterministic standard-class nets: they log EVERY class they add on the
+      // finished form (see applyOpenPlzClassesToForm / applyPeopleClassesToForm). If those
+      // additions
+      // do not survive to the form that is actually emitted, a transformation BETWEEN the form
+      // modification and this point dropped them — the two counts below make that visible in one
+      // run
+      // instead of being inferred from the designer.
+      logger.info(
+          "[AICodBiAssistant] Emitting form: {} chars, CodBi_People_* occurrences={}, CodBi_OpenPLZ_AC_SET_* occurrences={}",
+          resolvedFormJson.length,
+          Regex("CodBi_People_").findAll(resolvedFormJson).count(),
+          Regex("CodBi_OpenPLZ_AC_SET_").findAll(resolvedFormJson).count())
       result.append(""","formJson":$resolvedFormJson""")
     }
 
     // Resolve the selected model's pricing and compute the estimated cost of this run from the
     // accumulated input/output tokens. `null` when no price is configured for the model.
     val modelPrice = instance.priceForModel(modelId)
-    val runCost = modelPrice?.costFor(tokensIn.toLong(), tokensOut.toLong())
+    // Provider-reported prompt-cache hits (summed over this run's inferences) are billed at the
+    // model's cached-input rate when one is configured, so the run cost reflects the prompt-cache
+    // discount instead of treating every input token as full price.
+    val runCachedTokens = runTrips.get().sumOf { it.cachedTokens }
+    val runCost =
+        modelPrice?.costFor(tokensIn.toLong(), tokensOut.toLong(), runCachedTokens.toLong())
     val runCurrency = modelPrice?.currency
 
     // Compute the change description — used both for the change-log record and to detect whether
@@ -1670,7 +2025,8 @@ class AICodBiAssistant : IPluginServletAction {
           currency = runCurrency,
           username = currentUsername(params),
           clarification = clarificationTurnsToJson(clarificationHistory),
-          chatReply = replyForLog)
+          chatReply = replyForLog,
+          trips = tripsToJson())
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
     }
@@ -1755,6 +2111,7 @@ class AICodBiAssistant : IPluginServletAction {
         TokenUsage(
             assistUsage?.promptTokens ?: estimateTokens(messagesJson),
             assistUsage?.completionTokens ?: estimateTokens(rawResponse))
+    reportTrip("classify-intent", modelId, assistUsage, messagesJson, rawResponse)
     val cleaned = extractJson(stripThinkTags(rawResponse))
 
     return try {
@@ -1996,6 +2353,10 @@ class AICodBiAssistant : IPluginServletAction {
     var mergedRoot: JsonObject? = null
     var applicabilityReport: String? = null
     for ((index, lang) in langs.withIndex()) {
+      // Label every nested form-pass trip with the language handled in this iteration, so the
+      // change
+      // log attributes the sequential translation passes to the language that consumed them.
+      runTripPrefix.set("translate[$lang]/ ")
       val singlePrompt =
           prompt +
               "\n\nEXECUTION NOTE: your request translates the whole form into several languages. The languages are executed ONE AFTER ANOTHER. In THIS step translate the whole form ONLY into language '$lang'. Do NOT translate into any other language — ignore any other language named above (it is handled in its own step). Add the translations as Formcycle per-language i18n for '$lang' exactly as the form-translation rules require; leave the base/default language and every existing language untouched. When the form is translated into '$lang', end your JSON with the usual top-level marker for the languages you actually produced."
@@ -2013,6 +2374,7 @@ class AICodBiAssistant : IPluginServletAction {
               changeHistoryContext,
               matomoStatsContext,
               availableDatasourceNames = availableDatasourceNames)
+      runTripPrefix.set("")
       tokensIn += usage.input
       tokensOut += usage.output
       if (applic != null) applicabilityReport = applic
@@ -2067,15 +2429,28 @@ class AICodBiAssistant : IPluginServletAction {
       changeHistoryContext: String? = null,
       matomoStatsContext: String? = null,
       availableDatasources: String? = null,
-      availableDatasourceNames: List<String> = emptyList()
+      availableDatasourceNames: List<String> = emptyList(),
+      keepSections: Set<String> = emptySet()
   ): Triple<String, String?, TokenUsage> {
     // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
     var tokensIn = 0
     var tokensOut = 0
+    // Decide ONCE for this run whether the build prompts are assembled cache-friendly (see
+    // [PromptCachingMode]): an external provider may serve the shared prefix from its prompt cache,
+    // a local llama.cpp server cannot. `off` keeps the request-dependent section gating.
+    runCacheFriendly.set(cacheFriendlyFor(modelId))
     // Document-parsing rules are only included when the request references an attached document.
     val hasAttachedDocument = imageParts.isNotEmpty()
-    val baseSystemPrompt = buildFormSystemPrompt(useCodbi, useBuergerserviceNaming)
+    // Pass-1 section gating: keep the always-on decision core and ONLY the instruction blocks this
+    // request can need (the AI's `sections` ∪ the deterministic detectors; a tag matched by neither
+    // fails OPEN — the block is kept). See [PromptSectionGate] and
+    // plans/formassistant-input-token-optimization.md.
+    val sectionKeepTags =
+        PromptSectionGate.resolveKeepTags(
+            keepSections,
+            listOfNotNull(prompt, clarificationContext, chatContext).joinToString("\n"))
+    val baseSystemPrompt = buildFormSystemPrompt(useCodbi, useBuergerserviceNaming, sectionKeepTags)
     val systemPrompt =
         if (hasAttachedDocument) {
           val em = CodbiEntities.entityManagerFactory?.createEntityManager()
@@ -2189,14 +2564,19 @@ class AICodBiAssistant : IPluginServletAction {
             "REMINDER 2: when the request is a WHOLE-FORM TRANSLATION that adds another language, your JSON MUST ALSO end with the " +
             "top-level \"_workflowMailLanguages\": [\"<baseLanguageCode>\", \"<addedLanguageCode>\", ...] marker (base language first) " +
             "and set \"_codbiApplicability.codbiVerdict\" to \"none\".\n" +
-            "REMINDER 3 (TOKEN SAVING — THIS OVERRIDES THE \"COMPLETE FORM\" WORDING OF THE SYSTEM PROMPT): \"return the COMPLETE " +
-            "form\" means the RESULTING form must stay complete — it does NOT mean you must re-emit every item. Return ONLY THE DIFF: " +
-            "in the top-level \"items\" array include ONLY the items you ADD, the items you MODIFY, and the containers/pages whose " +
-            "STRUCTURE changed (each re-authored IN FULL, with its complete \"elements\" array); list the exact \"name\" of EVERY OTHER " +
-            "item you did not touch in a top-level \"_unchangedItems\": [\"elementName\", ...] array — the server keeps those verbatim " +
-            "from the current form. NEVER re-emit an unchanged item verbatim; the output MUST stay small (a few hundred tokens, NEVER " +
-            "the whole form). Emit the JSON COMPACTLY (no pretty-printing/indentation). A whole-form translation changes every element " +
-            "(adds its i18n) and therefore naturally re-emits them all — that is fine.\n" +
+            "REMINDER 3 (TOKEN SAVING — YOUR ANSWER IS A DIFF, NOT THE WHOLE FORM): emit a top-level \"_diff\": true marker and put " +
+            "in the top-level \"items\" array ONLY the items you ADD, the items you MODIFY, and the containers/pages whose STRUCTURE " +
+            "changed. EVERY item you do NOT re-emit is kept VERBATIM by the server — omission means UNCHANGED, NOT removal — and you " +
+            "do NOT name those items anywhere. Deletions are the ONLY exception: a removed element's name goes in a top-level " +
+            "\"_removedItems\": [\"elementName\", ...] array. NEVER re-emit an unchanged item; the output MUST stay small (a few " +
+            "hundred tokens, NEVER the whole form). A MODIFIED item carries ONLY the properties you actually change (\"properties\": " +
+            "{ \"<key>\": <new value> }): every property you leave OUT keeps its current value, so NEVER copy unchanged properties " +
+            "back. Three exceptions where the value must be COMPLETE: (a) a container/page whose STRUCTURE changed re-emits its " +
+            "complete \"elements\" array; (b) an HTML property you change (rtevalue) is sent COMPLETE, with its unchanged markup; (c) a " +
+            "property you REMOVE is named in that item's \"_removeProps\": [\"<property key>\", ...] array, because omitting it would " +
+            "mean \"unchanged\" and the server would restore it. Removing an entry from properties.attributes is still done by " +
+            "re-emitting the ENTIRE attributes array without it. Emit the JSON COMPACTLY (no pretty-printing/indentation). A " +
+            "whole-form translation changes every element (adds its i18n) and therefore naturally re-emits them all — that is fine.\n" +
             "REMINDER 4 (NO DIRECT WIDGET CREATION — SAVES A WHOLE EXTRA PASS): this pass only receives CONDENSED references, so you do " +
             "NOT have the exact JSON template of any Formcycle widget. NEVER emit a NEWLY CREATED widget (XTextField, XTextArea, XSelect, " +
             "XUpload, XSignature, XCheckbox, XDatePicker, ...) directly here — the server would have to rebuild it in a second pass and you " +
@@ -2225,7 +2605,17 @@ class AICodBiAssistant : IPluginServletAction {
     val assistUsage = instance.takeLastAssistUsage()
     tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
     tokensOut += assistUsage?.completionTokens ?: estimateTokens(rawResponse)
-    var cleaned = extractJson(stripThinkTags(rawResponse))
+    reportTrip("form-pass-1", modelId, assistUsage, messagesJson, rawResponse)
+    // Repair the recoverable JSON slips a model makes (e.g. the dropped `{` before the 2nd item, or
+    // a missing trailing closer) BEFORE the diff / details-request checks. Without this an
+    // otherwise
+    // usable payload is rejected as malformed and a whole extra pass is paid for it. See
+    // [repairAiJson].
+    var cleaned = repairAiJson(extractJson(stripThinkTags(rawResponse)))
+    // Measure how much of the pass-1 answer is a re-transmission of unchanged properties (see
+    // [logReEmissionStats]) — the honest answer to "does the AI regenerate properties it did not
+    // change?", which the change log itself cannot show (it is a before/after DIFF).
+    logReEmissionStats("form-pass-1", cleaned, persistJson)
 
     // The AI occasionally answers pass-1 with a clarifying QUESTION (a `need_clarification` meta
     // request) instead of the form — e.g. a select whose options it believes it cannot derive. This
@@ -2240,16 +2630,15 @@ class AICodBiAssistant : IPluginServletAction {
 
     // Materialize a pass-1 DIFF onto the ORIGINAL form so every later stage keeps working on a
     // COMPLETE form. Pass-1 is instructed (REMINDER 3, TOKEN SAVING) to return only the changed/new
-    // items plus a top-level "_unchangedItems" list instead of re-emitting the whole form — the
-    // single largest output-token cost of an ordinary edit. The splice merges those changes into
+    // items — the single largest output-token cost of an ordinary edit — and to declare that with a
+    // top-level `"_diff": true` marker. The splice merges those changes into the original form and
+    // keeps every item the diff did not re-emit verbatim, so OMISSION MEANS UNCHANGED (only
+    // `_removedItems` removes). This is IDEMPOTENT: when the model ignores the hint and re-emits
     // the
-    // original form and keeps every untouched item verbatim. This is IDEMPOTENT: when the model
-    // ignores the hint and re-emits the whole form (no "_unchangedItems") nothing here runs, and
-    // when
-    // it emits a partial form the merge is equivalent. It is also strictly SAFER than the previous
-    // behavior, where an item the model omitted without listing it was silently DROPPED from the
-    // form.
-    if (hasTopLevelItems(cleaned) && cleaned.contains("\"_unchangedItems\"")) {
+    // whole form nothing here runs for the legacy shape, and a partial form merges equivalently.
+    // The legacy `_unchangedItems` list is still accepted for prompts installed before the `_diff`
+    // marker existed.
+    if (hasTopLevelItems(cleaned) && FormDiffMarker.isDeclared(cleaned)) {
       cleaned =
           try {
             val spliced =
@@ -2578,7 +2967,8 @@ class AICodBiAssistant : IPluginServletAction {
               "[AICodBiAssistant] Forcing the detailed XSpan template into pass-2 (request needs the designed-text/illustration rules)")
         }
         val applySystemPrompt =
-            loadCodbiApplyPrompt(requested, widgetsForDetails, useCodbi, useBuergerserviceNaming) +
+            loadCodbiApplyPrompt(
+                requested, widgetsForDetails, useCodbi, useBuergerserviceNaming, sectionKeepTags) +
                 historySection +
                 clarificationSection +
                 chatSection +
@@ -2622,46 +3012,30 @@ class AICodBiAssistant : IPluginServletAction {
                 "REBUILD any formcycle widgets you created in the previous step so they exactly match the JSON " +
                 "templates provided.\n" +
                 "ALWAYS ANSWER ONLY WITH THE FORM JSON ITSELF — no prose, no commentary, no markdown fences, " +
-                "no text around the JSON object. Return ONLY THE DIFF: your output is a compact JSON object " +
-                "in which you MUST OMIT every item that is not changing (list its exact \"name\" in " +
-                "\"_unchangedItems\") and emit IN FULL only the items you ADD, the items you MODIFY, and the " +
-                "containers/pages whose structure changed. NEVER re-emit an unchanged item verbatim — the " +
-                "output MUST stay small (a few hundred tokens, never the whole form). \"Keep every element\" " +
-                "means keep it in the RESULTING form (via _unchangedItems), NOT that you must re-emit it. " +
+                "no text around the JSON object. Return ONLY THE DIFF: emit a top-level \"_diff\": true marker " +
+                "and a compact JSON object containing ONLY the items you ADD, the items you MODIFY, and the " +
+                "containers/pages whose structure changed — each re-emitted COMPLETE. Every item you do NOT " +
+                "re-emit is kept VERBATIM (omission means UNCHANGED, never removal), so omit every unchanged " +
+                "item and container: that is what keeps the output small. " +
                 "Existing elements leave the form ONLY when the user explicitly asked to remove/delete them " +
                 "(list those names in \"_removedItems\"). When the request only MODIFIES an existing widget " +
                 "(e.g. change a calculator or a field), modify ONLY that element IN PLACE keeping its same " +
                 "name/id, and NEVER merge/combine separate existing elements into one (e.g. do NOT collapse a " +
                 "dedicated text element plus a calculator element into a single new element), NEVER drop other " +
-                "untouched elements, and NEVER restructure the form beyond the request. CRITICAL — WHEN THE " +
-                "ELEMENT'S OWN CONTENT IS AN HTML STRING (properties.rtevalue) THAT CONTAINS MULTIPLE PARTS " +
-                "(e.g. static text/headings/bullets ABOVE OR BELOW an interactive calculator with inputs and " +
-                "JS), EDIT ONLY THE PART THE USER ASKED TO CHANGE AND KEEP EVERY OTHER PART OF THAT HTML " +
-                "VERBATIM — NEVER delete, truncate, or replace the untouched text just because you rewrote the " +
-                "calculator. The element's rtevalue must be returned COMPLETE (target part changed + every " +
-                "other paragraph, list, <style>/<script> block, and markup exactly as before). IMPORTANT: what " +
-                "the user names in the request (e.g. \"the calculator\", \"der Rechner\") is only the PART of " +
-                "that HTML property they want changed — it NEVER means \"replace the whole rtevalue with a " +
-                "brand-new, unrelated piece of HTML\". Translate the request into targeted edits of just that " +
-                "sub-markup and keep all surrounding text/markup byte-for-byte intact. When a removal is " +
-                "requested, honor it fully: OMIT those " +
+                "untouched elements, and NEVER restructure the form beyond the request. CRITICAL — WHEN AN " +
+                "ELEMENT'S OWN CONTENT IS AN HTML STRING (properties.rtevalue) WITH SEVERAL PARTS (e.g. " +
+                "static text/headings/bullets ABOVE OR BELOW an interactive calculator), EDIT ONLY THE PART " +
+                "THE USER ASKED TO CHANGE and return that rtevalue COMPLETE — never delete, truncate or " +
+                "replace the untouched paragraphs, lists, <style>/<script> blocks or markup. What the user " +
+                "names (e.g. \"der Rechner\") is only that PART — it NEVER means \"replace the whole " +
+                "rtevalue\". When a removal is requested, honor it fully: OMIT those " +
                 "items from the root \"items\" array AND remove their names from their parent container's " +
                 "\"elements\" array (e.g. clearing it to [] when the user said \"remove all fields\"). Also list " +
                 "every removed element's name in a top-level \"_removedItems\": [\"elementName\", ...] array so " +
                 "the server drops it completely (including any remaining references).\n" +
-                "TOKEN SAVING — UNCHANGED ITEMS (BIGGEST COST SAVER — USE IT AGGRESSIVELY): a leaf element " +
-                "(widget/field) OR a container/page whose BODY and whose ENTIRE STRUCTURE are NOT changing " +
-                "— meaning every one of its properties INCLUDING its complete \"elements\" array is identical " +
-                "to the current form — may be OMITTED from your output entirely; instead list its exact " +
-                "\"name\" in a top-level \"_unchangedItems\": [\"elementName\", ...] array and the server " +
-                "keeps it verbatim from the current form. NEVER re-emit an unchanged container/page in full: " +
-                "omitting it and listing its name is the ONLY way the output stays small. You MUST still " +
-                "emit IN FULL — with the complete \"elements\" array — every container/page whose structure " +
-                "actually changed in this request (e.g. the container into which you nest a new field), and " +
-                "every NEW or MODIFIED item. A container/page whose position changed, whose order of " +
-                "children changed, or that gained or lost a child may NOT be listed as unchanged — you must " +
-                "re-emit it in full. An element you are REMOVING goes in \"_removedItems\" (never in " +
-                "\"_unchangedItems\"). If a name appears in both lists, removal wins."
+                "A container/page whose position changed, whose order of children changed, or that gained or " +
+                "lost a child MUST be re-emitted IN FULL (with its complete \"elements\" array) — like every " +
+                "NEW or MODIFIED item."
 
         logger.info(
             "[AICodBiAssistant] Pass-2 CodBi â€” candidates: {}, targetIds: {}, sending {} item(s)",
@@ -2678,6 +3052,13 @@ class AICodBiAssistant : IPluginServletAction {
             "[AICodBiAssistant] Pass-2 form elements sent to AI (model={}): {}",
             modelId,
             gson.toJson(targetItems))
+        logger.info(
+            "[AICodBiAssistant] Pass-2 payload sizes: system={} chars, user={} chars (form dump={} chars, {}/{} items in full)",
+            applySystemPrompt.length,
+            pass2UserContent.length,
+            pass2FormDump.length,
+            targetItems.size(),
+            allItems.size())
         retryMessagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(applySystemPrompt)}},""")
@@ -2690,7 +3071,20 @@ class AICodBiAssistant : IPluginServletAction {
       val assistUsage = instance.takeLastAssistUsage()
       tokensIn += assistUsage?.promptTokens ?: estimateTokens(retryMessagesJson)
       tokensOut += assistUsage?.completionTokens ?: estimateTokens(retryRaw)
-      val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
+      reportTrip("form-pass-${rerunCount + 2}", modelId, assistUsage, retryMessagesJson, retryRaw)
+      // Repair the recoverable JSON slips BEFORE the `isJsonObjectOrArray` check below: the model
+      // very often drops the opening `{` of the NEXT item (`}},"className":…` instead of
+      // `}},{"className":…`). Without the repair such a payload counts as "non-JSON prose" and
+      // triggers the entire forced final pass (a whole extra inference). See [repairAiJson].
+      val pass2Extracted = extractJson(stripThinkTags(retryRaw))
+      val pass2Cleaned = repairAiJson(pass2Extracted)
+      // Same measurement for the pass that actually builds the form (see [logReEmissionStats]).
+      logReEmissionStats("form-pass-${rerunCount + 2}", pass2Cleaned, persistJson)
+      if (pass2Cleaned != pass2Extracted) {
+        logger.info(
+            "[AICodBiAssistant] Pass-{} JSON repaired (recoverable slip) — no forced final pass needed",
+            rerunCount + 2)
+      }
       logger.info(
           "[AICodBiAssistant] Pass-{} raw result: {}",
           rerunCount + 2,
@@ -2748,8 +3142,17 @@ class AICodBiAssistant : IPluginServletAction {
           logger.info(
               "[AICodBiAssistant] Rerun budget exhausted but AI still requests details - forcing final complete-form pass")
         }
+        // Reuse the details ALREADY requested for this rerun (exactly what pass-2 received) instead
+        // of the FULL compact reference. The forced final pass is a RETRY of pass-2, so it needs no
+        // more context than pass-2 had. Passing empty lists here pulled in the full widget
+        // reference
+        // (~71k chars) — a major input-token sink on a retry that only exists because pass-2
+        // returned
+        // malformed JSON. Falls back to the full reference only when this rerun carried no specific
+        // IDs (pure blind reconsideration).
         val finalSystemPrompt =
-            loadCodbiApplyPrompt(emptyList(), emptyList(), useCodbi, useBuergerserviceNaming) +
+            loadCodbiApplyPrompt(
+                requested, widgets, useCodbi, useBuergerserviceNaming, sectionKeepTags) +
                 chatSection +
                 "\n\n" +
                 (loadPromptWithClasspathFallback("codbi.retry_form") ?: "")
@@ -2776,12 +3179,12 @@ class AICodBiAssistant : IPluginServletAction {
                 "Return the COMPLETE modified form JSON with ALL items now. Do NOT ask the user any " +
                 "question and do NOT return any prose — answer ONLY with the form JSON. " +
                 "CRITICAL — PRESERVE EVERY EXISTING ELEMENT: every element that exists in the form " +
-                "above must remain in your output, unchanged and in its original container, plus only " +
-                "the additions/modifications the user requested. Never omit, drop, or remove an " +
-                "existing element or functionality that the user did not explicitly ask to remove — " +
-                "an omitted existing element is lost from the published form (data loss = FAIL). " +
+                "above must still be in the RESULTING form, unchanged and in its original container, plus only " +
+                "the additions/modifications the user requested. Never drop, empty or alter an existing " +
+                "element or functionality that the user did not explicitly ask to remove — an element you do " +
+                "NOT re-emit is kept VERBATIM by the server, so omission is SAFE and means UNCHANGED. " +
                 "ALSO — AN EXISTING ELEMENT'S OWN HTML (properties.rtevalue) OFTEN HOLDS SEVERAL PARTS AT ONCE (static text/headings/bullets ABOVE OR BELOW an interactive widget such as a calculator). When the request modifies something INSIDE that HTML (e.g. \"change the calculator\"), EDIT ONLY THAT PART and return the element's rtevalue COMPLETE — target part changed plus EVERY other paragraph, list, <style>/<script> block, and markup EXACTLY as before. What the user names in the request is only the PART of that HTML property they want changed — NEVER \"replace the whole rtevalue with a brand-new, unrelated piece of HTML\". " +
-                "TOKEN SAVING — UNCHANGED ITEMS (BIGGEST COST SAVER — USE IT AGGRESSIVELY): a LEAF element (widget/field) OR a container/page whose BODY and whose ENTIRE STRUCTURE are NOT changing — meaning every one of its properties INCLUDING its complete \"elements\" array is identical to the current form — may be OMITTED from your output entirely; instead list its exact \"name\" in a top-level \"_unchangedItems\": [\"elementName\", ...] array and the server keeps it verbatim. NEVER re-emit an unchanged container/page in full: omitting it and listing its name is the ONLY way the output stays small. You MUST still emit IN FULL — with the complete \"elements\" array — every container/page whose structure actually changed in this request (e.g. the container into which you nest a new field) and every NEW or MODIFIED item. A container/page whose position changed, whose order of children changed, or that gained or lost a child may NOT be listed as unchanged — you must re-emit it in full. An element you are REMOVING goes in \"_removedItems\" (never in \"_unchangedItems\"). If a name appears in both lists, removal wins."
+                "TOKEN SAVING — UNCHANGED ITEMS (BIGGEST COST SAVER — USE IT AGGRESSIVELY): emit the top-level \"_diff\": true marker and OMIT from your output entirely every leaf element (widget/field) AND every container/page whose BODY and whose ENTIRE STRUCTURE are NOT changing — every one of its properties INCLUDING its complete \"elements\" array identical to the current form. You do NOT name the omitted items anywhere: everything you do not re-emit is kept VERBATIM from the current form; omission means UNCHANGED, NOT removal. You MUST still emit IN FULL — with the complete \"elements\" array — every container/page whose structure actually changed in this request (e.g. the container into which you nest a new field) and every NEW or MODIFIED item. A container/page whose position changed, whose order of children changed, or that gained or lost a child must be re-emitted in full. An element you are REMOVING goes in \"_removedItems\" — that is the ONLY way an existing element leaves the form."
         val finalMessagesJson =
             "[{\"role\":\"system\",\"content\":${gson.toJson(finalSystemPrompt)}}," +
                 "{\"role\":\"user\",\"content\":${gson.toJson(finalUserContent)}}]"
@@ -2789,7 +3192,8 @@ class AICodBiAssistant : IPluginServletAction {
         val assistUsage = instance.takeLastAssistUsage()
         tokensIn += assistUsage?.promptTokens ?: estimateTokens(finalMessagesJson)
         tokensOut += assistUsage?.completionTokens ?: estimateTokens(finalRaw)
-        val finalCleaned = extractJson(stripThinkTags(finalRaw))
+        reportTrip("form-forced-final", modelId, assistUsage, finalMessagesJson, finalRaw)
+        val finalCleaned = repairAiJson(extractJson(stripThinkTags(finalRaw)))
         logger.info(
             "[AICodBiAssistant] Final forced pass raw result: {}",
             truncateForLog(compactJsonForLog(finalCleaned)))
@@ -3065,7 +3469,18 @@ class AICodBiAssistant : IPluginServletAction {
       // one request never yields the designed/interactive text twice. Pre-existing elements are the
       // survivor and are never touched — only a NEW copy is dropped.
       val dedupedForm = dropDuplicateTextSpans(guardedForm, persistJson)
-      Triple(dedupedForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+      // Deterministic OpenPLZ.AC.SET safety net, re-applied to the FINISHED form: the net also runs
+      // on the PASS-1 result, but pass-2 re-emits every created widget IN FULL, so those pass-1
+      // items
+      // (and the address classes the net had added to them) are overwritten by pass-2's version.
+      // See
+      // [applyOpenPlzClassesToForm].
+      val openPlzForm = applyOpenPlzClassesToForm(dedupedForm)
+      // People standard classes — same reasoning as the OpenPLZ net (pass-2 overwrites the pass-1
+      // items, so it must run on the finished form). Skipped entirely when the request explicitly
+      // asks for Cleave formatting.
+      val peopleForm = applyPeopleClassesToForm(openPlzForm, prompt)
+      Triple(peopleForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
     } catch (e: Exception) {
       logger.warn(
           "[AICodBiAssistant] Form AI returned unparseable response ({} chars): {}",
@@ -3090,8 +3505,9 @@ class AICodBiAssistant : IPluginServletAction {
 
   private fun buildFormSystemPrompt(
       useCodbi: Boolean = true,
-      useBuergerserviceNaming: Boolean = false
-  ): String = buildCodbiFormSystemPrompt(useCodbi, useBuergerserviceNaming)
+      useBuergerserviceNaming: Boolean = false,
+      sectionKeepTags: Set<String> = emptySet()
+  ): String = buildCodbiFormSystemPrompt(useCodbi, useBuergerserviceNaming, sectionKeepTags)
 
   private data class CodbiDetailsSignal(
       val elements: List<String>,
@@ -3473,6 +3889,36 @@ class AICodBiAssistant : IPluginServletAction {
         }
       }
 
+      /**
+       * Merges an AI patch onto the item it modifies: keys of the patch win, every property the
+       * patch OMITS keeps the baseline value, and `_removeProps` lists the properties the AI
+       * deliberately REMOVED (a removal cannot be expressed by omission — omission means
+       * "unchanged"). This is what lets the model answer a modification with a property-level patch
+       * instead of re-emitting the complete item: the payload (and therefore the output cost and
+       * the drift surface of the untouched properties) shrinks to the size of the actual change. A
+       * container whose STRUCTURE changed still sends its `elements` array itself, and an HTML
+       * property it changed still has to arrive complete — the merge only fills in what the patch
+       * left out.
+       */
+      fun graft(patch: JsonObject, base: JsonElement): JsonObject {
+        val merged = base.takeIf { it.isJsonObject }?.asJsonObject?.deepCopy() ?: JsonObject()
+        val mergedProps =
+            merged.getAsJsonObject("properties")
+                ?: JsonObject().also { merged.add("properties", it) }
+        patch.getAsJsonObject("properties")?.let { patchProps ->
+          for ((key, value) in patchProps.entrySet()) mergedProps.add(key, value.deepCopy())
+        }
+        // Explicit removals are honoured AFTER the merge (the baseline would otherwise bring them
+        // back).
+        for (key in removePropsOf(patch)) mergedProps.remove(key)
+        for ((key, value) in patch.entrySet()) {
+          if (key == "properties" || key == "_removeProps") continue
+          merged.add(key, value.deepCopy())
+        }
+        merged.remove("_removeProps")
+        return merged
+      }
+
       val pass1Items = pass1Obj.getAsJsonArray("items")
       if (pass1Items != null && (modifiedById.isNotEmpty() || modifiedByName.isNotEmpty())) {
         val matchedIds = mutableSetOf<String>()
@@ -3483,6 +3929,8 @@ class AICodBiAssistant : IPluginServletAction {
             val props = item.asJsonObject.getAsJsonObject("properties")
             val id = props?.get("id")?.asString
             val name = props?.get("name")?.asString
+            val patchById = id?.let { modifiedById[it] }
+            val patchByName = name?.let { modifiedByName[it] }
             // A matched pass-2 item that turns out to be a leaf STUB (a stripped name/id
             // placeholder
             // from sliceFormForPass2 that the AI echoed contrary to the instruction) must NOT
@@ -3499,22 +3947,21 @@ class AICodBiAssistant : IPluginServletAction {
                     matchedNames.add(name)
                     null
                   }
-                  id != null && id in modifiedById && !isLeafStubItem(modifiedById[id]) -> {
-                    matchedIds.add(id)
-                    modifiedById[id]
+                  patchById != null && !isLeafStubItem(patchById) -> {
+                    id?.let { matchedIds.add(it) }
+                    // Property-level merge: the patch does not have to be a complete copy any more.
+                    graft(patchById, item)
                   }
-                  id != null && id in modifiedById -> {
-                    matchedIds.add(id)
+                  patchById != null -> {
+                    id?.let { matchedIds.add(it) }
                     null
                   }
-                  name != null &&
-                      name in modifiedByName &&
-                      !isLeafStubItem(modifiedByName[name]) -> {
-                    matchedNames.add(name)
-                    modifiedByName[name]
+                  patchByName != null && !isLeafStubItem(patchByName) -> {
+                    matchedNames.add(name!!)
+                    graft(patchByName, item)
                   }
-                  name != null && name in modifiedByName -> {
-                    matchedNames.add(name)
+                  patchByName != null -> {
+                    matchedNames.add(name!!)
                     null
                   }
                   else -> null
@@ -3524,12 +3971,16 @@ class AICodBiAssistant : IPluginServletAction {
             newItems.add(item)
           }
         }
-        // Append any NEW items from pass-2 that were not matched to any pass-1 item
+        // Append any NEW items from pass-2 that were not matched to any pass-1 item. The protocol
+        // marker is stripped so it can never reach the form (a new item has no baseline to merge,
+        // so
+        // its properties are taken as sent).
         for ((id, item) in modifiedById) {
-          if (id !in matchedIds) newItems.add(item)
+          if (id !in matchedIds) newItems.add(item.deepCopy().also { it.remove("_removeProps") })
         }
         for ((name, item) in modifiedByName) {
-          if (name !in matchedNames) newItems.add(item)
+          if (name !in matchedNames)
+              newItems.add(item.deepCopy().also { it.remove("_removeProps") })
         }
         pass1Obj.add("items", newItems)
 
@@ -3718,6 +4169,8 @@ class AICodBiAssistant : IPluginServletAction {
       // precedence for an item named in both lists. Nothing more needs to be merged for it, so drop
       // it here to avoid persisting a designer-hostile top-level field on the final form.
       pass1Obj.remove("_unchangedItems")
+      // The newer "this is a diff" flag is a pure signal — never form data.
+      pass1Obj.remove(FormDiffMarker.KEY)
 
       // Preserve global variables the AI set in pass-2 (e.g. standard-configuration globals such
       // as USGrade) by merging the pass-2 `variables` array into the pass-1 base by name.
@@ -3927,6 +4380,134 @@ class AICodBiAssistant : IPluginServletAction {
     val jsonStart = candidate.indexOf("\"items\"")
     if (jsonStart > 0) candidate = candidate.substring(0, jsonStart)
     return candidate.trim().ifEmpty { null }
+  }
+
+  /**
+   * Re-applies the deterministic OpenPLZ.AC.SET net ([applyOpenPlzAddressClasses]) to a FINISHED
+   * form JSON, i.e. AFTER the pass-2 splice.
+   *
+   * The net also runs inside [restoreStrippedFields] on the PASS-1 result — but pass-2 re-emits
+   * every widget it creates IN FULL, so those pass-1 items (together with any
+   * `CodBi_OpenPLZ_AC_SET_*` class the net had added to them) are replaced by pass-2's version and
+   * the classes are lost. Running it again here guarantees the address-part classes reach the
+   * designer even when the model omits them in the pass that actually builds the widgets.
+   *
+   * Only its PASS 1 (tagging the existing address-part fields) is needed here: its PASS 2 creates a
+   * missing street/house-number field from the XTextField base template of the AI response wrapper,
+   * which no longer exists at this point — and that part has already run in the pass-1 invocation,
+   * where the template was available.
+   */
+  private fun applyOpenPlzClassesToForm(formJson: String): String {
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return formJson
+      applyOpenPlzAddressClasses(items, null)
+      root.toString()
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] OpenPLZ.AC.SET safety net on the finished form failed: {}", e.message)
+      formJson
+    }
+  }
+
+  /** Field-name tokens that identify the People standard's person-field classes. */
+  private val PEOPLE_MAIL_TOKENS = setOf("email", "mail")
+  private val PEOPLE_PHONE_TOKENS = setOf("telefon", "phone", "tel", "mobil", "mobile", "handy")
+  private val PEOPLE_PLZ_TOKENS = setOf("plz", "postleitzahl", "postalcode", "zip", "zipcode")
+  private val PEOPLE_BUILDING_TOKENS = setOf("hausnummer", "hausnr", "buildingnumber")
+  private val PEOPLE_NAME_TOKENS =
+      setOf(
+          "vorname",
+          "nachname",
+          "firstname",
+          "lastname",
+          "surname",
+          "givenname",
+          "familienname",
+          "name",
+          "first",
+          "last")
+  /** Unambiguous label words — a label match alone identifies the person field. */
+  private val PEOPLE_MAIL_LABEL = listOf("e-mail", "email", "mail")
+  private val PEOPLE_PHONE_LABEL = listOf("telefon", "phone")
+  private val PEOPLE_PLZ_LABEL = listOf("postleitzahl", "plz")
+  private val PEOPLE_BUILDING_LABEL = listOf("hausnummer")
+  private val PEOPLE_NAME_LABEL = listOf("vorname", "nachname")
+
+  /**
+   * A request that explicitly asks for Cleave formatting exempts the fields from the automatic
+   * People standard (see the standard-configuration rule): then Cleave is exactly what the user
+   * wants, and the AI's own Cleave-aware output is left untouched.
+   */
+  private val PEOPLE_CLEAVE_REQUEST = Regex("(?i)\\bcleave\\b|eingabemaske|input\\s*mask")
+
+  /**
+   * Deterministic safety net for the People standard configuration classes.
+   *
+   * DECISION: a person field ALWAYS carries its `CodBi_People_*` class. A datatype that also
+   * triggers a `Holistic.Cleave.*` standard (phone/plzDE) is NOT a reason to omit it — the server
+   * activates the Cleave standard automatically and the People class is additive. The classes are
+   * added ONLY when the request does not explicitly ask for Cleave formatting
+   * ([PEOPLE_CLEAVE_REQUEST]).
+   *
+   * Like the OpenPLZ net this runs on the FINISHED form: pass-2 re-emits every widget it creates in
+   * full, so a net that only ran before pass-2 would see its classes overwritten. It only ever
+   * ADDS, and at most ONE `CodBi_People_*` field class per field (a field is either a PLZ or a
+   * building number, never both).
+   */
+  private fun applyPeopleClassesToForm(formJson: String, prompt: String): String {
+    if (PEOPLE_CLEAVE_REQUEST.containsMatchIn(prompt)) {
+      logger.info(
+          "[AICodBiAssistant] People standard net skipped — the request explicitly asks for Cleave formatting")
+      return formJson
+    }
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return formJson
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        if (item.get("className")?.asString != "XTextField") continue
+        val props = item.getAsJsonObject("properties") ?: continue
+        val name = props.get("name")?.asString ?: continue
+        val label = (props.get("label")?.asString ?: "").lowercase()
+        val datatype = props.get("datatype")?.asString ?: ""
+        val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }.toSet()
+        val cls =
+            when {
+              datatype.equals("email", true) ||
+                  words.any { it in PEOPLE_MAIL_TOKENS } ||
+                  PEOPLE_MAIL_LABEL.any { label.contains(it) } -> "CodBi_People_Mail"
+              datatype.equals("phone", true) ||
+                  words.any { it in PEOPLE_PHONE_TOKENS } ||
+                  PEOPLE_PHONE_LABEL.any { label.contains(it) } -> "CodBi_People_Phone"
+              datatype.equals("plzDE", true) ||
+                  words.any { it in PEOPLE_PLZ_TOKENS } ||
+                  PEOPLE_PLZ_LABEL.any { label.contains(it) } -> "CodBi_People_PLZ"
+              words.any { it in PEOPLE_BUILDING_TOKENS } ||
+                  PEOPLE_BUILDING_LABEL.any { label.contains(it) } -> "CodBi_People_BuildingNumber"
+              words.any { it in PEOPLE_NAME_TOKENS } ||
+                  PEOPLE_NAME_LABEL.any { label.contains(it) } -> "CodBi_People_Name"
+              else -> null
+            }
+        if (cls == null) continue
+        val cssClasses =
+            if (props.get("cssclasses")?.isJsonArray == true) props.getAsJsonArray("cssclasses")
+            else JsonArray().also { props.add("cssclasses", it) }
+        // Never stack a SECOND People field class onto one field.
+        if (cssClasses.any { it.isJsonPrimitive && it.asString.startsWith("CodBi_People_") }) {
+          continue
+        }
+        cssClasses.add(cls)
+        logger.info(
+            "[AICodBiAssistant] Applied People standard class '{}' to field '{}'", cls, name)
+      }
+      root.toString()
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] People standard net on the finished form failed: {}", e.message)
+      formJson
+    }
   }
 
   /**
@@ -4909,7 +5490,7 @@ class AICodBiAssistant : IPluginServletAction {
    * `_workflowMailLanguages`) are consumed by dedicated server passes and must keep flowing
    * through.
    */
-  private val IGNORED_AI_MARKERS = setOf("_customScript")
+  private val IGNORED_AI_MARKERS = setOf("_customScript", FormDiffMarker.KEY)
 
   private val STRIPPED_ITEM_PROPS =
       setOf(
@@ -6043,6 +6624,11 @@ class AICodBiAssistant : IPluginServletAction {
             item.getAsJsonObject("properties")?.get("name")?.asString
                 ?: item.get("name")?.asString
                 ?: continue
+        // Read the removal marker BEFORE any branch consumes the item, and never let it reach the
+        // form: the diff protocol lists removed properties explicitly because omission means
+        // "unchanged, keep the baseline value".
+        val removedProps = removePropsOf(item)
+        item.remove("_removeProps")
         val origItem = originalByName[name]?.asJsonObject
         if (origItem == null) {
           // New item created by AI â€” validate and preserve workflow-visibility props, then
@@ -6138,6 +6724,8 @@ class AICodBiAssistant : IPluginServletAction {
         for (entry in origProps.entrySet()) {
           if (!resultProps.has(entry.key)) resultProps.add(entry.key, entry.value)
         }
+        // Property-level removals, honoured AFTER the restore above so it cannot bring them back.
+        for (key in removedProps) resultProps.remove(key)
         // Merge any per-language translations the AI emitted ("properties.i18n") into the
         // original item's translations so other languages and untouched properties survive a
         // "translate the whole form into <language>" request.
@@ -7665,31 +8253,52 @@ class AICodBiAssistant : IPluginServletAction {
       if (!applicabilityReport.isNullOrBlank()) {
         try {
           val reportObj = JsonParser.parseString(applicabilityReport).asJsonObject
-          val appliedArr = reportObj.getAsJsonArray("applied")
-          if (appliedArr != null) {
-            for (entry in appliedArr) {
-              if (!entry.isJsonObject) continue
-              val id = entry.asJsonObject.get("id")?.asString ?: continue
-              if (id.startsWith("Holistic.") &&
-                  id !in active &&
-                  (id !in PromptLoader.SYSTEM_CONFIG_NAMES || id in enabledHolistic)) {
-                active.add(id)
-                logger.info(
-                    "[AICodBiAssistant] Activated standard '{}' requested by AI in _codbiApplicability",
-                    id)
-              }
+          // "applied" is contractually an ARRAY of {"id":…,"targets":[…]} entries, but models also
+          // emit a bare string list (["Holistic.CSS.Standard"]) or — when there is nothing to
+          // report —
+          // collapse the field to a numeric COUNT (e.g. 0.0). All shapes are tolerated here; a
+          // non-array value simply means "no standard activations requested" (NOT a parse failure).
+          for (id in extractAppliedStandardIds(reportObj.get("applied"))) {
+            if (id.startsWith("Holistic.") &&
+                id !in active &&
+                (id !in PromptLoader.SYSTEM_CONFIG_NAMES || id in enabledHolistic)) {
+              active.add(id)
+              logger.info(
+                  "[AICodBiAssistant] Activated standard '{}' requested by AI in _codbiApplicability",
+                  id)
             }
           }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
           logger.warn(
-              "[AICodBiAssistant] Failed to parse applicabilityReport for standards: {}",
-              applicabilityReport.take(200))
+              "[AICodBiAssistant] Failed to parse applicabilityReport for standards: {} ({})",
+              applicabilityReport.take(200),
+              e.message)
         }
       }
       active.joinToString(",")
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to compute updated standards: {}", e.message)
       currentStandards
+    }
+  }
+
+  /**
+   * Extracts the standard-configuration ids the AI listed in `_codbiApplicability.applied`.
+   *
+   * The prompt contract is an ARRAY of `{"id":"CodBi.ID","targets":[…]}` objects, but the model
+   * sometimes emits a bare string list (`["Holistic.CSS.Standard"]`) or — when it has nothing to
+   * report — collapses the field to a numeric COUNT (`0.0`). All these shapes are tolerated; a
+   * non-array value yields an empty list (no activations requested) instead of throwing.
+   */
+  private fun extractAppliedStandardIds(applied: JsonElement?): List<String> {
+    val arr = applied?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
+    return arr.mapNotNull { entry ->
+      when {
+        entry.isJsonPrimitive -> entry.asString.trim().takeIf { it.isNotEmpty() }
+        entry.isJsonObject ->
+            entry.asJsonObject.get("id")?.asString?.trim()?.takeIf { it.isNotEmpty() }
+        else -> null
+      }
     }
   }
 
@@ -9415,6 +10024,7 @@ class AICodBiAssistant : IPluginServletAction {
     val assistUsage = instance.takeLastAssistUsage()
     tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
     tokensOut += assistUsage?.completionTokens ?: estimateTokens(pass1Raw)
+    reportTrip("workflow-pass-1", modelId, assistUsage, messagesJson, pass1Raw)
     var cleaned = extractJson(stripThinkTags(pass1Raw))
     logger.info(
         "[AICodBiAssistant] Workflow AI pass-1 raw response: {}", compactJsonForLog(cleaned))
@@ -9455,6 +10065,7 @@ class AICodBiAssistant : IPluginServletAction {
       val assistUsage = instance.takeLastAssistUsage()
       tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
       tokensOut += assistUsage?.completionTokens ?: estimateTokens(pass2Raw)
+      reportTrip("workflow-pass-2", modelId, assistUsage, messagesJson, pass2Raw)
       cleaned = extractJson(stripThinkTags(pass2Raw))
       logger.info(
           "[AICodBiAssistant] Workflow AI pass-2 raw response: {}", compactJsonForLog(cleaned))
@@ -9545,6 +10156,7 @@ class AICodBiAssistant : IPluginServletAction {
         val assistUsage = instance.takeLastAssistUsage()
         tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
         tokensOut += assistUsage?.completionTokens ?: estimateTokens(pass2Raw)
+        reportTrip("workflow-pass-2-retry", modelId, assistUsage, messagesJson, pass2Raw)
         cleaned = extractJson(stripThinkTags(pass2Raw))
         safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
         logger.info(
@@ -19403,7 +20015,8 @@ class AICodBiAssistant : IPluginServletAction {
 
   private fun buildCodbiFormSystemPrompt(
       useCodbi: Boolean = true,
-      useBuergerserviceNaming: Boolean = false
+      useBuergerserviceNaming: Boolean = false,
+      sectionKeepTags: Set<String> = emptySet()
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_form_system") ?: ""
@@ -19443,27 +20056,65 @@ class AICodBiAssistant : IPluginServletAction {
           }
       val canonicalOutputPart =
           loadPromptWithClasspathFallback("codbi.canonical_output_rules") ?: ""
-      val system =
-          PromptLoader.resolvePlaceholders(
-              taskInstruction +
+      // Section-gate the pass-1 decision cores: drop the `<!--SECTION:tag-->` blocks this request
+      // cannot need BEFORE logging/returning. The condensed catalogs carry no markers, so gating
+      // the
+      // whole composed string only affects the decision cores.
+      //
+      // Prompt-caching mode (see [promptCachingEnabled]): the decision cores are the STATIC prefix
+      // every request of this deployment shares, but request-dependent gating removes a DIFFERENT
+      // subset of their blocks on every call — which changes the middle of the prompt and therefore
+      // invalidates the provider's prefix cache for everything after it. In this mode the gates are
+      // therefore NOT applied (every KNOWN tag counts as "kept", which is also what STRIPS the raw
+      // `<!--SECTION:-->` marker comments — those must never reach the model) and the composition
+      // is
+      // re-ordered so the static blocks come first and the request-dependent catalogs last. The run
+      // pays the previously-dropped blocks again (~6-10k input tokens) and relies on the provider's
+      // cache discount to come out ahead — which is exactly what the per-trip `cachedIn` counter in
+      // the change log measures.
+      val effectiveKeepTags =
+          if (promptCachingEnabled) PromptSectionGate.KNOWN_TAGS else sectionKeepTags
+      val staticCore =
+          taskInstruction +
+              "\n\n" +
+              (loadPromptWithClasspathFallback("codbi.form_structure_rules_decision") ?: "") +
+              "\n\n" +
+              (fc["formcycle.general_decision"] ?: "")
+      val requestCatalogs = widgetsSectionCondensed + codbiPart
+      val composed =
+          if (promptCachingEnabled)
+          // static core -> static canonical rules -> volatile catalogs -> per-request naming
+          staticCore +
                   "\n\n" +
-                  (loadPromptWithClasspathFallback("codbi.form_structure_rules_decision") ?: "") +
+                  canonicalOutputPart +
                   "\n\n" +
-                  (fc["formcycle.general_decision"] ?: "") +
+                  requestCatalogs +
+                  buergerserviceNamingPart
+          else
+          // historical order (byte-identical to the non-caching assembly)
+          staticCore +
                   "\n\n" +
-                  widgetsSectionCondensed +
-                  codbiPart +
+                  requestCatalogs +
                   buergerserviceNamingPart +
                   "\n\n" +
-                  canonicalOutputPart)
+                  canonicalOutputPart
+      val system =
+          PromptSectionGate.applySectionGates(
+              PromptLoader.resolvePlaceholders(composed), effectiveKeepTags)
       // Support diagnosis: make the composition of the delivered pass-1 prompt visible in the log,
       // so a report about a missing/ignored rule can be answered from the log alone (e.g. whether
       // the designed-text illustrations / the state-availability distinction / the two-option rule
       // actually reached the model from the decision cores).
       logger.info(
-          "[AICodBiAssistant] Pass-1 system prompt: {} chars (designed-text rules: {}, detail-request protocol: {}, state-availability rules: {}, two-option rule: {})",
+          "[AICodBiAssistant] Pass-1 system prompt: {} chars (cache-friendly: {}, static block: {} chars, sections kept: {}, designed-text rules: {}, detail-request protocol: {}, state-availability rules: {}, two-option rule: {})",
           system.length,
-          system.contains("RICH/INTERACTIVE TEXT") || system.contains("DESIGNED/INTERACTIVE"),
+          promptCachingEnabled,
+          (staticCore + "\n\n" + canonicalOutputPart + "\n\n").length,
+          if (effectiveKeepTags.isEmpty()) "<none>"
+          else effectiveKeepTags.sorted().joinToString(","),
+          system.contains("RICH / DESIGNED / INTERACTIVE") ||
+              system.contains("DESIGNED/INTERACTIVE") ||
+              system.contains("RICH/INTERACTIVE TEXT"),
           system.contains("DETAILS REQUEST"),
           system.contains("STATE-BASED AVAILABILITY"),
           system.contains("TWO-OPTION RULE"))
@@ -19522,10 +20173,12 @@ class AICodBiAssistant : IPluginServletAction {
       // the full per-element parameters on demand — the primary no-CodBi build never pays for them.
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
-              (categories["codbi.general_rethink"]
-                  ?: categories["codbi.general_decision"]
-                  ?: categories["codbi.general"]
-                  ?: "") +
+              // The FULL `codbi.general` is deliberately NOT a fallback: it still carries the
+              // legacy
+              // "return the COMPLETE form JSON" wording, which contradicts this pass's diff
+              // protocol
+              // (a fallback to it would make the model re-emit the whole form).
+              (categories["codbi.general_rethink"] ?: categories["codbi.general_decision"] ?: "") +
               "\n" +
               FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: "") +
               "\n" +
@@ -19551,12 +20204,25 @@ class AICodBiAssistant : IPluginServletAction {
       requestedIds: List<String> = emptyList(),
       widgetIds: List<String> = emptyList(),
       useCodbi: Boolean = true,
-      useBuergerserviceNaming: Boolean = false
+      useBuergerserviceNaming: Boolean = false,
+      sectionKeepTags: Set<String> = emptySet()
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_apply") ?: ""
     try {
-      val widgetPart = buildWidgetDetailsSection(em, widgetIds)
+      // Prompt-caching mode (see [promptCachingEnabled]). Two things are needed for the prefix
+      // cache
+      // to hit: (1) the section gates stay off — every block is kept and only the raw
+      // `<!--SECTION:-->` markers are stripped — and (2) the requested ids are SORTED, so the same
+      // SET
+      // of ids always renders the same bytes regardless of the order the model listed them in
+      // (otherwise two runs requesting the same details produce a different tail and miss the
+      // cache).
+      val effectiveKeepTags =
+          if (promptCachingEnabled) PromptSectionGate.KNOWN_TAGS else sectionKeepTags
+      val requested = if (promptCachingEnabled) requestedIds.distinct().sorted() else requestedIds
+      val widgets = if (promptCachingEnabled) widgetIds.distinct().sorted() else widgetIds
+      val widgetPart = buildWidgetDetailsSection(em, widgets)
       if (!useCodbi) {
         // CodBi disabled: the pass-2 prompt contains only the Formcycle widget templates so the AI
         // can rebuild the widgets it created — no CodBi reference/details are sent at all.
@@ -19571,7 +20237,18 @@ class AICodBiAssistant : IPluginServletAction {
       // skeletons / EP chains / CSS lists that the full file appends are emitted on-demand from
       // the requested details (buildFullSectionFor) below, and the decision core carries the same
       // cross-cutting rules the model needs to build correctly in this fresh-conversation pass.
-      val base = CodBiElementAccess.scrub(categories["codbi.general_decision"] ?: "")
+      // This decision core is the SAME section-tagged file pass-1 gates: resolve its placeholders
+      // and
+      // apply the SAME section gate with pass-1's keep tags. Ungated it leaks raw `<!--SECTION:-->`
+      // marker comments into this prompt — text the model can read as "commented out" — and it
+      // sends
+      // the blocks this request cannot need. (The file carries no `{{...}}` placeholder, so the
+      // resolve is a no-op kept only for parity with pass-1.)
+      val base =
+          PromptSectionGate.applySectionGates(
+              CodBiElementAccess.scrub(
+                  PromptLoader.resolvePlaceholders(categories["codbi.general_decision"] ?: "")),
+              effectiveKeepTags)
       // Cross-cutting Formcycle rules (form structure, repeatable containers, server variables,
       // element identifiers) MUST be carried into every rerun — the AI drops a repeatable
       // container otherwise, because the REPEATABLE CONTAINERS rule lives in formcycle.general and
@@ -19580,12 +20257,11 @@ class AICodBiAssistant : IPluginServletAction {
       // Use the lean apply variant (decision core + EConditionType codes + server-variable catalog)
       // instead of the full 49.8KB formcycle.general — the full file's worked build examples are
       // redundant in the pass-2 apply prompt where the model rebuilds the form from the requested
-      // details. Fall back gracefully for DB installs that have not yet seeded the new key.
-      val formcycleGeneral =
-          fc["formcycle.general_apply"]
-              ?: fc["formcycle.general_decision"]
-              ?: fc["formcycle.general"]
-              ?: ""
+      // details. The FULL `formcycle.general` is deliberately NOT used as a fallback: it still
+      // carries the legacy "return the COMPLETE modified form JSON" wording, which CONTRADICTS this
+      // pass's diff protocol and would make the model re-emit the whole form. Falling back to the
+      // decision core is both cheaper and diff-compatible.
+      val formcycleGeneral = fc["formcycle.general_apply"] ?: fc["formcycle.general_decision"] ?: ""
       // The Bürger-Services canonical field naming MUST also be carried into pass-2 — the model
       // actually builds the form in this apply pass, and without it the canonical tfAntragsteller*
       // /
@@ -19594,41 +20270,123 @@ class AICodBiAssistant : IPluginServletAction {
           if (useBuergerserviceNaming) categories["codbi.buergerservice_naming"] ?: "" else ""
       val codbiPart =
           when {
-            requestedIds.isNotEmpty() -> {
-              val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
-              // Fall back to the full reference when none of the requested IDs could be resolved.
-              if (details.isBlank()) PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-              else
-              // The COMPLETE condensed EP/functionality name list MUST accompany the requested
-              // details: the model builds the form in THIS (pass-2) call, whose context is a
-              // fresh conversation that no longer contains the pass-1 prompt with the full
-              // listing. Without the name list the model invents EP names (e.g.
+            requested.isNotEmpty() -> {
+              val details = CodbiCapabilities.buildFullSectionFor(requested)
+              if (details.isBlank()) {
+                // NONE of the requested ids resolved. In practice this happens because the model
+                // listed FORM element names (e.g. "tfVorname", "fdPersonalData", "spIntro") in
+                // "elements" instead of CodBi ids. That must NEVER fall back to the full reference:
+                // it
+                // is ~62KB of API reference PLUS the local detailed section (measured at ~129KB in
+                // a
+                // real deployment) — more than half of the entire pass-2 prompt — for ids that do
+                // not
+                // exist. The name index below still lists EVERY valid id, and this prompt already
+                // carries the widget templates, the CodBi decision core and the requested fields,
+                // so
+                // the model can build without the reference.
+                logger.warn(
+                    "[AICodBiAssistant] None of the requested CodBi ids resolved ({}); sending the name index instead of the full reference (~129KB)",
+                    requested.joinToString(", "))
+                CodbiCapabilities.buildNameIndexSection()
+              } else
+              // The model builds the form in THIS (pass-2) call, whose context is a fresh
+              // conversation that no longer contains the pass-1 prompt. It therefore still needs
+              // the COMPLETE NAME list, otherwise it invents EP names (e.g.
               // Data.PlaceListStartingWithAn, Data.CantonsSwitzerland) for anything it did not
-              // explicitly request details for in pass-1.
-              details +
-                      "\n\n## COMPLETE ELEMENT PLACEHOLDER / FUNCTIONALITY / STANDARD CONFIGURATION " +
-                      "REFERENCE (authoritative EP names + usage — use EXACTLY these names, never invent names)\n" +
-                      PromptLoader.resolvePlaceholders("{{CODBI_ELEMENTS_SECTION}}")
+              // explicitly request details for in pass-1 — but it needs only the NAME: the full
+              // text of every entry the AI did NOT request is dead weight here, so the catalog's
+              // "what it does / how to use it" prose is replaced by
+              // CodbiCapabilities.buildNameIndexSection(). Every requested id keeps its FULL
+              // specification above (details).
+              details + "\n\n" + CodbiCapabilities.buildNameIndexSection()
             }
-            // The AI asked ONLY for widget templates (elements list empty): give it the condensed
-            // element list (names + purposes) plus the widget templates — NOT the full API
-            // reference.
-            widgetIds.isNotEmpty() -> PromptLoader.resolvePlaceholders("{{CODBI_ELEMENTS_SECTION}}")
-            // Pure blind reconsideration: provide the complete reference.
+            // The AI asked ONLY for widget templates (elements list empty): it still gets the
+            // complete
+            // name index (so no name can be invented) plus the widget templates — NOT the reference
+            // prose.
+            widgets.isNotEmpty() -> CodbiCapabilities.buildNameIndexSection()
+            // Pure blind reconsideration: the decision WHICH CodBi element applies has to be made
+            // in
+            // this pass and needs the real prose — provide the complete reference.
             else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
-      return (loadPromptWithClasspathFallback("codbi.form_structure_rules") ?: "") +
-          "\n\n" +
-          formcycleGeneral +
-          "\n\n" +
-          base +
-          "\n\n" +
-          codbiPart +
-          (if (buergerserviceNaming.isNotBlank()) "\n\n" + buergerserviceNaming else "") +
-          "\n\n" +
-          widgetPart +
-          "\n\n" +
-          (loadPromptWithClasspathFallback("codbi.canonical_output_rules") ?: "")
+      // Pass-1 already sent the structure DECISION core (and acted on it); this pass re-sends the
+      // SAME
+      // core instead of the full reference. The full file's additional prose is the
+      // design/illustration guidance that the requested details built below already carry, so
+      // sending
+      // both was a pure duplication of ~25KB (~7K input tokens) on every pass-2 — the single
+      // biggest
+      // cost centre of a form run. Falls back to the full reference when the DB has no decision
+      // core
+      // seeded. The core is section-tagged, so it is gated exactly like pass-1 (same blocks kept,
+      // and
+      // no raw `<!--SECTION:-->` marker comments leak into this prompt).
+      val rawStructureRules =
+          loadPromptWithClasspathFallback("codbi.form_structure_rules_decision")
+              ?: loadPromptWithClasspathFallback("codbi.form_structure_rules")
+              ?: ""
+      val structureRules = PromptSectionGate.applySectionGates(rawStructureRules, effectiveKeepTags)
+      val canonicalOutputRules =
+          loadPromptWithClasspathFallback("codbi.canonical_output_rules") ?: ""
+      // Same diagnostic idea as the pass-1 log: name the size of every component so an expensive
+      // pass-2 (the single biggest cost centre of a form run) can be attributed at a glance instead
+      // of guessed. `structureRules` (gated) vs `raw` shows how much the section gate removed.
+      // The byte-identical prefix of caching mode (everything before the first request-dependent
+      // block). Empty in non-caching mode, where the gated blocks and the historical order are
+      // used.
+      val staticPrefix =
+          if (promptCachingEnabled)
+              structureRules +
+                  "\n\n" +
+                  formcycleGeneral +
+                  "\n\n" +
+                  base +
+                  "\n\n" +
+                  canonicalOutputRules +
+                  "\n\n"
+          else ""
+      logger.info(
+          "[AICodBiAssistant] Pass-2 system prompt composition: cache-friendly={}, static prefix={} chars, structureRules={} (raw {}), formcycleGeneral={}, codbiDecisionCore={}, codbiDetails+nameIndex={}, widgetTemplates={}, buergerservice={}, canonical={} chars (requested codbi ids={}, requested widgets={}, kept sections={})",
+          promptCachingEnabled,
+          staticPrefix.length,
+          structureRules.length,
+          rawStructureRules.length,
+          formcycleGeneral.length,
+          base.length,
+          codbiPart.length,
+          widgetPart.length,
+          buergerserviceNaming.length,
+          canonicalOutputRules.length,
+          requested.size,
+          widgets.size,
+          if (effectiveKeepTags.isEmpty()) "<none>"
+          else effectiveKeepTags.sorted().joinToString(","))
+      // Caching mode: the static blocks (structure rules, formcycle rules, the CodBi decision core,
+      // the canonical output rules) form the byte-identical prefix; everything request-dependent
+      // (the
+      // requested CodBi details, Bürger-Services naming, the requested widget templates) follows as
+      // the volatile tail. Non-caching mode keeps the historical order unchanged.
+      return if (promptCachingEnabled)
+          staticPrefix +
+              codbiPart +
+              (if (buergerserviceNaming.isNotBlank()) "\n\n" + buergerserviceNaming else "") +
+              "\n\n" +
+              widgetPart
+      else
+          structureRules +
+              "\n\n" +
+              formcycleGeneral +
+              "\n\n" +
+              base +
+              "\n\n" +
+              codbiPart +
+              (if (buergerserviceNaming.isNotBlank()) "\n\n" + buergerserviceNaming else "") +
+              "\n\n" +
+              widgetPart +
+              "\n\n" +
+              canonicalOutputRules
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load apply prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_apply") ?: ""
@@ -20804,7 +21562,16 @@ class AICodBiAssistant : IPluginServletAction {
       // the
       // model did not return them — then the keyword heuristic in [applyClarificationSections] is
       // used.
-      val topics: Set<String> = emptySet()
+      val topics: Set<String> = emptySet(),
+      // Which OPTIONAL pass-1 instruction sections (translation / designed_text / custom_js / …)
+      // this
+      // request needs, decided by the SAME chat-classification call (no extra inference). Consumed
+      // by
+      // [PromptSectionGate] to gate the pass-1 decision cores. Empty when the model did not return
+      // them (or the installed prompt predates the key) — then the deterministic detectors decide
+      // and
+      // every unmatched section fails OPEN (kept).
+      val sections: Set<String> = emptySet()
   )
 
   /** Reads the `chatHistory` request param (JSON array of {user, assistant} turns). */
@@ -21058,20 +21825,23 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info("[AICodBiAssistant] Chat response is a status signal — not an answer envelope")
         return null
       }
-      val topics =
-          obj.get("topics")
+      fun stringSet(key: String): Set<String> =
+          obj.get(key)
               ?.takeIf { it.isJsonArray }
               ?.asJsonArray
               ?.mapNotNull { e -> if (e.isJsonPrimitive) e.asString.trim().lowercase() else null }
               ?.filter { it.isNotBlank() }
               ?.toSet() ?: emptySet()
+      val topics = stringSet("topics")
+      val sections = stringSet("sections")
       ChatAnswer(
           hasQuestion = obj.get("hasQuestion")?.asBoolean ?: false,
           hasInstructions = obj.get("hasInstructions")?.asBoolean ?: false,
           answer = obj.get("answer")?.asString?.trim() ?: "",
           tokensIn = estimateTokens(messagesJson),
           tokensOut = estimateTokens(raw),
-          topics = topics)
+          topics = topics,
+          sections = sections)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Could not parse chat answer: {}", e.message)
       null

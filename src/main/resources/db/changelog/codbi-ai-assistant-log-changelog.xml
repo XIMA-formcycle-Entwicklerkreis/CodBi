@@ -169,4 +169,18 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-assistant-log-10" author="codbi">
+        <comment>
+            Add a trips CLOB holding one entry per AI inference of the run (phase, model, input and
+            output tokens, cost, currency) so the change log can break a run's total token usage and
+            cost down per call instead of showing only the run sum.
+        </comment>
+        <addColumn tableName="codbi_ai_assistant_log">
+            <column name="trips" type="CLOB"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_assistant_log" columnName="trips"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

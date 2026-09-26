@@ -42,5 +42,11 @@ class CodbiAiAssistantLog(
     @Lob @Column(name = "form_changes") var formChanges: String? = null,
     @Lob @Column(name = "workflow_changes") var workflowChanges: String? = null,
     @Lob @Column(name = "clarification") var clarification: String? = null,
-    @Lob @Column(name = "chat_reply") var chatReply: String? = null
+    @Lob @Column(name = "chat_reply") var chatReply: String? = null,
+    /**
+     * JSON array holding one entry per AI inference ("trip") of the run — `{ "phase", "modelId",
+     * "tokensIn", "tokensOut", "cost", "currency" }` — so the change log can break the run's total
+     * token usage and cost down per call (e.g. two clarification rounds + pass-1 + pass-2).
+     */
+    @Lob @Column(name = "trips") var trips: String? = null
 )

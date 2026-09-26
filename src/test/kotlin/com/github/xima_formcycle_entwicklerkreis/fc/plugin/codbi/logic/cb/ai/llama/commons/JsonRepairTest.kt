@@ -198,4 +198,30 @@ class JsonRepairTest {
         "Submission successful",
         child[3].asJsonObject.getAsJsonObject("nodeParams").get("htmlTemplate").asString)
   }
+
+  @Test
+  fun repairsFormAssistantDiffWithDroppedBraceAndMissingClosers() {
+    // Faithful reproduction of the FORM-ASSISTANT pass-2 payload from the production log, which was
+    // mislabelled "non-JSON prose" and triggered the whole forced final pass: the model emits its
+    // `_diff` items back to back but drops the opening `{` of the SECOND item
+    // (`}},"className":"XCheckbox"` instead of `}},{"className":"XCheckbox"`) and never closes the
+    // `items` array / root object.
+    val malformed =
+        """{"_diff":true,"items":[{"className":"XSpan","properties":{"name":"spIntro","id":"xi-sp-intro","rtevalue":"<style>.a{color:red;}</style><div>text</div>"}},"className":"XCheckbox","properties":{"name":"cbShowPersonalData","id":"xi-cb-showpersonaldata","label":"Meine Daten angeben","required":"0"}}"""
+    val repaired = repairAiJson(malformed)
+    assertNotEquals(malformed, repaired)
+
+    val root = JsonParser.parseString(repaired).asJsonObject
+    assertTrue(root.get("_diff").asBoolean)
+    val items = root.getAsJsonArray("items")
+    assertEquals(2, items.size())
+    assertEquals("XSpan", items[0].asJsonObject.get("className").asString)
+    assertEquals(
+        "spIntro", items[0].asJsonObject.getAsJsonObject("properties").get("name").asString)
+    // The second item — whose opening brace the model dropped — is recovered intact.
+    assertEquals("XCheckbox", items[1].asJsonObject.get("className").asString)
+    assertEquals(
+        "cbShowPersonalData",
+        items[1].asJsonObject.getAsJsonObject("properties").get("name").asString)
+  }
 }

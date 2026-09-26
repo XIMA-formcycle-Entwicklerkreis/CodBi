@@ -13,8 +13,15 @@ import { markdownToHtml } from "../ai-assistant/markdown";
 export interface LogNode {
   /** Stable, unique id used for Angular tracking. */
   id: string;
-  /** Human-readable label shown next to the icon (e.g. widget name, attribute name). */
+  /** Human-readable label shown next to the icon (e.g. widget TYPE, attribute name). */
   label: string;
+  /**
+   * Technical element id (e.g. `cbShowPersonData`) rendered as a darkorange rounded badge directly
+   * after [label]. The label carries the element TYPE (e.g. `XCheckbox`) and this the id, so the id
+   * is perceived at a glance instead of being buried in a combined `XCheckbox "cbShowPersonData"`
+   * string.
+   */
+  idTag?: string;
   /** Login name of the user who ran the inference (top-level rows) — rendered in darkorange. */
   userLabel?: string;
   /** Readable name of the AI model used for this inference (top-level rows) — shown under the user. */
@@ -120,6 +127,9 @@ export interface LogNode {
           <span
               class="cb-log-node__label-text"
               [class.cb-log-node__label-text--pre]="node.multiline === true">{{ node.label }}</span>
+          @if (node.idTag) {
+            <span class="cb-log-node__id-tag" [attr.title]="'Element id: ' + node.idTag">{{ node.idTag }}</span>
+          }
           @if (node.userLabel) {
             <span class="cb-log-node__user" title="User who ran this inference">{{ node.userLabel }}</span>
           }
@@ -148,6 +158,16 @@ export interface LogNode {
                 aria-label="Toggle full value"
                 (click)="toggleValue($event)">
               <i [class]="node.valueExpanded === true ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" aria-hidden="true"></i>
+            </button>
+          }
+          @if (isPropertyNode(node)) {
+            <button
+                type="button"
+                class="cb-log-node__value-copy"
+                [attr.title]="valueCopied ? 'Copied' : 'Copy this property value to the clipboard'"
+                aria-label="Copy property value"
+                (click)="copyValue($event)">
+              <i [class]="valueCopied ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
             </button>
           }
         }
@@ -243,7 +263,17 @@ export interface LogNode {
       }
     </details>
     @if (node.valueExpanded === true && node.value && node.kind !== 'prompt') {
-      <div class="cb-log-node__value-full">{{ node.value }}</div>
+      <div class="cb-log-node__value-full">
+        <button
+            type="button"
+            class="cb-log-node__value-copy cb-log-node__value-copy--pinned"
+            [attr.title]="valueCopied ? 'Copied' : 'Copy this value to the clipboard'"
+            aria-label="Copy value"
+            (click)="copyValue($event)">
+          <i [class]="valueCopied ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+        </button>
+        <span class="cb-log-node__value-full-text">{{ node.value }}</span>
+      </div>
     }
   `,
   encapsulation: ViewEncapsulation.None,
@@ -278,6 +308,9 @@ export class LogTreeNode {
   /** True for a short moment after a chat reply was copied (shows a check icon on the copy button). */
   replyCopied = false;
   private replyCopyTimer: number | null = null;
+  /** True for a short moment after a node's VALUE was copied (shows a check icon on its button). */
+  valueCopied = false;
+  private valueCopyTimer: number | null = null;
 
   onToggle(event: Event): void {
     const details = event.target as HTMLDetailsElement | null;
@@ -315,12 +348,58 @@ export class LogTreeNode {
     return typeof node.value === "string" && node.value.length > 60;
   }
 
+  /**
+   * True for rows that carry a FIELD PROPERTY value — an element's configuration (`label`, `rtevalue`,
+   * `hiddenif`, `datatype`, …), a functionality's parameter, or a global variable's value. Only those
+   * get the copy button: a widget/section row shows a type or structure value that is not worth
+   * copying, and copying an element id is not what the button is for.
+   */
+  isPropertyNode(node: LogNode): boolean {
+    return (
+      node.kind === "attr" ||
+      node.kind === "func" ||
+      node.kind === "param" ||
+      node.kind === "param-item" ||
+      node.kind === "var"
+    );
+  }
+
   /** Expands/collapses a long node value, revealing the complete text in a body below the row. */
   toggleValue(event: Event): void {
     event.stopPropagation();
     event.preventDefault();
     this.node = { ...this.node, valueExpanded: this.node.valueExpanded !== true };
     this.cdr.markForCheck();
+  }
+
+  /**
+   * Copies this node's property value to the clipboard (with brief check feedback). The button is only
+   * rendered for property rows (see [isPropertyNode]).
+   */
+  copyValue(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const text = this.node.value ?? this.node.label;
+    if (!text) return;
+    const done = (): void => {
+      this.valueCopied = true;
+      this.cdr.markForCheck();
+      if (this.valueCopyTimer !== null) window.clearTimeout(this.valueCopyTimer);
+      this.valueCopyTimer = window.setTimeout(() => {
+        this.valueCopied = false;
+        this.cdr.markForCheck();
+      }, 1500);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard
+        .writeText(text)
+        .then(done)
+        .catch(() => {
+          window.prompt("Copy this value", text);
+        });
+    } else {
+      window.prompt("Copy this value", text);
+    }
   }
 
   /** True for nodes that belong to a CodBi functionality, CSS class, or a chat entry — these are

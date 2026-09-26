@@ -166,6 +166,22 @@
 
     <ng-template #footer>
         <span class="cb-ai-footer-codbi">
+            <!-- Reasoning-effort dropdown — placed DIRECTLY BEFORE the CodBi switch. The selected
+                 value is sent as the `reasoningEffort` run parameter and OVERRIDES the per-specialist
+                 (AI_Assistant_ReasoningEffort_<name>) and the global (AI_Assistant_ReasoningEffort)
+                 plugin properties for that run. "Default" = use the configured property. -->
+            <span class="cb-ai-reasoning-label">{{ reasoningEffortLabel }}</span>
+            <select
+                class="cb-ai-reasoning-select"
+                [title]="reasoningEffortTitle"
+                [attr.aria-label]="reasoningEffortLabel"
+                [(ngModel)]="reasoningEffort"
+                (ngModelChange)="onReasoningEffortChange($event)"
+                [disabled]="loading || !dbAvailable">
+                @for (opt of reasoningEffortOptions; track opt) {
+                    <option [value]="opt">{{ reasoningEffortOptionLabel(opt) }}</option>
+                }
+            </select>
             <label
                 class="cb-ai-codbi-switch"
                 title="Send CodBi prompts (functionalities, element placeholders, standard configurations) to the AI. Off = only Formcycle widgets and workflow nodes are generated; no CodBi is applied in any pass.">

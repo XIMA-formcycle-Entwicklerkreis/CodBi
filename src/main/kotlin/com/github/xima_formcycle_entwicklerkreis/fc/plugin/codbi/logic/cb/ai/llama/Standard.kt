@@ -33,58 +33,62 @@ import org.slf4j.MDC
  * LLAMA-Server dies.
  *
  * ## Plugin Properties
- * |Property                                         |Type   |Default                                      |Description                                                                                                                                                                 |
- * |-------------------------------------------------|-------|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
- * |`Active_AI`                                      |String |—                                            |Must contain `llama_std` (local) or `external` (external-only) to activate this component                                                                                   |
- * |`AI_LLAMA_STD_ModelUrl`                          |URL    |Qwen3-VL-2B Q4_K_M HuggingFace               |Download URL for the GGUF model file                                                                                                                                        |
- * |`AI_LLAMA_STD_MmprojUrl`                         |URL    |Qwen3-VL-2B mmproj (when using default model)|Download URL for the vision projector (mmproj) file. Omit for text-only models (vision features disabled). Auto-set when using the default VL model                         |
- * |`AI_LLAMA_STD_MaxPixels`                         |Long   |`3211264`                                    |Max pixel budget for image downscaling (min 3136)                                                                                                                           |
- * |`AI_LLAMA_STD_MaxUploadBytes`                    |Long   |`52428800`                                   |Max raw image size in bytes before decoding (default 50 MB, min 1 MB)                                                                                                       |
- * |`AI_LLAMA_STD_MaxTokens`                         |Int    |`2048`                                       |Maximum tokens to generate per response                                                                                                                                     |
- * |`AI_LLAMA_STD_MaxRAMPercent`                     |Double |`101.0`                                      |RAM usage threshold (%) — blocks requests when exceeded                                                                                                                     |
- * |`AI_LLAMA_STD_MaxComputePercent`                 |Double |`101.0`                                      |Compute usage threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded                                                                        |
- * |`AI_LLAMA_STD_MaxCPUPercent`                     |Double |—                                            |Legacy alias for MaxComputePercent (accepted as fallback)                                                                                                                   |
- * |`AI_LLAMA_STD_LlamaRelease`                      |String |`b8175`                                      |llama.cpp release tag for server binary download                                                                                                                            |
- * |`AI_LLAMA_STD_ServerUrl_<platform>`              |URL    |(auto from release tag)                      |Per-platform override for the LLAMA-Server binary URL                                                                                                                       |
- * |`AI_LLAMA_STD_UpdateCheckHours`                  |Long   |`24`                                         |Hours between GitHub release checks (0 = disabled)                                                                                                                          |
- * |`AI_LLAMA_STD_NotifyEmail`                       |String |—                                            |Email address for update notifications                                                                                                                                      |
- * |`AI_LLAMA_STD_ThinkingModelUrl`                  |URL    |—                                            |Download URL for a dedicated thinking model GGUF (optional)                                                                                                                 |
- * |`AI_LLAMA_STD_ThinkingMmprojUrl`                 |URL    |—                                            |Download URL for the thinking model's mmproj file (optional)                                                                                                                |
- * |`AI_LLAMA_STD_ExternalUrl`                       |URL    |—                                            |Base URL of an external OpenAI-compatible API; overrides local model                                                                                                        |
- * |`AI_LLAMA_STD_ExternalApiKey`                    |String |—                                            |API key for the external AI (sent as Bearer token)                                                                                                                          |
- * |`AI_LLAMA_STD_ExternalModel`                     |String |—                                            |Model name for the external API (e.g. gpt-4o, claude-3-opus)                                                                                                                |
- * |`AI_LLAMA_STD_ExternalNoPrompt`                  |Boolean|`false`                                      |When `true`, skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user message and chat history.                                          |
- * |`AI_LLAMA_STD_PromptIdentity`                    |String |(built-in)                                   |Override the identity/role sentence ("You are a helpful assistant..."). Use `{date}` for today's date, `{time}` for current time.                                           |
- * |`AI_LLAMA_STD_PromptLocation`                    |String |(built-in)                                   |Override the location-context instruction. Use `{location}` as placeholder.                                                                                                 |
- * |`AI_LLAMA_STD_PromptSearch`                      |String |(built-in)                                   |Override the CALL:search instruction block (before examples).                                                                                                               |
- * |`AI_LLAMA_STD_PromptThinking`                    |String |(built-in)                                   |Override the thinking-mode instruction. Use `{language}` as placeholder.                                                                                                    |
- * |`AI_LLAMA_STD_PromptNoInternet`                  |String |(built-in)                                   |Override the no-internet-access warning.                                                                                                                                    |
- * |`AI_LLAMA_STD_PromptRules`                       |String |(built-in)                                   |Override the general rules (language, measurements, independence).                                                                                                          |
- * |`AI_LLAMA_STD_FallbackLocation`                  |String |—                                            |Fallback location string used when geolocation fails (e.g. `Ansbach, Nürnberger Straße 32, Bayern, Deutschland`)                                                            |
- * |`AI_LLAMA_STD_NominatimDomain`                   |String |`nominatim.openstreetmap.org`                |Domain for reverse geocoding requests (without path).                                                                                                                       |
- * |`AI_LLAMA_STD_IpGeolocationDomain`               |String |`ipwho.is`                                   |Domain for IP geolocation requests (without path).                                                                                                                          |
- * |`AI_BraveSearch_ApiKey`                          |String |—                                            |Brave Search API key — enables web search tool for the model                                                                                                                |
- * |`AI_BraveSearch_MaxResults`                      |Int    |`5`                                          |Maximum number of Brave Search results per query (1–20).                                                                                                                    |
- * |`AI_LLAMA_STD_Language`                          |String |—                                            |Two-letter ISO 639-1 code (e.g. `de`, `fr`) — forces the AI to respond in this language, skipping auto-detection. Overridden by per-functionality `responselanguage` toLoad.|
- * |`AI_LLAMA_STD_SPECIALIST_XXX`                    |URL    |—                                            |Download URL for a specialist GGUF model named `XXX`. The name is chosen by the administrator and matched case-insensitively by the `specialist` toLoad property.           |
- * |`AI_LLAMA_STD_SPECIALIST_MMProj_XXX`             |URL    |—                                            |Download URL for the specialist `XXX`'s multimodal projector (mmproj). Optional — omit if the specialist model has no vision capability.                                    |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_XXX`                |URL    |—                                            |Base URL of an external OpenAI-compatible API for a specialist named `XXX`. Matched case-insensitively by the `specialist` toLoad property.                                 |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_Key_XXX`            |String |—                                            |API key for the external specialist `XXX` (sent as Bearer token). Optional.                                                                                                 |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_Model_XXX`          |String |—                                            |Model name for the external specialist `XXX` (e.g. `gpt-4o`). Optional — omit to use the API default.                                                                       |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_MaxTokens_XXX`      |Int    |—                                            |Maximum output tokens for specialist `XXX`. Overrides `AI_LLAMA_STD_MaxTokens` for this specialist only. Optional.                                                          |
- * |`AI_LLAMA_STD_ExtraParams`                       |JSON   |—                                            |Extra parameters appended to every completion request body (e.g. `{"top_p":0.9,"seed":42}`). Keys `messages`, `stream`, `model`, `id_slot`, `logprobs` are silently ignored.|
- * |`AI_LLAMA_STD_PriceCurrency`                     |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the **standard** model's prices. When unset, no cost is shown for the standard model.                                         |
- * |`AI_LLAMA_STD_PricePerMInput`                    |Double |—                                            |Price per 1,000,000 **input** tokens for the standard model (e.g. `3.00`).                                                                                                  |
- * |`AI_LLAMA_STD_PricePerMOutput`                   |Double |—                                            |Price per 1,000,000 **output** tokens for the standard model (e.g. `15.00`).                                                                                                |
- * |`AI_LLAMA_STD_ThinkingPriceCurrency`             |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the **thinking** model's prices.                                                                                              |
- * |`AI_LLAMA_STD_ThinkingPricePerMInput`            |Double |—                                            |Price per 1,000,000 **input** tokens for the thinking model.                                                                                                                |
- * |`AI_LLAMA_STD_ThinkingPricePerMOutput`           |Double |—                                            |Price per 1,000,000 **output** tokens for the thinking model.                                                                                                               |
- * |`AI_LLAMA_STD_SPECIALIST_PriceCurrency_XXX`      |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the local specialist `XXX`'s prices.                                                                                          |
- * |`AI_LLAMA_STD_SPECIALIST_PricePerMInput_XXX`     |Double |—                                            |Price per 1,000,000 **input** tokens for the local specialist `XXX`.                                                                                                        |
- * |`AI_LLAMA_STD_SPECIALIST_PricePerMOutput_XXX`    |Double |—                                            |Price per 1,000,000 **output** tokens for the local specialist `XXX`.                                                                                                       |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_PriceCurrency_XXX`  |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the external specialist `XXX`'s prices.                                                                                       |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_PricePerMInput_XXX` |Double |—                                            |Price per 1,000,000 **input** tokens for the external specialist `XXX`.                                                                                                     |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_PricePerMOutput_XXX`|Double |—                                            |Price per 1,000,000 **output** tokens for the external specialist `XXX`.                                                                                                    |
+ * |Property                                              |Type   |Default                                      |Description                                                                                                                                                                                                                                               |
+ * |------------------------------------------------------|-------|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+ * |`Active_AI`                                           |String |—                                            |Must contain `llama_std` (local) or `external` (external-only) to activate this component                                                                                                                                                                 |
+ * |`AI_LLAMA_STD_ModelUrl`                               |URL    |Qwen3-VL-2B Q4_K_M HuggingFace               |Download URL for the GGUF model file                                                                                                                                                                                                                      |
+ * |`AI_LLAMA_STD_MmprojUrl`                              |URL    |Qwen3-VL-2B mmproj (when using default model)|Download URL for the vision projector (mmproj) file. Omit for text-only models (vision features disabled). Auto-set when using the default VL model                                                                                                       |
+ * |`AI_LLAMA_STD_MaxPixels`                              |Long   |`3211264`                                    |Max pixel budget for image downscaling (min 3136)                                                                                                                                                                                                         |
+ * |`AI_LLAMA_STD_MaxUploadBytes`                         |Long   |`52428800`                                   |Max raw image size in bytes before decoding (default 50 MB, min 1 MB)                                                                                                                                                                                     |
+ * |`AI_LLAMA_STD_MaxTokens`                              |Int    |`2048`                                       |Maximum tokens to generate per response                                                                                                                                                                                                                   |
+ * |`AI_LLAMA_STD_MaxRAMPercent`                          |Double |`101.0`                                      |RAM usage threshold (%) — blocks requests when exceeded                                                                                                                                                                                                   |
+ * |`AI_LLAMA_STD_MaxComputePercent`                      |Double |`101.0`                                      |Compute usage threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded                                                                                                                                                      |
+ * |`AI_LLAMA_STD_MaxCPUPercent`                          |Double |—                                            |Legacy alias for MaxComputePercent (accepted as fallback)                                                                                                                                                                                                 |
+ * |`AI_LLAMA_STD_LlamaRelease`                           |String |`b8175`                                      |llama.cpp release tag for server binary download                                                                                                                                                                                                          |
+ * |`AI_LLAMA_STD_ServerUrl_<platform>`                   |URL    |(auto from release tag)                      |Per-platform override for the LLAMA-Server binary URL                                                                                                                                                                                                     |
+ * |`AI_LLAMA_STD_UpdateCheckHours`                       |Long   |`24`                                         |Hours between GitHub release checks (0 = disabled)                                                                                                                                                                                                        |
+ * |`AI_LLAMA_STD_NotifyEmail`                            |String |—                                            |Email address for update notifications                                                                                                                                                                                                                    |
+ * |`AI_LLAMA_STD_ThinkingModelUrl`                       |URL    |—                                            |Download URL for a dedicated thinking model GGUF (optional)                                                                                                                                                                                               |
+ * |`AI_LLAMA_STD_ThinkingMmprojUrl`                      |URL    |—                                            |Download URL for the thinking model's mmproj file (optional)                                                                                                                                                                                              |
+ * |`AI_LLAMA_STD_ExternalUrl`                            |URL    |—                                            |Base URL of an external OpenAI-compatible API; overrides local model                                                                                                                                                                                      |
+ * |`AI_LLAMA_STD_ExternalApiKey`                         |String |—                                            |API key for the external AI (sent as Bearer token)                                                                                                                                                                                                        |
+ * |`AI_LLAMA_STD_ExternalModel`                          |String |—                                            |Model name for the external API (e.g. gpt-4o, claude-3-opus)                                                                                                                                                                                              |
+ * |`AI_LLAMA_STD_ExternalNoPrompt`                       |Boolean|`false`                                      |When `true`, skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user message and chat history.                                                                                                                        |
+ * |`AI_LLAMA_STD_PromptIdentity`                         |String |(built-in)                                   |Override the identity/role sentence ("You are a helpful assistant..."). Use `{date}` for today's date, `{time}` for current time.                                                                                                                         |
+ * |`AI_LLAMA_STD_PromptLocation`                         |String |(built-in)                                   |Override the location-context instruction. Use `{location}` as placeholder.                                                                                                                                                                               |
+ * |`AI_LLAMA_STD_PromptSearch`                           |String |(built-in)                                   |Override the CALL:search instruction block (before examples).                                                                                                                                                                                             |
+ * |`AI_LLAMA_STD_PromptThinking`                         |String |(built-in)                                   |Override the thinking-mode instruction. Use `{language}` as placeholder.                                                                                                                                                                                  |
+ * |`AI_LLAMA_STD_PromptNoInternet`                       |String |(built-in)                                   |Override the no-internet-access warning.                                                                                                                                                                                                                  |
+ * |`AI_LLAMA_STD_PromptRules`                            |String |(built-in)                                   |Override the general rules (language, measurements, independence).                                                                                                                                                                                        |
+ * |`AI_LLAMA_STD_FallbackLocation`                       |String |—                                            |Fallback location string used when geolocation fails (e.g. `Ansbach, Nürnberger Straße 32, Bayern, Deutschland`)                                                                                                                                          |
+ * |`AI_LLAMA_STD_NominatimDomain`                        |String |`nominatim.openstreetmap.org`                |Domain for reverse geocoding requests (without path).                                                                                                                                                                                                     |
+ * |`AI_LLAMA_STD_IpGeolocationDomain`                    |String |`ipwho.is`                                   |Domain for IP geolocation requests (without path).                                                                                                                                                                                                        |
+ * |`AI_BraveSearch_ApiKey`                               |String |—                                            |Brave Search API key — enables web search tool for the model                                                                                                                                                                                              |
+ * |`AI_BraveSearch_MaxResults`                           |Int    |`5`                                          |Maximum number of Brave Search results per query (1–20).                                                                                                                                                                                                  |
+ * |`AI_LLAMA_STD_Language`                               |String |—                                            |Two-letter ISO 639-1 code (e.g. `de`, `fr`) — forces the AI to respond in this language, skipping auto-detection. Overridden by per-functionality `responselanguage` toLoad.                                                                              |
+ * |`AI_LLAMA_STD_SPECIALIST_XXX`                         |URL    |—                                            |Download URL for a specialist GGUF model named `XXX`. The name is chosen by the administrator and matched case-insensitively by the `specialist` toLoad property.                                                                                         |
+ * |`AI_LLAMA_STD_SPECIALIST_MMProj_XXX`                  |URL    |—                                            |Download URL for the specialist `XXX`'s multimodal projector (mmproj). Optional — omit if the specialist model has no vision capability.                                                                                                                  |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_XXX`                     |URL    |—                                            |Base URL of an external OpenAI-compatible API for a specialist named `XXX`. Matched case-insensitively by the `specialist` toLoad property.                                                                                                               |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_Key_XXX`                 |String |—                                            |API key for the external specialist `XXX` (sent as Bearer token). Optional.                                                                                                                                                                               |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_Model_XXX`               |String |—                                            |Model name for the external specialist `XXX` (e.g. `gpt-4o`). Optional — omit to use the API default.                                                                                                                                                     |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_MaxTokens_XXX`           |Int    |—                                            |Maximum output tokens for specialist `XXX`. Overrides `AI_LLAMA_STD_MaxTokens` for this specialist only. Optional.                                                                                                                                        |
+ * |`AI_LLAMA_STD_ExtraParams`                            |JSON   |—                                            |Extra parameters appended to every completion request body (e.g. `{"top_p":0.9,"seed":42}`). Keys `messages`, `stream`, `model`, `id_slot`, `logprobs` are silently ignored.                                                                              |
+ * |`AI_LLAMA_STD_PriceCurrency`                          |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the **standard** model's prices. When unset, no cost is shown for the standard model.                                                                                                                       |
+ * |`AI_LLAMA_STD_PricePerMInput`                         |Double |—                                            |Price per 1,000,000 **input** tokens for the standard model (e.g. `3.00`).                                                                                                                                                                                |
+ * |`AI_LLAMA_STD_PricePerMOutput`                        |Double |—                                            |Price per 1,000,000 **output** tokens for the standard model (e.g. `15.00`).                                                                                                                                                                              |
+ * |`AI_LLAMA_STD_PricePerMCachedInput`                   |Double |—                                            |Discounted price per 1,000,000 **cache-hit input** tokens for the standard model (e.g. `0.30`). Set it for a provider that charges less for the part of the prompt it served from its prompt cache; when unset, cache hits are billed at `PricePerMInput`.|
+ * |`AI_LLAMA_STD_ThinkingPriceCurrency`                  |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the **thinking** model's prices.                                                                                                                                                                            |
+ * |`AI_LLAMA_STD_ThinkingPricePerMInput`                 |Double |—                                            |Price per 1,000,000 **input** tokens for the thinking model.                                                                                                                                                                                              |
+ * |`AI_LLAMA_STD_ThinkingPricePerMOutput`                |Double |—                                            |Price per 1,000,000 **output** tokens for the thinking model.                                                                                                                                                                                             |
+ * |`AI_LLAMA_STD_ThinkingPricePerMCachedInput`           |Double |—                                            |Discounted price per 1,000,000 **cache-hit input** tokens for the thinking model.                                                                                                                                                                         |
+ * |`AI_LLAMA_STD_SPECIALIST_PriceCurrency_XXX`           |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the local specialist `XXX`'s prices.                                                                                                                                                                        |
+ * |`AI_LLAMA_STD_SPECIALIST_PricePerMInput_XXX`          |Double |—                                            |Price per 1,000,000 **input** tokens for the local specialist `XXX`.                                                                                                                                                                                      |
+ * |`AI_LLAMA_STD_SPECIALIST_PricePerMOutput_XXX`         |Double |—                                            |Price per 1,000,000 **output** tokens for the local specialist `XXX`.                                                                                                                                                                                     |
+ * |`AI_LLAMA_STD_SPECIALIST_PricePerMCachedInput_XXX`    |Double |—                                            |Discounted price per 1,000,000 **cache-hit input** tokens for the local specialist `XXX`.                                                                                                                                                                 |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_PriceCurrency_XXX`       |String |—                                            |ISO 4217 currency code (e.g. `EUR`, `USD`) of the external specialist `XXX`'s prices.                                                                                                                                                                     |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_PricePerMInput_XXX`      |Double |—                                            |Price per 1,000,000 **input** tokens for the external specialist `XXX`.                                                                                                                                                                                   |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_PricePerMOutput_XXX`     |Double |—                                            |Price per 1,000,000 **output** tokens for the external specialist `XXX`.                                                                                                                                                                                  |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_PricePerMCachedInput_XXX`|Double |—                                            |Discounted price per 1,000,000 **cache-hit input** tokens for the external specialist `XXX`.                                                                                                                                                              |
  *
  * ## Domains to whitelist
  * - **github.com** — LLAMA-Server binary releases & release-check API
@@ -123,6 +127,23 @@ class Standard : LLAMA() {
      * Enabled unless the value is `false`/`0`/`no`/`off`/`disabled` (case-insensitive).
      */
     const val WEB_ACCESS_PROPERTY = "AI_FormAssistant_WebAccess"
+
+    /**
+     * Global plugin property for the reasoning budget of EXTERNAL, reasoning-capable providers.
+     * `low`/`medium`/`high` lower or raise the budget, `off` asks the provider to skip its
+     * reasoning phase; absent = the provider's own default. Overridable per specialist via
+     * `AI_Assistant_ReasoningEffort_<specialistName>` and per run via the assistant's
+     * `reasoningEffort` request parameter (precedence: request > specialist > global > provider
+     * default).
+     */
+    const val REASONING_EFFORT_PROPERTY = "AI_Assistant_ReasoningEffort"
+
+    /**
+     * The selectable reasoning-effort values offered by the assistant dialog. `default` means "use
+     * the configured property" (i.e. no per-request override); the rest map to the provider request
+     * body.
+     */
+    val REASONING_EFFORT_OPTIONS: List<String> = listOf("default", "low", "medium", "high", "off")
 
     /**
      * Represents a model available for AI Form Assistance, with a routing [id] and a user-facing
@@ -198,6 +219,31 @@ class Standard : LLAMA() {
     private set
 
   // endregion Model state
+  // region Reasoning budget
+  /**
+   * The GLOBAL reasoning budget parsed from [REASONING_EFFORT_PROPERTY]
+   * (`AI_Assistant_ReasoningEffort`); the lowest-precedence configured source, used when neither a
+   * per-request selection nor a per-specialist property applies. `null` leaves the provider
+   * default.
+   */
+  @Volatile private var globalReasoningEffort: String? = null
+
+  /**
+   * Per-specialist reasoning budgets parsed from `AI_Assistant_ReasoningEffort_<specialistName>`,
+   * keyed by the LOWERCASE specialist name (the model id after stripping `specialist:` /
+   * `ext-specialist:`). A hit here wins over [globalReasoningEffort] for that specialist.
+   */
+  private val specialistReasoningEffort = ConcurrentHashMap<String, String>()
+
+  /**
+   * Per-REQUEST reasoning-budget override (the assistant dialog's dropdown), scoped to the run
+   * executing on the current thread. `AICodBiAssistant.handleRun` sets it (null included) once at
+   * the start of every run so a pooled thread can never leak the previous run's value. `null`,
+   * blank or `default` means "no per-request override" — fall through to the specialist/global
+   * property.
+   */
+  private val requestReasoningEffort = ThreadLocal<String?>()
+  // endregion Reasoning budget
   // region Thread pool
   /** Counter for active threads in the executor service. */
   private val threadCounter = AtomicInteger(0)
@@ -310,6 +356,42 @@ class Standard : LLAMA() {
     webAccessEnabled =
         props.getProperty(WEB_ACCESS_PROPERTY)?.trim()?.lowercase() !in
             listOf("false", "0", "no", "off", "disabled")
+
+    // Reasoning budget sent to an EXTERNAL, reasoning-capable provider (e.g. Cerebras GPT-OSS): the
+    // reasoning tokens are part of the billed completion tokens while the visible answer is only a
+    // fraction of them, so this is the output-side lever. Resolved with this precedence (highest
+    // first): the per-request UI selection → the per-specialist property
+    // `AI_Assistant_ReasoningEffort_<specialistName>` → the global
+    // `AI_Assistant_ReasoningEffort` → the provider default (send nothing). The GLOBAL value is
+    // kept
+    // here as the fallback and ALSO forwarded to [ChatCompletionService.reasoningEffort] so every
+    // other caller (runtime chat, workflow) keeps today's behaviour; the per-specialist map and the
+    // per-request ThreadLocal only affect the design-time assistant passes.
+    // IMPORTANT: the provider only accepts `low`/`medium`/`high` — Cerebras rejects anything else
+    // with
+    // `HTTP 400 … Unsupported reasoning effort` and aborts the run, so `off`/`none` and every other
+    // unsupported value are coerced to the lowest level `low` at the request builder (see
+    // ChatCompletionService.reasoningEffortJson). A true "no reasoning" switch must be configured
+    // through the provider's own extra-parameters property.
+    globalReasoningEffort = normalizeReasoningEffort(props.getProperty(REASONING_EFFORT_PROPERTY))
+    ChatCompletionService.reasoningEffort = globalReasoningEffort
+    specialistReasoningEffort.clear()
+    val reasoningSpecialistPrefix = "${REASONING_EFFORT_PROPERTY}_"
+    for (key in props.stringPropertyNames()) {
+      if (!key.startsWith(reasoningSpecialistPrefix)) continue
+      val specialistName = key.removePrefix(reasoningSpecialistPrefix).trim().lowercase()
+      if (specialistName.isEmpty()) continue
+      normalizeReasoningEffort(props.getProperty(key))?.let {
+        specialistReasoningEffort[specialistName] = it
+      }
+    }
+    log(
+        LogLevel.INFO,
+        "External-provider reasoning budget ($REASONING_EFFORT_PROPERTY): " +
+            (globalReasoningEffort ?: "provider default") +
+            (if (specialistReasoningEffort.isEmpty()) ""
+            else
+                ", specialist overrides: ${specialistReasoningEffort.entries.joinToString { "${it.key}=${it.value}" }}"))
     log(
         LogLevel.INFO,
         "Design-time assistant web access ($WEB_ACCESS_PROPERTY): " +
@@ -389,9 +471,11 @@ class Standard : LLAMA() {
         priceCurrency = str("PriceCurrency")?.trim()?.takeIf { it.isNotEmpty() },
         pricePerMInput = dbl("PricePerMInput")?.takeIf { it >= 0.0 },
         pricePerMOutput = dbl("PricePerMOutput")?.takeIf { it >= 0.0 },
+        pricePerMCachedInput = dbl("PricePerMCachedInput")?.takeIf { it >= 0.0 },
         thinkingPriceCurrency = str("ThinkingPriceCurrency")?.trim()?.takeIf { it.isNotEmpty() },
         thinkingPricePerMInput = dbl("ThinkingPricePerMInput")?.takeIf { it >= 0.0 },
-        thinkingPricePerMOutput = dbl("ThinkingPricePerMOutput")?.takeIf { it >= 0.0 })
+        thinkingPricePerMOutput = dbl("ThinkingPricePerMOutput")?.takeIf { it >= 0.0 },
+        thinkingPricePerMCachedInput = dbl("ThinkingPricePerMCachedInput")?.takeIf { it >= 0.0 })
   }
 
   /**
@@ -429,6 +513,7 @@ class Standard : LLAMA() {
     val currencyPrefix = "${PROP_PREFIX}_SPECIALIST_PriceCurrency_"
     val priceInPrefix = "${PROP_PREFIX}_SPECIALIST_PricePerMInput_"
     val priceOutPrefix = "${PROP_PREFIX}_SPECIALIST_PricePerMOutput_"
+    val priceCachedInPrefix = "${PROP_PREFIX}_SPECIALIST_PricePerMCachedInput_"
     val specialists = mutableMapOf<String, StandardConfig.SpecialistEntry>()
 
     for (key in props.stringPropertyNames()) {
@@ -438,6 +523,7 @@ class Standard : LLAMA() {
       if (key.startsWith(currencyPrefix)) continue
       if (key.startsWith(priceInPrefix)) continue
       if (key.startsWith(priceOutPrefix)) continue
+      if (key.startsWith(priceCachedInPrefix)) continue
       if (key.endsWith("_SHA256")) continue
 
       val specialistName = key.removePrefix(prefix).trim()
@@ -466,6 +552,12 @@ class Standard : LLAMA() {
           props.getProperty("${priceOutPrefix}$specialistName")?.trim()?.toDoubleOrNull()?.takeIf {
             it >= 0.0
           }
+      val pricePerMCachedInput =
+          props
+              .getProperty("${priceCachedInPrefix}$specialistName")
+              ?.trim()
+              ?.toDoubleOrNull()
+              ?.takeIf { it >= 0.0 }
 
       specialists[specialistName] =
           StandardConfig.SpecialistEntry(
@@ -475,7 +567,8 @@ class Standard : LLAMA() {
               mmprojSha256 = mmprojSha256,
               currency = currency,
               pricePerMInput = pricePerMInput,
-              pricePerMOutput = pricePerMOutput)
+              pricePerMOutput = pricePerMOutput,
+              pricePerMCachedInput = pricePerMCachedInput)
     }
 
     return specialists
@@ -500,6 +593,7 @@ class Standard : LLAMA() {
     val currencyPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_PriceCurrency_"
     val priceInPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_PricePerMInput_"
     val priceOutPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_PricePerMOutput_"
+    val priceCachedInPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_PricePerMCachedInput_"
     val result = mutableMapOf<String, StandardConfig.ExternalSpecialistEntry>()
 
     for (key in props.stringPropertyNames()) {
@@ -510,7 +604,8 @@ class Standard : LLAMA() {
           key.startsWith(extraParamsPrefix) ||
           key.startsWith(currencyPrefix) ||
           key.startsWith(priceInPrefix) ||
-          key.startsWith(priceOutPrefix))
+          key.startsWith(priceOutPrefix) ||
+          key.startsWith(priceCachedInPrefix))
           continue
 
       val specialistName = key.removePrefix(prefix).trim()
@@ -539,6 +634,12 @@ class Standard : LLAMA() {
           props.getProperty("${priceOutPrefix}$specialistName")?.trim()?.toDoubleOrNull()?.takeIf {
             it >= 0.0
           }
+      val pricePerMCachedInput =
+          props
+              .getProperty("${priceCachedInPrefix}$specialistName")
+              ?.trim()
+              ?.toDoubleOrNull()
+              ?.takeIf { it >= 0.0 }
 
       result[specialistName] =
           StandardConfig.ExternalSpecialistEntry(
@@ -549,7 +650,8 @@ class Standard : LLAMA() {
               extraParams = extraParams,
               currency = currency,
               pricePerMInput = pricePerMInput,
-              pricePerMOutput = pricePerMOutput)
+              pricePerMOutput = pricePerMOutput,
+              pricePerMCachedInput = pricePerMCachedInput)
     }
 
     return result
@@ -1099,8 +1201,77 @@ class Standard : LLAMA() {
     return notes?.takeIf { it.isNotBlank() }
   }
 
-  /** Provider-reported token usage of one form-assist call, summed over all of its rounds. */
-  internal data class AssistUsage(val promptTokens: Int, val completionTokens: Int) {
+  /** Normalizes a reasoning-effort value; `null`/blank/`default` mean "not configured". */
+  private fun normalizeReasoningEffort(raw: String?): String? =
+      raw?.trim()?.lowercase()?.takeIf { it.isNotEmpty() && it != "default" }
+
+  /**
+   * Sets the PER-REQUEST reasoning-budget override for the run executing on the current thread.
+   *
+   * `AICodBiAssistant.handleRun` calls this ONCE at the start of every run — `null` included — so a
+   * pooled thread can never leak the previous run's value. A blank or `default` value means "use
+   * the configured property", i.e. no per-request override.
+   */
+  internal fun setRequestReasoningEffort(value: String?) {
+    requestReasoningEffort.set(normalizeReasoningEffort(value))
+  }
+
+  /**
+   * The specialist name a `modelId` refers to, or `null` for the non-specialist routes. The name is
+   * lowercased to match the keys of [specialistReasoningEffort].
+   */
+  private fun specialistNameForReasoning(modelId: String): String? =
+      when {
+        modelId.startsWith("ext-specialist:") ->
+            modelId.removePrefix("ext-specialist:").trim().lowercase().takeIf { it.isNotEmpty() }
+        modelId.startsWith("specialist:") ->
+            modelId.removePrefix("specialist:").trim().lowercase().takeIf { it.isNotEmpty() }
+        else -> null
+      }
+
+  /**
+   * The reasoning budget configured for [modelId] (per-specialist property first, then the global),
+   * or `null` when neither is set (the provider default applies). Ignores any per-request override
+   * — this is the value the assistant dialog shows as the effective default for the selected model.
+   */
+  internal fun configuredReasoningEffort(modelId: String): String? =
+      specialistNameForReasoning(modelId)?.let { specialistReasoningEffort[it] }
+          ?: globalReasoningEffort
+
+  /**
+   * Resolves the reasoning budget for a form-assist call to [modelId], applying the precedence
+   * (highest first):
+   * 1. the per-REQUEST selection (the assistant dialog's dropdown, set via
+   *    [setRequestReasoningEffort]);
+   * 2. the per-specialist plugin property `AI_Assistant_ReasoningEffort_<specialistName>`;
+   * 3. the global plugin property `AI_Assistant_ReasoningEffort`;
+   * 4. `null` — send nothing and use the provider's own default.
+   *
+   * The result is handed to [ChatCompletionService.chatCompletion] as its per-call override. A
+   * `default`/blank request value (or none) falls through to the configured sources.
+   */
+  internal fun resolveReasoningEffort(modelId: String): String? =
+      requestReasoningEffort.get() ?: configuredReasoningEffort(modelId)
+
+  /** The value the assistant dropdown should preselect for [modelId] (`default` when unset). */
+  internal fun reasoningEffortSelectionFor(modelId: String): String =
+      configuredReasoningEffort(modelId) ?: "default"
+
+  /**
+   * Provider-reported token usage of one form-assist call, summed over all of its rounds.
+   *
+   * [cachedPromptTokens] is the share of [promptTokens] the provider served from its own prompt
+   * cache — reported by [ChatCompletionService] when the provider exposes such a counter. It is a
+   * DIAGNOSTIC value: `AICodBiAssistant` shows it per AI call in the change log so the
+   * cache-friendly prompt layout (see `AI_Assistant_PromptCaching`) can be verified to actually
+   * produce cache hits instead of being assumed to. Providers without prompt caching always
+   * report 0.
+   */
+  internal data class AssistUsage(
+      val promptTokens: Int,
+      val completionTokens: Int,
+      val cachedPromptTokens: Int = 0
+  ) {
     val total: Int
       get() = promptTokens + completionTokens
   }
@@ -1108,12 +1279,17 @@ class Standard : LLAMA() {
   /** Accumulator for [assistUsage] — one entry per thread, reset at the start of each call. */
   private val assistUsage = ThreadLocal<AssistUsage?>()
 
-  private fun accumulateAssistUsage(promptTokens: Int, completionTokens: Int) {
+  private fun accumulateAssistUsage(
+      promptTokens: Int,
+      completionTokens: Int,
+      cachedPromptTokens: Int = 0
+  ) {
     val current = assistUsage.get()
     assistUsage.set(
         AssistUsage(
             (current?.promptTokens ?: 0) + promptTokens,
-            (current?.completionTokens ?: 0) + completionTokens))
+            (current?.completionTokens ?: 0) + completionTokens,
+            (current?.cachedPromptTokens ?: 0) + cachedPromptTokens))
   }
 
   /**
@@ -1134,41 +1310,55 @@ class Standard : LLAMA() {
       svc: ChatCompletionService,
       modelId: String,
       messagesJson: String,
-      onUsage: ((Int, Int) -> Unit)? = null
-  ): String =
-      when {
-        modelId == "thinking" ->
-            svc.chatCompletion(messagesJson, enableThinking = true, onUsage = onUsage)
-        modelId.startsWith("specialist:") -> {
-          val name = modelId.removePrefix("specialist:")
-          val port = specialistServers[name]?.port ?: error("Specialist '$name' not ready")
-          svc.chatCompletion(messagesJson, overridePort = port, onUsage = onUsage)
-        }
-        modelId.startsWith("ext-specialist:") -> {
-          val name = modelId.removePrefix("ext-specialist:")
-          val client =
-              externalSpecialistClients[name] ?: error("External specialist '$name' not found")
-          val specialistMaxTokens =
-              config.externalSpecialists.entries
-                  .firstOrNull { it.key.equals(name, ignoreCase = true) }
-                  ?.value
-                  ?.maxTokens
+      onUsage: ((Int, Int, Int) -> Unit)? = null
+  ): String {
+    // Apply the reasoning-budget precedence for THIS call: per-request selection > per-specialist
+    // property > global property > provider default (see [resolveReasoningEffort]).
+    val reasoningEffort = resolveReasoningEffort(modelId)
+    return when {
+      modelId == "thinking" ->
           svc.chatCompletion(
               messagesJson,
-              overrideExternalClient = client,
-              overrideMaxTokens = specialistMaxTokens,
+              enableThinking = true,
+              reasoningEffort = reasoningEffort,
               onUsage = onUsage)
-        }
-        // For form-assist the response is a full form JSON, which can be large.
-        // Local models default to AI_LLAMA_STD_MaxTokens (default 2048), which is too small for
-        // complex multi-page forms. Force a larger budget for local models only.
-        // External APIs (e.g. Groq) use their own generous defaults and count requested max_tokens
-        // toward rate limits, so we do not override them here.
-        else -> {
-          val formMaxTokens = if (config.isExternalMode) null else 16384
-          svc.chatCompletion(messagesJson, overrideMaxTokens = formMaxTokens, onUsage = onUsage)
-        }
+      modelId.startsWith("specialist:") -> {
+        val name = modelId.removePrefix("specialist:")
+        val port = specialistServers[name]?.port ?: error("Specialist '$name' not ready")
+        svc.chatCompletion(
+            messagesJson, overridePort = port, reasoningEffort = reasoningEffort, onUsage = onUsage)
       }
+      modelId.startsWith("ext-specialist:") -> {
+        val name = modelId.removePrefix("ext-specialist:")
+        val client =
+            externalSpecialistClients[name] ?: error("External specialist '$name' not found")
+        val specialistMaxTokens =
+            config.externalSpecialists.entries
+                .firstOrNull { it.key.equals(name, ignoreCase = true) }
+                ?.value
+                ?.maxTokens
+        svc.chatCompletion(
+            messagesJson,
+            overrideExternalClient = client,
+            overrideMaxTokens = specialistMaxTokens,
+            reasoningEffort = reasoningEffort,
+            onUsage = onUsage)
+      }
+      // For form-assist the response is a full form JSON, which can be large.
+      // Local models default to AI_LLAMA_STD_MaxTokens (default 2048), which is too small for
+      // complex multi-page forms. Force a larger budget for local models only.
+      // External APIs (e.g. Groq) use their own generous defaults and count requested max_tokens
+      // toward rate limits, so we do not override them here.
+      else -> {
+        val formMaxTokens = if (config.isExternalMode) null else 16384
+        svc.chatCompletion(
+            messagesJson,
+            overrideMaxTokens = formMaxTokens,
+            reasoningEffort = reasoningEffort,
+            onUsage = onUsage)
+      }
+    }
+  }
 
   /** Maximum web-access tool round-trips per form-assist request (mirrors the chat/proxy cap). */
   private val maxWebAccessRoundTrips = 2

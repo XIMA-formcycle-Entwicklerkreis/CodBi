@@ -45,11 +45,16 @@ import java.io.File
  * @param pricePerMInput Price per 1,000,000 **input** tokens for the standard model, or `null` when
  *   the standard model has no configured price.
  * @param pricePerMOutput Price per 1,000,000 **output** tokens for the standard model, or `null`.
+ * @param pricePerMCachedInput Price per 1,000,000 **cache-hit input** tokens for the standard
+ *   model, or `null` when the provider has no prompt cache / no discount is configured (then cache
+ *   hits are billed at [pricePerMInput]).
  * @param thinkingPriceCurrency ISO 4217 currency code of the **thinking** model's prices, or
  *   `null`.
  * @param thinkingPricePerMInput Price per 1,000,000 input tokens for the thinking model, or `null`.
  * @param thinkingPricePerMOutput Price per 1,000,000 output tokens for the thinking model, or
  *   `null`.
+ * @param thinkingPricePerMCachedInput Price per 1,000,000 cache-hit input tokens for the thinking
+ *   model, or `null`.
  */
 internal data class StandardConfig(
     val modelUrl: String,
@@ -86,9 +91,11 @@ internal data class StandardConfig(
     val priceCurrency: String? = null,
     val pricePerMInput: Double? = null,
     val pricePerMOutput: Double? = null,
+    val pricePerMCachedInput: Double? = null,
     val thinkingPriceCurrency: String? = null,
     val thinkingPricePerMInput: Double? = null,
-    val thinkingPricePerMOutput: Double? = null
+    val thinkingPricePerMOutput: Double? = null,
+    val thinkingPricePerMCachedInput: Double? = null
 ) {
   /**
    * A local specialist model entry parsed from `AI_LLAMA_STD_SPECIALIST_XXX` plugin properties.
@@ -102,6 +109,8 @@ internal data class StandardConfig(
    * @param currency ISO 4217 currency code of this specialist's prices, or `null`.
    * @param pricePerMInput Price per 1,000,000 input tokens for this specialist, or `null`.
    * @param pricePerMOutput Price per 1,000,000 output tokens for this specialist, or `null`.
+   * @param pricePerMCachedInput Price per 1,000,000 cache-hit input tokens for this specialist, or
+   *   `null`.
    */
   data class SpecialistEntry(
       val modelUrl: String,
@@ -110,7 +119,8 @@ internal data class StandardConfig(
       val mmprojSha256: String? = null,
       val currency: String? = null,
       val pricePerMInput: Double? = null,
-      val pricePerMOutput: Double? = null
+      val pricePerMOutput: Double? = null,
+      val pricePerMCachedInput: Double? = null
   )
 
   /**
@@ -126,6 +136,8 @@ internal data class StandardConfig(
    * @param currency ISO 4217 currency code of this specialist's prices, or `null`.
    * @param pricePerMInput Price per 1,000,000 input tokens for this specialist, or `null`.
    * @param pricePerMOutput Price per 1,000,000 output tokens for this specialist, or `null`.
+   * @param pricePerMCachedInput Price per 1,000,000 cache-hit input tokens for this specialist, or
+   *   `null`.
    */
   data class ExternalSpecialistEntry(
       val url: String,
@@ -135,7 +147,8 @@ internal data class StandardConfig(
       val extraParams: String? = null,
       val currency: String? = null,
       val pricePerMInput: Double? = null,
-      val pricePerMOutput: Double? = null
+      val pricePerMOutput: Double? = null,
+      val pricePerMCachedInput: Double? = null
   )
 
   init {
@@ -173,15 +186,25 @@ internal data class StandardConfig(
    */
   fun priceForModel(modelId: String): ModelPrice? =
       when {
-        modelId == "standard" -> buildPrice(priceCurrency, pricePerMInput, pricePerMOutput)
+        modelId == "standard" ->
+            buildPrice(priceCurrency, pricePerMInput, pricePerMOutput, pricePerMCachedInput)
         modelId == "thinking" ->
-            buildPrice(thinkingPriceCurrency, thinkingPricePerMInput, thinkingPricePerMOutput)
+            buildPrice(
+                thinkingPriceCurrency,
+                thinkingPricePerMInput,
+                thinkingPricePerMOutput,
+                thinkingPricePerMCachedInput)
         modelId.startsWith("specialist:") -> {
           val name = modelId.removePrefix("specialist:")
           val entry =
               specialists.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
           if (entry == null) null
-          else buildPrice(entry.currency, entry.pricePerMInput, entry.pricePerMOutput)
+          else
+              buildPrice(
+                  entry.currency,
+                  entry.pricePerMInput,
+                  entry.pricePerMOutput,
+                  entry.pricePerMCachedInput)
         }
         modelId.startsWith("ext-specialist:") -> {
           val name = modelId.removePrefix("ext-specialist:")
@@ -190,16 +213,35 @@ internal data class StandardConfig(
                   .firstOrNull { it.key.equals(name, ignoreCase = true) }
                   ?.value
           if (entry == null) null
-          else buildPrice(entry.currency, entry.pricePerMInput, entry.pricePerMOutput)
+          else
+              buildPrice(
+                  entry.currency,
+                  entry.pricePerMInput,
+                  entry.pricePerMOutput,
+                  entry.pricePerMCachedInput)
         }
         else -> null
       }
 
-  /** Builds a [ModelPrice] for the given currency/prices, or `null` when either price is unset. */
-  private fun buildPrice(currency: String?, priceIn: Double?, priceOut: Double?): ModelPrice? {
+  /**
+   * Builds a [ModelPrice] for the given currency/prices, or `null` when either price is unset.
+   *
+   * [priceCachedIn] is optional: without it a cache hit is billed at the full input price, so a
+   * provider that does not discount cached input keeps the previous numbers.
+   */
+  private fun buildPrice(
+      currency: String?,
+      priceIn: Double?,
+      priceOut: Double?,
+      priceCachedIn: Double? = null
+  ): ModelPrice? {
     val input = priceIn ?: return null
     val output = priceOut ?: return null
-    return ModelPrice(currency = currency, pricePerMInput = input, pricePerMOutput = output)
+    return ModelPrice(
+        currency = currency,
+        pricePerMInput = input,
+        pricePerMOutput = output,
+        pricePerMCachedInput = priceCachedIn)
   }
 
   /** Returns a summary string with the API key redacted. */
@@ -218,18 +260,34 @@ internal data class StandardConfig(
  * @param currency ISO 4217 currency code (e.g. `EUR`, `USD`), or `null` when not configured.
  * @param pricePerMInput Price per 1,000,000 input tokens.
  * @param pricePerMOutput Price per 1,000,000 output tokens.
+ * @param pricePerMCachedInput Price per 1,000,000 **cache-hit** input tokens (the discounted rate a
+ *   provider with prompt caching charges for the part of the prompt it served from its cache), or
+ *   `null` when no such rate is configured — then a cache hit is billed at [pricePerMInput].
  */
 data class ModelPrice(
     val currency: String?,
     val pricePerMInput: Double,
-    val pricePerMOutput: Double
+    val pricePerMOutput: Double,
+    val pricePerMCachedInput: Double? = null
 ) {
   /**
    * Computes the estimated cost for [tokensIn] input and [tokensOut] output tokens. Returns `null`
    * when the token counts are both zero (nothing consumed).
+   *
+   * [cachedTokens] is the share of [tokensIn] the provider served from its prompt cache (see
+   * `AI_Assistant_PromptCaching`): it is billed at [pricePerMCachedInput] — or at the full
+   * [pricePerMInput] when no discounted rate is configured — while the remaining input tokens are
+   * billed at [pricePerMInput]. Values outside `0..tokensIn` are clamped, so a provider that
+   * reports more cached tokens than prompt tokens cannot produce a negative cost.
    */
-  fun costFor(tokensIn: Long, tokensOut: Long): Double? {
-    val cost = tokensIn / 1_000_000.0 * pricePerMInput + tokensOut / 1_000_000.0 * pricePerMOutput
+  fun costFor(tokensIn: Long, tokensOut: Long, cachedTokens: Long = 0L): Double? {
+    val cached = cachedTokens.coerceIn(0L, tokensIn.coerceAtLeast(0L))
+    val uncached = tokensIn - cached
+    val cachedRate = pricePerMCachedInput ?: pricePerMInput
+    val cost =
+        uncached / 1_000_000.0 * pricePerMInput +
+            cached / 1_000_000.0 * cachedRate +
+            tokensOut / 1_000_000.0 * pricePerMOutput
     return if (cost > 0.0) cost else null
   }
 }

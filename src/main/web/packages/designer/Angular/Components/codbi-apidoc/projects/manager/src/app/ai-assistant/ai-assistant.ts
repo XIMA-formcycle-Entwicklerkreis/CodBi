@@ -60,6 +60,12 @@ interface AiModel {
   pricePerMInput?: number;
   /** Price per 1,000,000 output tokens, when configured in the plugin properties. */
   pricePerMOutput?: number;
+  /** Selectable reasoning-effort values for this model, sent by the backend (e.g.
+   *  ["default","low","medium","high","off"]) so the assistant does not hard-code the list. */
+  reasoningEffortOptions?: string[];
+  /** The reasoning budget currently configured for this model (per-specialist or global plugin
+   *  property), or "default" when no property is set. */
+  reasoningEffort?: string;
 }
 
 interface FormElement {
@@ -173,6 +179,11 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  sent to the AI at all. Defaults to ON. When OFF, the AI only receives Formcycle widgets and
    *  workflow nodes, and no CodBi is applied in any pass. */
   useCodbi = true;
+  /** Reasoning-effort override for the next run (footer dropdown placed directly BEFORE the CodBi
+   *  switch). "default" = use the configured plugin property; any other value overrides BOTH the
+   *  per-specialist (AI_Assistant_ReasoningEffort_<name>) and the global
+   *  (AI_Assistant_ReasoningEffort) property for that run. */
+  reasoningEffort = "default";
   /** When true, the AI asks ALL clarification questions at once in a single round instead of at
    *  most 3 per round. Defaults to OFF. */
   askAllQuestions = false;
@@ -299,6 +310,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   private readonly LOG_PANEL_OPEN_KEY = "codbi-ai-log-panel-open";
   /** localStorage key remembering the CodBi on/off switch state. */
   private readonly USE_CODBI_KEY = "codbi-ai-use-codbi";
+  /** localStorage key remembering the reasoning-effort dropdown selection. */
+  private readonly REASONING_EFFORT_KEY = "codbi-ai-reasoning-effort";
   /** localStorage key remembering the Bürgerservice field-naming switch state. */
   private readonly USE_BUERGERSERVICE_NAMING_KEY = "codbi-ai-use-buergerservice-naming";
   /** localStorage key remembering the "Nicht installierte Elemente erstellen" switch state. */
@@ -890,6 +903,15 @@ export class AiAssistant implements OnInit, OnDestroy {
     } catch {
       // ignore storage errors
     }
+    // Restore the persisted reasoning-effort dropdown selection (footer, before the CodBi switch).
+    try {
+      const savedEffort = localStorage.getItem(this.REASONING_EFFORT_KEY);
+      if (savedEffort && this.reasoningEffortOptions.includes(savedEffort)) {
+        this.reasoningEffort = savedEffort;
+      }
+    } catch {
+      // ignore storage errors
+    }
     // Restore the persisted Bürgerservice field-naming switch state.
     try {
       const savedNaming = localStorage.getItem(this.USE_BUERGERSERVICE_NAMING_KEY);
@@ -1413,6 +1435,117 @@ export class AiAssistant implements OnInit, OnDestroy {
       localStorage.setItem(this.USE_CODBI_KEY, use ? "1" : "0");
     } catch {
       // ignore storage errors
+    }
+  }
+
+  /** Persists the reasoning-effort dropdown selection; it is applied to every subsequent run. */
+  onReasoningEffortChange(value: string): void {
+    this.reasoningEffort = value;
+    try {
+      localStorage.setItem(this.REASONING_EFFORT_KEY, value);
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** The reasoning-effort values offered for the selected model. Supplied by the backend models
+   *  payload (so the list is not hard-coded); falls back to the standard set when the cached model
+   *  list predates the field. */
+  get reasoningEffortOptions(): string[] {
+    const model = this.models.find((m) => m.id === this.selectedModel);
+    return model?.reasoningEffortOptions?.length
+      ? model.reasoningEffortOptions
+      : ["default", "low", "medium", "high", "off"];
+  }
+
+  /** The reasoning budget currently configured for the selected model — the effective default the
+   *  "Default" option represents — or "default" when no property is set. */
+  get configuredReasoningEffort(): string {
+    const model = this.models.find((m) => m.id === this.selectedModel);
+    return model?.reasoningEffort && model.reasoningEffort.length > 0 ? model.reasoningEffort : "default";
+  }
+
+  /** Current Formcycle UI language (`de`/`it`/`nl`, otherwise English). */
+  private get uiLang(): string {
+    return (
+      (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage ?? "en"
+    );
+  }
+
+  /** Localized label for the reasoning-effort dropdown. */
+  get reasoningEffortLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Reasoning-Aufwand";
+      case "it":
+        return "Impegno di ragionamento";
+      case "nl":
+        return "Redeneerinspanning";
+      default:
+        return "Reasoning effort";
+    }
+  }
+
+  /** Tooltip explaining the precedence chain of the reasoning-effort dropdown. */
+  get reasoningEffortTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Reasoning-Aufwand für diesen Lauf. Überschreibt die Specialist-Einstellung und die globale Plugin-Eigenschaft AI_Assistant_ReasoningEffort. „Standard“ = konfigurierte Eigenschaft verwenden (nichts senden, wenn keine gesetzt ist). „Aus“ sendet die niedrigste vom Anbieter unterstützte Stufe (low) — Anbieter akzeptieren nur low/medium/high; jeder andere Wert wird auf low abgebildet, damit eine Anfrage nie abgelehnt wird.";
+      case "it":
+        return "Impegno di ragionamento per questa esecuzione. Prevale sull'impostazione dello specialist e sulla proprietà globale AI_Assistant_ReasoningEffort. «Predefinito» = usa la proprietà configurata. «Disattivato» invia il livello minimo supportato dal provider (low) — i provider accettano solo low/medium/high; ogni altro valore viene ricondotto a low.";
+      case "nl":
+        return "Redeneerinspanning voor deze run. Overschrijft de specialist-instelling en de globale plugin-eigenschap AI_Assistant_ReasoningEffort. “Standaard” = de geconfigureerde eigenschap gebruiken. “Uit” stuurt het laagste door de provider ondersteunde niveau (low) — providers accepteren alleen low/medium/high; elke andere waarde wordt naar low omgezet.";
+      default:
+        return 'Reasoning effort for this run. Overrides the per-specialist setting and the global plugin property AI_Assistant_ReasoningEffort. "Default" = use the configured property (send nothing when none is set). "Off" sends the lowest level the provider supports (low) — providers only accept low/medium/high, so any other value is mapped to low and a request is never rejected.';
+    }
+  }
+
+  /** Localized label for a reasoning-effort option; the "default" option shows the configured value
+   *  (the effective default) when one is set. */
+  reasoningEffortOptionLabel(option: string): string {
+    switch (option) {
+      case "default": {
+        const configured = this.configuredReasoningEffort;
+        const base =
+          this.uiLang === "de"
+            ? "Standard"
+            : this.uiLang === "it"
+              ? "Predefinito"
+              : this.uiLang === "nl"
+                ? "Standaard"
+                : "Default";
+        return configured !== "default" ? `${base} (${configured})` : base;
+      }
+      case "low":
+        return this.uiLang === "de"
+          ? "Niedrig"
+          : this.uiLang === "it"
+            ? "Basso"
+            : this.uiLang === "nl"
+              ? "Laag"
+              : "Low";
+      case "medium":
+        return this.uiLang === "de"
+          ? "Mittel"
+          : this.uiLang === "it"
+            ? "Medio"
+            : this.uiLang === "nl"
+              ? "Gemiddeld"
+              : "Medium";
+      case "high":
+        return this.uiLang === "de" ? "Hoch" : this.uiLang === "it" ? "Alto" : this.uiLang === "nl" ? "Hoog" : "High";
+      case "off":
+        // The lowest level the provider supports — providers reject anything outside
+        // low/medium/high, so "off" is honest about being a minimum, not a true disable.
+        return this.uiLang === "de"
+          ? "Aus (Minimum)"
+          : this.uiLang === "it"
+            ? "Disattivato (minimo)"
+            : this.uiLang === "nl"
+              ? "Uit (minimum)"
+              : "Off (minimum)";
+      default:
+        return option;
     }
   }
 
@@ -3376,6 +3509,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       useCodbi: String(this.useCodbi),
       askAllQuestions: String(this.askAllQuestions),
       useBuergerserviceNaming: String(this.useBuergerserviceNaming),
+      // Per-request reasoning budget (the footer dropdown); "default" = use the configured property.
+      reasoningEffort: this.reasoningEffort,
     };
     this.appendAllowedElements(phase1Data);
     const phase1Form = new FormData();
@@ -3481,6 +3616,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       useCodbi: String(this.useCodbi),
       askAllQuestions: String(this.askAllQuestions),
       useBuergerserviceNaming: String(this.useBuergerserviceNaming),
+      // Per-request reasoning budget (the footer dropdown); "default" = use the configured property.
+      reasoningEffort: this.reasoningEffort,
       // Formcycle UI language, so the backend can localize stored change-log text (e.g. the
       // "earlier chat turns" context label) to match the UI.
       lang: (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage ?? "",

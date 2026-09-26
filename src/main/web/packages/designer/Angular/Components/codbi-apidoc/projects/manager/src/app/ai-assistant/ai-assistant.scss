@@ -266,19 +266,37 @@ cb-ai-assistant {
     margin-left: auto;
 }
 
-/* Buttons in the form assistant dialog shrink to scale .9 while pressed (0.25s ease) for tactile
-   feedback, then spring back when released. */
+/* Buttons in the form assistant dialog (Run / Prompts / Change log / Chat):
+   - a soft drop shadow lifts them off the footer,
+   - hovering raises the shadow AND nudges the button up (hover animation),
+   - pressing shrinks it to scale .9 (0.25s ease), then it springs back.
+   `!important` is required on the shadow: PrimeNG's own `.p-button` rules are injected after this
+   stylesheet, so at equal specificity they would otherwise win and the shadow would not appear. */
 .cb-ai-assistant-dialog .p-button {
+    box-shadow:
+        0 1px 2px rgba(15, 23, 42, 0.18),
+        0 2px 6px rgba(15, 23, 42, 0.10) !important;
     transition:
         background-color 0.2s,
         color 0.2s,
         border-color 0.2s,
         box-shadow 0.2s,
-        transform 0.25s ease;
+        transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+    will-change: transform;
+}
+
+.cb-ai-assistant-dialog .p-button:hover:not(:disabled) {
+    box-shadow:
+        0 3px 6px rgba(15, 23, 42, 0.20),
+        0 8px 18px rgba(15, 23, 42, 0.16) !important;
+    transform: translateY(-1px);
 }
 
 .cb-ai-assistant-dialog .p-button:active:not(:disabled) {
     transform: scale(0.9);
+    box-shadow:
+        0 1px 2px rgba(15, 23, 42, 0.14),
+        0 1px 3px rgba(15, 23, 42, 0.10) !important;
 }
 
 /* When the footer wrapped onto two lines (dialog too narrow — detected in ai-assistant.ts via the
@@ -352,6 +370,32 @@ cb-ai-assistant {
     font-size: 0.85em;
     font-weight: 600;
     color: #555;
+}
+
+/* Reasoning-effort dropdown — sits directly BEFORE the CodBi switch in the footer. Compact so it
+   stays on the same row as the other switches; the tooltip explains the precedence chain. */
+.cb-ai-reasoning-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #555;
+    white-space: nowrap;
+}
+
+.cb-ai-reasoning-select {
+    height: 24px;
+    padding: 0 6px;
+    font-size: 0.82em;
+    color: #333;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.cb-ai-reasoning-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* Settings button right next to the "Nicht installierte Elemente erstellen" switch — opens the

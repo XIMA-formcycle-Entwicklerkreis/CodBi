@@ -50,6 +50,9 @@ import type { ChartConfiguration } from "chart.js";
  *   under each of them).
  * - **Workflow**: one node per created workflow element; unfolding a node reveals the parameters
  *   defined for it.
+ * - **Inference trips**: one node per AI call of the run (phase, model, input/output tokens, cost),
+ *   so the run's total token count is attributable (e.g. 2 clarification rounds + pass-1 + pass-2)
+ *   instead of being a single opaque number.
  */
 
 /**
@@ -642,15 +645,21 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     this.markAndExpandHighlights(this.logs, elements);
   }
 
+  /**
+   * All text of a node that searching and sensitive-element matching must look at: the label, the
+   * technical id badge ([LogNode.idTag], e.g. `cbShowPersonData`) and the optional value. The id is
+   * part of it because it used to be embedded in [LogNode.label].
+   */
+  private nodeText(node: LogNode): string {
+    return `${node.label} ${node.idTag ?? ""} ${node.value !== undefined ? String(node.value) : ""}`.toLowerCase();
+  }
+
   /** Recursively marks matching nodes and expands their ancestors. Returns true when a match was found. */
   private markAndExpandHighlights(nodes: LogNode[], elements: string[]): boolean {
     let anyMatch = false;
     for (const node of nodes) {
-      const selfMatches = elements.some(
-        (el) =>
-          node.label.toLowerCase().includes(el) ||
-          (node.value !== undefined && String(node.value).toLowerCase().includes(el)),
-      );
+      const text = this.nodeText(node);
+      const selfMatches = elements.some((el) => text.includes(el));
       const childMatches = node.children ? this.markAndExpandHighlights(node.children, elements) : false;
       if (selfMatches) node.highlighted = true;
       if (childMatches) node.expanded = true;
@@ -776,9 +785,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     });
   }
 
-  /** The configured sensitive element names (lowercased) that match a node's label/value. */
+  /** The configured sensitive element names (lowercased) that match a node's label/id/value. */
   private matchingSensitiveNames(node: LogNode): string[] {
-    const label = node.label.toLowerCase();
+    const label = `${node.label} ${node.idTag ?? ""}`.toLowerCase();
     const value = node.value !== undefined ? String(node.value).toLowerCase() : "";
     const matched: string[] = [];
     for (const [name, pattern] of this.sensitivePatterns.entries()) {
@@ -829,9 +838,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   private expandToSearchMatches(nodes: LogNode[], q: string): boolean {
     let anyMatch = false;
     for (const node of nodes) {
-      const selfMatches =
-        node.label.toLowerCase().includes(q) ||
-        (node.value !== undefined && String(node.value).toLowerCase().includes(q));
+      const selfMatches = this.nodeText(node).includes(q);
       const childMatches = node.children ? this.expandToSearchMatches(node.children, q) : false;
       if (selfMatches || childMatches) {
         // Open the section that contains the match. A prompt node whose own text matches is also
@@ -870,6 +877,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       if (form) {
         if (this.formMatches(form, q)) return true;
       }
+      // Searchable by inference phase (e.g. "forced-final", "clarify-check#2") so a run that paid an
+      // extra pass can be found directly.
+      const trips = entry["trips"];
+      if (Array.isArray(trips) && this.tripsMatch(trips as Array<Record<string, unknown>>, q)) return true;
       return false;
     });
   }
@@ -941,6 +952,17 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   private formatTokenSplit(tokensIn: number, tokensOut: number): string {
     if (!tokensIn && !tokensOut) return "";
     return `In ${tokensIn.toLocaleString()} / Out ${tokensOut.toLocaleString()}`;
+  }
+
+  /**
+   * Formats the payload character sizes of one inference trip (e.g. "213,456\u219218,900 chars").
+   * Empty when the backend recorded none. The char count is what makes a prompt-size change visible
+   * directly in the change log (a pass whose transmitted prompt doubled shows up here even when the
+   * token counts of two runs look similar).
+   */
+  private formatCharSplit(promptChars: number, completionChars: number): string {
+    if (!promptChars && !completionChars) return "";
+    return `${promptChars.toLocaleString()}\u2192${completionChars.toLocaleString()} chars`;
   }
 
   /** Formats a single entry's estimated cost with its currency. Empty when zero or no currency. */
@@ -1024,6 +1046,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           },
           this.buildReplyNode(cr, entryId),
         ];
+        const chatTrips = Array.isArray(entry["trips"]) ? (entry["trips"] as Array<Record<string, unknown>>) : [];
+        if (chatTrips.length > 0) {
+          chatChildren.push(this.buildTripsNode(chatTrips, entryId));
+        }
         return {
           id: entryId,
           kind: "chat",
@@ -1071,6 +1097,11 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       const workflow = entry["workflow"];
       if (Array.isArray(workflow) && workflow.length > 0) {
         children.push(this.buildWorkflowNode(workflow as Array<Record<string, unknown>>, entryId));
+      }
+      // Per-inference token/cost breakdown: one node per AI call the run made (see buildTripsNode).
+      const trips = entry["trips"];
+      if (Array.isArray(trips) && trips.length > 0) {
+        children.push(this.buildTripsNode(trips as Array<Record<string, unknown>>, entryId));
       }
       return {
         id: entryId,
@@ -1168,6 +1199,76 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       children,
       expanded: false,
     };
+  }
+
+  /**
+   * Builds the "Inference trips" section: one node per AI call of the run, so a run's TOTAL token
+   * count becomes attributable instead of being a single opaque number. This is what makes the
+   * difference between two runs visible — e.g. a run that paid the clarification prompt twice (2
+   * rounds) plus pass-1 and pass-2 versus a run with a single round, or a run that additionally paid
+   * a forced final pass.
+   *
+   * The trips are ordered by INPUT tokens descending (biggest cost driver first) and the section
+   * label carries the summed input/output split as a cross-check against the run's total.
+   *
+   * `cachedIn` (when the provider reported it) is the prompt-cache hit of that call — the
+   * cache-friendly prompt assembly (`AI_Assistant_PromptCaching`) is verifiable here instead of
+   * being assumed. The per-trip cost is an UPPER bound in that case, because it prices every prompt
+   * token at the full input rate.
+   */
+  private buildTripsNode(trips: Array<Record<string, unknown>>, entryId: string): LogNode {
+    const totalIn = trips.reduce((sum, t) => sum + Number(t["tokensIn"] ?? 0), 0);
+    const totalOut = trips.reduce((sum, t) => sum + Number(t["tokensOut"] ?? 0), 0);
+    const totalCached = this.tripsCachedIn(trips);
+    const nodes: Array<{ node: LogNode; tokensIn: number }> = trips.map((trip, i) => {
+      const model = this.formatModelName(String(trip["modelId"] ?? ""));
+      const cost = this.formatEntryCost(Number(trip["cost"] ?? 0), String(trip["currency"] ?? ""));
+      const chars = this.formatCharSplit(Number(trip["promptChars"] ?? 0), Number(trip["completionChars"] ?? 0));
+      const cachedIn = Number(trip["cachedIn"] ?? 0);
+      return {
+        node: {
+          id: `${entryId}-trip-${i}`,
+          kind: "param-item",
+          label: String(trip["phase"] ?? "") || `Trip ${i + 1}`,
+          value: [
+            this.formatTokenSplit(Number(trip["tokensIn"] ?? 0), Number(trip["tokensOut"] ?? 0)),
+            cachedIn > 0 ? `cached in ${cachedIn}` : "",
+            chars,
+            model,
+            cost,
+          ]
+            .filter(Boolean)
+            .join(" \u00B7 "),
+        },
+        tokensIn: Number(trip["tokensIn"] ?? 0),
+      };
+    });
+    nodes.sort((a, b) => b.tokensIn - a.tokensIn);
+    return {
+      id: `${entryId}-trips`,
+      kind: "section",
+      label: `Inference trips (${trips.length})\u2009\u2014\u2009${this.formatTokenSplit(totalIn, totalOut)}${totalCached > 0 ? `\u2009\u2014\u2009cached in ${totalCached}` : ""}`,
+      children: nodes.map((x) => x.node),
+      expanded: false,
+    };
+  }
+
+  /** Whether any inference trip (its phase or model) matches [q]. */
+  private tripsMatch(trips: Array<Record<string, unknown>>, q: string): boolean {
+    return trips.some(
+      (trip) =>
+        String(trip["phase"] ?? "")
+          .toLowerCase()
+          .includes(q) ||
+        String(trip["modelId"] ?? "")
+          .toLowerCase()
+          .includes(q),
+    );
+  }
+
+  /** Total provider-reported prompt-cache hit of a run's trips (0 when the provider reported none). */
+  private tripsCachedIn(trips: Array<Record<string, unknown>>): number {
+    return trips.reduce((sum, t) => sum + Number(t["cachedIn"] ?? 0), 0);
   }
 
   private buildFormNode(form: Record<string, unknown>, entryId: string): LogNode {
@@ -1268,10 +1369,16 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     return { id: `${entryId}-form`, kind: "section", label: "Form", children, expanded: false };
   }
 
+  /**
+   * A widget node: the element TYPE is the label, the technical element id is the [LogNode.idTag]
+   * badge (rendered as a darkorange rounded box). Previously both were packed into one
+   * `Type "id"` string, which hid the id behind the type name.
+   */
   private widgetNode(widget: Record<string, unknown>, id: string): LogNode {
     const className = String(widget["className"] ?? "");
     const name = String(widget["name"] ?? "");
-    return { id, kind: "widget", label: name ? `${className} "${name}"` : className };
+    if (!className) return { id, kind: "widget", label: name || "Widget" };
+    return { id, kind: "widget", label: className, idTag: name || undefined };
   }
 
   /**
@@ -1341,7 +1448,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     }
     const className = String(widget["className"] ?? "");
     const name = String(widget["name"] ?? "");
-    return { id, kind: "widget", label: name ? `${className} "${name}"` : className, children, expanded: false };
+    // Type as the label, id as the badge — same convention as [widgetNode].
+    const label = className || name || "Widget";
+    const idTag = className && name ? name : undefined;
+    return { id, kind: "widget", label, idTag, children, expanded: false };
   }
 
   /** Converts a widget's attribute list into tree nodes (special data-cb-func / data-cb-* handling). */

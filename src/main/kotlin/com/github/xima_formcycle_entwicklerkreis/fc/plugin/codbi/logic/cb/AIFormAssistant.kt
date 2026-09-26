@@ -939,7 +939,7 @@ class AIFormAssistant : IPluginServletAction {
    * `_workflowMailLanguages`) are consumed by dedicated server passes and must keep flowing
    * through.
    */
-  private val IGNORED_AI_MARKERS = setOf("_customScript")
+  private val IGNORED_AI_MARKERS = setOf("_customScript", FormDiffMarker.KEY)
 
   /**
    * Item-level property keys that are always stripped from each item's `properties` object before

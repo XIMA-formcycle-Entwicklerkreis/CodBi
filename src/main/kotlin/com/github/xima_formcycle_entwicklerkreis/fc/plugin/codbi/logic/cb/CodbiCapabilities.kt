@@ -81,6 +81,57 @@ internal object CodbiCapabilities {
     return buildFullSectionBase() + localDetailedSection()
   }
 
+  /**
+   * Returns the NAME-ONLY index of the condensed reference: every authoritative id (functionality,
+   * element placeholder, standard configuration) as a plain one-per-line list, with none of the
+   * "what it does / how to use it" prose.
+   *
+   * Used by the pass-2 apply prompt. That pass already carries the FULL specification of every id
+   * the AI requested (see [buildFullSectionFor]); for the ids it did NOT request, only the NAME
+   * matters — it must merely never be invented. Sending the prose of those unrequested entries was
+   * dead weight: the condensed catalog is ~20KB and almost all of it is prose. Locally configured
+   * (API-Doc) elements are included, so an organisation-specific element placeholder can still
+   * never be invented.
+   */
+  fun buildNameIndexSection(): String {
+    val ids = LinkedHashSet<String>()
+    ids.addAll(entryIdsOf(buildSectionBase()))
+    ids.addAll(entryIdsOf(localCondensedSection()))
+    if (ids.isEmpty()) return ""
+    return buildString {
+      append(
+          "## CODBI NAME INDEX (authoritative ids — use EXACTLY these names, never invent one)\n")
+      append(
+          "The FULL specification of every id requested for this form is given above. Only the ids " +
+              "listed here exist: use them verbatim, NEVER invent or guess a name that is not listed. " +
+              "When an id's parameters are needed but were not requested, request its details instead " +
+              "of guessing them.\n")
+      for (id in ids.sorted()) append("- ").append(id).append('\n')
+    }
+  }
+
+  /**
+   * Extracts the authoritative ids of a compact reference: every `### <Id>` entry heading, taken
+   * **verbatim**. The document title (`#`) and the group headings (`##`) are not entries.
+   *
+   * A heading must NOT be filtered by "contains no space": the LOCAL API-Doc elements (and DB
+   * display names) may carry spaces — e.g. a locally documented element named "Matomo Tracking".
+   * Such an element is AI-capable (condensed prompt + detailed prompt + uploaded code, see
+   * `LocalApiDocPrompts.loadAiCapableElements`) and is advertised to pass-1 by
+   * [buildSectionCondensed]; dropping it here would make pass-2's index contradict pass-1 and hide
+   * exactly the organisation-specific elements the model must be able to use.
+   *
+   * `internal` so the vocabulary extraction can be unit-tested against both heading shapes.
+   */
+  internal fun entryIdsOf(markdown: String): List<String> {
+    if (markdown.isBlank()) return emptyList()
+    return Regex("(?m)^###\\s+(.+?)\\s*$")
+        .findAll(markdown)
+        .map { it.groupValues[1].trim() }
+        .filter { it.isNotEmpty() }
+        .toList()
+  }
+
   /** Builds the (cached) base elements section without the local API-Doc prompts. */
   private fun buildSectionBase(): String {
     // Prefer the database so deactivated compact elements are excluded from the AI's pass-1
@@ -251,7 +302,30 @@ internal object CodbiCapabilities {
   fun buildSectionCondensed(): String = condenseEntryBodies(buildSection())
 
   /** CONDENSED [buildWidgetsSection] for pass-1 (heading + first sentence per widget). */
-  fun buildWidgetsSectionCondensed(): String = condenseEntryBodies(buildWidgetsSection())
+  fun buildWidgetsSectionCondensed(): String =
+      condenseEntryBodies(dropClarificationOnlyParagraphs(buildWidgetsSection()))
+
+  /**
+   * Removes the widget-catalog PREAMBLE paragraphs that only concern the CLARIFICATION round, which
+   * pass-1 explicitly must NOT perform ("NEVER ASK IN THIS BUILD PASS"):
+   * - `REQUIRED OPTIONS …` — tells the AI to ASK the user for a missing widget option.
+   * - `EXISTING FORM ELEMENTS …` — tells the AI to never ask whether a referenced element exists.
+   *
+   * Both would have pass-1 emit a question (its output is parsed as a form → a costly forced final
+   * pass), contradict pass-1's own instruction, and are already covered by the decision cores
+   * ("MANDATORY ... DETAIL REQUEST" / "REFERENCED FIELDS ARE IN THE PROVIDED FORM"). Only the
+   * decision-relevant `LABELS …` rule and the details-request protocol stay. Applied ONLY to the
+   * pass-1 view — the full catalog is unchanged everywhere else.
+   */
+  private fun dropClarificationOnlyParagraphs(text: String): String =
+      text
+          .lines()
+          .filterNot { l ->
+            val t = l.trimStart()
+            t.startsWith("REQUIRED OPTIONS") || t.startsWith("EXISTING FORM ELEMENTS")
+          }
+          .joinToString("\n")
+          .replace(Regex("\n{3,}"), "\n\n")
 
   /**
    * Truncates the BODY of each catalog ENTRY (the prose after a `### <name>` heading) to its FIRST

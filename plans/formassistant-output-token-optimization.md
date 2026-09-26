@@ -303,6 +303,64 @@ that rule, so newly created fields had **no `label`** and Formcycle showed the d
 condensed. (The pass-1 composition log's `designed-text rules` / `detail-request protocol` flags were
 also updated to match the strings that now live in the de-duplicated cores.)
 
+## Forced final pass re-used the FULL reference (FIXED)
+
+A subsequent run showed that even with the above, the run was NOT minimal. Log:
+
+```
+Pass-1 system prompt: 84435 chars (designed-text rules: true, detail-request protocol: true, ...)
+Pass-2 raw result: {"_unchangedItems":[...],"items":[{"className":"XSpan",...}},"className":"XCheckbox",...   ← malformed JSON
+Pass-2 returned non-JSON prose (1026 chars) — forcing final complete-form pass
+Pass-2 widget details: FULL reference (71549 chars, ...)
+```
+
+Pass-2 emitted **malformed JSON** (a dropped `{` before the second item), which triggered the
+**forced final pass**. That pass called `loadCodbiApplyPrompt(emptyList(), emptyList(), ...)`, pulling in
+the **FULL widget reference (~71,549 chars)** even though pass-2 had already been given the two targeted
+widget details (`XTextField`, `XSpan`).
+
+**Fix:** [`rerunWithCodbiDetails`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:2751)
+now builds the forced-final system prompt from the rerun's own `requested` / `widgets` params
+(`loadCodbiApplyPrompt(requested, widgets, ...)`) — exactly the context pass-2 had. The full reference is
+used only for a pure blind reconsideration (no specific IDs). The forced pass is a RETRY of pass-2, so it
+needs no more context; this removes ~71k chars of input when pass-2 has to be retried.
+
+## Audit: what the CONDENSED catalogs still contain (and what was removed)
+
+Pass-1's catalogs are built as: **heading + PREAMBLE verbatim + each entry body truncated to its first
+sentence (≤220 chars)**. Audited every retained item for whether it helps pass-1 *decide whether to
+apply an element*:
+
+**Widget catalog** (`4,838 → 3,810 chars`)
+
+| Retained item | Verdict |
+|---|---|
+| `LABELS — never use generic placeholders such as "Label"` | KEEP — decision-critical (the "Label" regression) |
+| details-request protocol paragraph | KEEP — needed so pass-1 knows it must request details |
+| `REQUIRED OPTIONS …` (~620 chars) | **REMOVED** — it instructs the AI to *ASK the user*: a CLARIFICATION-phase rule that contradicts pass-1's own "NEVER ASK IN THIS BUILD PASS" and is covered by the general core's details-request rules |
+| `EXISTING FORM ELEMENTS …` (~340 chars) | **REMOVED** — also a clarification rule ("never ask whether it exists"), already covered by the general core's `REFERENCED FIELDS ARE IN THE PROVIDED FORM` |
+| per-widget one-line "what it is" | KEEP — that IS the apply/not-apply trigger |
+| 4 continuation lines (XTextField address, XSelect datasource/title-column/option-switches, 803 chars) | LEFT IN — build/wiring detail already in the general core (`AN ADDRESS IS NEVER A SINGLE FIELD`, datasource rules), but they double as triggers; measured saving is only 0.8 KB |
+
+Implemented in [`dropClarificationOnlyParagraphs()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/CodbiCapabilities.kt:256)
+(pass-1 view only; the full catalog is unchanged).
+
+**Elements catalog** (`9,610 chars` — unchanged, nothing cleanly removable)
+
+| Section | Size | Verdict |
+|---|---|---|
+| `## Functionalities` | ~7.2k | KEEP — these are the user-facing triggers |
+| `## Element Placeholders` | ~1.9k | internal building blocks (F/I/V/VP/Sorted/Unique/Net.URL/Date.*/…) — not user-facing triggers, BUT pass-1 needs the NAMES to reference/request them, and the BayVIS EP mapping matters; bodies are weak one-liners → left in place |
+| `## Standard Configurations` | ~0.7k | prose is weak, but this is the only place naming the config groups → left in place |
+
+Also measured: keeping only each entry's **first** prose line (dropping continuations) saves just 0.8 KB
+for the widgets and **0 KB** for the elements catalog (its entries are already single lines).
+
+**Conclusion:** after the two removed paragraphs the condensed catalogs contain only names + a one-line
+"what it is" + the decision-critical preamble rules. The remaining removable text is ~1.5–2.0k chars
+(≈2% of pass-1) and sits exactly where the text doubles as naming/mapping input, so it is deliberately
+left in place rather than risk another behaviour regression.
+
 ## Verification
 
 - `./mvnw.cmd -DskipTests -o compile` passes.

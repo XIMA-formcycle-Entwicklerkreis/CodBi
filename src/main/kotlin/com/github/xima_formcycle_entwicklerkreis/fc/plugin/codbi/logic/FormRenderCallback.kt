@@ -100,7 +100,15 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
           val currentEntry = child.value.attributes[i]
 
           if (currentEntry is com.alibaba.fastjson.JSONObject) {
-            val currentEntryValue = (currentEntry.get("text") as String).lowercase()
+            // A MALFORMED attribute entry must never break the whole render: the designer preview
+            // threw `null cannot be cast to non-null type kotlin.String` for an entry without a
+            // "text" STRING (observed after a run whose AI emitted the change-log attribute shape
+            // {"name":…,"value":…,"kind":…,"codbi":…}), which left the user with an EMPTY-looking
+            // form. Skip such entries instead of throwing; the backend also normalizes them away
+            // (see AICodBiAssistant's properties.attributes canonicalization).
+            val attrText = currentEntry.get("text") as? String ?: continue
+            val attrValue = currentEntry.get("value") as? String ?: ""
+            val currentEntryValue = attrText.lowercase()
 
             if (currentEntryValue == "data-cb-func" ||
                 currentEntryValue == "data-cb-_t_func" ||
@@ -108,7 +116,7 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
                     "data-cb-_f_func") { // Check if it is the property that contains the
               // functionalities
               // to use.
-              for (functionality in (currentEntry["value"] as String).split(",")) {
+              for (functionality in attrValue.split(",")) {
                 val fileName = functionality.trim().lowercase()
 
                 if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {
@@ -116,12 +124,12 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
                 }
               }
             } else {
-              if ((currentEntry["text"] as String).length > 8 &&
-                  (currentEntry["text"] as String).lowercase() != "data-cb-apply" &&
-                  (currentEntry["text"] as String).substring(0, 8) == "data-cb-") {
+              if (attrText.length > 8 &&
+                  currentEntryValue != "data-cb-apply" &&
+                  attrText.substring(0, 8) == "data-cb-") {
                 // CodBi-Attributes named "data-cb-APPLY" can be omitted. All
                 // others starting with "data-cb-" may contain EPs.
-                for (ep in extractEPs((currentEntry["value"] as String))) {
+                for (ep in extractEPs(attrValue)) {
                   val fileName = ep.trim().lowercase()
 
                   if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {

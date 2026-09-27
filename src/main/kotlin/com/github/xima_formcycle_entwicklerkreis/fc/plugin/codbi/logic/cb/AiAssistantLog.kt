@@ -8,6 +8,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.JsonPrimitive
 import javax.persistence.EntityManager
 import javax.persistence.EntityManagerFactory
 import org.slf4j.LoggerFactory
@@ -31,7 +32,14 @@ import org.slf4j.LoggerFactory
 object AiAssistantLog {
 
   private val logger = LoggerFactory.getLogger(AiAssistantLog::class.java)
-  private val gson: Gson = GsonBuilder().create()
+
+  /**
+   * Change-log serializer. HTML escaping is disabled (see `AICodBiAssistant.gson`): the logged form
+   * JSON, prompts and attribute values contain HTML/CSS/EP text, and `\u003c`-style escapes inflate
+   * both the stored payload and the AI change-history prompt that is built from it — with no
+   * information gained, since the consumer parses JSON.
+   */
+  private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
 
   /** Property keys that are identity / structural and never rendered as user-facing attributes. */
   private val SKIP_ATTRS =
@@ -70,7 +78,13 @@ object AiAssistantLog {
       username: String? = null,
       clarification: JsonArray? = null,
       chatReply: String? = null,
-      trips: JsonArray? = null
+      trips: JsonArray? = null,
+      /**
+       * Full resolved items/nodes of this run — see [computeAppliedItems] and the `items` column.
+       */
+      items: JsonObject? = null,
+      /** Set when this row was re-applied from an earlier entry without an inference. */
+      appliedFrom: Long? = null
   ): Boolean {
     if (emf == null) return false
     return try {
@@ -94,7 +108,9 @@ object AiAssistantLog {
                 workflowChanges = workflowChanges?.toString(),
                 clarification = clarification?.takeIf { it.size() > 0 }?.toString(),
                 chatReply = chatReply,
-                trips = trips?.takeIf { it.size() > 0 }?.toString()))
+                trips = trips?.takeIf { it.size() > 0 }?.toString(),
+                items = items?.toString(),
+                appliedFrom = appliedFrom))
         em.transaction.commit()
         true
       } catch (e: Exception) {
@@ -334,6 +350,40 @@ object AiAssistantLog {
                   e.addProperty("clarification", text)
                 }
               }
+          // Whether this entry can be re-applied to the CURRENT form WITHOUT an inference, and
+          // which
+          // elements the change-log tree may offer individually. The (potentially large) item JSON
+          // itself stays in the database — the `applyLogEntry` action fetches it by entry id.
+          entry.items
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                runCatching { JsonParser.parseString(text).asJsonObject }
+                    .getOrNull()
+                    ?.let { obj ->
+                      val names = JsonArray()
+                      val form = obj.getAsJsonObject("form")
+                      for (section in listOf("created", "changed")) {
+                        form?.getAsJsonArray(section)?.forEach { el ->
+                          val name =
+                              el.takeIf { it.isJsonObject }
+                                  ?.asJsonObject
+                                  ?.get("item")
+                                  ?.takeIf { it.isJsonObject }
+                                  ?.asJsonObject
+                                  ?.getAsJsonObject("properties")
+                                  ?.get("name")
+                                  ?.takeIf { it.isJsonPrimitive }
+                                  ?.asString
+                          if (!name.isNullOrBlank() && names.none { it.asString == name }) {
+                            names.add(name)
+                          }
+                        }
+                      }
+                      e.addProperty("hasItems", true)
+                      e.add("itemNames", names)
+                    }
+              }
+          entry.appliedFrom?.let { e.addProperty("appliedFrom", it) }
           // The AI's chat reply (only set for chat-only turns). Stored as JSON
           // {"text":"...","matomoStats":{...}} so the frontend can render the reply as Markdown
           // (and charts from the attached statistics) exactly like the chat reply buttons.
@@ -660,6 +710,376 @@ object AiAssistantLog {
     result.add("variablesSet", computeVariablesDiff(beforeJson, afterJson))
     return result
   }
+
+  // region Apply-from-log
+
+  /** One item's location inside a form: its JSON plus the container name and index it sits at. */
+  private data class ItemLocation(val item: JsonObject, val parent: String?, val index: Int)
+
+  /**
+   * Builds the `items` payload stored with every change-log entry: the FULL resolved items a run
+   * CREATED or CHANGED (each with the container it lives in) plus the items it REMOVED, so the
+   * change log can re-apply them to the CURRENT form later **without another inference**.
+   *
+   * [computeFormChanges] cannot serve that purpose — it keeps only names and the changed attribute
+   * values, which is not enough to rebuild an element. Returns `null` when the run changed no
+   * element (there is then nothing to re-apply and the column stays empty).
+   *
+   * ```json
+   * { "form": { "created": [ { "item": { … }, "parent": "fdPersonalData", "index": 3 } ],
+   *             "changed": [ … ], "removed": [ … ] } }
+   * ```
+   */
+  fun computeAppliedItems(beforeJson: String, afterJson: String): JsonObject? {
+    return try {
+      val before = collectItemLocations(JsonParser.parseString(beforeJson).asJsonObject)
+      val after = collectItemLocations(JsonParser.parseString(afterJson).asJsonObject)
+      val created = JsonArray()
+      val changed = JsonArray()
+      for ((name, loc) in after) {
+        val prev = before[name]
+        if (prev == null) {
+          // CREATED: stored WITHOUT its nested `elements` — its children are new as well and are
+          // stored as their own entries, so keeping them here would double the payload AND make a
+          // re-apply insert them a second time (the container already carries them).
+          created.add(locationJson(loc, stripChildren = true))
+        } else if (ownStateOf(prev.item) != ownStateOf(loc.item)) {
+          // CHANGED: compared WITHOUT `elements`, so a page/container does not count as changed
+          // just
+          // because a child was added or removed (that child carries the change itself). Such an
+          // item
+          // keeps its nested children — its own change must travel with them.
+          changed.add(locationJson(loc, stripChildren = false))
+        }
+      }
+      val removed = JsonArray()
+      for ((name, loc) in before) {
+        // REMOVED: the children are gone as well and are stored individually, so no subtree is
+        // needed.
+        if (!after.containsKey(name)) removed.add(locationJson(loc, stripChildren = true))
+      }
+      if (created.size() == 0 && changed.size() == 0 && removed.size() == 0) return null
+      val form = JsonObject()
+      form.add("created", created)
+      form.add("changed", changed)
+      form.add("removed", removed)
+      val out = JsonObject()
+      out.add("form", form)
+      out
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to compute applied items: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * `{ "item": …item…, "parent": "<container name>"|null, "index": n }` — see [ItemLocation].
+   * [stripChildren] drops the child references (see the callers for when that is correct).
+   */
+  private fun locationJson(loc: ItemLocation, stripChildren: Boolean): JsonObject {
+    val o = JsonObject()
+    val item = loc.item.deepCopy()
+    if (stripChildren) stripChildrenRefs(item)
+    o.add("item", item)
+    if (loc.parent != null) o.addProperty("parent", loc.parent)
+    o.addProperty("index", loc.index)
+    return o
+  }
+
+  /**
+   * Removes a container's child references from [item] — both persist shapes: the canonical
+   * `properties.elements` NAME list (the flat shape the designer stores) and the nested item-level
+   * `elements` array (the AI's intermediate shape). Used for CREATED / REMOVED items: their
+   * children are stored as their own entries, so carrying the references here would let a re-apply
+   * insert a stale reference to a child that is (or is not) restored separately.
+   */
+  private fun stripChildrenRefs(item: JsonObject) {
+    item.remove("elements")
+    item.getAsJsonObject("properties")?.remove("elements")
+  }
+
+  /**
+   * The item's OWN state — everything except its child references (see [stripChildrenRefs]). Used
+   * to decide whether an item itself changed: a container/page must not look changed merely because
+   * one of its children was added, removed or reordered (its child list naturally differs then).
+   */
+  private fun ownStateOf(item: JsonObject): JsonObject {
+    val copy = item.deepCopy()
+    stripChildrenRefs(copy)
+    return copy
+  }
+
+  /**
+   * Walks a form root and maps every element NAME to its JSON plus the container it sits in (first
+   * occurrence wins — names are unique in a form). Used to diff two form states.
+   *
+   * BOTH persist shapes are handled, because Formcycle's designer accepts both:
+   * - NESTED — a container's `properties.elements` holds the child OBJECTS (recursed into below);
+   * - FLAT — the shape the assistant emits ([AICodBiAssistant]'s `reorderItemsByTreeOrder`): every
+   *   element lives in the root `items` array and a container references its children by NAME in
+   *   `properties.elements`. The second pass below resolves those name references, so a recorded
+   *   item knows its container (and its position inside it). Without it every item would look
+   *   parent-less and a re-apply would splice the object into a name list — invisible in the
+   *   designer.
+   */
+  private fun collectItemLocations(root: JsonObject): LinkedHashMap<String, ItemLocation> {
+    val out = LinkedHashMap<String, ItemLocation>()
+    val items = root.getAsJsonArray("items") ?: return out
+    fun nameOf(obj: JsonObject): String? =
+        obj.getAsJsonObject("properties")
+            ?.get("name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+    fun walk(list: JsonArray, parent: String?) {
+      var index = 0
+      for (el in list) {
+        val obj = el.takeIf { it.isJsonObject }?.asJsonObject
+        if (obj != null) {
+          val name = nameOf(obj)
+          if (name != null && !out.containsKey(name)) out[name] = ItemLocation(obj, parent, index)
+          obj.getAsJsonArray("elements")?.let { walk(it, name) }
+        }
+        index++
+      }
+    }
+    walk(items, null)
+    // FLAT shape: resolve the name references (a top-level item found above has parent == null).
+    val roots = items.mapNotNull { it.takeIf { it.isJsonObject }?.asJsonObject }
+    val byName = LinkedHashMap<String, JsonObject>()
+    for (obj in roots) nameOf(obj)?.let { byName.putIfAbsent(it, obj) }
+    for (obj in roots) {
+      val container = nameOf(obj) ?: continue
+      val elements = obj.getAsJsonObject("properties")?.getAsJsonArray("elements") ?: continue
+      var index = 0
+      for (el in elements) {
+        val child = el.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+        if (child != null) {
+          val childItem = byName[child]
+          if (childItem != null && out[child]?.parent == null) {
+            out[child] = ItemLocation(childItem, container, index)
+          }
+        }
+        index++
+      }
+    }
+    return out
+  }
+
+  /**
+   * Loads the items a change-log entry can restore — the stored `items` payload when present, else
+   * the items RECONSTRUCTED from the entry's change description ([reconstructItems]) so "repeat
+   * onto form" works WITHOUT any inference for entries recorded before the column existed too.
+   *
+   * [formKey], when given, must match the entry's form — a restore is only ever offered for the
+   * form the log panel is showing. Returns `null` for an unknown entry or one that changed no
+   * element.
+   */
+  fun loadEntryItems(emf: EntityManagerFactory?, entryId: Long, formKey: String?): JsonObject? {
+    val em = emf?.createEntityManager() ?: return null
+    try {
+      val row = em.find(CodbiAiAssistantLog::class.java, entryId) ?: return null
+      if (!formKey.isNullOrBlank() && !row.formKey.isNullOrBlank() && row.formKey != formKey) {
+        return null
+      }
+      row.items
+          ?.takeIf { it.isNotBlank() }
+          ?.let { text ->
+            val parsed = JsonParser.parseString(text)
+            if (parsed.isJsonObject) return parsed.asJsonObject
+          }
+      val changes =
+          row.formChanges
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                runCatching { JsonParser.parseString(text) }
+                    .getOrNull()
+                    ?.takeIf { it.isJsonObject }
+                    ?.asJsonObject
+              }
+      return reconstructItems(changes)
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to load entry items: {}", e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Reconstructs restorable items from a change DESCRIPTION (`form_changes`) — the only element
+   * data an entry recorded before the `items` column carries.
+   *
+   * `attributesSet` holds every property the AI actually SET on the element (name + value + kind)
+   * and `classesSet` its standard-class CSS classes, so the element is rebuildable from
+   * `className` + `name` + those properties. Only what the AI did NOT set (Formcycle defaults) and
+   * the nesting (the caller falls back to the last page) are unknown.
+   *
+   * Returns the [computeAppliedItems] shape with each entry marked `"reconstructed":true`, or
+   * `null` when the description holds no element at all (pure chat / variables-only entries).
+   */
+  fun reconstructItems(formChanges: JsonObject?): JsonObject? {
+    if (formChanges == null) return null
+    return try {
+      // widget -> className, for the widgets this entry CREATED.
+      val created = linkedMapOf<String, String>()
+      formChanges.getAsJsonArray("widgetsCreated")?.forEach { el ->
+        val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+        val n = o.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+        if (n != null) {
+          created[n] = o.get("className")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        }
+      }
+      // widget -> the AI-set property entries ({name, value, kind, codbi[, params]}) and classes.
+      val attrs = linkedMapOf<String, MutableList<JsonObject>>()
+      val classes = linkedMapOf<String, MutableList<String>>()
+      // widget -> className (both sets carry it; `widgetsCreated` is not the only source).
+      val classNames = linkedMapOf<String, String>()
+      val order = ArrayList<String>()
+      fun track(widget: String) {
+        if (!order.contains(widget)) order.add(widget)
+      }
+      formChanges.getAsJsonArray("attributesSet")?.forEach { el ->
+        val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+        val w =
+            o.get("widget")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+                ?: return@forEach
+        track(w)
+        o.get("className")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+            ?.let { classNames[w] = it }
+        o.getAsJsonArray("attributes")?.forEach { a ->
+          a.takeIf { it.isJsonObject }
+              ?.asJsonObject
+              ?.let { attrs.getOrPut(w) { mutableListOf() }.add(it) }
+        }
+      }
+      formChanges.getAsJsonArray("classesSet")?.forEach { el ->
+        val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+        val w =
+            o.get("widget")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+                ?: return@forEach
+        track(w)
+        o.get("className")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+            ?.let { classNames[w] = it }
+        o.getAsJsonArray("classes")?.forEach { c ->
+          c.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.takeIf { it.isNotBlank() }
+              ?.let { classes.getOrPut(w) { mutableListOf() }.add(it) }
+        }
+      }
+      if (order.isEmpty()) return null
+
+      val createdOut = JsonArray()
+      val changedOut = JsonArray()
+      // Document order: the created widgets first (their own order), then the changed ones.
+      val allWidgets = ArrayList<String>()
+      allWidgets.addAll(created.keys)
+      for (w in order) if (!allWidgets.contains(w)) allWidgets.add(w)
+
+      for (w in allWidgets) {
+        // Without a className the element cannot be rebuilt at all — skip it (the entry's
+        // description
+        // always carries one for a created/changed widget, so this is only a safety net).
+        val className = created[w] ?: classNames[w] ?: continue
+        val props = JsonObject()
+        props.addProperty("name", w)
+        val dataCb = JsonArray()
+        val funcNames = ArrayList<String>()
+        for (a in attrs[w].orEmpty()) {
+          val key =
+              a.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+                  ?: continue
+          val kind = a.get("kind")?.takeIf { it.isJsonPrimitive }?.asString ?: "attr"
+          when (kind) {
+            "func" -> {
+              if (key.isNotBlank()) funcNames.add(key)
+              // The functionality's own data-cb-* parameters are NESTED in its `params` array (see
+              // buildAttributes) — they must be re-emitted, else the reconstructed element loses
+              // e.g. its datasource/field mapping.
+              a.getAsJsonArray("params")?.forEach paramLoop@{ p ->
+                val po = p.takeIf { it.isJsonObject }?.asJsonObject ?: return@paramLoop
+                val pn =
+                    po.get("name")
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.asString
+                        ?.takeIf { it.isNotBlank() } ?: return@paramLoop
+                val o = JsonObject()
+                o.addProperty("text", pn)
+                o.addProperty(
+                    "value", po.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: "")
+                dataCb.add(o)
+              }
+            }
+            "param" -> {
+              val o = JsonObject()
+              o.addProperty("text", key)
+              o.addProperty("value", a.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: "")
+              dataCb.add(o)
+            }
+            else -> {
+              val v = a.get("value")
+              props.add(
+                  key,
+                  when {
+                    v == null || v.isJsonNull -> JsonPrimitive("")
+                    // A boolean that the AI set stays a boolean; everything else is a string in the
+                    // persist JSON (e.g. "required":"1", "maxwidth":"850px").
+                    v.isJsonPrimitive && v.asJsonPrimitive.isString && v.asString == "true" ->
+                        JsonPrimitive(true)
+                    v.isJsonPrimitive && v.asJsonPrimitive.isString && v.asString == "false" ->
+                        JsonPrimitive(false)
+                    v.isJsonPrimitive -> JsonPrimitive(v.asString)
+                    else -> JsonParser.parseString(v.toString())
+                  })
+            }
+          }
+        }
+        if (funcNames.isNotEmpty()) {
+          val o = JsonObject()
+          o.addProperty("text", "data-cb-func")
+          o.addProperty("value", funcNames.distinct().joinToString(","))
+          dataCb.add(o)
+        }
+        classes[w]
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { cls ->
+              val arr = JsonArray()
+              cls.distinct().forEach { arr.add(it) }
+              props.add("cssclasses", arr)
+            }
+        val item = JsonObject()
+        item.addProperty("className", className)
+        item.add("properties", props)
+        if (dataCb.size() > 0) item.add("attributes", dataCb)
+        val loc = JsonObject()
+        loc.add("item", item)
+        loc.addProperty("index", -1)
+        loc.addProperty("reconstructed", true)
+        if (created.containsKey(w)) createdOut.add(loc) else changedOut.add(loc)
+      }
+      if (createdOut.size() == 0 && changedOut.size() == 0) return null
+      val form = JsonObject()
+      form.add("created", createdOut)
+      form.add("changed", changedOut)
+      form.add("removed", JsonArray())
+      val out = JsonObject()
+      out.add("form", form)
+      out.addProperty("reconstructed", true)
+      out
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to reconstruct items: {}", e.message)
+      null
+    }
+  }
+
+  // endregion Apply-from-log
 
   /**
    * Extracts the labels of all workflow nodes whose change-log entry was flagged as a blocked

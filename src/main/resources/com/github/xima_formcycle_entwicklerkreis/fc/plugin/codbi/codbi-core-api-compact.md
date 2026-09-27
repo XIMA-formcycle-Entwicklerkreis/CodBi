@@ -33,7 +33,7 @@ when CodBi searches within the shared parent container.
   - VoiceSendHotkey: Configures 'VoiceSendHotkey' for this functionality.
   - WaitingText: Configures 'WaitingText' for this functionality.
   - WelcomeText: Configures 'WelcomeText' for this functionality.
-- AI.LLAMA.STANDARD.QA: The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.
+- AI.LLAMA.STANDARD.QA: Applicable on an XUpload to answer questions about the uploaded document (image/PDF) with a local AI: put data-cb-func='ai.llama.standard.qa' plus data-cb-MaxPixelSize on the XUpload and create ONE XTextField/XTextArea per question, each tagged with the CSS class AI_LLAMA_STANDARD_QA_Question and carrying its own data-cb-Question attribute. Do NOT put the functionality on the container or on the question fields.
   - AIHint: Configures 'AIHint' for this functionality.
   - CaseInsensitive: Configures 'CaseInsensitive' for this functionality.
   - FilterResults: Configures 'FilterResults' for this functionality.
@@ -54,7 +54,7 @@ when CodBi searches within the shared parent container.
   - Thinking: Configures 'Thinking' for this functionality.
   - VerifyCheckboxLabel: Configures 'VerifyCheckboxLabel' for this functionality.
   - VerifyErrorText: Configures 'VerifyErrorText' for this functionality.
-- AI.LLAMA.STANDARD.TXTQA: Unique session ID generated on page load â€” ensures each session gets its own llama-server slot.
+- AI.LLAMA.STANDARD.TXTQA: Applicable on the FIRST source input field to have a local AI answer questions from the text values the user typed: the fields whose values supply the source context are tagged with the CSS class AI_LLAMA_TXTQA_Source, the functionality goes on the FIRST of them, and the field that RECEIVES the answer is tagged AI_LLAMA_STANDARD_TXTQA_Question with its own data-cb-Question attribute (that field's id is the question key). The receiving field must NOT also carry the functionality.
   - AIHint: Configures 'AIHint' for this functionality.
   - debounce: Configures 'debounce' for this functionality.
   - FilterResults: Configures 'FilterResults' for this functionality.
@@ -67,7 +67,7 @@ when CodBi searches within the shared parent container.
   - ResponseLanguage: Configures 'ResponseLanguage' for this functionality.
   - Specialist: Configures 'Specialist' for this functionality.
   - useinternet: Configures 'useinternet' for this functionality.
-- AI.LLAMA.STANDARD.TXTVERIFY: The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.
+- AI.LLAMA.STANDARD.TXTVERIFY: Applicable on a SINGLE text input/textarea to VERIFY its value with a local AI when the user leaves the field (blur): the value is sent together with the verification question (data-cb-Question attribute preferred, else the Question parameter; <[this]> resolves to the field's own value) and the field stays invalid with the AI's explanation as its error text unless the AI answers with the PositiveResponse word (default 'yes'). Use it for 'prüfe/validiere, ob …' / 'verify whether …' requests on ONE field.
   - CaseInsensitive: Configures 'CaseInsensitive' for this functionality.
   - FilterResults: Configures 'FilterResults' for this functionality.
   - InternetAccess: Configures 'InternetAccess' for this functionality.
@@ -314,13 +314,13 @@ when CodBi searches within the shared parent container.
 
 - AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
   - Param[1]: The question to ask the AI.
-  - Param[2]: UseInternet â€” `"true"` to enable Brave Search internet access.
-  - Param[3]: Location â€” `"true"` to enable geolocation access.
-  - Param[4]: Language â€” Language for the AI response (e.g.
-  - Param[5]: ResponseLanguage â€” Two-letter ISO 639-1 code (e.g.
-  - Param[6]: Specialist â€” Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`.
-  - Param[7]: FilterResults â€” `"true"` to enable PII filtering on Brave Search queries.
-  - Param[8]: JsonParse â€” `"true"` to parse the AI response as JSON.
+  - Param[2]: UseInternet — `"true"` to enable Brave Search internet access. Default: `"false"`.
+  - Param[3]: Location — `"true"` to enable geolocation access. Default: `"false"`.
+  - Param[4]: Language — Language for the AI response (e.g. `"German"`, `"English"`). Appends `"Answer in {language}."` to the question.
+  - Param[5]: ResponseLanguage — Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to respond in this language, skipping auto-detection.
+  - Param[6]: Specialist — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`.
+  - Param[7]: FilterResults — `"true"` to enable PII filtering on Brave Search queries.
+  - Param[8]: JsonParse — `"true"` to parse the AI response as JSON.
 - BayVIS.Ansprechpartner.Details: This Element-Placeholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.
   - Param[1]: The ID of the contact who's details are to be retrieved.
   - Param[2]: An optional property of the contact, like e.g.

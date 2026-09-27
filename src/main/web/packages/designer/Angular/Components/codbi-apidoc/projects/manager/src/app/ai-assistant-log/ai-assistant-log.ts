@@ -4,6 +4,7 @@ import {
   ChangeDetectorRef,
   Component,
   EventEmitter,
+  Input,
   Output,
   ViewEncapsulation,
 } from "@angular/core";
@@ -160,6 +161,13 @@ export class AiAssistantLog implements OnInit, OnDestroy {
    *  `p-dialog-maximized` class when the log content re-renders, which would shrink the dialog back
    *  to its non-fullscreen size. */
   @Output() refreshed = new EventEmitter<void>();
+  /** True while the assistant run is in flight. Forwarded to the tree nodes so their per-entry
+   *  "apply this entry again" buttons are disabled, preventing a second run from being started. */
+  @Input() applyAgainBusy = false;
+  /** Emitted with a change-log entry's raw backend record when the user requests re-running that
+   *  entry's request against the CURRENT form. Handled by the embedding assistant dialog
+   *  (AiAssistant), which owns the run/apply state; this panel only forwards the intent. */
+  @Output() applyAgain = new EventEmitter<Record<string, unknown>>();
 
   private readonly openHandler = (event: Event): void => {
     const detail = (event as CustomEvent<{ elements?: string[] } | undefined>).detail;
@@ -1013,6 +1021,55 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       .join(" \u00B7 ");
   }
   // #endregion Open / close / load
+
+  // #region Per-entry "apply again" (localization + event forwarding)
+  /** Current Formcycle UI language (`de`/`it`/`nl`, otherwise English). Same mechanism the assistant
+   *  dialog uses, so a localized UI shows no bare English string in the log. */
+  private get uiLang(): string {
+    return (
+      (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage ?? "en"
+    );
+  }
+
+  /** Localized label of the per-entry "apply this entry again" button. */
+  get applyAgainLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Diesen Eintrag erneut anwenden";
+      case "it":
+        return "Applica di nuovo questa voce";
+      case "nl":
+        return "Dit item opnieuw toepassen";
+      default:
+        return "Apply this entry again";
+    }
+  }
+
+  /** Localized tooltip of the per-entry "apply this entry again" button. The entry's elements are
+   *  applied DIRECTLY to the current form — never through a new inference. */
+  get applyAgainTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Die Elemente dieses Eintrags ohne erneute KI-Anfrage auf das AKTUELLE Formular anwenden";
+      case "it":
+        return "Applica gli elementi di questa voce al modulo ATTUALE senza una nuova richiesta all'IA";
+      case "nl":
+        return "Pas de elementen van dit item zonder nieuwe AI-aanvraag toe op het HUIDIGE formulier";
+      default:
+        return "Apply this entry's elements to the CURRENT form — without a new AI request";
+    }
+  }
+
+  /** Forwards a per-entry apply request to the embedding assistant dialog that owns the apply state.
+   *  The button is only rendered for non-chat entries (see LogTreeNode.canApplyAgain), so a
+   *  `chat` / `reply` node never reaches this handler. */
+  onApplyAgain(node: LogNode): void {
+    if (!node.raw) {
+      return;
+    }
+    this.applyAgain.emit(node.raw);
+  }
+  // #endregion Per-entry "apply again" (localization + event forwarding)
 
   /** Track function for the `*ngFor` over the log entries. */
   trackById(_index: number, node: LogNode): string {

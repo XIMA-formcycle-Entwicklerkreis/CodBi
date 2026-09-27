@@ -691,6 +691,36 @@ cb-ai-assistant-log {
     color: #1b7a5e;
 }
 
+/* Per-entry "apply this entry again" button (shown on non-chat top-level entries). It re-runs the
+   assistant with the entry's recorded request against the CURRENT form; it is disabled while a run
+   is in flight so a second run cannot be started. */
+.cb-log-node__apply-again {
+    margin-left: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #5b6472;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.7em;
+    line-height: 1;
+}
+
+.cb-log-node__apply-again:hover {
+    background: #e3e6ea;
+    color: #2563eb;
+}
+
+.cb-log-node__apply-again:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 .cb-log-node__children {
     margin: 2px 0 2px 22px;
     border-left: 1px solid #e3e6ea;

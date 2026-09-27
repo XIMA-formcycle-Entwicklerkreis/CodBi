@@ -44,6 +44,24 @@ class CodbiAiAssistantLog(
     @Lob @Column(name = "clarification") var clarification: String? = null,
     @Lob @Column(name = "chat_reply") var chatReply: String? = null,
     /**
+     * JSON holding the FULL resolved form items / workflow node specs this run created or changed,
+     * each with the container it lives in:
+     * `{"form":{"items":[{item,parent,index}],"removed":[{item,parent}]},"workflow":{"nodes":[{spec,trigger}]}}`.
+     *
+     * [formChanges]/[workflowChanges] only carry SUMMARIES (names, changed attributes), which is
+     * not enough to rebuild anything — this column is what lets the change log re-apply an entry to
+     * the CURRENT form/workflow **without another inference** (see
+     * `AiAssistantLog.computeAppliedItems` and `AICodBiAssistant.handleApplyLogEntry`). `null` for
+     * entries recorded before the column existed (those can only be re-applied with AI support).
+     */
+    @Lob @Column(name = "items") var items: String? = null,
+    /**
+     * The id of the log entry this row was re-applied FROM when the re-apply happened without an
+     * inference (the `applyLogEntry` action) — `null` for every ordinary run. Lets the change log
+     * tell an AI run apart from a deterministic re-apply of an earlier entry.
+     */
+    @Column(name = "applied_from") var appliedFrom: Long? = null,
+    /**
      * JSON array holding one entry per AI inference ("trip") of the run — `{ "phase", "modelId",
      * "tokensIn", "tokensOut", "cost", "currency" }` — so the change log can break the run's total
      * token usage and cost down per call (e.g. two clarification rounds + pass-1 + pass-2).

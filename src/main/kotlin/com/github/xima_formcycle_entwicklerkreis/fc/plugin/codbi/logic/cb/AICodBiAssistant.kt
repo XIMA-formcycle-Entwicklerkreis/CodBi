@@ -66,7 +66,18 @@ import org.slf4j.LoggerFactory
 class AICodBiAssistant : IPluginServletAction {
 
   private val logger = LoggerFactory.getLogger(AICodBiAssistant::class.java)
-  private val gson: Gson = GsonBuilder().create()
+
+  /**
+   * Serializer for every AI payload, prompt text and API response of this action. HTML escaping is
+   * DISABLED on purpose: Gson would otherwise turn `<`, `>`, `=`, `'` and `&` into
+   * `\u003c`/`\u003e`/`\u003d`/`\u0027`/`\u0026` — 5 extra characters (~2-3 tokens instead of 1)
+   * for every one of them in the form dumps, the HTML/`rtevalue` content, the EP expressions (`{
+   * Data.Join > … }`) and the prompts. JSON does not require that escaping, and the model MIMICS
+   * whatever it was shown, so the same inflation was paid again in its answer (observed:
+   * `"rtevalue":"\u003cstyle\u003e@keyframes …`). Disabling it is lossless — the characters survive
+   * the JSON round-trip unchanged and every consumer here parses JSON.
+   */
+  private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
 
   /**
    * One AI inference ("trip") of a run: its phase label, the provider-reported token usage, and the
@@ -379,6 +390,7 @@ class AICodBiAssistant : IPluginServletAction {
           "AvailableElements" -> handleAvailableElements(params)
           "Log" -> handleLog(params)
           "SensitiveCheck" -> handleSensitiveCheck(params)
+          "ApplyLogEntry" -> handleApplyLogEntry(params)
           else -> jsonResponse("""{"error":"Unknown action"}""")
         }
       }
@@ -698,6 +710,550 @@ class AICodBiAssistant : IPluginServletAction {
     return jsonResponse(
         AiAssistantLog.loadLogs(emf, formKey = formKey, username = currentUsername(params)))
   }
+
+  // region Apply a change-log entry (no inference)
+
+  /**
+   * Result of [applyLoggedItems]: the new form plus what was inserted (for the log/UI feedback).
+   */
+  internal data class AppliedFromLog(
+      val form: JsonObject,
+      val applied: List<String>,
+      val resurrected: List<String>
+  )
+
+  /**
+   * Re-applies the elements recorded in a change-log entry to the CURRENT form — deterministically,
+   * **without any AI inference**. This is the `ApplyLogEntry` action behind the change log's
+   * per-entry / per-element "repeat onto form" button.
+   *
+   * Request parameters:
+   * - `entryId` (required) — the `codbi_ai_assistant_log` row to re-apply;
+   * - `formJson` (required) — the CURRENT form (`IPersistJson`) the elements are inserted into; the
+   *   frontend sends exactly what it would send to a run and applies the RETURNED form through the
+   *   normal save/publish path, so this action never writes to the database itself;
+   * - `item` (optional) — apply ONLY the element with this name (or id); omitted = every element
+   *   the entry created or changed;
+   * - `formKey` (optional) — guards that the entry belongs to the form the log panel shows.
+   *
+   * Collision rule: an incoming element whose `properties.id` already exists in the current form
+   * (or was already handed out in this batch) gets `properties.id = "_cb_ressurected_<N>"`, N being
+   * the smallest free integer ≥ 1, so the form never ends up with duplicate ids. The same counter
+   * also suffixes `properties.name` when that name already exists, because a duplicate technical
+   * NAME is invalid in Formcycle.
+   *
+   * Responds `{"status":"ok","form":<persistJson>,"applied":[…],"resurrected":[…]}` or
+   * `{"error":…}` when the entry carries no element data (recorded before the log stored the
+   * elements — the UI then offers the AI re-run) or nothing matched.
+   */
+  private fun handleApplyLogEntry(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val entryId = params.requestParameters["entryId"]?.firstOrNull()?.trim()?.toLongOrNull()
+    if (entryId == null) return jsonResponse("""{"error":"Missing or invalid entryId."}""")
+    val formJson = params.requestParameters["formJson"]?.firstOrNull()?.trim()
+    if (formJson.isNullOrBlank()) {
+      return jsonResponse("""{"error":"Missing formJson (the current form)."}""")
+    }
+    val item = params.requestParameters["item"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    val formKey =
+        params.requestParameters["formKey"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    logger.info(
+        "[AICodBiAssistant] ApplyLogEntry: entry #{} (item={}, formKey={}) — no inference",
+        entryId,
+        item ?: "<all>",
+        formKey ?: "<none>")
+    // The entry's stored items, or those rebuilt from its change description (older entries) — no
+    // inference is ever involved.
+    val entryItems =
+        AiAssistantLog.loadEntryItems(CodbiEntities.entityManagerFactory, entryId, formKey)
+            ?: return jsonResponse(
+                """{"error":"This log entry carries no restorable element data — it created or changed no form element."}""")
+    logger.info(
+        "[AICodBiAssistant] ApplyLogEntry #{}: {} item(s) to apply{}",
+        entryId,
+        entryItems.getAsJsonObject("form")?.let { f ->
+          (f.getAsJsonArray("created")?.size() ?: 0) + (f.getAsJsonArray("changed")?.size() ?: 0)
+        } ?: 0,
+        if (entryItems.get("reconstructed")?.asBoolean == true)
+            " (reconstructed from the change description)"
+        else "")
+    val merged = applyLoggedItems(formJson, entryItems, item)
+    if (merged == null) {
+      val safe = item?.filter { it != '"' } ?: ""
+      return jsonResponse(
+          if (item == null)
+              """{"error":"The elements of this log entry could not be applied to the current form."}"""
+          else """{"error":"The logged element '$safe' was not found in this entry."}""")
+    }
+    // Traceability: record the re-apply as its own zero-cost entry so the change log shows that the
+    // elements were taken from entry #<entryId> WITHOUT an inference (`applied_from`). No `items`
+    // payload is stored — there is nothing new to re-apply from this row.
+    runCatching {
+      AiAssistantLog.recordInference(
+          emf = CodbiEntities.entityManagerFactory,
+          prompt = "Re-applied log entry #$entryId (no inference)",
+          intent = "apply",
+          modelId = "",
+          formKey = formKey,
+          workflowVersionId = null,
+          formChanges = null,
+          workflowChanges = null,
+          tokensIn = 0L,
+          tokensOut = 0L,
+          cost = 0.0,
+          username = currentUsername(params),
+          appliedFrom = entryId)
+    }
+    // gson (not JsonObject.toString) so the returned form keeps the HTML-escaping fix — a
+    // JsonElement.toString would inflate every `<`, `>` and `&` of the form's HTML/CSS back to
+    // \u003c-style escapes.
+    return jsonResponse(
+        """{"status":"ok","form":${gson.toJson(merged.form)},"applied":${gson.toJson(merged.applied)},"resurrected":${gson.toJson(merged.resurrected)}}""")
+  }
+
+  /**
+   * Inserts the entry's logged items into the given current form (see [handleApplyLogEntry]).
+   * Returns `null` when the entry holds no applicable item or none matches [selection].
+   *
+   * Both the elements the entry CREATED and the ones it CHANGED are applied (a changed element is
+   * resurrected exactly as the entry left it); the elements it REMOVED are not re-applied.
+   */
+  internal fun applyLoggedItems(
+      currentFormJson: String,
+      entryItems: JsonObject,
+      selection: String?
+  ): AppliedFromLog? {
+    return try {
+      val root = JsonParser.parseString(currentFormJson).asJsonObject
+      val form = entryItems.getAsJsonObject("form") ?: return null
+      // (loc, isChanged): the BUCKET matters. A CREATED element is (re)inserted — with the
+      // `_cb_ressurected_<N>` rule when its id/name already exists — while a CHANGED element is
+      // applied to the element that is already in the form and must never be inserted a second time
+      // (inserting it is what resurrected a duplicate page/header/footer).
+      val candidates = ArrayList<Pair<JsonObject, Boolean>>()
+      for (section in listOf("created" to false, "changed" to true)) {
+        form.getAsJsonArray(section.first)?.forEach { el ->
+          el.takeIf { it.isJsonObject }?.asJsonObject?.let { candidates.add(it to section.second) }
+        }
+      }
+      // name -> className of every logged item: needed to route a child into the right container
+      // when
+      // its recorded container is deliberately NOT created (a header/footer — see below).
+      val loggedClassByName = LinkedHashMap<String, String>()
+      for ((loc, _) in candidates) {
+        val name = loc.loggedItemName() ?: continue
+        val cls =
+            loc.get("item")
+                ?.takeIf { it.isJsonObject }
+                ?.asJsonObject
+                ?.get("className")
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString
+        if (cls != null) loggedClassByName.putIfAbsent(name, cls)
+      }
+      val selected =
+          candidates.filter { (loc, _) ->
+            selection == null ||
+                selection == loc.loggedItemName() ||
+                selection == loc.loggedItemId()
+          }
+      if (selected.isEmpty()) return null
+
+      val usedIds = collectPropertyValues(root, "id").toMutableSet()
+      val usedNames = collectPropertyValues(root, "name").toMutableSet()
+      // Separate counters: the id suffix and the name suffix are independent, so a batch of
+      // resurrected elements yields _cb_ressurected_1, _2, … for the ids even when some of them
+      // also
+      // needed a name suffix.
+      var idCounter = 1
+      var nameCounter = 1
+      val applied = ArrayList<String>()
+      val resurrected = ArrayList<String>()
+      for ((loc, isChanged) in selected) {
+        val item = loc.get("item")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        val copy = item.deepCopy()
+        val props =
+            copy.getAsJsonObject("properties") ?: JsonObject().also { copy.add("properties", it) }
+        val origName =
+            props.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+        val origId =
+            props.get("id")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+        val className = copy.get("className")?.takeIf { it.isJsonPrimitive }?.asString
+        // A HEADER / FOOTER is NEVER created by a restore: a form keeps the one it has (a second
+        // header/footer can only break the layout). A recorded CHANGE to it is applied to the
+        // existing one, and the elements recorded under it are inserted there as well — see the
+        // parent fallback in insertLoggedItem().
+        if (className != null && className in NEVER_RESURRECTED) {
+          val target = firstItemWithClass(root, className)
+          if (isChanged && target != null) {
+            mergeLoggedState(target, copy)
+            applied.add(origName ?: origId ?: className)
+          }
+          logger.info(
+              "[AICodBiAssistant] Apply-from-log: {} '{}' not created — the form keeps its own {}",
+              className,
+              origName ?: "?",
+              className)
+          continue
+        }
+        val existing =
+            (origName?.let { findItemByName(root, it) }) ?: (origId?.let { findItemById(root, it) })
+        // A CHANGED element must be applied to the element that is already there — never inserted
+        // as
+        // a second copy.
+        if (isChanged && existing != null) {
+          mergeLoggedState(existing, copy)
+          logger.info(
+              "[AICodBiAssistant] Apply-from-log: merged the recorded change of '{}' into the existing element",
+              origName ?: origId ?: "?")
+          applied.add(origName ?: origId ?: "?")
+          continue
+        }
+        // A page the form already has (same name) is not created a second time; its elements are
+        // attached to it through the parent lookup.
+        if (!isChanged && className == "XPage" && existing != null) {
+          logger.info(
+              "[AICodBiAssistant] Apply-from-log: page '{}' already exists — not created again",
+              origName ?: "?")
+          continue
+        }
+        // The collision rule: never introduce a duplicate ID into the form. N is the smallest free
+        // integer, considering the form's existing ids AND the ids already handed out in this
+        // batch.
+        // A RECONSTRUCTED element (an entry recorded before the `items` column, rebuilt from its
+        // change description) carries no id at all — the description only stores the AI-SET
+        // properties. Mint one with the same scheme, so the designer can render it and no duplicate
+        // can appear.
+        if (origId == null) {
+          val fresh = nextFreeResurrectName(usedIds, null, idCounter)
+          idCounter = fresh.second
+          props.addProperty("id", fresh.first)
+          usedIds.add(fresh.first)
+        } else if (origId in usedIds) {
+          val fresh = nextFreeResurrectName(usedIds, null, idCounter)
+          idCounter = fresh.second
+          props.addProperty("id", fresh.first)
+          usedIds.add(fresh.first)
+          resurrected.add(origName ?: origId)
+        } else {
+          usedIds.add(origId)
+        }
+        // A duplicate technical NAME is invalid in Formcycle: suffix it with the same counter.
+        if (origName != null) {
+          if (origName in usedNames) {
+            val fresh = nextFreeResurrectName(usedNames, origName, nameCounter)
+            nameCounter = fresh.second
+            props.addProperty("name", fresh.first)
+            usedNames.add(fresh.first)
+            if (!resurrected.contains(origName)) resurrected.add(origName)
+          } else {
+            usedNames.add(origName)
+          }
+        }
+        val parentClass =
+            loc.get("parent")
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString
+                ?.let { loggedClassByName[it] }
+        insertLoggedItem(root, loc, copy, parentClass)
+        applied.add(origName ?: origId ?: "?")
+      }
+      if (applied.isEmpty()) return null
+      AppliedFromLog(root, applied, resurrected)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to apply a log entry: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * The smallest free `_cb_ressurected_<N>` (or `<name>_cb_ressurected_<N>`) identifier, starting
+   * at [counter]; returns the identifier plus the counter to continue from.
+   */
+  private fun nextFreeResurrectName(
+      used: Set<String>,
+      name: String?,
+      counter: Int
+  ): Pair<String, Int> {
+    var n = counter
+    while (true) {
+      val candidate =
+          if (name.isNullOrBlank()) "_cb_ressurected_$n" else "${name}_cb_ressurected_$n"
+      if (!used.contains(candidate)) return candidate to (n + 1)
+      n++
+    }
+  }
+
+  /** The `properties.name` of one logged item location (`{item,parent,index}`). */
+  private fun JsonObject.loggedItemName(): String? = loggedItemProperty("name")
+
+  /** The `properties.id` of one logged item location (`{item,parent,index}`). */
+  private fun JsonObject.loggedItemId(): String? = loggedItemProperty("id")
+
+  private fun JsonObject.loggedItemProperty(key: String): String? =
+      get("item")
+          ?.takeIf { it.isJsonObject }
+          ?.asJsonObject
+          ?.getAsJsonObject("properties")
+          ?.get(key)
+          ?.takeIf { it.isJsonPrimitive }
+          ?.asString
+
+  /**
+   * Every value of the property [key] (`name`/`id`) anywhere in the form — for collision checks.
+   */
+  private fun collectPropertyValues(root: JsonObject, key: String): Set<String> {
+    val out = LinkedHashSet<String>()
+    val items = root.getAsJsonArray("items") ?: return out
+    fun walk(list: JsonArray) {
+      for (el in list) {
+        val obj = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        obj.getAsJsonObject("properties")
+            ?.get(key)
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+            ?.let { out.add(it) }
+        obj.getAsJsonArray("elements")?.let { walk(it) }
+      }
+    }
+    walk(items)
+    return out
+  }
+
+  /**
+   * Inserts [item] where the entry recorded it.
+   *
+   * TWO persist shapes are supported, because Formcycle's designer accepts both:
+   * - **NESTED** — a container's `properties.elements` holds the child OBJECTS; the item is spliced
+   *   into that array at the recorded index.
+   * - **FLAT** — the shape the assistant emits and the designer persists (see
+   *   `reorderItemsByTreeOrder`): the root `items` array holds EVERY element, and a container
+   *   references its children by NAME in `properties.elements`. The item OBJECT therefore has to go
+   *   into the root `items` array while its NAME goes into the container's `elements`. (Missing
+   *   this made a restored element invisible in the designer: it ended up inside a name list
+   *   instead of the `items` array.)
+   *
+   * The owner is the recorded container (by name), else the LAST page, else the form root; with no
+   * container at all the item becomes a root entry.
+   *
+   * The owner's array is REBUILT instead of using an index insert: the Gson version bundled here
+   * only exposes the single-argument `JsonArray.add(…)` overloads (no `add(int, JsonElement)`).
+   */
+  private fun insertLoggedItem(
+      root: JsonObject,
+      loc: JsonObject,
+      item: JsonObject,
+      parentClass: String? = null
+  ) {
+    val parentName = loc.get("parent")?.takeIf { it.isJsonPrimitive }?.asString
+    val recordedIndex = loc.get("index")?.takeIf { it.isJsonPrimitive }?.asInt ?: -1
+    val parent = parentName?.let { findItemByName(root, it) }
+    // The recorded container may be a header/footer that a restore deliberately did NOT create: the
+    // element then belongs into the header/footer the form ALREADY has.
+    val owner =
+        parent
+            ?: parentClass?.takeIf { it in NEVER_RESURRECTED }?.let { firstItemWithClass(root, it) }
+            ?: lastPage(root)
+    // A recorded position is only meaningful inside the container it was recorded in — when the
+    // owner
+    // had to be substituted the element is APPENDED instead (a stale index would reorder the
+    // target).
+    val index = if (parent != null || parentName == null) recordedIndex else -1
+    // NOTE: `loggedItemName()` reads a LOC (`{item,parent,index}`) — here the name of the ITEM
+    // itself
+    // is needed, so it is read directly.
+    val itemName =
+        item
+            .getAsJsonObject("properties")
+            ?.get("name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+    if (owner == null) {
+      insertIntoArray(root, "items", index, item)
+      return
+    }
+    val ownerProps =
+        owner.getAsJsonObject("properties") ?: JsonObject().also { owner.add("properties", it) }
+    val elements = ownerProps.getAsJsonArray("elements")
+    if (isFlatForm(root) && itemName != null) {
+      // FLAT: reference the child by name in the owner, and place its object directly behind its
+      // last
+      // already present sibling so the designer's (items-array driven) render order keeps the
+      // container's `elements` order.
+      val anchorIndex =
+          elements?.let { arr ->
+            (arr.size() - 1 downTo 0).firstNotNullOfOrNull { i ->
+              arr[i]
+                  .takeIf { it.isJsonPrimitive }
+                  ?.asString
+                  ?.takeIf { it != itemName && it.isNotBlank() }
+                  ?.let { findItemByName(root, it) }
+                  ?.let { indexOfItem(root, it) }
+                  ?.takeIf { it >= 0 }
+            }
+          } ?: -1
+      val ownerIndex = indexOfItem(root, owner)
+      val after = if (anchorIndex >= 0) anchorIndex else ownerIndex
+      insertIntoArray(root, "items", if (after >= 0) after + 1 else -1, item)
+      val rebuilt = JsonArray()
+      var i = 0
+      var added = false
+      for (el in elements ?: JsonArray()) {
+        if (i == index && !added) {
+          rebuilt.add(itemName)
+          added = true
+        }
+        // Drop a stale reference to the very same name (a re-apply must not list a child twice).
+        if (!(el.isJsonPrimitive && el.asString == itemName)) rebuilt.add(el)
+        i++
+      }
+      if (!added) rebuilt.add(itemName)
+      ownerProps.add("elements", rebuilt)
+      return
+    }
+    if (elements == null) {
+      // A container that had no children yet: in the nested shape the object itself is the child.
+      ownerProps.add("elements", JsonArray().also { it.add(item) })
+      return
+    }
+    insertIntoArray(ownerProps, "elements", index, item)
+  }
+
+  /** Splices [item] into `holder[key]` at [index] (appended when the index is out of range). */
+  private fun insertIntoArray(holder: JsonObject, key: String, index: Int, item: JsonElement) {
+    val existing = holder.getAsJsonArray(key) ?: JsonArray()
+    val rebuilt = JsonArray()
+    var i = 0
+    var inserted = false
+    for (el in existing) {
+      if (i == index && !inserted) {
+        rebuilt.add(item)
+        inserted = true
+      }
+      rebuilt.add(el)
+      i++
+    }
+    if (!inserted) rebuilt.add(item)
+    holder.add(key, rebuilt)
+  }
+
+  /** The index of [target] in the form's `items` array (-1 when it is not a root entry). */
+  private fun indexOfItem(root: JsonObject, target: JsonObject): Int {
+    val items = root.getAsJsonArray("items") ?: return -1
+    for (i in 0 until items.size()) if (items.get(i) === target) return i
+    return -1
+  }
+
+  /**
+   * True when the form uses the FLAT shape: at least one item references its children by NAME in
+   * `properties.elements` (what `reorderItemsByTreeOrder` produces and the designer persists).
+   */
+  private fun isFlatForm(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    for (el in items) {
+      val obj = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+      val arr = obj.getAsJsonObject("properties")?.getAsJsonArray("elements") ?: continue
+      for (child in arr) if (child.isJsonPrimitive) return true
+    }
+    return false
+  }
+
+  /**
+   * Element classes a restore must NEVER create: a form keeps the header/footer it has, and a
+   * second one can only break the layout. A recorded change to one of them is merged onto the
+   * existing element instead, and the elements recorded below it are inserted there too (see
+   * [insertLoggedItem]).
+   */
+  private val NEVER_RESURRECTED = setOf("XHeader", "XFooter")
+
+  /** The first item of the form with the given `className` (header/footer lookup). */
+  private fun firstItemWithClass(root: JsonObject, className: String): JsonObject? {
+    val items = root.getAsJsonArray("items") ?: return null
+    for (el in items) {
+      val obj = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+      if (obj.get("className")?.takeIf { it.isJsonPrimitive }?.asString == className) return obj
+    }
+    return null
+  }
+
+  /** Depth-first search for the element whose `properties.id` is [id]. */
+  private fun findItemById(root: JsonObject, id: String): JsonObject? {
+    val items = root.getAsJsonArray("items") ?: return null
+    for (el in items) {
+      val obj = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+      val found =
+          obj.getAsJsonObject("properties")?.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+      if (found == id) return obj
+    }
+    return null
+  }
+
+  /**
+   * Applies the recorded state of an element that ALREADY exists in the form (a CHANGED item, or a
+   * header/footer): its own properties and its CodBi `attributes` are copied over, while its
+   * IDENTITY (`name`, `id`) and its child references (`elements`) stay untouched — a restore must
+   * never duplicate or re-parent an element that is already there.
+   */
+  private fun mergeLoggedState(target: JsonObject, recorded: JsonObject) {
+    val recordedProps = recorded.getAsJsonObject("properties") ?: return
+    val targetProps =
+        target.getAsJsonObject("properties") ?: JsonObject().also { target.add("properties", it) }
+    for ((key, value) in recordedProps.entrySet()) {
+      if (key == "name" || key == "id" || key == "elements") continue
+      targetProps.add(key, value.deepCopy())
+    }
+    recorded.getAsJsonArray("attributes")?.let { target.add("attributes", it.deepCopy()) }
+  }
+
+  /**
+   * Depth-first search for the element whose `properties.name` is [name]. Handles both persist
+   * shapes: in the flat one every item is in the root `items` array (found on the first level); in
+   * the nested one the children are objects inside an `elements` array — item-level or inside
+   * `properties`.
+   */
+  private fun findItemByName(root: JsonObject, name: String): JsonObject? {
+    val items = root.getAsJsonArray("items") ?: return null
+    fun walk(list: JsonArray): JsonObject? {
+      for (el in list) {
+        val obj = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        val n =
+            obj.getAsJsonObject("properties")?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+        if (n == name) return obj
+        obj.getAsJsonArray("elements")?.let { child ->
+          walk(child)?.let {
+            return it
+          }
+        }
+        obj.getAsJsonObject("properties")?.getAsJsonArray("elements")?.let { child ->
+          walk(child)?.let {
+            return it
+          }
+        }
+      }
+      return null
+    }
+    return walk(items)
+  }
+
+  /** The LAST `XPage` item of the form — the default target for an appended element. */
+  private fun lastPage(root: JsonObject): JsonObject? {
+    val items = root.getAsJsonArray("items") ?: return null
+    var last: JsonObject? = null
+    for (el in items) {
+      val obj = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+      val cls =
+          obj.get("className")?.takeIf { it.isJsonPrimitive }?.asString
+              ?: obj.getAsJsonObject("properties")
+                  ?.get("className")
+                  ?.takeIf { it.isJsonPrimitive }
+                  ?.asString
+      if (cls == "XPage") last = obj
+    }
+    return last
+  }
+
+  // endregion Apply a change-log entry (no inference)
 
   /**
    * Stores/removes a sensitive-element dismiss check for the current user. Called with X-Action:
@@ -1034,6 +1590,16 @@ class AICodBiAssistant : IPluginServletAction {
     // turns coming from the chat popup; those re-classify intent when they contain instructions.
     val chatTurns = parseChatHistory(params)
     val chatMode = params.requestParameters["chatMode"]?.firstOrNull()?.toBoolean() ?: false
+    // "Apply this entry again" (change log) on an OLD entry — one recorded before the log stored
+    // the
+    // built items — falls back to re-running the AI with that entry's request. Such a run is an
+    // EXPLICIT re-apply and must ALWAYS execute the build: it must never be swallowed by the
+    // neutral-chat ack ("✅ Okay.") nor answered as a chat question. Observed without this flag: the
+    // classifier judged the replayed prompt as "no instructions", the assistant opened the chat
+    // with
+    // an ack and the form was left UNCHANGED (the user saw a chat popup and no new elements).
+    // forceExecute skips the chat classification altogether — including its inference.
+    val forceExecute = params.requestParameters["forceExecute"]?.firstOrNull()?.toBoolean() ?: false
     // The chat history (previous turns) is ALSO fed to the clarification check and the form /
     // workflow execution prompts, so references like "apply options 1, 2, 5 and 7" resolve against
     // the numbered list the AI gave in the chat popup instead of being asked again.
@@ -1052,21 +1618,29 @@ class AICodBiAssistant : IPluginServletAction {
           null
         }
     val chatAnswerResult =
-        try {
-          produceChatAnswer(
-              prompt,
-              modelId,
-              instance,
-              formStructureContext,
-              completeFormJson,
-              completeWorkflowJson,
-              chatTurns,
-              clarificationContext,
-              formKey,
-              userContextForChat)
-        } catch (e: Exception) {
-          logger.warn("[AICodBiAssistant] Chat answer pass failed: {}", e.message)
+        if (forceExecute) {
+          // Explicit re-apply (see [forceExecute]): the build must run, so the chat/answer tier is
+          // skipped entirely — no chat popup, no ack, and one inference less.
+          logger.info(
+              "[AICodBiAssistant] forceExecute=true — chat classification skipped, executing the build")
           null
+        } else {
+          try {
+            produceChatAnswer(
+                prompt,
+                modelId,
+                instance,
+                formStructureContext,
+                completeFormJson,
+                completeWorkflowJson,
+                chatTurns,
+                clarificationContext,
+                formKey,
+                userContextForChat)
+          } catch (e: Exception) {
+            logger.warn("[AICodBiAssistant] Chat answer pass failed: {}", e.message)
+            null
+          }
         }
     // Matomo statistics fetched during the chat pass (the AI requested them for an analysis /
     // optimisation question). They are reused by the form-modification pass below so an
@@ -1080,7 +1654,8 @@ class AICodBiAssistant : IPluginServletAction {
     // form/workflow build, never be swallowed by this neutral-chat ack. Without this guard the chat
     // AI occasionally misclassifies such a re-run as answer-only and the assistant just replies
     // "Alles klar!" instead of building the form.
-    if (chatAnswerResult != null &&
+    if (!forceExecute &&
+        chatAnswerResult != null &&
         !chatAnswerResult.hasInstructions &&
         clarificationContext.isNullOrBlank()) {
       val chatPrice = instance.priceForModel(modelId)
@@ -1952,8 +2527,13 @@ class AICodBiAssistant : IPluginServletAction {
     // runs where a missing submit button was added (both persistJson and resolvedFormJson are then
     // non-null).
     var formChanges: JsonObject? = null
+    var appliedItems: JsonObject? = null
     if (persistJson != null && resolvedFormJson != null) {
       formChanges = AiAssistantLog.computeFormChanges(persistJson, resolvedFormJson)
+      // The FULL resolved items (not the summaries formChanges holds) so the change log can
+      // re-apply
+      // this entry to the CURRENT form later without another inference — see handleApplyLogEntry.
+      appliedItems = AiAssistantLog.computeAppliedItems(persistJson, resolvedFormJson)
     }
     val sensitiveUsed =
         LinkedHashSet<String>()
@@ -2026,7 +2606,8 @@ class AICodBiAssistant : IPluginServletAction {
           username = currentUsername(params),
           clarification = clarificationTurnsToJson(clarificationHistory),
           chatReply = replyForLog,
-          trips = tripsToJson())
+          trips = tripsToJson(),
+          items = appliedItems)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
     }
@@ -2446,10 +3027,21 @@ class AICodBiAssistant : IPluginServletAction {
     // request can need (the AI's `sections` ∪ the deterministic detectors; a tag matched by neither
     // fails OPEN — the block is kept). See [PromptSectionGate] and
     // plans/formassistant-input-token-optimization.md.
-    val sectionKeepTags =
+    val gatedKeepTags =
         PromptSectionGate.resolveKeepTags(
             keepSections,
             listOfNotNull(prompt, clarificationContext, chatContext).joinToString("\n"))
+    // The detailed XSpan widget section is itself split into `designed_text` / `svg` /
+    // `designed_text,svg,custom_js` blocks (see formcycle-widgets.md), and pass-2 ships that
+    // section
+    // gated with the same keep set. [DesignedTextDetector] force-adds `XSpan` to the requested
+    // widgets whenever the request talks about design / animation / illustration — so the SAME
+    // signal must also keep those blocks, otherwise that force-in would deliver a section whose
+    // rules were just gated away. Using one detector for both guarantees they can never disagree.
+    val sectionKeepTags =
+        if (DesignedTextDetector.wantsDesignedTextOrIllustration(prompt))
+            gatedKeepTags + setOf("designed_text", "svg")
+        else gatedKeepTags
     val baseSystemPrompt = buildFormSystemPrompt(useCodbi, useBuergerserviceNaming, sectionKeepTags)
     val systemPrompt =
         if (hasAttachedDocument) {
@@ -6526,6 +7118,71 @@ class AICodBiAssistant : IPluginServletAction {
         item.add("className", classNameInProps)
         props.remove("className")
       }
+    }
+    // Canonicalize properties.attributes FIRST: FORMCYCLE (and the designer + the render callback)
+    // reads attributes ONLY as an array of {"text":"data-cb-*","value":"<string>"} objects, and it
+    // requires the "text" key to be a STRING. The AI sometimes emits the CHANGE-LOG attribute shape
+    // ({"name":"data-cb-func","value":…,"kind":"func","codbi":true}) or an object map directly
+    // inside
+    // properties.attributes. Such an entry used to reach the persisted form, where it made the
+    // designer preview throw (`null cannot be cast to non-null type kotlin.String` in
+    // FormRenderCallback) — the user saw the toast but NO elements in the form. Every entry is
+    // rewritten here; entries without a usable name/string value are dropped.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val raw = props.get("attributes") ?: continue
+      if (raw.isJsonNull) {
+        props.remove("attributes")
+        continue
+      }
+      if (!raw.isJsonObject && !raw.isJsonArray) {
+        props.remove("attributes")
+        continue
+      }
+      fun attrEntry(name: String, value: com.google.gson.JsonElement): JsonObject {
+        val o = JsonObject()
+        o.addProperty("text", name)
+        // The value MUST be a string: an object/array value is rendered as "[object Object]" and
+        // the change-log shape may carry a nested object. Keep a string, else the JSON text.
+        o.addProperty(
+            "value",
+            when {
+              value.isJsonPrimitive -> value.asString
+              value.isJsonNull -> ""
+              else -> value.toString()
+            })
+        return o
+      }
+      val canonical = JsonArray()
+      if (raw.isJsonObject) {
+        for ((key, value) in raw.asJsonObject.entrySet()) {
+          if (key.isBlank()) continue
+          canonical.add(attrEntry(key, value))
+        }
+      } else {
+        for (attr in raw.asJsonArray) {
+          if (!attr.isJsonObject) {
+            // A bare "data-cb-func" style string entry: keep it with an empty value.
+            if (attr.isJsonPrimitive &&
+                attr.asJsonPrimitive.isString &&
+                attr.asString.isNotBlank()) {
+              canonical.add(attrEntry(attr.asString, JsonPrimitive("")))
+            }
+            continue
+          }
+          val obj = attr.asJsonObject
+          val name =
+              obj.get("text")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+                  ?: obj.get("name")
+                      ?.takeIf { it.isJsonPrimitive }
+                      ?.asString
+                      ?.takeIf { it.isNotBlank() }
+                  ?: continue
+          canonical.add(attrEntry(name, obj.get("value") ?: JsonPrimitive("")))
+        }
+      }
+      if (canonical.size() == 0) props.remove("attributes") else props.add("attributes", canonical)
     }
     // Normalize the AI's ITEM-level "attributes" (sibling of "properties") into
     // "properties.attributes". FORMCYCLE only reads attributes from
@@ -20180,7 +20837,13 @@ class AICodBiAssistant : IPluginServletAction {
               // (a fallback to it would make the model re-emit the whole form).
               (categories["codbi.general_rethink"] ?: categories["codbi.general_decision"] ?: "") +
               "\n" +
-              FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: "") +
+              // The full widget reference carries the `<!--SECTION:…-->` markers of the gated XSpan
+              // sub-blocks. This rethink pass has no pass-1 keep set (it is a fresh, complete
+              // reference), so keep every block and only STRIP the markers — a raw marker comment
+              // must never reach the model.
+              PromptSectionGate.applySectionGates(
+                  FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: ""),
+                  PromptSectionGate.KNOWN_TAGS) +
               "\n" +
               "{{CODBI_ELEMENTS_SECTION}}")
     } catch (e: Exception) {
@@ -20222,7 +20885,7 @@ class AICodBiAssistant : IPluginServletAction {
           if (promptCachingEnabled) PromptSectionGate.KNOWN_TAGS else sectionKeepTags
       val requested = if (promptCachingEnabled) requestedIds.distinct().sorted() else requestedIds
       val widgets = if (promptCachingEnabled) widgetIds.distinct().sorted() else widgetIds
-      val widgetPart = buildWidgetDetailsSection(em, widgets)
+      val widgetPart = buildWidgetDetailsSection(em, widgets, effectiveKeepTags)
       if (!useCodbi) {
         // CodBi disabled: the pass-2 prompt contains only the Formcycle widget templates so the AI
         // can rebuild the widgets it created — no CodBi reference/details are sent at all.
@@ -20399,17 +21062,36 @@ class AICodBiAssistant : IPluginServletAction {
    * Builds the formcycle widget details section for the pass-2 rerun. When [widgetIds] is
    * non-empty, only the requested widgets' sections (from `formcycle.widgets.<name>`) are appended;
    * otherwise the full widget reference is included as a fallback.
+   *
+   * [sectionKeepTags] is pass-1's keep set ([PromptSectionGate.resolveKeepTags]). The detailed
+   * `XSpan` section is the only widget section split into `<!--SECTION:…-->` blocks: a
+   * `designed_text` block (the designed/interactive-text rules), a `designed_text,svg,custom_js`
+   * block (the CSS-animation / in-`rtevalue`-`<style>` / custom-JS mechanism) and a large `svg`
+   * block (the illustration rules with two worked examples and the forbidden-composition list, ~20
+   * KB). A request for e.g. only a designed text needs the first two but NOT the illustration half,
+   * so each requested widget's content is gated with the SAME keep set pass-1 used; the build pass
+   * can still pull the other half via `need_codbi_details`. In prompt-caching mode the caller
+   * passes [PromptSectionGate.KNOWN_TAGS], which keeps everything and only strips the markers (a
+   * request-dependent drop would change the middle of the prompt and invalidate the prefix cache).
    */
-  private fun buildWidgetDetailsSection(em: EntityManager, widgetIds: List<String>): String {
+  private fun buildWidgetDetailsSection(
+      em: EntityManager,
+      widgetIds: List<String>,
+      sectionKeepTags: Set<String>
+  ): String {
     if (widgetIds.isEmpty()) {
-      // Full-widget fallback — scrub out widgets not allowed for the current request.
+      // Full-widget fallback — scrub out widgets not allowed for the current request, then gate the
+      // section-tagged XSpan sub-blocks exactly like the requested path does.
       val full =
-          FormcycleElementFilter.scrubWidgetSections(
-              PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
+          PromptSectionGate.applySectionGates(
+              FormcycleElementFilter.scrubWidgetSections(
+                  PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: ""),
+              sectionKeepTags)
       logger.info(
-          "[AICodBiAssistant] Pass-2 widget details: FULL reference ({} chars, XSpan section included: {}, illustration checklist included: {})",
+          "[AICodBiAssistant] Pass-2 widget details: FULL reference ({} chars, XSpan section included: {}, designed-text rules included: {}, illustration checklist included: {})",
           full.length,
           full.contains("## XSpan"),
+          full.contains("RICH / DESIGNED / INTERACTIVE TEXT"),
           full.contains("FORBIDDEN COMPOSITIONS"))
       return full
     }
@@ -20428,16 +21110,23 @@ class AICodBiAssistant : IPluginServletAction {
                   .firstOrNull { (k, _) -> k.removePrefix("formcycle.widgets.").startsWith(norm) }
                   ?.value
               ?: continue
-      sb.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+      // Gate the SECTION-tagged sub-blocks of THIS widget (only `XSpan` has any today). Shipping
+      // the raw content would both send the half this request does not need and leak the
+      // `<!--SECTION:-->` marker comments into the prompt.
+      val gated = PromptSectionGate.applySectionGates(content, sectionKeepTags)
+      sb.append("\n## ").append(id.trim()).append("\n").append(gated).append("\n")
       sent.add(id.trim())
     }
     // Support diagnosis: the pass that BUILDS the form must be seen to carry the designed-text /
     // illustration rules (the XSpan section). A run that builds a naive drawing without them
-    // requested XSpan can be told apart from a model that simply ignored the rules.
+    // requested XSpan can be told apart from a model that ignored the rules — and, since these
+    // blocks are now section-gated, from a request that simply did not need the illustration half.
     logger.info(
-        "[AICodBiAssistant] Pass-2 widget details: requested=[{}] sent=[{}] (illustration checklist included: {})",
+        "[AICodBiAssistant] Pass-2 widget details: requested=[{}] sent=[{}] ({} chars, designed-text rules included: {}, illustration checklist included: {})",
         widgetIds.joinToString(", "),
         if (sent.isEmpty()) "<none>" else sent.joinToString(", "),
+        sb.length,
+        sb.contains("RICH / DESIGNED / INTERACTIVE TEXT"),
         sb.contains("FORBIDDEN COMPOSITIONS"))
     return sb.toString().trimEnd()
   }

@@ -589,7 +589,7 @@ much of the output was thinking.
 
 | # | Lever | Size | ≈ % of run | Risk |
 |---|---|---:|---:|---|
-| A | **One conversation for pass-1 + pass-2**: append the requested details as a SECOND user turn instead of sending a fresh ~94 k-char system core again (Cerebras then also serves the prefix from its cache) | ~22 k in | ~37 % | medium-high (protocol + prompt work) |
+| A | ~~One conversation for pass-1 + pass-2~~ — **CORRECTED, not a token saving.** A chat-completion call is STATELESS: a second turn must carry the whole message array, so it re-sends the same ~94 k-char system core **plus** turn 1's messages — i.e. it *adds* input tokens. It only pays off on a provider that **discounts cached prefixes** (Anthropic/OpenAI/DeepSeek-style); Cerebras bills cached tokens exactly like fresh ones, so there it buys latency (TTFT) and continuity (the model keeps its own pass-1 decisions in context), not cost. | 0 on Cerebras | — |
 | B | **Gate the WIDGET sub-sections with the same `sectionKeepTags`**: the XSpan template carries BOTH the designed-text and the SVG-illustration halves; the request needs only the half its tags select (the AI can still ask for the other via `need_codbi_details`) | ~8.5 k in | ~32 % | low (superseded by A) |
 | C | **De-duplicate `formcycle-general-apply` against `codbi-form-structure-rules.decision`** — conditional properties, repeatable containers, panels and placement are stated in both; move each rule to ONE place | ~4.5 k in | ~17 % | low-medium |
 | D | **Trim the Bürger-Services naming block** to the canonical name list + the ELSTER fields (drop the prose/worked examples) | ~3 k in | ~12 % | low |
@@ -600,6 +600,84 @@ much of the output was thinking.
 A and B overlap (with A, pass-2 no longer re-sends the widget templates at all), so A+B are not
 additive — A is the structural version of B. C, D and F are pure information de-duplication/reduction
 with no rule removed; E and G change the pass structure and need the prompt corpus as a guard.
+
+### 9.6 Implemented: HTML escaping disabled in every AI payload (lossless)
+
+Gson escapes `<`, `>`, `=`, `'` and `&` into `\u003c`/`\u003e`/`\u003d`/`\u0027`/`\u0026` **by
+default**, which JSON does not require — and every AI payload, prompt text and change-log row in this
+plugin was serialized with a plain `GsonBuilder().create()`. Consequences:
+
+- each of those characters cost 5 extra characters (≈2-3 tokens instead of 1) in the form dumps, the
+  HTML/`rtevalue` content, the EP expressions (`{ Data.Join > … }`) and the rule texts;
+- the model **mimics** the escaping it was shown — a real answer contained
+  `"rtevalue":"\u003cstyle\u003e@keyframes …\u003d\u0027…"` — so the same inflation was paid again in
+  the answer (output tokens) and in the next pass's input.
+
+`GsonBuilder().disableHtmlEscaping()` is now used by [`AICodBiAssistant`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:69)
+(payloads, prompts, API responses), [`AiAssistantLog`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AiAssistantLog.kt:34)
+(change-log rows, which are also fed back as change history) and both assistant variants
+([`AIFormAssistant`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AIFormAssistant.kt:54),
+[`AIWorkflowAssistant`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AIWorkflowAssistant.kt:48)).
+
+**Lossless** — the characters survive the JSON round-trip unchanged, and every consumer parses JSON
+(the designer uses `JSON.parse`, the backend Gson). Verification is visible in the log: the
+`Form data sent to AI …` / `Pass-2 form elements sent to AI …` lines now show raw `<p>`, `<style>`,
+`{ Data.Join > … }` instead of the `\u003c…` forms, and `promptChars`/`completionChars` of the trips
+drop for HTML-heavy requests.
+
+### 9.8 Status after the 2026-09-27 changes — what is closed, what is still open
+
+Closed since §9.5 was written:
+
+| Item | Outcome |
+|---|---|
+| §9.5 B "strip the designer defaults / dump diet" | **already implemented** (`slimPersistJson` + `sliceFormForPass2`) — see §9.7; the default-equality variant is rejected |
+| HTML escaping in every AI payload | **done** (§9.6) |
+| §9.5 C "de-duplicate the four rule files" | **done**: single authoritative home per topic; pass-1 ≈ −5.9 k chars, pass-2 ≈ −5.9 k chars (≈ 3 k tokens/run). Watch: rules relocated into the section-gated structure-rules file are now gated in pass-2 as well |
+| Reading convention ("empty ⇒ omitted") | **taught** in `codbi-form-structure-rules.decision.md` (both passes) |
+| Change-log per-entry "apply again" | **done** (frontend) |
+| §9.8 lever 1 "gate the WIDGET sub-sections" | **done (2026-09-27)**: the `XSpan` widget section is split into `<!--SECTION:designed_text-->` (the designed/interactive-text rules), `<!--SECTION:designed_text,svg,custom_js-->` (the in-`rtevalue`-`<style>` / animation / custom-JS mechanism) and `<!--SECTION:svg-->` (the illustration rules incl. BOTH worked examples and the forbidden-composition list, ~20 k chars), and [`buildWidgetDetailsSection()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:20442) gates every requested widget's content with the run's `sectionKeepTags`. [`DesignedTextDetector`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/DesignedTextDetector.kt:81) adds `designed_text`+`svg` to that set when it force-adds `XSpan`, so the force-in can never deliver a gated-away section. The rethink prompts and the legacy assistant keep every block and only strip the markers (fail-safe). **Requires a prompt re-seed** — the DB rows (`formcycle.widgets.xspan`, `formcycle.widgets`) still hold the unmarked text, so the split is inert until re-seeded; guard: [`WidgetSectionGatingTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/WidgetSectionGatingTest.kt:1) (7 tests against the real bundled file) |
+
+Still open, best value/effort first:
+
+| # | Lever | Size | Notes / risk |
+|---|---|---:|---|
+| 1 | **Skip the dedicated clarify-check when the classification is unambiguous** (its content is re-sent to pass-1 anyway) | ~8.8 k in (15 % of a run) | behavioural: may ask one round later |
+| 2 | **Shorten what pass-2 must be told** — the only real way to cut pass-2's input. A one-conversation design does NOT help a stateless API (it re-sends the same system core plus the first turn; see the correction in §9.5 A), so the honest options are: send fewer rule blocks to the pass that builds, and/or move to a provider that discounts cached prefixes (then the existing `AI_Assistant_PromptCaching` + `…PricePerMCachedInput…` support it). | up to ~5 k in today; ~22 k only with a discounting provider | rules are needed *when the build happens* — trim only what that pass provably cannot act on |
+| 3 | **Multi-language translation in ONE pass** — `runSequentialWholeFormTranslation` currently costs one full-form inference per language | N−1 inferences per multi-language request | unexplored; would matter a lot for "translate into 5 languages" |
+| 4 | **Merge `classify-intent` into `chat-classify`** | ~2.2 k in | both run on the same request |
+| 5 | **Trim the Bürger-Services naming block** to the canonical names + ELSTER fields (drop prose/examples) | ~3 k in | low risk, prompt only |
+| 6 | **NAME-ONLY catalogs in pass-1** (names are enough to request details) | ~2-3 k in | medium: the first sentence helps the AI *choose* the right element |
+| 7 | **Workflow prompt split** — the workflow branch (`workflow-pass-1/2/2-retry`, mail/endpage i18n) has never had the decision-core/full-reference split that the form path got | unexplored, likely large for workflow runs | needs the same inventory/consolidation method |
+| 8 | **Output-side leftovers** — `_codbiApplicability` report (~200-400 output tokens/run) could be derived from the diff instead of generated; the forced-final and retry passes | small per run | measure first |
+
+**Closed 2026-09-27 (was lever 1)** — gate the widget sub-sections with the same `sectionKeepTags`: see the "closed" table above. Measured effect: the `svg` half is >15 k chars, so a request that needs only a designed text no longer pays for the illustration rules and vice versa; the guard test asserts the >15 k split.
+
+### 9.7 Correction: the "emptiness" dump diet was ALREADY implemented — and the convention is now taught
+
+Reading the code before implementing the "strip empty arrays/objects from the form dump" idea showed it
+is **already done**:
+
+- [`slimPersistJson()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:6273) removes every property whose value is an empty primitive (`""`), an
+  empty array or an empty object — plus `properties.i18n` (kept server-side and merged) and the root's
+  `STRIPPED_FIELDS` (`css`, `script`, `base`, `formI18n`, `metadata`, …);
+- [`sliceFormForPass2()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:6341) builds the pass-2 dump **from** `slimPersistJson(formBase)`, so pass-2
+  inherits exactly the same diet.
+
+The empty arrays that looked like a leak in the `Pass-2 form elements sent to AI …` log line are the
+RAW target items printed for diagnosis; the payload itself is the slimmed dump (`Pass-2 payload sizes:
+… form dump=1,821 chars, 3/3 items in full` in the same run).
+
+So the only variant left was stripping **non-empty values that equal the class default** (`maxwidth`
+850px, `print_hide` `"0"`, `showrequiredhint` `false`, …) — **rejected**, because the AI never receives
+the defaults table (`base` is in `STRIPPED_FIELDS`) and the defaults are only documented sporadically
+in prose, so "absent" would become ambiguous exactly where it matters. That is also why the reading
+convention is now stated explicitly in
+[`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md:5)
+(which both passes receive): *properties with an empty value are omitted — an absent property is empty/none,
+never missing, never to be re-created; `properties.i18n` is omitted and merged server-side; `base`/`css`/
+`script`/`metadata` are never in the dump*. It costs ~4 lines and removes a whole ambiguity class from
+the existing (already slimmed) dump.
 
 **The structural fix (lever 8) — and why it is cheaper than it looks.** The merge engine ALREADY
 implements the semantics a property-level patch needs: [`restoreStrippedFields()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:6604)

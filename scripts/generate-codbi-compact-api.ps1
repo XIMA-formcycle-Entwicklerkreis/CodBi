@@ -4,6 +4,27 @@
 
 $ErrorActionPreference = "Stop"
 
+# ##############################################################################################
+# WARNING — DO NOT RUN THIS ON THE COMMITTED ARTIFACTS WITHOUT REVIEWING THE DIFF.
+# `codbi-core-api-compact.md`, `codbi-core-elements-compact.md` and
+# `codbi-core-details-index.json` are SEEDED into the database (`compact.elements.*`,
+# `compact.formcycle_widgets` and the local API-doc details index) and are read by the AI's pass-1
+# catalogs, but they have been ENRICHED BY HAND after the last generation: entries such as
+# `Media.MultipleUpload` or `Media.Image.Cropper` carry applicability prose that this script cannot
+# reproduce (a plain run replaces them with a terse/wrong sentence). Use this generator only to
+# bootstrap a NEW artifact or to fix the extraction of specific entries, and hand-merge the result.
+#
+# Fixed here (2026-09-27), for when it IS run:
+#   * every `Get-Content` reads with `-Encoding UTF8` — without it Windows PowerShell decoded the
+#     UTF-8 sources as ANSI and seeded mojibake (`—` became the three characters a-hat/euro/quote);
+#   * the JSDoc picker accepts `public static async functionality(…)` (the missing `async` made the
+#     AI.LLAMA.STANDARD.* entries fall through to an arbitrary member doc — the private
+#     PAGE_SESSION_ID field, "The Unique session ID generated on page load …");
+#   * it also falls back to the CLASS-level doc, and the sentence splitter no longer ends a sentence
+#     at an abbreviation like "e.g." (which truncated `Param[5]` of AI.LLAMA.STD.QA at "(e.g.");
+#   * the three AI.LLAMA.STANDARD.* functionalities have explicit `$compactDescOverrides` entries.
+# ##############################################################################################
+
 $jsRoot = Join-Path $RepoRoot "src/main/web/packages/form/src/js"
 $outFile = Join-Path $RepoRoot "src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/codbi-core-api-compact.md"
 $elementsOnlyOutFile = Join-Path $RepoRoot "src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/codbi-core-elements-compact.md"
@@ -25,7 +46,12 @@ function To-OneSentence {
   param([string]$Text)
   $t = Normalize-Text $Text
   if ([string]::IsNullOrWhiteSpace($t)) { return "" }
-  $m = [regex]::Match($t, "^(.+?[.!?])(\s|$)")
+  # A sentence ends at . ! ? followed by whitespace AND an uppercase word (or at the end of the
+  # text). Requiring an uppercase word keeps ABBREVIATIONS from ending the sentence: the old
+  # pattern `(.+?[.!?])(\s|$)` stopped at the first period followed by a space, so a parameter
+  # documented as `ResponseLanguage — Two-letter ISO 639-1 code (e.g. "de", "en"). Appends …`
+  # was cut to `… code (e.g.` (observed in the seeded compact reference).
+  $m = [regex]::Match($t, "^(.+?[.!?])(?=\s+[A-ZÄÖÜ0-9][a-zäöüß]|$)")
   if ($m.Success) { return $m.Groups[1].Value.Trim() }
   return ($t.TrimEnd(".") + ".")
 }
@@ -79,19 +105,33 @@ function Get-AllDocBlocks {
 function Get-BestDescription {
   # Returns the best one-sentence description from the file.
   # Priority: (1) JSDoc block immediately before functionality()/retrieve() static method,
+  #           (1b) the CLASS-level JSDoc immediately before `export class …`,
   #           (2) first non-stub JSDoc block,
   #           (3) first non-empty description.
   param([string]$FileContent)
-  # Priority 1: JSDoc directly before the core static method
-  $coreMatch = [regex]::Match($FileContent, "(?s)/\*\*(.*?)\*/\s*(?:public\s+)?static\s+(?:functionality|retrieve)\s*\(")
+  $stubPattern = "^(Provides the |Registers the |Extended |A single |The type of )"
+  # Priority 1: JSDoc directly before the core static method. `async` MUST be allowed: several
+  # functionalities declare `public static async functionality(…)`, which the old pattern missed —
+  # the description then fell through to Priority 2 and picked an arbitrary MEMBER doc (observed:
+  # AI.LLAMA.STANDARD.QA / .TXTQA / .TXTVERIFY were described with their private PAGE_SESSION_ID
+  # field doc, "The Unique session ID generated on page load …").
+  $coreMatch = [regex]::Match($FileContent, "(?s)/\*\*(.*?)\*/\s*(?:public\s+)?static\s+(?:async\s+)?(?:functionality|retrieve)\s*\(")
   if ($coreMatch.Success) {
     $raw = $coreMatch.Groups[1].Value
     $lines = $raw -split "`r?`n" | ForEach-Object { ($_ -replace "^\s*\*\s?", "").TrimEnd() }
     $d = Get-ElementDescription ($lines -join "`n")
     if ($d) { return $d }
   }
+  # Priority 1b: the CLASS-level JSDoc (immediately before `export class <Name>`) when it is not a
+  # "Provides the {@link …}" stub — the documented home of a component's purpose.
+  $classMatch = [regex]::Match($FileContent, "(?s)/\*\*(.*?)\*/\s*export\s+class\s+\w+")
+  if ($classMatch.Success) {
+    $raw = $classMatch.Groups[1].Value
+    $lines = $raw -split "`r?`n" | ForEach-Object { ($_ -replace "^\s*\*\s?", "").TrimEnd() }
+    $d = Get-ElementDescription ($lines -join "`n")
+    if ($d -and $d -notmatch $stubPattern) { return $d }
+  }
   # Priority 2: first non-stub JSDoc block
-  $stubPattern = "^(Provides the |Registers the |Extended |A single |The type of )"
   $blocks = Get-AllDocBlocks $FileContent
   foreach ($block in $blocks) {
     $d = Get-ElementDescription $block
@@ -318,6 +358,13 @@ $compactDescOverrides = @{
   "Sys.Log.Console"      = "Applicable for debugging; logs CodBi runtime data to the browser developer console."
   "AI.OCR"               = "Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR."
   "AI.LLAMA.CHAT"        = "Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings)."
+  # The AI.LLAMA.STANDARD.* functionalities have only a "Provides the {@link …}" class doc, so the
+  # automatic JSDoc picker used to describe them with their private PAGE_SESSION_ID field doc
+  # ("The Unique session ID generated on page load …"). They therefore carry explicit applicability
+  # text, like AI.LLAMA.CHAT above.
+  "AI.LLAMA.STANDARD.QA" = "Applicable on an XUpload to answer questions about the uploaded document (image/PDF) with a local AI: put data-cb-func='ai.llama.standard.qa' plus data-cb-MaxPixelSize on the XUpload and create ONE XTextField/XTextArea per question, each tagged with the CSS class AI_LLAMA_STANDARD_QA_Question and carrying its own data-cb-Question attribute. Do NOT put the functionality on the container or on the question fields."
+  "AI.LLAMA.STANDARD.TXTQA" = "Applicable on the FIRST source input field to have a local AI answer questions from the text values the user typed: the fields whose values supply the source context are tagged with the CSS class AI_LLAMA_TXTQA_Source, the functionality goes on the FIRST of them, and the field that RECEIVES the answer is tagged AI_LLAMA_STANDARD_TXTQA_Question with its own data-cb-Question attribute (that field's id is the question key). The receiving field must NOT also carry the functionality."
+  "AI.LLAMA.STANDARD.TXTVERIFY" = "Applicable on a SINGLE text input/textarea to VERIFY its value with a local AI when the user leaves the field (blur): the value is sent together with the verification question (data-cb-Question attribute preferred, else the Question parameter; <[this]> resolves to the field's own value) and the field stays invalid with the AI's explanation as its error text unless the AI answers with the PositiveResponse word (default 'yes'). Use it for 'prüfe/validiere, ob …' / 'verify whether …' requests on ONE field."
 }
 
 # Parameter-level hints that override auto-extracted JSDoc descriptions.
@@ -364,7 +411,9 @@ $detailsAliases = [ordered]@{}
 $funcDir = Join-Path $jsRoot "Functionalities"
 Get-ChildItem $funcDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   $file = $_
-  $ts = Get-Content -Raw $file.FullName
+  # -Encoding UTF8 is REQUIRED: without it Windows PowerShell decodes the UTF-8 sources as ANSI and
+  # every non-ASCII character is seeded as mojibake (observed: the em dash `—` became `â€”`).
+  $ts = Get-Content -Raw -Encoding UTF8 $file.FullName
   $idMatch = [regex]::Match($ts, 'registerFunctionality\s*\(\s*"([^"]+)"')
   if (-not $idMatch.Success) { return }
 
@@ -427,7 +476,7 @@ Get-ChildItem $funcDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
 $epDir = Join-Path $jsRoot "EPs"
 Get-ChildItem $epDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   $file = $_
-  $ts = Get-Content -Raw $file.FullName
+  $ts = Get-Content -Raw -Encoding UTF8 $file.FullName
   $idMatch = [regex]::Match($ts, 'registerEP\(\s*"([^"]+)"')
   if (-not $idMatch.Success) { return }
 
@@ -470,7 +519,7 @@ $cfgDir = Join-Path $jsRoot "Configurations"
 Get-ChildItem $cfgDir -Filter "*.json" | Sort-Object Name | ForEach-Object {
   $file = $_
   $cfgId = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
-  $json = Get-Content -Raw $file.FullName | ConvertFrom-Json
+  $json = Get-Content -Raw -Encoding UTF8 $file.FullName | ConvertFrom-Json
   $classNames = @()
   if ($null -ne $json.classes) {
     $classNames = @($json.classes.PSObject.Properties.Name | Sort-Object)
@@ -479,7 +528,7 @@ Get-ChildItem $cfgDir -Filter "*.json" | Sort-Object Name | ForEach-Object {
   $tsPath = [System.IO.Path]::ChangeExtension($file.FullName, ".ts")
   $doc = ""
   if (Test-Path $tsPath) {
-    $doc = Get-DocBlock (Get-Content -Raw $tsPath)
+    $doc = Get-DocBlock (Get-Content -Raw -Encoding UTF8 $tsPath)
   }
   $docDetail = Get-DocDetail $doc
 

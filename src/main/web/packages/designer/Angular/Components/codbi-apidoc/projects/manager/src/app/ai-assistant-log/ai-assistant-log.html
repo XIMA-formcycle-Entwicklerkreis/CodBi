@@ -126,9 +126,13 @@
             @for (node of logs; track trackById($index, node)) {
                 <cb-log-node
                     [node]="node"
+                    [applyAgainLabel]="applyAgainLabel"
+                    [applyAgainTitle]="applyAgainTitle"
+                    [applyAgainBusy]="applyAgainBusy"
                     (sensitiveChecked)="onSensitiveChecked($event)"
                     (promptOpen)="onPromptOpen($event)"
-                    (chatReplyOpen)="onChatReplyOpen($event)" />
+                    (chatReplyOpen)="onChatReplyOpen($event)"
+                    (applyAgain)="onApplyAgain($event)" />
             }
         </div>
     }

@@ -156,9 +156,11 @@
                     [style.width.px]="logPanelWidth">
                     <cb-ai-assistant-log
                         #logPanel
+                        [applyAgainBusy]="loading"
                         (opened)="onLogOpened()"
                         (closed)="onLogClosed()"
-                        (refreshed)="onLogRefreshed()" />
+                        (refreshed)="onLogRefreshed()"
+                        (applyAgain)="onApplyAgain($event)" />
                 </div>
             }
         </div>

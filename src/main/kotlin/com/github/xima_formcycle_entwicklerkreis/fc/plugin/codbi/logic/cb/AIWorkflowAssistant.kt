@@ -45,7 +45,8 @@ import org.slf4j.LoggerFactory
 class AIWorkflowAssistant : IPluginServletAction {
 
   private val logger = LoggerFactory.getLogger(AIWorkflowAssistant::class.java)
-  private val gson: Gson = GsonBuilder().create()
+  // No HTML escaping: node params/mail bodies contain HTML — see `AICodBiAssistant.gson`.
+  private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
 
   /**
    * Stamps a workflow element's custom-parameters version exactly like formcycle's own node

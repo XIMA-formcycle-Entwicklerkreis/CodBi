@@ -51,7 +51,8 @@ import org.slf4j.LoggerFactory
 class AIFormAssistant : IPluginServletAction {
 
   private val logger = LoggerFactory.getLogger(AIFormAssistant::class.java)
-  private val gson: Gson = GsonBuilder().create()
+  // No HTML escaping: the form JSON contains HTML/CSS/EP text — see `AICodBiAssistant.gson`.
+  private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
 
   override fun getName(): String = "CodBi_AIFormAssistant"
 
@@ -2119,7 +2120,14 @@ class AIFormAssistant : IPluginServletAction {
               "\n\n" +
               (categories["codbi.general"] ?: "") +
               "\n" +
-              FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: "") +
+              // The full widget reference carries the `<!--SECTION:…-->` markers of the gated XSpan
+              // sub-blocks, and this rethink pass is NOT section-gated (no pass-1 keep set exists
+              // for it). Keep every block and only STRIP the markers — a raw marker comment must
+              // never reach the model. The legacy assistant deliberately does not gate the widget
+              // details (see buildWidgetDetailsSection): it has no keep set to gate them with.
+              PromptSectionGate.applySectionGates(
+                  FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: ""),
+                  PromptSectionGate.KNOWN_TAGS) +
               "\n" +
               "{{CODBI_FULL_SECTION}}")
     } catch (e: Exception) {
@@ -2196,13 +2204,22 @@ class AIFormAssistant : IPluginServletAction {
    * Builds the formcycle widget details section for the pass-2 rerun. When [widgetIds] is
    * non-empty, only the requested widgets' sections (from `formcycle.widgets.<name>`) are appended;
    * otherwise the full widget reference is included as a fallback.
+   *
+   * Unlike [AICodBiAssistant], this legacy assistant has no pass-1 section keep set, so the
+   * `<!--SECTION:…-->`-tagged XSpan sub-blocks (designed text / animation mechanism / illustration)
+   * are NOT gated here: every block is kept and only the raw MARKER comments are stripped
+   * ([PromptSectionGate.KNOWN_TAGS] = keep-all). The tags are still removed because a marker
+   * comment would otherwise reach the model, which reads `<!--SECTION:-->` as "commented out".
    */
   private fun buildWidgetDetailsSection(em: EntityManager, widgetIds: List<String>): String {
     if (widgetIds.isEmpty()) {
-      // Full-widget fallback — scrub out widgets not allowed for the current request.
+      // Full-widget fallback — scrub out widgets not allowed for the current request, then strip
+      // the section markers (keep every block).
       val full =
-          FormcycleElementFilter.scrubWidgetSections(
-              PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
+          PromptSectionGate.applySectionGates(
+              FormcycleElementFilter.scrubWidgetSections(
+                  PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: ""),
+              PromptSectionGate.KNOWN_TAGS)
       logger.info(
           "[AIFormAssistant] Pass-2 widget details: FULL reference ({} chars, XSpan section included: {}, illustration checklist included: {})",
           full.length,
@@ -2225,7 +2242,9 @@ class AIFormAssistant : IPluginServletAction {
                   .firstOrNull { (k, _) -> k.removePrefix("formcycle.widgets.").startsWith(norm) }
                   ?.value
               ?: continue
-      sb.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+      // Strip the `<!--SECTION:-->` markers (keep every block) — they must never reach the model.
+      val gated = PromptSectionGate.applySectionGates(content, PromptSectionGate.KNOWN_TAGS)
+      sb.append("\n## ").append(id.trim()).append("\n").append(gated).append("\n")
       sent.add(id.trim())
     }
     // Support diagnosis: the pass that BUILDS the form must be seen to carry the designed-text /

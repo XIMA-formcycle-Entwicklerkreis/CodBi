@@ -747,6 +747,211 @@ export class AiAssistant implements OnInit, OnDestroy {
     setTimeout(() => this.updateFooterLayout(), 0);
   }
 
+  /**
+   * Restores the elements recorded in a change-log entry into the CURRENT form.
+   *
+   * This is the change-log panel's per-entry "apply this entry again" button, and it NEVER triggers an
+   * AI inference: the backend rebuilds the entry's elements from the log (the stored `items` payload,
+   * or — for entries recorded before that existed — from the entry's recorded change description) and
+   * merges them into the form sent here. An element whose id (or technical name) already exists in the
+   * form receives a `_cb_ressurected_N` suffix, so no duplicate can be introduced.
+   *
+   * The returned form is applied and published through the normal designer path; only a busy state and
+   * a result toast are shown (no model, no spinner text about an inference).
+   */
+  async onApplyAgain(entry: Record<string, unknown>): Promise<void> {
+    if (this.loading) {
+      return;
+    }
+    // Chat entries reflect a chat message — nothing to restore (the button is hidden for them).
+    if (String(entry["intent"] ?? "") === "chat") {
+      return;
+    }
+    const itemName = typeof entry["itemName"] === "string" ? (entry["itemName"] as string) : undefined;
+    await this.applyLogEntryToCurrentForm(entry, itemName);
+  }
+
+  /**
+   * Applies the elements recorded in a change-log entry to the CURRENT form **without an inference**
+   * (backend action `ApplyLogEntry`). The backend merges the entry's stored items into the form sent
+   * here and returns the merged persist JSON; an element whose id — or technical name — already
+   * exists in the form receives a `_cb_ressurected_N` suffix, so no duplicate id/name is introduced.
+   * The returned form is then loaded and published exactly like a run's result, but no AI is called
+   * and nothing is billed.
+   *
+   * [itemName] applies only that one element (per-element button in the log tree); omitted applies
+   * every element the entry created or changed.
+   */
+  async applyLogEntryToCurrentForm(entry: Record<string, unknown>, itemName?: string): Promise<void> {
+    if (this.loading) {
+      return;
+    }
+    const entryId = String(entry["id"] ?? "").trim();
+    if (!entryId) {
+      return;
+    }
+    const designer = getDesignerInstance();
+    const d = designer as unknown as Record<string, unknown> | undefined;
+    const persistWrapper = designer?.getPersist?.() as unknown as Record<string, unknown> | undefined;
+    const innerJson =
+      typeof persistWrapper?.["persist"] === "string"
+        ? (persistWrapper["persist"] as string)
+        : persistWrapper
+          ? JSON.stringify(persistWrapper)
+          : null;
+    if (!d || !innerJson) {
+      this.setError("Designer is not available or has no form data.");
+      return;
+    }
+    const scope = itemName ? `"${itemName}"` : this.applyFromLogAllText;
+    if (!window.confirm(this.applyFromLogConfirmText(scope))) {
+      return;
+    }
+    const formKey = getCurrentFormKey();
+    this.loading = true;
+    this.spinnerText = this.applyFromLogSpinnerText;
+    this.resultText = null;
+    this.errorText = null;
+    this.cdr.markForCheck();
+    const finish = (message: string): void => {
+      this.loading = false;
+      this.setError(message);
+      this.cdr.markForCheck();
+    };
+    getJQuery().ajax({
+      url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+      type: "POST",
+      headers: { "X-Action": "ApplyLogEntry" },
+      data: {
+        entryId,
+        formJson: innerJson,
+        ...(itemName ? { item: itemName } : {}),
+        ...(formKey ? { formKey } : {}),
+      },
+      dataType: "json",
+      success: (response: unknown) => {
+        const r = response as Record<string, unknown> | null;
+        if (!r || typeof r !== "object") {
+          finish("Unexpected response from server.");
+          return;
+        }
+        if ("error" in r) {
+          finish(String(r["error"]));
+          return;
+        }
+        const form = r["form"];
+        if (form == null || typeof form !== "object") {
+          finish("The backend returned no form.");
+          return;
+        }
+        try {
+          if (typeof d["loadPersistJson"] === "function") {
+            (d["loadPersistJson"] as (json: unknown) => void).call(designer, form);
+          } else if (typeof d["loadPersist"] === "function") {
+            (d["loadPersist"] as (...args: unknown[]) => void).call(
+              designer,
+              JSON.stringify(form),
+              "ai-form.json",
+              "json",
+            );
+          } else {
+            finish("Neither loadPersistJson nor loadPersist is available on the designer instance.");
+            return;
+          }
+        } catch (err) {
+          finish(err instanceof Error ? err.message : "Failed to apply the logged elements.");
+          return;
+        }
+        // loadPersistJson triggers async rendering; poll _isLoading before publishing (the same guard
+        // the run path uses) so publish() is not rejected with "please wait until loading is finished".
+        const waitUntilReady = (): Promise<void> =>
+          new Promise<void>((resolve) => {
+            const maxWait = 10_000;
+            const start = Date.now();
+            const poll = (): void => {
+              if (!d["_isLoading"] || Date.now() - start >= maxWait) {
+                resolve();
+              } else {
+                setTimeout(poll, 100);
+              }
+            };
+            poll();
+          });
+        void waitUntilReady().then(() => {
+          if (typeof d["publish"] === "function") {
+            (d["publish"] as () => unknown).call(designer);
+          }
+          const applied = Array.isArray(r["applied"]) ? (r["applied"] as string[]).join(", ") : "";
+          const resurrected = Array.isArray(r["resurrected"]) ? (r["resurrected"] as string[]) : [];
+          this.resultText = this.applyFromLogDoneText(applied, resurrected);
+          this.showToast(this.resultText, "success");
+          this.loading = false;
+          this.cdr.markForCheck();
+        });
+      },
+      error: () => {
+        finish("Failed to apply the log entry.");
+      },
+    });
+  }
+
+  /** Localized confirmation of the no-inference apply ([scope] = the element(s) it will insert). */
+  private applyFromLogConfirmText(scope: string): string {
+    switch (this.uiLang) {
+      case "de":
+        return `Dies übernimmt ${scope} aus diesem Log-Eintrag DIREKT in das AKTUELLE Formular – ohne erneute KI-Anfrage und ohne Abrechnung. Bereits vorhandene IDs erhalten ein _cb_ressurected_N.`;
+      case "it":
+        return `Questa azione applica ${scope} da questa voce di log al modulo ATTUALE – senza una nuova richiesta all'IA e senza addebito. Gli ID già presenti ricevono _cb_ressurected_N.`;
+      case "nl":
+        return `Hiermee worden ${scope} uit dit logitem DIRECT op het HUIDIGE formulier toegepast – zonder nieuwe AI-aanvraag en zonder facturering. Bestaande ID's krijgen _cb_ressurected_N.`;
+      default:
+        return `This applies ${scope} from this log entry DIRECTLY to the CURRENT form — no new AI request and nothing billed. Existing ids receive _cb_ressurected_N.`;
+    }
+  }
+
+  /** Localized label for "all elements of the entry" (the scope used by [applyFromLogConfirmText]). */
+  private get applyFromLogAllText(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "alle Elemente";
+      case "it":
+        return "tutti gli elementi";
+      case "nl":
+        return "alle elementen";
+      default:
+        return "all elements";
+    }
+  }
+
+  /** Localized spinner text while a log entry is applied without an inference. */
+  private get applyFromLogSpinnerText(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Log-Eintrag wird ohne Inferenz übernommen…";
+      case "it":
+        return "Applicazione della voce di log senza inferenza…";
+      case "nl":
+        return "Logitem wordt zonder inferentie toegepast…";
+      default:
+        return "Applying the log entry without an inference…";
+    }
+  }
+
+  /** Localized success message of the no-inference apply. */
+  private applyFromLogDoneText(applied: string, resurrected: string[]): string {
+    const raised = resurrected.length > 0 ? ` (${resurrected.join(", ")} → _cb_ressurected_N)` : "";
+    switch (this.uiLang) {
+      case "de":
+        return `Ohne Inferenz übernommen: ${applied}${raised}`;
+      case "it":
+        return `Applicato senza inferenza: ${applied}${raised}`;
+      case "nl":
+        return `Zonder inferentie toegepast: ${applied}${raised}`;
+      default:
+        return `Applied without an inference: ${applied}${raised}`;
+    }
+  }
+
   /** Keeps the dialog footer layout in sync: when the switch group and the button group wrap onto
    *  separate lines (the dialog is too narrow), they are centered; otherwise they stay left/right
    *  aligned on one row. */

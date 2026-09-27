@@ -183,4 +183,24 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-assistant-log-11" author="codbi">
+        <comment>
+            Add an items CLOB holding the FULL resolved form items / workflow node specs each run
+            created or changed (with the container they live in), plus applied_from marking a row that
+            was re-applied from an earlier entry WITHOUT an inference. The existing form_changes /
+            workflow_changes columns only hold summaries (names + changed attributes), which cannot
+            rebuild an element — the items column is what allows the change log's "repeat onto form"
+            action to re-apply an entry to the CURRENT form deterministically (duplicate ids/names
+            receive a _cb_ressurected_N suffix). Old rows have NULL and need the AI re-run instead.
+        </comment>
+        <addColumn tableName="codbi_ai_assistant_log">
+            <column name="items" type="CLOB"/>
+            <column name="applied_from" type="BIGINT"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_assistant_log" columnName="items"/>
+            <dropColumn tableName="codbi_ai_assistant_log" columnName="applied_from"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

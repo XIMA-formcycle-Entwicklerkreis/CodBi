@@ -197,6 +197,17 @@ export interface LogNode {
             <i class="pi pi-download" aria-hidden="true"></i>
           </button>
         }
+        @if (canApplyAgain(node)) {
+          <button
+              type="button"
+              class="cb-log-node__apply-again"
+              [attr.title]="applyAgainTitle"
+              [attr.aria-label]="applyAgainLabel"
+              [disabled]="applyAgainBusy"
+              (click)="requestApplyAgain($event)">
+            <i class="pi pi-replay" aria-hidden="true"></i>
+          </button>
+        }
         @if (node.kind === 'reply' && (node.chatReplyText || node.chatStats)) {
           <button
               type="button"
@@ -255,9 +266,13 @@ export interface LogNode {
           @for (child of node.children; track child.id) {
             <cb-log-node
                 [node]="child"
+                [applyAgainLabel]="applyAgainLabel"
+                [applyAgainTitle]="applyAgainTitle"
+                [applyAgainBusy]="applyAgainBusy"
                 (sensitiveChecked)="sensitiveChecked.emit($event)"
                 (promptOpen)="promptOpen.emit($event)"
-                (chatReplyOpen)="chatReplyOpen.emit($event)" />
+                (chatReplyOpen)="chatReplyOpen.emit($event)"
+                (applyAgain)="applyAgain.emit($event)" />
           }
         </div>
       }
@@ -290,6 +305,16 @@ export class LogTreeNode {
   /** Emitted with a chat reply node when the user requests the draggable Markdown/chart viewer. The
    *  dialog itself is rendered once by the parent AiAssistantLog (a proper top-level popup). */
   @Output() chatReplyOpen = new EventEmitter<LogNode>();
+  /** Emitted with an entry node when the user requests re-running that entry's recorded request
+   *  against the CURRENT form. Chat entries never emit this (see [canApplyAgain]). */
+  @Output() applyAgain = new EventEmitter<LogNode>();
+  /** Localized label of the per-entry "apply this entry again" button. Set by the log dialog so the
+   *  string lives with the other log-dialog strings (see AiAssistantLog.applyAgainLabel). */
+  @Input() applyAgainLabel = "Apply this entry again";
+  /** Localized tooltip of the per-entry "apply this entry again" button. */
+  @Input() applyAgainTitle = "Apply this entry's elements to the CURRENT form — without a new AI request";
+  /** True while a run is in flight — disables the button so a second run cannot be started. */
+  @Input() applyAgainBusy = false;
 
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   /** CodBi logo used as the icon for CodBi CSS class nodes (same resource as the dialog header). */
@@ -451,6 +476,31 @@ export class LogTreeNode {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  /**
+   * True when this entry may be re-run. Only the top-level form / workflow / translation inference
+   * entries are eligible: the backend records chat-only turns with `intent = "chat"` (and the log
+   * dialog renders them as a `chat` node) because they reflect a chat message, so they are never
+   * re-runnable. This reuses the log dialog's existing chat/inference distinction (the same one the
+   * JSON-export button relies on) instead of inventing a new heuristic.
+   */
+  canApplyAgain(node: LogNode): boolean {
+    if (node.kind !== "inference" || !node.raw) {
+      return false;
+    }
+    return String(node.raw["intent"] ?? "") !== "chat";
+  }
+
+  /** Requests applying this entry's recorded elements to the CURRENT form. The merge itself is
+   *  handled by the assistant dialog that owns the apply state (emitted via [applyAgain]). */
+  requestApplyAgain(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    if (this.applyAgainBusy || !this.canApplyAgain(this.node)) {
+      return;
+    }
+    this.applyAgain.emit(this.node);
   }
 
   /** Opens the full-prompt viewer. The dialog itself lives once in the parent (AiAssistantLog) as a

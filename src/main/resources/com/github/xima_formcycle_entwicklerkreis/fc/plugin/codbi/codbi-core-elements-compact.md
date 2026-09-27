@@ -8,13 +8,13 @@ Element-only reference: what each functionality, element placeholder, and standa
 Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
 
 ### AI.LLAMA.STANDARD.QA
-The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.
+Applicable on an XUpload to answer questions about the uploaded document (image/PDF) with a local AI: put data-cb-func='ai.llama.standard.qa' plus data-cb-MaxPixelSize on the XUpload and create ONE XTextField/XTextArea per question, each tagged with the CSS class AI_LLAMA_STANDARD_QA_Question and carrying its own data-cb-Question attribute. Do NOT put the functionality on the container or on the question fields.
 
 ### AI.LLAMA.STANDARD.TXTQA
-Unique session ID generated on page load â€” ensures each session gets its own llama-server slot.
+Applicable on the FIRST source input field to have a local AI answer questions from the text values the user typed: the fields whose values supply the source context are tagged with the CSS class AI_LLAMA_TXTQA_Source, the functionality goes on the FIRST of them, and the field that RECEIVES the answer is tagged AI_LLAMA_STANDARD_TXTQA_Question with its own data-cb-Question attribute (that field's id is the question key). The receiving field must NOT also carry the functionality.
 
 ### AI.LLAMA.STANDARD.TXTVERIFY
-The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.
+Applicable on a SINGLE text input/textarea to VERIFY its value with a local AI when the user leaves the field (blur): the value is sent together with the verification question (data-cb-Question attribute preferred, else the Question parameter; <[this]> resolves to the field's own value) and the field stays invalid with the AI's explanation as its error text unless the AI answers with the PositiveResponse word (default 'yes'). Use it for 'prüfe/validiere, ob …' / 'verify whether …' requests on ONE field.
 
 ### AI.OCR
 Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.

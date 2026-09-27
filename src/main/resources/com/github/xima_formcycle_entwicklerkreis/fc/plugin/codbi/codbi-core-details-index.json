@@ -12,7 +12,7 @@
     "AI.LLAMA.STANDARD.QA": {
       "id": "AI.LLAMA.STANDARD.QA",
       "type": "functionality",
-      "summary": "The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.",
+      "summary": "Applicable on an XUpload to answer questions about the uploaded document (image/PDF) with a local AI: put data-cb-func='ai.llama.standard.qa' plus data-cb-MaxPixelSize on the XUpload and create ONE XTextField/XTextArea per question, each tagged with the CSS class AI_LLAMA_STANDARD_QA_Question and carrying its own data-cb-Question attribute. Do NOT put the functionality on the container or on the question fields.",
       "tsdoc": "Provides the {@link AI_LLAMA_STANDARD_QA.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -20,7 +20,7 @@
     "AI.LLAMA.STANDARD.TXTQA": {
       "id": "AI.LLAMA.STANDARD.TXTQA",
       "type": "functionality",
-      "summary": "Unique session ID generated on page load â€” ensures each session gets its own llama-server slot.",
+      "summary": "Applicable on the FIRST source input field to have a local AI answer questions from the text values the user typed: the fields whose values supply the source context are tagged with the CSS class AI_LLAMA_TXTQA_Source, the functionality goes on the FIRST of them, and the field that RECEIVES the answer is tagged AI_LLAMA_STANDARD_TXTQA_Question with its own data-cb-Question attribute (that field's id is the question key). The receiving field must NOT also carry the functionality.",
       "tsdoc": "Provides the {@link AI_LLAMA_STANDARD_TXTQA.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -28,7 +28,7 @@
     "AI.LLAMA.STANDARD.TXTVERIFY": {
       "id": "AI.LLAMA.STANDARD.TXTVERIFY",
       "type": "functionality",
-      "summary": "The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.",
+      "summary": "Applicable on a SINGLE text input/textarea to VERIFY its value with a local AI when the user leaves the field (blur): the value is sent together with the verification question (data-cb-Question attribute preferred, else the Question parameter; <[this]> resolves to the field's own value) and the field stays invalid with the AI's explanation as its error text unless the AI answers with the PositiveResponse word (default 'yes'). Use it for 'prüfe/validiere, ob …' / 'verify whether …' requests on ONE field.",
       "tsdoc": "Provides the {@link AI_LLAMA_STANDARD_TXTVERIFY.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -508,13 +508,13 @@
       "tsdoc": "This **E**lement-**P**laceholder acquires the AI response to a question.\n### Indexed Parameters:\n- 1st: The question to ask the AI.\n- 2nd: UseInternet â€” `\"true\"` to enable Brave Search internet access. Default: `\"false\"`.\n- 3rd: Location â€” `\"true\"` to enable geolocation access. Default: `\"false\"`.\n- 4th: Language â€” Language for the AI response (e.g. `\"German\"`, `\"English\"`). Appends\n`\"Answer in {language}.\"` to the question.\n- 5th: ResponseLanguage â€” Two-letter ISO 639-1 code (e.g. `\"de\"`, `\"fr\"`). Forces the AI\nto respond in this language, skipping auto-detection.\n- 6th: Specialist â€” Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`\nplugin property.\n- 7th: FilterResults â€” `\"true\"` to enable PII filtering on Brave Search queries.\n- 8th: JsonParse â€” `\"true\"` to parse the AI response as JSON. Default: `\"false\"`.",
       "parameters": {
         "1": "The question to ask the AI.",
-        "2": "UseInternet â€” `\"true\"` to enable Brave Search internet access.",
-        "3": "Location â€” `\"true\"` to enable geolocation access.",
-        "4": "Language â€” Language for the AI response (e.g.",
-        "5": "ResponseLanguage â€” Two-letter ISO 639-1 code (e.g.",
-        "6": "Specialist â€” Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`.",
-        "7": "FilterResults â€” `\"true\"` to enable PII filtering on Brave Search queries.",
-        "8": "JsonParse â€” `\"true\"` to parse the AI response as JSON."
+        "2": "UseInternet — `\"true\"` to enable Brave Search internet access. Default: `\"false\"`.",
+        "3": "Location — `\"true\"` to enable geolocation access. Default: `\"false\"`.",
+        "4": "Language — Language for the AI response (e.g. `\"German\"`, `\"English\"`). Appends `\"Answer in {language}.\"` to the question.",
+        "5": "ResponseLanguage — Two-letter ISO 639-1 code (e.g. \"de\", \"fr\"). Forces the AI to respond in this language, skipping auto-detection.",
+        "6": "Specialist — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`.",
+        "7": "FilterResults — `\"true\"` to enable PII filtering on Brave Search queries.",
+        "8": "JsonParse — `\"true\"` to parse the AI response as JSON."
       },
       "classDescriptions": {}
     },

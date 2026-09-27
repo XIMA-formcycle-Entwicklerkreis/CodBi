@@ -763,26 +763,41 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (this.loading) {
       return;
     }
-    // Chat entries reflect a chat message — nothing to restore (the button is hidden for them).
+    // Chat entries reflect a chat message — nothing to restore (the button is hidden for them). A
+    // per-element/widget or per-node/workflow row carries no `intent`, so this guard only affects
+    // the whole-entry (top-level) scope.
     if (String(entry["intent"] ?? "") === "chat") {
       return;
     }
     const itemName = typeof entry["itemName"] === "string" ? (entry["itemName"] as string) : undefined;
-    await this.applyLogEntryToCurrentForm(entry, itemName);
+    const nodeName = typeof entry["nodeName"] === "string" ? (entry["nodeName"] as string) : undefined;
+    // The extra "element only" button on a CONTAINER row: re-apply the element WITHOUT its children.
+    const withoutChildren = entry["withoutChildren"] === true;
+    await this.applyLogEntryToCurrentForm(entry, itemName, nodeName, withoutChildren);
   }
 
   /**
-   * Applies the elements recorded in a change-log entry to the CURRENT form **without an inference**
-   * (backend action `ApplyLogEntry`). The backend merges the entry's stored items into the form sent
-   * here and returns the merged persist JSON; an element whose id — or technical name — already
-   * exists in the form receives a `_cb_ressurected_N` suffix, so no duplicate id/name is introduced.
-   * The returned form is then loaded and published exactly like a run's result, but no AI is called
-   * and nothing is billed.
+   * Applies the elements/workflow paths recorded in a change-log entry to the CURRENT form/workflow
+   * **without an inference** (backend action `ApplyLogEntry`). For the form the backend merges the
+   * entry's stored items into the form sent here and returns the merged persist JSON; an element
+   * whose id — or technical name — already exists receives a `_cb_ressurected_N` suffix, so no
+   * duplicate id/name is introduced. The returned form is then loaded and published exactly like a
+   * run's result. For the WORKFLOW the backend re-creates the logged path(s) on the server
+   * directly, so the designer is RELOADED afterwards (like a workflow run). No AI is called and
+   * nothing is billed either way.
    *
-   * [itemName] applies only that one element (per-element button in the log tree); omitted applies
-   * every element the entry created or changed.
+   * [itemName] applies only that one form element (per-element button in the log tree); [nodeName]
+   * applies only that one workflow path (per-node button). Both omitted applies every element AND
+   * every workflow path the entry created or changed. [withoutChildren] — only meaningful with
+   * [itemName] — re-applies a CONTAINER element WITHOUT the children that were logged beneath it (the
+   * default pulls them in, so a container is not restored empty).
    */
-  async applyLogEntryToCurrentForm(entry: Record<string, unknown>, itemName?: string): Promise<void> {
+  async applyLogEntryToCurrentForm(
+    entry: Record<string, unknown>,
+    itemName?: string,
+    nodeName?: string,
+    withoutChildren = false,
+  ): Promise<void> {
     if (this.loading) {
       return;
     }
@@ -803,7 +818,7 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.setError("Designer is not available or has no form data.");
       return;
     }
-    const scope = itemName ? `"${itemName}"` : this.applyFromLogAllText;
+    const scope = itemName ? `"${itemName}"` : nodeName ? `"${nodeName}"` : this.applyFromLogAllText;
     if (!window.confirm(this.applyFromLogConfirmText(scope))) {
       return;
     }
@@ -826,6 +841,8 @@ export class AiAssistant implements OnInit, OnDestroy {
         entryId,
         formJson: innerJson,
         ...(itemName ? { item: itemName } : {}),
+        ...(nodeName ? { node: nodeName } : {}),
+        ...(withoutChildren ? { withoutChildren: "true" } : {}),
         ...(formKey ? { formKey } : {}),
       },
       dataType: "json",
@@ -840,7 +857,26 @@ export class AiAssistant implements OnInit, OnDestroy {
           return;
         }
         const form = r["form"];
+        const workflowApplied = Array.isArray(r["workflowApplied"]) ? (r["workflowApplied"] as string[]) : [];
+        // A WORKFLOW re-apply writes nodes/tasks on the server directly (a per-node apply returns no
+        // form), so the designer must be reloaded for the Workflow tab to pick them up — exactly like
+        // a workflow run.
+        const reloadForWorkflow = (): void => {
+          this.resultText = this.applyFromLogDoneText(workflowApplied.join(", "), []);
+          this.showToast(this.resultText, "success");
+          this.loading = true;
+          this.spinnerText = "Reloading designer\u2026";
+          setTimeout(() => {
+            this.markWorkflowReloadPending();
+            this.persistPendingChat();
+            window.location.reload();
+          }, 1500);
+        };
         if (form == null || typeof form !== "object") {
+          if (workflowApplied.length > 0) {
+            reloadForWorkflow();
+            return;
+          }
           finish("The backend returned no form.");
           return;
         }
@@ -881,6 +917,12 @@ export class AiAssistant implements OnInit, OnDestroy {
           if (typeof d["publish"] === "function") {
             (d["publish"] as () => unknown).call(designer);
           }
+          // An apply that ALSO re-created workflow paths (the all-scope button on a "both" entry):
+          // publish the form first, then reload so the workflow is picked up too.
+          if (workflowApplied.length > 0) {
+            reloadForWorkflow();
+            return;
+          }
           const applied = Array.isArray(r["applied"]) ? (r["applied"] as string[]).join(", ") : "";
           const resurrected = Array.isArray(r["resurrected"]) ? (r["resurrected"] as string[]) : [];
           this.resultText = this.applyFromLogDoneText(applied, resurrected);
@@ -895,31 +937,33 @@ export class AiAssistant implements OnInit, OnDestroy {
     });
   }
 
-  /** Localized confirmation of the no-inference apply ([scope] = the element(s) it will insert). */
+  /** Localized confirmation of the no-inference apply ([scope] = the element(s)/path(s) it will
+   *  insert). A widget re-applies into the form, a workflow path into the workflow. */
   private applyFromLogConfirmText(scope: string): string {
     switch (this.uiLang) {
       case "de":
-        return `Dies übernimmt ${scope} aus diesem Log-Eintrag DIREKT in das AKTUELLE Formular – ohne erneute KI-Anfrage und ohne Abrechnung. Bereits vorhandene IDs erhalten ein _cb_ressurected_N.`;
+        return `Dies übernimmt ${scope} aus diesem Log-Eintrag DIREKT in das AKTUELLE Formular bzw. den AKTUELLEN Workflow – ohne erneute KI-Anfrage und ohne Abrechnung. Bereits vorhandene Formular-IDs erhalten ein _cb_ressurected_N.`;
       case "it":
-        return `Questa azione applica ${scope} da questa voce di log al modulo ATTUALE – senza una nuova richiesta all'IA e senza addebito. Gli ID già presenti ricevono _cb_ressurected_N.`;
+        return `Questa azione applica ${scope} da questa voce di log al modulo/al workflow ATTUALE – senza una nuova richiesta all'IA e senza addebito. Gli ID già presenti ricevono _cb_ressurected_N.`;
       case "nl":
-        return `Hiermee worden ${scope} uit dit logitem DIRECT op het HUIDIGE formulier toegepast – zonder nieuwe AI-aanvraag en zonder facturering. Bestaande ID's krijgen _cb_ressurected_N.`;
+        return `Hiermee worden ${scope} uit dit logitem DIRECT op het HUIDIGE formulier of de HUIDIGE workflow toegepast – zonder nieuwe AI-aanvraag en zonder facturering. Bestaande formulier-ID's krijgen _cb_ressurected_N.`;
       default:
-        return `This applies ${scope} from this log entry DIRECTLY to the CURRENT form — no new AI request and nothing billed. Existing ids receive _cb_ressurected_N.`;
+        return `This applies ${scope} from this log entry DIRECTLY to the CURRENT form / workflow — no new AI request and nothing billed. Existing form ids receive _cb_ressurected_N.`;
     }
   }
 
-  /** Localized label for "all elements of the entry" (the scope used by [applyFromLogConfirmText]). */
+  /** Localized label for "all elements and workflow paths of the entry" (the scope used by
+   *  [applyFromLogConfirmText]). */
   private get applyFromLogAllText(): string {
     switch (this.uiLang) {
       case "de":
-        return "alle Elemente";
+        return "alle Elemente und Workflow-Pfade";
       case "it":
-        return "tutti gli elementi";
+        return "tutti gli elementi e i percorsi del workflow";
       case "nl":
-        return "alle elementen";
+        return "alle elementen en workflowpaden";
       default:
-        return "all elements";
+        return "all elements and workflow paths";
     }
   }
 

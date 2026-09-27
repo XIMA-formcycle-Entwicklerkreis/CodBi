@@ -44,6 +44,27 @@ export interface LogNode {
   ts?: string;
   /** Raw backend entry of an inference node, used for the per-entry JSON export. */
   raw?: Record<string, unknown>;
+  /**
+   * Raw backend entry of a CHILD row (a widget / workflow path) that carries the per-element or
+   * per-node re-apply button. The button forwards this entry together with [applyItemName] /
+   * [applyNodeName]; a top-level inference row uses [raw] instead.
+   */
+  applyRaw?: Record<string, unknown>;
+  /** Form-element name this row re-applies (the backend `item` param) — set on created/changed widget rows. */
+  applyItemName?: string;
+  /** Workflow path/task name this row re-applies (the backend `node` param) — set on workflow path rows. */
+  applyNodeName?: string;
+  /**
+   * True for a widget row that is a CONTAINER in the entry (its logged children sit beneath it).
+   * Only then is the extra "apply this element WITHOUT its children" button offered next to the
+   * normal re-apply button.
+   */
+  applyContainer?: boolean;
+  /**
+   * Internal marker set by the extra button ([LogTreeNode.requestApplyWithoutChildren]): apply ONLY
+   * this element and not its logged descendants.
+   */
+  withoutChildren?: boolean;
   /** True for `class` nodes whose CSS class belongs to a CodBi standard configuration. */
   codbi?: boolean;
   /** True for nodes marked as sensitive (from `AI_Log_SensitiveElements`) — rendered with a lightning icon. */
@@ -208,6 +229,17 @@ export interface LogNode {
             <i class="pi pi-replay" aria-hidden="true"></i>
           </button>
         }
+        @if (canApplyOnlyElement(node)) {
+          <button
+              type="button"
+              class="cb-log-node__apply-again cb-log-node__apply-again--only"
+              [attr.title]="applyWithoutChildrenTitle"
+              [attr.aria-label]="applyWithoutChildrenLabel"
+              [disabled]="applyAgainBusy"
+              (click)="requestApplyWithoutChildren($event)">
+            <i class="pi pi-box" aria-hidden="true"></i>
+          </button>
+        }
         @if (node.kind === 'reply' && (node.chatReplyText || node.chatStats)) {
           <button
               type="button"
@@ -268,6 +300,8 @@ export interface LogNode {
                 [node]="child"
                 [applyAgainLabel]="applyAgainLabel"
                 [applyAgainTitle]="applyAgainTitle"
+                [applyWithoutChildrenLabel]="applyWithoutChildrenLabel"
+                [applyWithoutChildrenTitle]="applyWithoutChildrenTitle"
                 [applyAgainBusy]="applyAgainBusy"
                 (sensitiveChecked)="sensitiveChecked.emit($event)"
                 (promptOpen)="promptOpen.emit($event)"
@@ -305,14 +339,20 @@ export class LogTreeNode {
   /** Emitted with a chat reply node when the user requests the draggable Markdown/chart viewer. The
    *  dialog itself is rendered once by the parent AiAssistantLog (a proper top-level popup). */
   @Output() chatReplyOpen = new EventEmitter<LogNode>();
-  /** Emitted with an entry node when the user requests re-running that entry's recorded request
-   *  against the CURRENT form. Chat entries never emit this (see [canApplyAgain]). */
+  /** Emitted with the clicked node when the user requests re-applying it (the whole entry, or one
+   *  element/workflow path) to the CURRENT form/workflow — without an inference. Chat entries never
+   *  emit this (see [canApplyAgain]). */
   @Output() applyAgain = new EventEmitter<LogNode>();
   /** Localized label of the per-entry "apply this entry again" button. Set by the log dialog so the
    *  string lives with the other log-dialog strings (see AiAssistantLog.applyAgainLabel). */
   @Input() applyAgainLabel = "Apply this entry again";
   /** Localized tooltip of the per-entry "apply this entry again" button. */
   @Input() applyAgainTitle = "Apply this entry's elements to the CURRENT form — without a new AI request";
+  /** Localized label of the extra "apply this element only (without children)" button. */
+  @Input() applyWithoutChildrenLabel = "Apply this element only (without its child elements)";
+  /** Localized tooltip of the extra "apply this element only (without children)" button. */
+  @Input() applyWithoutChildrenTitle =
+    "Apply ONLY this element to the CURRENT form — without the child elements that were built inside it";
   /** True while a run is in flight — disables the button so a second run cannot be started. */
   @Input() applyAgainBusy = false;
 
@@ -479,13 +519,19 @@ export class LogTreeNode {
   }
 
   /**
-   * True when this entry may be re-run. Only the top-level form / workflow / translation inference
-   * entries are eligible: the backend records chat-only turns with `intent = "chat"` (and the log
-   * dialog renders them as a `chat` node) because they reflect a chat message, so they are never
-   * re-runnable. This reuses the log dialog's existing chat/inference distinction (the same one the
-   * JSON-export button relies on) instead of inventing a new heuristic.
+   * True when this row may be re-applied to the CURRENT form / workflow WITHOUT an inference.
+   *
+   * Two kinds of rows are eligible:
+   * - the top-level form / workflow / translation inference entry (a `kind === "inference"` row);
+   *   chat-only turns are excluded because the backend records them with `intent = "chat"` (the log
+   *   dialog renders them as a `chat` node) — the same distinction the JSON-export button uses; and
+   * - the INDIVIDUAL elements of an inference: a created/changed widget row ([applyItemName]) or a
+   *   workflow path row ([applyNodeName]), each carrying the entry in [applyRaw].
    */
   canApplyAgain(node: LogNode): boolean {
+    if (node.applyItemName || node.applyNodeName) {
+      return node.applyRaw != null;
+    }
     if (node.kind !== "inference" || !node.raw) {
       return false;
     }
@@ -501,6 +547,24 @@ export class LogTreeNode {
       return;
     }
     this.applyAgain.emit(this.node);
+  }
+
+  /** True when this row is a CONTAINER that may ALSO be applied WITHOUT its children — the extra
+   *  button next to the normal re-apply button (see [requestApplyWithoutChildren]). */
+  canApplyOnlyElement(node: LogNode): boolean {
+    return node.applyContainer === true && node.applyRaw != null && !!node.applyItemName;
+  }
+
+  /** Requests applying ONLY this container element; its logged children are skipped. Emitted through
+   *  the same [applyAgain] channel, marked with `withoutChildren` so the assistant forwards the
+   *  `withoutChildren` flag to the backend. */
+  requestApplyWithoutChildren(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    if (this.applyAgainBusy || !this.canApplyOnlyElement(this.node)) {
+      return;
+    }
+    this.applyAgain.emit({ ...this.node, withoutChildren: true });
   }
 
   /** Opens the full-prompt viewer. The dialog itself lives once in the parent (AiAssistantLog) as a

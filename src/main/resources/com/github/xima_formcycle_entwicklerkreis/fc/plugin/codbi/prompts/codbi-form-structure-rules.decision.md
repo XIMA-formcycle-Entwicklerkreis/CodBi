@@ -21,6 +21,7 @@ WIDGET STRUCTURE DECISIONS:
 - XUPLOAD DECISIONS: "Automatischer Upload" IS ALWAYS CHECKED — EVERY XUpload you create gets the direct property "uploadMode":"ajax" UNLESS the user explicitly wants upload-on-submit. "VORSCHAU"/"PREVIEW" is the FORMCYCLE preview (the direct boolean "filepreview":"1"), NOT a cropper — do NOT tag the upload with Media.Image.Cropper / a CodBi_Fotocropper_* class for a plain preview. "MEHRERE DATEIEN"/multiple files = the CodBi Media.MultipleUpload functionality applied ON that one XUpload (plus the native "uploadMultiple":"1"); it is NEITHER the cropper NOR the preview, and it creates EXACTLY ONE XUpload. Allowed extensions & per-file size are DERIVED from the requested file type (image/ID → common image+pdf globs ~4 MB; document → .pdf/.doc/.docx ~1 MB), never a clarification question.
 <!--/SECTION:upload-->
 
+<!--SECTION:field_creation-->
 ROW GROUPING RULES (RELATED fields that belong on the SAME LINE — decide these groups in ANY language):
 - A person's GIVEN/FIRST name + FAMILY/LAST name (+ MIDDLE name) — up to three name fields share one line.
 - A STREET/ROAD name + HOUSE/BUILDING number.
@@ -28,14 +29,19 @@ ROW GROUPING RULES (RELATED fields that belong on the SAME LINE — decide these
 - An E-MAIL ADDRESS + PHONE/TELEPHONE (contact details).
 - Any other fields the request presents as ONE unit (FROM+TO date pair, BEGIN+END pair, value+unit, quantity+size).
 THE GOLDEN RULE — GROUP RELATED FIELDS, NEVER MORE THAN FOUR PER LINE: a line carries AT LEAST TWO and AT MOST FOUR fields; when MORE than four belong together split them over several lines ("row-1", "row-2", ...). Group ONLY genuinely related fields — never merge unrelated fields into one line. A related group of odd size keeps its own members together and remaining related fields go on the NEXT line. Fields that stand alone (single comment/message, checkbox, submit button) get NO 'rowid' and span their own full-width line. HOW Formcycle renders a row: keep the fields of one group as DIRECT SIBLINGS inside the same parent (do NOT wrap them); give ALL fields of one group the SAME string 'rowid' value; use a DIFFERENT 'rowid' per line; omit 'rowid' for full-width fields. NEVER copy a 'rowid' from another field — a rowid shared with a field of ANOTHER container merges ALL those fields into one row. Size the fields sensibly to share the line.
+<!--/SECTION:field_creation-->
 
+<!--SECTION:field_creation-->
 GROUP RELATED FIELDS INTO CONTAINERS (person / address / contact data): group logically-related fields into ONE dedicated XContainer (or XFieldSet when a legend/title fits) per group — do NOT place them flat on the page:
 - NAME / person-data fields → one container (also the LDAP/autofill person-data group when one is requested).
 - ADDRESS fields → one address container (the OpenPLZ autocomplete set lives here). CRITICAL — AN ADDRESS IS NEVER A SINGLE FIELD: when the request names "Adresse"/"Anschrift"/"address", build the FOUR parts `tfStrasse` (label "Straße"), `tfHausnummer` (label "Hausnummer"), `tfPLZ` (label "Postleitzahl", datatype "plzDE") and `tfOrt` (label "Ort") in that container, each with its OpenPLZ class, with street+house number on one `rowid` and PLZ+city on the next. A lone free-text "Adresse" XTextField is a FAIL.
 - CONTACT fields (e-mail, phone/telephone) → one contact container.
 Inside each container the fields are DIRECT SIBLINGS and the ROW GROUPING RULES still apply. Do NOT wrap a single line in its own extra container. Add each group container to its page's/container's 'elements' array and every field inside to the group container's 'elements' array; a field not referenced by any container's 'elements' array is orphaned and does NOT render.
+<!--/SECTION:field_creation-->
 
+<!--SECTION:field_creation-->
 COMPLETE FORM RULES (build the ENTIRE requested form): A request can contain MANY fields. Create EVERY field the user asked for in ONE output — never create only the most recent/emphasized subset and never drop fields mentioned earlier. "Make this group repeatable" applies ONLY to that one group — all OTHER requested fields must still be created. Map each requested input to the matching widget (single-line text → XTextField, multi-line → XTextArea, yes/no → XCheckbox / XSelect). Add every created field to its page's/container's 'elements' array. When in doubt, CREATE the field — a missing requested field is a failed request.
+<!--/SECTION:field_creation-->
 
 HELPTEXT — DECISION RULE: the Formcycle "Hilfe"/"Help" of ANY element is its DIRECT property "helptext" — a "Hinweis"/help/hint request (ANY language) goes into that element's "helptext" — NEVER via HTML.SETAttribute + data-cb-name="title" (that is an HTML title tooltip, not the Formcycle Help).
 
@@ -57,7 +63,9 @@ ELEMENT NAMES use a type prefix: tf for a text field, fd for a fieldset/containe
 
 INTRO AT POSITION 0 is a structural rule: append the new intro element's name at index 0 of the target container's/page's 'elements' array; keep all others in relative order.
 
+<!--SECTION:removal-->
 REMOVALS — REMOVE A FIELD CORRECTLY: when the user asks to REMOVE/DELETE a field/element, drop it from the root "items" array AND remove its 'name' from its parent container's "elements" array. REMOVE-ALL ("remove all fields", "delete all", "alles entfernen", in ANY language): KEEP the first page (XPage), the header (XHeader) and the footer (XFooter) as EMPTY structural shells (their "elements" cleared to []), remove ALL other content elements, list every removed element in the top-level "_removedItems" array, and emit the top-level marker "_removeAll": true (the backend strips this and deletes the orphaned workflow paths). NEVER drop the page/header/footer.
+<!--/SECTION:removal-->
 
 FORBIDDEN FIELDS — do NOT emit these into the form JSON: "css", "script", "image", "imagePPreview", "rendered", "formI18n", "metadata" (server-populated or derived). The output is ONLY valid JSON — a single well-formed form document, never prose, never escaped quotes, never a partial form.
 
@@ -65,11 +73,15 @@ FORBIDDEN FIELDS — do NOT emit these into the form JSON: "css", "script", "ima
 CUSTOM JAVASCRIPT — WHERE AND HOW: custom JS belongs to the ELEMENT itself, as its HTML property (an XSpan's rtevalue / an element's custom HTML), NOT as a form-level "script" field. Write it as a `<button type='button'>` (never a bare `<button>` that submits the form), wrapped in an IIFE, and attach event listeners with a DELAYED, DELEGATED binding (e.g. on 'input'/'click' through the document) — NEVER rely on 'DOMContentLoaded' (the body may load after the script runs) and NEVER call 'event.preventDefault()' unless you truly need it. For LIVE DATA (weather etc.) never ask for a URL / API endpoint / "Datenquelle" / API key / day count: write the self-contained JavaScript against the VERIFIED CORS-ENABLED https endpoints; for a 404 embed/URL, replace ONLY that attribute's VALUE inside the SAME element's HTML with the working URL and keep every other part byte-for-byte.
 <!--/SECTION:custom_js-->
 
+<!--SECTION:designed_text,svg,custom_js-->
 PARTIAL HTML EDITS — WHEN A REQUEST TARGETS ONLY ONE PART OF AN ELEMENT'S HTML, CHANGE ONLY THAT PART: a single element's HTML may hold SEVERAL independent pieces (a designed text + a JS calculator + a weather forecast). A follow-up targeting ONE widget matches it by the heading/text it renders, re-emits the SAME element (same name/id), and keeps EVERY OTHER PART byte-for-byte UNCHANGED. NEVER blank/shorten/reorder/drop other content, never create a second element for a part that already exists.
+<!--/SECTION:designed_text,svg,custom_js-->
 
 NEVER ASK WHETHER AN ELEMENT EXISTS: the form (FORM ELEMENTS / CURRENT FORM STRUCTURE) already tells you what exists. Reuse/modify an existing element with the same purpose (REUSE INSTEAD OF DUPLICATING — duplicates are a FAIL); only create a new element when nothing equivalent exists. Same intent must always resolve to the SAME existing element — a re-run must never grow the form.
 
+<!--SECTION:field_creation-->
 BUTTON ACTIONS (XButtonList): each button's "action" is an object. For navigation use action.page with a FORMCYCLE keyword: "" / "next" / "previous" / a page name / or the submit commands "submit", "submitNoCheck", "submitSave", "submitSaveNoCheck", "submitPreview", "submitPreviewWindowed". Set action.check=true to make the button VALIDATE the current page before acting — a "next"/'Weiter' button MUST use check=true when the page has any invalidatable (required/validated) field; a SUBMIT button ALWAYS uses check=true.
+<!--/SECTION:field_creation-->
 
 CONTAINER FOR CONDITIONALLY SHOWN FIELDS: a condition can go DIRECTLY on the field itself. Use a container for grouped conditionally-shown fields ONLY IF the container ALREADY exists — NEVER invent a container just to host a condition. The user-group state names / approval flow that hides a whole BLOCK of fields uses the existing container. EXCEPTION — fsBKAllDaten: put the `hiddenif` directly on the fsBKAllDaten XFieldSet.
 

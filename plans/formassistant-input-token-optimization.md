@@ -1,5 +1,10 @@
 # Form Assistant — Input-Token Reduction Plan
 
+> **STATUS 2026-09-27 — this file is the HISTORY of the work.** For what is *still* open, the
+> measured baseline and the next step, see
+> [`plans/formassistant-token-reduction-remaining.md`](formassistant-token-reduction-remaining.md)
+> §3.2 (handover state). Several items listed as "still open" in §9 and §9.8 below are already closed.
+
 Companion to [`plans/formassistant-output-token-optimization.md`](formassistant-output-token-optimization.md),
 which already removed most of the wasted **output**. This plan targets the remaining **input**
 tokens (the part that scales with every request and every retry).

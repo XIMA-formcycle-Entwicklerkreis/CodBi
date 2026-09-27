@@ -1031,7 +1031,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     );
   }
 
-  /** Localized label of the per-entry "apply this entry again" button. */
+  /** Localized label of the re-apply button (shown on a whole entry AND on each element/path row). */
   get applyAgainLabel(): string {
     switch (this.uiLang) {
       case "de":
@@ -1045,29 +1045,73 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     }
   }
 
-  /** Localized tooltip of the per-entry "apply this entry again" button. The entry's elements are
-   *  applied DIRECTLY to the current form — never through a new inference. */
+  /** Localized tooltip of the re-apply button. The row's element(s)/workflow path(s) are applied
+   *  DIRECTLY to the current form/workflow — never through a new inference. */
   get applyAgainTitle(): string {
     switch (this.uiLang) {
       case "de":
-        return "Die Elemente dieses Eintrags ohne erneute KI-Anfrage auf das AKTUELLE Formular anwenden";
+        return "Diese(s) Element / diesen Eintrag ohne erneute KI-Anfrage auf das AKTUELLE Formular bzw. den AKTUELLEN Workflow anwenden";
       case "it":
-        return "Applica gli elementi di questa voce al modulo ATTUALE senza una nuova richiesta all'IA";
+        return "Applica questo elemento/questa voce al modulo/al workflow ATTUALE senza una nuova richiesta all'IA";
       case "nl":
-        return "Pas de elementen van dit item zonder nieuwe AI-aanvraag toe op het HUIDIGE formulier";
+        return "Pas dit element/item zonder nieuwe AI-aanvraag toe op het HUIDIGE formulier of de HUIDIGE workflow";
       default:
-        return "Apply this entry's elements to the CURRENT form — without a new AI request";
+        return "Apply this element/entry to the CURRENT form / workflow — without a new AI request";
     }
   }
 
-  /** Forwards a per-entry apply request to the embedding assistant dialog that owns the apply state.
-   *  The button is only rendered for non-chat entries (see LogTreeNode.canApplyAgain), so a
-   *  `chat` / `reply` node never reaches this handler. */
+  /** Localized label of the extra "apply this element only (without children)" button. */
+  get applyWithoutChildrenLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Nur dieses Element anwenden (ohne Kind-Elemente)";
+      case "it":
+        return "Applica solo questo elemento (senza elementi figli)";
+      case "nl":
+        return "Alleen dit element toepassen (zonder kindelementen)";
+      default:
+        return "Apply this element only (without child elements)";
+    }
+  }
+
+  /** Localized tooltip of the extra "apply this element only" button. */
+  get applyWithoutChildrenTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "NUR diesen Container ohne die darin erzeugten Kind-Elemente in das AKTUELLE Formular übernehmen";
+      case "it":
+        return "Applica SOLO questo contenitore, senza gli elementi figli creati al suo interno, al modulo ATTUALE";
+      case "nl":
+        return "Pas ALLEEN deze container toe op het HUIDIGE formulier, zonder de erin gemaakte kindelementen";
+      default:
+        return "Apply ONLY this container to the CURRENT form — without the child elements created inside it";
+    }
+  }
+
+  /** Forwards a re-apply request to the embedding assistant dialog that owns the apply state.
+   *  Two scopes reach here (both gated by LogTreeNode.canApplyAgain): a TOP-LEVEL inference row
+   *  ([node.raw] = whole entry) and a per-element widget / per-path workflow child row ([node.applyRaw]
+   *  plus [node.applyItemName] / [node.applyNodeName]). A `chat` / `reply` node never reaches this. */
   onApplyAgain(node: LogNode): void {
-    if (!node.raw) {
+    if (node.raw) {
+      this.applyAgain.emit(node.raw);
       return;
     }
-    this.applyAgain.emit(node.raw);
+    if (!node.applyRaw) {
+      return;
+    }
+    const payload: Record<string, unknown> = { ...node.applyRaw };
+    if (node.applyItemName) {
+      payload["itemName"] = node.applyItemName;
+    }
+    if (node.applyNodeName) {
+      payload["nodeName"] = node.applyNodeName;
+    }
+    // The extra "element only" button: forward the flag so the backend skips the logged children.
+    if (node.withoutChildren) {
+      payload["withoutChildren"] = true;
+    }
+    this.applyAgain.emit(payload);
   }
   // #endregion Per-entry "apply again" (localization + event forwarding)
 
@@ -1149,11 +1193,25 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       }
       const form = entry["form"] as Record<string, unknown> | undefined;
       if (form) {
-        children.push(this.buildFormNode(form, entryId));
+        // The form items that are CONTAINERS in the entry (their logged children sit beneath them);
+        // only those get the extra "element only (without children)" re-apply button.
+        const containerItems = new Set<string>(
+          Array.isArray(entry["containerItems"]) ? (entry["containerItems"] as string[]) : [],
+        );
+        children.push(this.buildFormNode(form, entryId, entry, containerItems));
       }
       const workflow = entry["workflow"];
       if (Array.isArray(workflow) && workflow.length > 0) {
-        children.push(this.buildWorkflowNode(workflow as Array<Record<string, unknown>>, entryId));
+        // The workflow paths the entry can re-create individually (each carries a stored task spec,
+        // exposed as `workflowItemNames`). The per-node button is offered ONLY for these names — an
+        // older entry (recorded before the spec payload existed) has no such array and therefore
+        // gets no workflow re-apply button.
+        const workflowItemNames = new Set<string>(
+          Array.isArray(entry["workflowItemNames"]) ? (entry["workflowItemNames"] as string[]) : [],
+        );
+        children.push(
+          this.buildWorkflowNode(workflow as Array<Record<string, unknown>>, entryId, entry, workflowItemNames),
+        );
       }
       // Per-inference token/cost breakdown: one node per AI call the run made (see buildTripsNode).
       const trips = entry["trips"];
@@ -1328,7 +1386,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     return trips.reduce((sum, t) => sum + Number(t["cachedIn"] ?? 0), 0);
   }
 
-  private buildFormNode(form: Record<string, unknown>, entryId: string): LogNode {
+  private buildFormNode(
+    form: Record<string, unknown>,
+    entryId: string,
+    entry: Record<string, unknown>,
+    containerItems: Set<string>,
+  ): LogNode {
     const children: LogNode[] = [];
     const created = (form["widgetsCreated"] as Array<Record<string, unknown>> | undefined) ?? [];
     const removed = (form["widgetsRemoved"] as Array<Record<string, unknown>> | undefined) ?? [];
@@ -1374,6 +1437,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             `${entryId}-created-${i}`,
             classesByWidget.get(String(widget["name"])) ?? [],
             attributesByWidget.get(String(widget["name"])) ?? [],
+            entry,
+            containerItems,
           ),
         ),
         expanded: false,
@@ -1400,6 +1465,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             `${entryId}-changed-${i}`,
             classesByWidget.get(name) ?? [],
             attributesByWidget.get(name) ?? [],
+            entry,
+            containerItems,
           );
         }),
         expanded: false,
@@ -1463,6 +1530,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     id: string,
     classes: string[],
     attributes: Array<Record<string, unknown>>,
+    applyEntryRaw?: Record<string, unknown>,
+    containerItems?: Set<string>,
   ): LogNode {
     const children: LogNode[] = [];
     // Top-level "Classes" node holding all CSS classes that are set on the element.
@@ -1508,7 +1577,19 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     // Type as the label, id as the badge — same convention as [widgetNode].
     const label = className || name || "Widget";
     const idTag = className && name ? name : undefined;
-    return { id, kind: "widget", label, idTag, children, expanded: false };
+    // A created/changed widget offers the per-element re-apply button; its scope is the element's
+    // technical NAME (the backend `item` param). Removed widgets never pass [applyEntryRaw], so they
+    // get no button.
+    const applyScope = applyEntryRaw
+      ? {
+          applyRaw: applyEntryRaw,
+          applyItemName: name || undefined,
+          // A container also gets the extra "element only" button (its logged children are separate
+          // items, so re-applying it alone is a meaningful, distinct action).
+          applyContainer: !!name && containerItems?.has(name) === true,
+        }
+      : {};
+    return { id, kind: "widget", label, idTag, children, expanded: false, ...applyScope };
   }
 
   /** Converts a widget's attribute list into tree nodes (special data-cb-func / data-cb-* handling). */
@@ -1543,11 +1624,21 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     return result;
   }
 
-  private buildWorkflowNode(workflow: Array<Record<string, unknown>>, entryId: string): LogNode {
+  private buildWorkflowNode(
+    workflow: Array<Record<string, unknown>>,
+    entryId: string,
+    entry: Record<string, unknown>,
+    workflowItemNames: Set<string>,
+  ): LogNode {
     const children: LogNode[] = [];
     workflow.forEach((element, i) => {
       const baseId = `${entryId}-workflow-${i}`;
       const childChildren: LogNode[] = [];
+      // This path's task NAME — the re-apply scope. The button is offered only when the entry
+      // carries a stored spec for it (see [workflowItemNames]); an older entry has none.
+      const pathName = String(element["name"] ?? "");
+      const applyScope =
+        pathName && workflowItemNames.has(pathName) ? { applyRaw: entry, applyNodeName: pathName } : {};
 
       if (Array.isArray(element["elements"])) {
         // New path-based format: { name, trigger, elements, status }.
@@ -1600,6 +1691,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             label: `${String(el["nodeType"] ?? "")} "${String(el["name"] ?? "")}"`,
             children: elChildren,
             expanded: false,
+            ...applyScope,
             ...(blocked ? { blockedSql: true, blockedSqlReasons: blockedReasons } : {}),
           };
         });
@@ -1645,6 +1737,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           label: `Path "${String(element["name"] ?? "")}"`,
           children: childChildren,
           expanded: false,
+          ...applyScope,
         });
       } else {
         // Legacy flat format: a single node with its parameters.
@@ -1663,6 +1756,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           label: `${String(element["nodeType"] ?? "")} "${String(element["name"] ?? "")}"`,
           children: paramChildren,
           expanded: false,
+          ...applyScope,
           ...(blocked ? { blockedSql: true, blockedSqlReasons: blockedReasons } : {}),
         });
       }

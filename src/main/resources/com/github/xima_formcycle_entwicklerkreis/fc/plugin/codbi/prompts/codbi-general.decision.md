@@ -58,7 +58,9 @@ FORM CHATBOT PLUGIN vs CodBi AI CHAT — DECISION: the FORM-LEVEL chatbot (XIMA 
 XAppointment appointmentPlan: when the request sets up a Terminfinder/appointment selection via XAppointment, add the direct property "appointmentPlan": "X" (a JSON-encoded appointment plan) to its properties.
 <!--/SECTION:appointment-->
 
+<!--SECTION:bundid-->
 Bürger-Services / BundID fields: tfAntragsteller* (applicant) fields do NOT get data-cb-func (no autofill functionality on them) — but the standard CSS classes (e.g. CodBi_People_*) still apply to those fields.
+<!--/SECTION:bundid-->
 
 <!--SECTION:bundid-->
 BundID / Bürgerkonto login + ID-UPLOAD + CAPTCHA bundle — WHEN THE REQUEST groups them ("BundID/Bürgerkonto Login, Personalausweis hochladen und Captcha"), emit the COMPLETE bundle: an XBsLogin button item (bs_auth_ref properties), an XUpload with data-cb-func="Media.Image.Cropper", an XCaptcha, and an XSignature — and PLACE every one (add to the page's "elements" AND set properties.parentid).
@@ -88,7 +90,9 @@ STANDARD CONFIGURATIONS are CSS classes, NEVER data-cb-func (e.g. the RegularShi
 
 PRESERVE EXISTING ATTRIBUTES / FUNCTIONALITIES — ABSOLUTE RULE: every existing element must still be in the RESULTING form (same name, id, className, properties, attributes) in its original container, even when not mentioned. In this DIFF pass you achieve that by NOT re-emitting it — an item you do not re-emit and do not list in "_removedItems" is kept VERBATIM by the server, so omission means UNCHANGED, never removal. Only elements the user explicitly asked to remove go in "_removedItems". NEVER drop an existing data-cb-func / data-cb-* from a field you are not asked to change.
 
+<!--SECTION:removal-->
 REMOVING A FUNCTIONALITY FROM AN EXISTING ELEMENT: when removing a CodBi functionality, re-emit the element's ENTIRE "attributes" array WITHOUT the removed functionality's attribute entries (never omit the whole attributes key — the server restores it). A DIRECT property you remove (e.g. `hiddenif`, `hiddenifcomp`, `hiddenifvalue`, `statusdependent`, `readonly_statusdependent`, `isreadonly`, `dynamic`) is instead named in the item's `"_removeProps": ["<property key>", ...]` array — omission alone would mean "unchanged" and the server would restore it. If the removed functionality was a panel, also remove the panel CSS class. When the removal means the remaining element must be wrapped outward, create exactly ONE wrapper container (a plain, NON-repeatable container); do not duplicate content.
+<!--/SECTION:removal-->
 
 MOVING ELEMENTS PRESERVES EVERYTHING ELSE: moving re-parents ONLY that element — remove it from the old parent's "elements", add it to the new parent's "elements", set parentid to the new parent; keep the moved element's properties/attributes unchanged; never drop/empty any other container while moving.
 

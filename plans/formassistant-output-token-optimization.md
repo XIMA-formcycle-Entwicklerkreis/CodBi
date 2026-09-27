@@ -1,5 +1,10 @@
 # Form Assistant — Output-Token Optimization
 
+> **STATUS 2026-09-27 — this file is the HISTORY of the work.** For what is *still* open, the
+> measured baseline and the next step, see
+> [`plans/formassistant-token-reduction-remaining.md`](formassistant-token-reduction-remaining.md)
+> §3.2 (handover state).
+
 ## Problem
 
 A trivial request ("add a field to the bottom of the page") generated ~20,000 output

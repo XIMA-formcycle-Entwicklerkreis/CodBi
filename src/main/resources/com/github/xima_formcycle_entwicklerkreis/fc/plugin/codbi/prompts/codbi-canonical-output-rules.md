@@ -4,6 +4,21 @@ These rules are MANDATORY. Emitting them in a different format forces a slow, to
 recovery pass that re-sends the whole form. Get them right the FIRST time so no extra pass is
 needed.
 
+### 0. `_codbiApplicability` is MANDATORY on EVERY form output — omitting it costs a whole extra pass
+
+Every form output MUST carry the top-level `"_codbiApplicability"` object, emitted as the LAST key,
+even when NO CodBi element applies. A response that omits it forces the server into a blind CodBi
+re-evaluation pass that re-sends the entire CodBi/widget reference — many times the size of your
+whole answer. When nothing applies, emit exactly:
+`"_codbiApplicability": {"codbiVerdict": "none", "considered": [], "applied": [], "skipped": []}`
+When something DOES apply, list it in `applied` / `considered` AND request its exact details with
+`{"status":"need_codbi_details", "elements": [...], "widgets": [...]}` in the SAME response.
+
+### 0b. `name` / `id` belong in EVERY item — they are not "unchanged properties"
+
+A property-level patch is `{"properties":{"name":"<exact name>","id":"<id>","<changed key>":…}}`.
+Without `properties.name` the server cannot find the element and the change is IGNORED.
+
 ### 1. Conditional visibility / hidden conditions — `hiddenif` / `hiddenifcomp` / `hiddenifclear`
 
 Formcycle stores every visibility condition on a container or field as EXACTLY THREE properties.

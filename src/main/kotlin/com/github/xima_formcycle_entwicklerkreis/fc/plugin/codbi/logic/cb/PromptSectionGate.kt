@@ -61,7 +61,12 @@ internal object PromptSectionGate {
           "aichat",
           "css",
           "date",
-          "appointment")
+          "appointment",
+          // Build-SCOPE tags (not CodBi capabilities): rules that only matter when the request
+          // actually BUILDS form structure (creates/groups fields, buttons) or REMOVES elements.
+          // A plain edit (rename a label) needs none of them.
+          "field_creation",
+          "removal")
 
   /**
    * [KNOWN_TAGS] normalised to the comparison form. The AI is TOLD the exact members and told never
@@ -70,6 +75,13 @@ internal object PromptSectionGate {
    * match a marker tag instead of being wrongly treated as an unknown tag.
    */
   private val KNOWN_TAGS_NORMALIZED: Set<String> = KNOWN_TAGS.map { normalizeTag(it) }.toSet()
+
+  /**
+   * Tags whose block is so large that an AI-only inclusion (the classifier's "when UNSURE, INCLUDE
+   * it") is not worth its cost — see [resolveKeepTags]. They require the deterministic detector.
+   */
+  private val DETECTOR_REQUIRED_TAGS: Set<String> =
+      setOf("svg", "custom_js").map { normalizeTag(it) }.toSet()
 
   /**
    * The comparison form of a tag: lowercase with every non-alphanumeric character removed, so
@@ -270,7 +282,35 @@ internal object PromptSectionGate {
                   "buchung",
                   "booking",
                   "zeitfenster",
-                  "slot"))
+                  "slot"),
+          // Build-scope: deliberately NARROW — a creation VERB, never the bare noun. "Ändere das
+          // Label des Vorname-Feldes" must not fire it (the noun "Feld" is not an instruction to
+          // build), and a false positive here keeps ~12 k chars of construction rules that a plain
+          // edit does not need. A missed creation request only keeps those rules (fail-open), which
+          // is the safe direction.
+          "field_creation" to
+              patterns(
+                  "hinzu",
+                  "anlegen",
+                  "anlege",
+                  "erstell",
+                  "erzeuge",
+                  "gruppier",
+                  "\\badd a (new )?field\\b",
+                  "\\badd (a )?new\\b",
+                  "\\bnew field\\b",
+                  "\\bcreate (a )?(new )?(field|container|button)\\b",
+                  "\\binsert (a )?new\\b"),
+          "removal" to
+              patterns(
+                  "lösch",
+                  "loesch",
+                  "entfern",
+                  "\\bremove\\b",
+                  "\\bdelete\\b",
+                  "\\breset\\b",
+                  "zurücksetzen",
+                  "zuruecksetzen"))
 
   private fun patterns(vararg raw: String): List<Regex> =
       raw.map { Regex(it, RegexOption.IGNORE_CASE) }
@@ -294,13 +334,24 @@ internal object PromptSectionGate {
    */
   fun resolveKeepTags(aiSections: Collection<String>?, corpus: String?): Set<String> {
     val keep = linkedSetOf<String>()
-    aiSections?.forEach { raw ->
-      val tag = normalizeTag(raw)
-      if (tag.isNotEmpty()) keep.add(tag)
-    }
     // Detector tags are already canonical; normalise anyway so the whole set has ONE comparison
     // form.
-    detect(corpus).forEach { keep.add(normalizeTag(it)) }
+    val detected = detect(corpus).map { normalizeTag(it) }.toSet()
+    aiSections?.forEach { raw ->
+      val tag = normalizeTag(raw)
+      if (tag.isEmpty()) return@forEach
+      // A few tags gate a VERY LARGE block — `svg` selects the illustration half of the `XSpan`
+      // widget template (~15–20 k chars), `custom_js` its script mechanism. For those, a "when
+      // unsure, INCLUDE it" answer from the classifier costs far more than the block it protects:
+      // measured on a live build run, an AI-only `svg` kept ~20 k chars of illustration rules for a
+      // request that animates with CSS only. They are therefore honoured only when the
+      // DETERMINISTIC
+      // detector matched too. The build pass can still pull the block on demand via
+      // `need_codbi_details`, so nothing becomes unreachable.
+      if (tag in DETECTOR_REQUIRED_TAGS && tag !in detected) return@forEach
+      keep.add(tag)
+    }
+    detected.forEach { keep.add(it) }
     return keep
   }
 

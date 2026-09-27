@@ -1,10 +1,12 @@
 # Apply a change-log entry to the form/workflow WITHOUT an inference
 
-Status: **implemented for form elements (2026-09-27).** The change-log button **never** runs an
-inference: it always calls the backend `ApplyLogEntry` action. Entries that carry the elements use
-the stored `items` payload; entries recorded before that column existed are RECONSTRUCTED from the
-entry's change description (`reconstructItems`). Per-element/per-node buttons and the workflow-node
-payload are the remaining steps (§6).
+Status: **implemented (2026-09-27) for form elements AND workflow paths — per whole entry and per
+element/node.** The change-log button **never** runs an inference: it always calls the backend
+`ApplyLogEntry` action. Entries that carry the elements use the stored `items` payload; entries
+recorded before that column existed are RECONSTRUCTED from the entry's change description
+(`reconstructItems`). A widget row re-applies a single form element (backend `item` param), a
+workflow-path row re-creates a single workflow path (backend `node` param), and the top-level button
+applies the whole entry (form items AND workflow paths).
 
 ## 0. What is implemented
 
@@ -179,11 +181,36 @@ through the existing `applyWorkflowOperation` / `createWorkflowTask` path, with 
 * The backend records a zero-cost "apply" row, so the change log shows the re-application and the
   source entry (`applied_from`).
 
-## 6. Remaining steps
+## 6. Implemented: per-element / per-node buttons and workflow nodes
 
-* **Per-element / per-node buttons.** The backend already accepts `item` (element name or id) and
-  `ApplyLogEntryTest` covers it; the log TREE must offer the button on element/workflow-node child
-  nodes (and emit `{...entry, itemName: <name>}`, which `onApplyAgain` already forwards).
-* **Workflow nodes.** `items` currently carries the form part only; the workflow part needs the full
-  node specs (the `nodeLog` array holds labels), inserted through `applyWorkflowOperation` with the
-  same `_cb_ressurected_<N>` rule.
+* **Per-element / per-node buttons (done).** [`LogTreeNode.canApplyAgain()`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant-log/log-tree-node.ts:500)
+  also enables the button for a **widget** row ([`LogNode.applyItemName`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant-log/log-tree-node.ts:52))
+  and a **workflow-path** row ([`LogNode.applyNodeName`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant-log/log-tree-node.ts:54)).
+  The tree attaches the entry plus the scope name; [`AiAssistantLog.onApplyAgain()`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant-log/ai-assistant-log.ts:1066)
+  forwards `{...entry, itemName}` / `{...entry, nodeName}`, which
+  [`AiAssistant.onApplyAgain()`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant/ai-assistant.ts:762)
+  passes to `applyLogEntryToCurrentForm`. Removed widgets and legacy workflow entries (no stored
+  spec) get no button — `workflowItemNames` in the log response gates the workflow button.
+* **Container elements (done).** A logged container (fieldset/page/…) is stored WITHOUT its nested
+  child references — the children are separate items whose recorded `parent` is the container. The
+  per-element button therefore re-applies a container TOGETHER with its logged descendants
+  ([`selectLoggedItems()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:926)
+  expands the selection over the `parent` chain; `includeChildren` defaults to true in
+  [`applyLoggedItems()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:993)).
+  For a container the tree additionally offers an extra **"element only (without children)"** button
+  ([`LogTreeNode.requestApplyWithoutChildren()`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant-log/log-tree-node.ts:561))
+  that sends `withoutChildren=true` (backend param). Container detection is exposed per entry as
+  `containerItems` in the log response.
+* **Workflow nodes (done).** [`AICodBiAssistant.runWorkflowCreation()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:10425)
+  attaches the full `WorkflowTaskSpec` to each created path (private `_spec` key);
+  [`AiAssistantLog.computeAppliedWorkflowItems()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AiAssistantLog.kt:774)
+  extracts them into `items.workflow.nodes` (`{name, spec}`) and strips `_spec`;
+  [`AICodBiAssistant.applyLoggedWorkflowNodes()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:869)
+  re-creates the selected path(s) through the SAME [`applyWorkflowOperation()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:14686)
+  path a normal run uses (no AI, no billing) and then marks the workflow version invalid
+  ([`touchWorkflowVersion()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:14486)).
+  Because the workflow lives on the server (unlike the form), the frontend RELOADS the designer after
+  a workflow apply, exactly like a workflow run.
+* **Tests.** [`ApplyLogEntryWorkflowTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ApplyLogEntryWorkflowTest.kt:1)
+  covers the deterministic parts: spec extraction + `_spec` stripping, `mergeAppliedItems`, and the
+  per-node selection. The actual node re-creation is exercised end-to-end against a server.

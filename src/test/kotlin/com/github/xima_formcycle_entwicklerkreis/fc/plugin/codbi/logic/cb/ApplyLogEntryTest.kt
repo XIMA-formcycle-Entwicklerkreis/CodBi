@@ -307,6 +307,49 @@ class ApplyLogEntryTest {
     assertEquals(listOf("tfName", "tfA", "tfB"), childRefsOf(merged.form, "page1"))
   }
 
+  // ---- containers: a container re-apply pulls its children unless asked not to
+  // ---------------------
+
+  /** A stored payload with a CONTAINER (`fsNew`, no nested child refs) and its child (`tfA`). */
+  private fun containerPayload(): JsonObject =
+      JsonParser.parseString(
+              """
+              {"form":{"created":[
+                {"item":{"className":"XFieldSet","properties":{"name":"fsNew","id":"xi-fs-new","legend":"Neu"}},"parent":"page1","index":1},
+                {"item":{"className":"XTextField","properties":{"name":"tfA","id":"xi-tf-a","label":"A"}},"parent":"fsNew","index":0}
+              ]}}
+              """
+                  .trimIndent())
+          .asJsonObject
+
+  @Test
+  fun `a container selection pulls in the logged children`() {
+    // The container's own nested children are NOT part of its stored item (they are separate
+    // entries
+    // whose recorded parent is the container) — a per-container re-apply must pull them in.
+    val merged = assistant.applyLoggedItems(currentForm, containerPayload(), "fsNew")
+    assertNotNull(merged)
+    assertNotNull(itemByName(merged!!.form, "fsNew"))
+    assertNotNull(itemByName(merged.form, "tfA"))
+    assertEquals(listOf("tfName", "fsNew"), childRefsOf(merged.form, "page1"))
+    assertEquals(listOf("tfA"), childRefsOf(merged.form, "fsNew"))
+    assertEquals(listOf("fsNew", "tfA"), merged.applied)
+  }
+
+  @Test
+  fun `withoutChildren restores only the container itself`() {
+    val merged =
+        assistant.applyLoggedItems(
+            currentForm, containerPayload(), "fsNew", includeChildren = false)
+    assertNotNull(merged)
+    assertNotNull(itemByName(merged!!.form, "fsNew"))
+    // The child was NOT restored …
+    assertNull(itemByName(merged.form, "tfA"))
+    // … and the container has no child reference.
+    assertTrue(childRefsOf(merged.form, "fsNew").isEmpty())
+    assertEquals(listOf("fsNew"), merged.applied)
+  }
+
   // ---- structural rules: a page/header/footer is not duplicated by a restore
   // ---------------------
 

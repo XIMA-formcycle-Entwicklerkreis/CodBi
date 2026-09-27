@@ -734,6 +734,13 @@ class AICodBiAssistant : IPluginServletAction {
    *   normal save/publish path, so this action never writes to the database itself;
    * - `item` (optional) — apply ONLY the element with this name (or id); omitted = every element
    *   the entry created or changed;
+   * - `node` (optional) — apply ONLY the workflow path with this task NAME, re-creating it from the
+   *   stored full [WorkflowTaskSpec]. A per-node apply does not touch the form, so `formJson` is
+   *   optional then. Omitted together with `item` = apply the whole entry (form items AND workflow
+   *   paths);
+   * - `withoutChildren` (optional, `"true"`) — for a per-element apply, re-apply ONLY the element
+   *   itself and NOT its logged descendants (a container is otherwise restored together with the
+   *   children that were logged beneath it);
    * - `formKey` (optional) — guards that the entry belongs to the form the log panel shows.
    *
    * Collision rule: an incoming element whose `properties.id` already exists in the current form
@@ -750,23 +757,32 @@ class AICodBiAssistant : IPluginServletAction {
     val entryId = params.requestParameters["entryId"]?.firstOrNull()?.trim()?.toLongOrNull()
     if (entryId == null) return jsonResponse("""{"error":"Missing or invalid entryId."}""")
     val formJson = params.requestParameters["formJson"]?.firstOrNull()?.trim()
-    if (formJson.isNullOrBlank()) {
-      return jsonResponse("""{"error":"Missing formJson (the current form)."}""")
-    }
     val item = params.requestParameters["item"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    val node = params.requestParameters["node"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    // A CONTAINER element is re-applied WITH its descendants by default; the extra "element only"
+    // button sends `withoutChildren=true` to restore just the element itself.
+    val withoutChildren =
+        params.requestParameters["withoutChildren"]?.firstOrNull()?.trim()?.equals("true", true)
+            ?: false
     val formKey =
         params.requestParameters["formKey"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    // A per-NODE workflow re-apply does not touch the form, so no formJson is required then; every
+    // other scope (all / per-element) needs the current form.
+    if (node == null && formJson.isNullOrBlank()) {
+      return jsonResponse("""{"error":"Missing formJson (the current form)."}""")
+    }
     logger.info(
-        "[AICodBiAssistant] ApplyLogEntry: entry #{} (item={}, formKey={}) — no inference",
+        "[AICodBiAssistant] ApplyLogEntry: entry #{} (item={}, node={}, formKey={}) — no inference",
         entryId,
         item ?: "<all>",
+        node ?: "<all>",
         formKey ?: "<none>")
     // The entry's stored items, or those rebuilt from its change description (older entries) — no
     // inference is ever involved.
     val entryItems =
         AiAssistantLog.loadEntryItems(CodbiEntities.entityManagerFactory, entryId, formKey)
             ?: return jsonResponse(
-                """{"error":"This log entry carries no restorable element data — it created or changed no form element."}""")
+                """{"error":"This log entry carries no restorable element data — it created or changed no form element or workflow path."}""")
     logger.info(
         "[AICodBiAssistant] ApplyLogEntry #{}: {} item(s) to apply{}",
         entryId,
@@ -776,13 +792,35 @@ class AICodBiAssistant : IPluginServletAction {
         if (entryItems.get("reconstructed")?.asBoolean == true)
             " (reconstructed from the change description)"
         else "")
-    val merged = applyLoggedItems(formJson, entryItems, item)
-    if (merged == null) {
-      val safe = item?.filter { it != '"' } ?: ""
+    // FORM apply: the entry's form items merged into the form the frontend sent. Skipped for a
+    // per-NODE workflow apply (there is nothing to change in the form then).
+    val merged =
+        if (node == null) {
+          applyLoggedItems(formJson!!, entryItems, item, includeChildren = !withoutChildren)
+        } else null
+    // WORKFLOW apply: a per-node apply (node given) always; an all-scope apply (neither item nor
+    // node) also re-creates every logged workflow path. A per-ELEMENT form apply never touches the
+    // workflow.
+    val applyWorkflow = node != null || item == null
+    val workflowApplied =
+        if (applyWorkflow) {
+          applyLoggedWorkflowNodes(
+              entryItems,
+              node,
+              AiAssistantLog.loadEntryWorkflowVersionId(
+                  CodbiEntities.entityManagerFactory, entryId, formKey),
+              params)
+        } else emptyList<String>()
+    if (merged == null && workflowApplied.isEmpty()) {
+      val safe = (node ?: item)?.filter { it != '"' } ?: ""
       return jsonResponse(
-          if (item == null)
-              """{"error":"The elements of this log entry could not be applied to the current form."}"""
-          else """{"error":"The logged element '$safe' was not found in this entry."}""")
+          when {
+            node != null ->
+                """{"error":"The logged workflow path '$safe' was not found in this entry (or the entry carries no workflow version)."}"""
+            item == null ->
+                """{"error":"The elements of this log entry could not be applied to the current form."}"""
+            else -> """{"error":"The logged element '$safe' was not found in this entry."}"""
+          })
     }
     // Traceability: record the re-apply as its own zero-cost entry so the change log shows that the
     // elements were taken from entry #<entryId> WITHOUT an inference (`applied_from`). No `items`
@@ -805,9 +843,137 @@ class AICodBiAssistant : IPluginServletAction {
     }
     // gson (not JsonObject.toString) so the returned form keeps the HTML-escaping fix — a
     // JsonElement.toString would inflate every `<`, `>` and `&` of the form's HTML/CSS back to
-    // \u003c-style escapes.
+    // \u003c-style escapes. The workflow part carries no form, so a workflow-only apply omits it.
+    val formPart = if (merged != null) ",\"form\":${gson.toJson(merged.form)}" else ""
     return jsonResponse(
-        """{"status":"ok","form":${gson.toJson(merged.form)},"applied":${gson.toJson(merged.applied)},"resurrected":${gson.toJson(merged.resurrected)}}""")
+        "{\"status\":\"ok\"$formPart,\"applied\":${gson.toJson(merged?.applied ?: emptyList<String>())}," +
+            "\"resurrected\":${gson.toJson(merged?.resurrected ?: emptyList<String>())}," +
+            "\"workflowApplied\":${gson.toJson(workflowApplied)}}")
+  }
+
+  /**
+   * The stored workflow paths of a change-log entry, filtered by [selection] (a path/task name;
+   * `null` = every path). Each item is the path's NAME plus the raw [WorkflowTaskSpec] JSON the AI
+   * generated (extracted into `items.workflow` by [AiAssistantLog.computeAppliedWorkflowItems]).
+   * Pure and side-effect free, so the selection contract is unit-testable without Formcycle.
+   */
+  internal fun selectLoggedWorkflowSpecs(
+      entryItems: JsonObject,
+      selection: String?
+  ): List<Pair<String, JsonObject>> {
+    val nodes =
+        entryItems.getAsJsonObject("workflow")?.getAsJsonArray("nodes") ?: return emptyList()
+    val out = ArrayList<Pair<String, JsonObject>>()
+    for (el in nodes) {
+      val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+      val name =
+          o.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+              ?: continue
+      if (selection != null && selection != name) continue
+      val spec = o.get("spec")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+      out.add(name to spec)
+    }
+    return out
+  }
+
+  /**
+   * Re-creates the workflow PATH(s) recorded in a change-log entry — deterministically and WITHOUT
+   * an inference (the `ApplyLogEntry` action's workflow half, see [handleApplyLogEntry]).
+   *
+   * Each stored path carries the exact [WorkflowTaskSpec] the AI generated, so re-applying it is
+   * the same call a normal run makes ([applyWorkflowOperation]) — no AI, no billing. [selection] (a
+   * path/task name) restricts it to ONE path; `null` re-creates every recorded path.
+   *
+   * Returns the names of the re-created paths (empty when the entry has no workflow path, none
+   * matched, or the entry has no workflow version to attach them to). The workflow version is
+   * marked invalid afterwards so the designer reloads its model on the next load.
+   */
+  internal fun applyLoggedWorkflowNodes(
+      entryItems: JsonObject,
+      selection: String?,
+      workflowVersionId: Long?,
+      params: IPluginServletActionParams
+  ): List<String> {
+    val matched = selectLoggedWorkflowSpecs(entryItems, selection)
+    if (matched.isEmpty()) return emptyList()
+    if (workflowVersionId == null) {
+      logger.warn(
+          "[AICodBiAssistant] Apply-from-log: the entry has {} workflow path(s) but no workflowVersionId — cannot re-create them",
+          matched.size)
+      return emptyList()
+    }
+    val applied = ArrayList<String>()
+    for ((name, specJson) in matched) {
+      val spec =
+          try {
+            gson.fromJson(specJson, WorkflowTaskSpec::class.java)
+          } catch (e: Exception) {
+            logger.warn(
+                "[AICodBiAssistant] Apply-from-log: could not parse the stored spec of '{}': {}",
+                name,
+                e.message)
+            continue
+          }
+      val result =
+          runCatching { applyWorkflowOperation(workflowVersionId, spec, params) }
+              .getOrElse { e ->
+                logger.warn(
+                    "[AICodBiAssistant] Apply-from-log: re-creating path '{}' failed: {}",
+                    name,
+                    e.message)
+                "error: ${e.message}"
+              }
+      logger.info(
+          "[AICodBiAssistant] Apply-from-log: re-created workflow path '{}' — {}", name, result)
+      applied.add(name)
+    }
+    if (applied.isNotEmpty()) {
+      runCatching { touchWorkflowVersion(getUserContext(params), workflowVersionId) }
+    }
+    return applied
+  }
+
+  /**
+   * The logged items a re-apply targets. With [selection] `null` that is every item; otherwise the
+   * item whose `properties.name` (or `properties.id`) equals [selection] PLUS — when
+   * [includeChildren] is set — every descendant whose recorded `parent` chain leads to it.
+   *
+   * A container is stored WITHOUT its nested child references: its children are separate items
+   * whose `parent` is the container name, so a per-container re-apply must pull them in or it
+   * restores an empty container. The payload order (parent before child) is preserved, which keeps
+   * the insertion position-faithful.
+   */
+  internal fun selectLoggedItems(
+      candidates: List<Pair<JsonObject, Boolean>>,
+      selection: String?,
+      includeChildren: Boolean
+  ): List<Pair<JsonObject, Boolean>> {
+    if (selection == null) return candidates
+    val names = LinkedHashSet<String>()
+    for ((loc, _) in candidates) {
+      if (loc.loggedItemName() == selection || loc.loggedItemId() == selection) {
+        loc.loggedItemName()?.let { names.add(it) }
+      }
+    }
+    if (includeChildren && names.isNotEmpty()) {
+      var grew = true
+      while (grew) {
+        grew = false
+        for ((loc, _) in candidates) {
+          val childName = loc.loggedItemName() ?: continue
+          if (names.contains(childName)) continue
+          val parent = loc.get("parent")?.takeIf { it.isJsonPrimitive }?.asString
+          if (parent != null && names.contains(parent)) {
+            names.add(childName)
+            grew = true
+          }
+        }
+      }
+    }
+    return candidates.filter { (loc, _) ->
+      val n = loc.loggedItemName()
+      (n != null && names.contains(n)) || loc.loggedItemId() == selection
+    }
   }
 
   /**
@@ -816,11 +982,18 @@ class AICodBiAssistant : IPluginServletAction {
    *
    * Both the elements the entry CREATED and the ones it CHANGED are applied (a changed element is
    * resurrected exactly as the entry left it); the elements it REMOVED are not re-applied.
+   *
+   * [includeChildren] (the default) makes a CONTAINER selection pull in ALL of its descendants: a
+   * logged fieldset/page is stored WITHOUT its nested child references (they are separate items
+   * whose recorded `parent` is the container), so re-applying only the container object would leave
+   * it empty. With `includeChildren = false` (the extra "element only" button) just the selected
+   * item is applied.
    */
   internal fun applyLoggedItems(
       currentFormJson: String,
       entryItems: JsonObject,
-      selection: String?
+      selection: String?,
+      includeChildren: Boolean = true
   ): AppliedFromLog? {
     return try {
       val root = JsonParser.parseString(currentFormJson).asJsonObject
@@ -850,12 +1023,7 @@ class AICodBiAssistant : IPluginServletAction {
                 ?.asString
         if (cls != null) loggedClassByName.putIfAbsent(name, cls)
       }
-      val selected =
-          candidates.filter { (loc, _) ->
-            selection == null ||
-                selection == loc.loggedItemName() ||
-                selection == loc.loggedItemId()
-          }
+      val selected = selectLoggedItems(candidates, selection, includeChildren)
       if (selected.isEmpty()) return null
 
       val usedIds = collectPropertyValues(root, "id").toMutableSet()
@@ -1824,7 +1992,24 @@ class AICodBiAssistant : IPluginServletAction {
       tokensIn += promptTokens
       tokensOut += completionTokens
     }
-    for (round in 0 until 5) {
+    // LEVER 1 (token reduction, language-agnostic): the clarify round is the ONLY consumer of
+    // `need_form_list` / `need_chat_history`, and the `changeHistoryContext` it loads reaches
+    // pass-1, the workflow pass and the mail/endpage i18n passes. It is therefore skipped ONLY when
+    // the AI's own tier-1 answer (by MEANING, in ANY language) explicitly denies both a question
+    // and
+    // any tool context, and no deterministic veto fires — see [ClarifySkipPolicy]. Everything
+    // unknown
+    // fails OPEN and runs the round exactly as before.
+    val clarifySkipReason =
+        clarificationSkipReason(chatAnswerResult, prompt, clarificationContext, chatContext)
+    if (clarifySkipReason != null) {
+      logger.info(
+          "[AICodBiAssistant] Clarify-check SKIPPED — {} (one full clarify inference saved; the build proceeds immediately)",
+          clarifySkipReason)
+    }
+    // `0 until 0` runs the loop zero times, so the round is bypassed without restructuring the
+    // (large) loop body; `clarification` then stays null and the build path continues.
+    for (round in 0 until (if (clarifySkipReason != null) 0 else 5)) {
       clarifyRound = round + 1
       val check =
           try {
@@ -2527,14 +2712,22 @@ class AICodBiAssistant : IPluginServletAction {
     // runs where a missing submit button was added (both persistJson and resolvedFormJson are then
     // non-null).
     var formChanges: JsonObject? = null
-    var appliedItems: JsonObject? = null
     if (persistJson != null && resolvedFormJson != null) {
       formChanges = AiAssistantLog.computeFormChanges(persistJson, resolvedFormJson)
-      // The FULL resolved items (not the summaries formChanges holds) so the change log can
-      // re-apply
-      // this entry to the CURRENT form later without another inference — see handleApplyLogEntry.
-      appliedItems = AiAssistantLog.computeAppliedItems(persistJson, resolvedFormJson)
     }
+    // The FULL resolved items (not the summaries formChanges holds) so the change log can re-apply
+    // this entry to the CURRENT form/workflow later without another inference — see
+    // handleApplyLogEntry. The FORM half is the resolved item diff; the WORKFLOW half is built from
+    // the full task specs `runWorkflowCreation` attached to the node log — computing it also STRIPS
+    // the private `_spec` from `workflowNodes` so the stored change description (and the client
+    // payload) stays lean.
+    val formAppliedItems =
+        if (persistJson != null && resolvedFormJson != null) {
+          AiAssistantLog.computeAppliedItems(persistJson, resolvedFormJson)
+        } else null
+    val workflowAppliedItems = AiAssistantLog.computeAppliedWorkflowItems(workflowNodes)
+    val appliedItems: JsonObject? =
+        AiAssistantLog.mergeAppliedItems(formAppliedItems, workflowAppliedItems)
     val sensitiveUsed =
         LinkedHashSet<String>()
             .apply {
@@ -3161,8 +3354,9 @@ class AICodBiAssistant : IPluginServletAction {
             "changed. EVERY item you do NOT re-emit is kept VERBATIM by the server — omission means UNCHANGED, NOT removal — and you " +
             "do NOT name those items anywhere. Deletions are the ONLY exception: a removed element's name goes in a top-level " +
             "\"_removedItems\": [\"elementName\", ...] array. NEVER re-emit an unchanged item; the output MUST stay small (a few " +
-            "hundred tokens, NEVER the whole form). A MODIFIED item carries ONLY the properties you actually change (\"properties\": " +
-            "{ \"<key>\": <new value> }): every property you leave OUT keeps its current value, so NEVER copy unchanged properties " +
+            "hundred tokens, NEVER the whole form). A MODIFIED item is \"properties\": { \"name\": \"<the element's exact name>\", " +
+            "\"id\": \"<its id>\", \"<changed key>\": <new value> } — \"name\"/\"id\" belong in EVERY item (the server finds the element by " +
+            "them); every OTHER property you leave OUT keeps its current value, so NEVER copy the other unchanged properties " +
             "back. Three exceptions where the value must be COMPLETE: (a) a container/page whose STRUCTURE changed re-emits its " +
             "complete \"elements\" array; (b) an HTML property you change (rtevalue) is sent COMPLETE, with its unchanged markup; (c) a " +
             "property you REMOVE is named in that item's \"_removeProps\": [\"<property key>\", ...] array, because omitting it would " +
@@ -3218,6 +3412,42 @@ class AICodBiAssistant : IPluginServletAction {
           "[AICodBiAssistant] Pass-1 returned a need_clarification request ({} question(s)) — surfacing it to the user",
           req.questions.size)
       return Triple(cleaned, null, TokenUsage(tokensIn, tokensOut))
+    }
+
+    // SILENT-LOSS GUARD: a diff item that carries NEITHER `properties.name` NOR `properties.id`
+    // cannot be matched to any element — the splice below drops it and the run ends with a
+    // byte-identical form (observed with "change the Vorname label to Vor-Name": the model answered
+    // `{"properties":{"label":"Vor-Name"}}` with no identity). Rather than lose the change, ask
+    // pass-1 ONCE more with an explicit identity requirement. This costs one extra pass ONLY for a
+    // broken answer; a compliant answer never reaches it.
+    val unidentifiedPatches = FormItemIdentity.countWithoutIdentity(cleaned)
+    if (unidentifiedPatches > 0) {
+      logger.warn(
+          "[AICodBiAssistant] Pass-1 diff has {} item(s) WITHOUT identity (no properties.name, no properties.id) — re-running pass-1 with an explicit identity requirement so the change is not lost",
+          unidentifiedPatches)
+      val repairUserContent =
+          userContent +
+              "\n\nREPAIR — YOUR PREVIOUS ANSWER COULD NOT BE APPLIED: $unidentifiedPatches item(s) in \"items\" carried NO \"name\" and NO \"id\", so the server could not find the element to modify. Return the SAME change again, and give EVERY item in \"items\" its exact \"properties.name\" (plus \"properties.id\" when you know it). NEVER omit these two keys — they are identity, not \"unchanged properties\"." +
+              "\n\nREMINDER 3 (unchanged): put ONLY the changed properties in each item; everything else is restored by the server."
+      val repairMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(effectiveSystemPrompt)}},""")
+        append("""{"role":"user","content":${buildUserContent(repairUserContent, imageParts)}}""")
+        append("]")
+      }
+      val repairRaw = instance.performFormAssist(modelId, repairMessages)
+      val repairUsage = instance.takeLastAssistUsage()
+      tokensIn += repairUsage?.promptTokens ?: estimateTokens(repairMessages)
+      tokensOut += repairUsage?.completionTokens ?: estimateTokens(repairRaw)
+      reportTrip("form-pass-1-repair", modelId, repairUsage, repairMessages, repairRaw)
+      val repaired = repairAiJson(extractJson(stripThinkTags(repairRaw)))
+      if (hasTopLevelItems(repaired) && FormItemIdentity.countWithoutIdentity(repaired) == 0) {
+        cleaned = repaired
+        logReEmissionStats("form-pass-1-repair", repaired, persistJson)
+      } else {
+        logger.warn(
+            "[AICodBiAssistant] Pass-1 repair round STILL returned item(s) without identity — the change cannot be applied and is reported here instead of being dropped silently")
+      }
     }
 
     // Materialize a pass-1 DIFF onto the ORIGINAL form so every later stage keeps working on a
@@ -3912,7 +4142,25 @@ class AICodBiAssistant : IPluginServletAction {
             // sees "AI returned invalid JSON". Gating on hasTopLevelItems() keeps the token-saving
             // skip for the good case (a real form + a "none" verdict) while preserving recovery.
             val pass1ProducedForm = hasTopLevelItems(cleaned)
-            if (pass1ProducedForm &&
+            // LEVER (pass-2 token reduction): the blind reconsideration re-sends the ENTIRE
+            // CodBi/widget reference (formcycle-widgets.md is 72.8k chars; the pure-blind branch
+            // resolves {{CODBI_FULL_SECTION}} at ~133.8k) to take a second opinion on a decision
+            // pass-1 already had every input for. Skip it when nothing in the run indicates that a
+            // CodBi decision is still open — see [CodbiBlindPassPolicy]; every unknown (no usable
+            // form, a created widget, existing data-cb wiring, a CodBi-capable section) keeps the
+            // pass exactly as before.
+            val blindPassRedundant =
+                CodbiBlindPassPolicy.maySkipBlindPass(
+                    pass1ProducedForm = pass1ProducedForm,
+                    createdWidgets = createdWidgets.isNotEmpty(),
+                    touchesCodbiInOutput =
+                        cleaned.contains("data-cb-") || rawResponse.contains("data-cb-"),
+                    keepTags = gatedKeepTags)
+            if (blindPassRedundant) {
+              logger.info(
+                  "[AICodBiAssistant] Blind CodBi reconsideration SKIPPED — pass-1 produced a form, touched no CodBi element and the sections {} contain no CodBi-capable area; the CodBi/widget reference is not re-sent",
+                  gatedKeepTags.sorted())
+            } else if (pass1ProducedForm &&
                 (declaresWholeFormTranslation ||
                     jsonDeclaresNothingApplies(cleaned) ||
                     rawClaimsNothingApplies(rawResponse) ||
@@ -4447,6 +4695,23 @@ class AICodBiAssistant : IPluginServletAction {
         } else if (name != null) {
           modifiedByName[name] = item.asJsonObject
         }
+      }
+
+      // A patch that carries NEITHER `properties.id` NOR `properties.name` can be matched by
+      // nothing below — it used to vanish wordlessly, which turned a "rename the label" request
+      // into
+      // a no-op with an unchanged form. Report it loudly; the prompt rule (identity keys are always
+      // included) is the real remedy.
+      val unidentifiedPatches =
+          pass2Obj.getAsJsonArray("items")?.count { el ->
+            if (!el.isJsonObject) return@count false
+            val props = el.asJsonObject.getAsJsonObject("properties") ?: return@count true
+            !props.has("id") && !props.has("name")
+          } ?: 0
+      if (unidentifiedPatches > 0) {
+        logger.warn(
+            "[AICodBiAssistant] {} patch item(s) carry NO identity (neither properties.id nor properties.name) — they cannot be matched to an element and are IGNORED, so their change is lost",
+            unidentifiedPatches)
       }
 
       // `_unchangedItems` is the AI's token-saving hint: any element (LEAF or CONTAINER/PAGE) whose
@@ -7266,6 +7531,12 @@ class AICodBiAssistant : IPluginServletAction {
                 name to el
               }
               .toMap()
+      // Identity fallback by `properties.id` — see [FormItemIdentity] (a property-level patch that
+      // omits the unchanged identity key `properties.name` used to be dropped silently, making the
+      // request a no-op with a byte-identical form).
+      val nameById =
+          FormItemIdentity.nameById(
+              originalItems.filter { it.isJsonObject }.map { it.asJsonObject })
       val originalContainerOfItem = mutableMapOf<String, String>()
       for ((containerName, el) in originalByName) {
         val elements =
@@ -7277,10 +7548,17 @@ class AICodBiAssistant : IPluginServletAction {
       for (el in resultItems) {
         if (!el.isJsonObject) continue
         val item = el.asJsonObject
-        val name =
-            item.getAsJsonObject("properties")?.get("name")?.asString
-                ?: item.get("name")?.asString
-                ?: continue
+        val name = FormItemIdentity.resolveName(item, nameById)
+        if (name == null) {
+          // Neither `properties.name` nor a resolvable `properties.id`: the patch cannot be matched
+          // to an existing element, and guessing by `className` is unsafe (several elements often
+          // share one — nine XTextField in the reference form). Report it instead of dropping it
+          // silently: this is the failure mode that made "change the Vorname label" a no-op.
+          logger.warn(
+              "[AICodBiAssistant] AI item patch has no identity (properties.name missing and properties.id did not resolve) — IGNORED, the element cannot be matched: {}",
+              compactJsonForLog(gson.toJson(item)))
+          continue
+        }
         // Read the removal marker BEFORE any branch consumes the item, and never let it reach the
         // form: the diff protocol lists removed properties explicitly because omission means
         // "unchanged, keep the baseline value".
@@ -11015,6 +11293,12 @@ class AICodBiAssistant : IPluginServletAction {
           spec.taskName.trim().takeIf { it.isNotEmpty() }?.let { sanitizeWorkflowName(it) }
               ?: deriveNodeName(spec)
       path.addProperty("name", pathName)
+      // Private re-apply payload: the FULL spec of this created path, so the change log can
+      // re-create it later WITHOUT another inference (see
+      // AiAssistantLog.computeAppliedWorkflowItems,
+      // which extracts this into `items.workflow` and strips it from the stored change
+      // description).
+      path.add("_spec", gson.toJsonTree(spec))
 
       // Trigger — the workflow trigger the AI chose for this path.
       val trigger = JsonObject()
@@ -22154,6 +22438,36 @@ class AICodBiAssistant : IPluginServletAction {
    * prior change history. Returns questions when the AI asks, a [ClarificationCheck] with
    * [ClarificationCheck.needsHistory] when it wants the change history, or null when it is ready.
    */
+  /**
+   * LEVER 1 (token reduction) — may the dedicated clarify round be SKIPPED?
+   *
+   * The decision is delegated to [ClarifySkipPolicy]; this wrapper only assembles the two signals:
+   * - the **AI signal** ([ChatAnswer.needsClarification] / [ChatAnswer.needsToolContext]) — the
+   *   ONLY authority that can authorise a skip, and language-agnostic because it is decided by
+   *   MEANING in the tier-1 classification;
+   * - the **deterministic veto** ([ClarificationReferenceDetector]) — it may only FORCE the round
+   *   (a reference to earlier work / another form), never authorise a skip. That is why a keyword
+   *   list that does not cover the request's language cannot cause a wrong skip: it just
+   *   contributes no veto.
+   *
+   * Returns the reason when the round may be skipped, or `null` (fail open) when it must run.
+   */
+  private fun clarificationSkipReason(
+      chatAnswerResult: ChatAnswer?,
+      prompt: String,
+      clarificationContext: String,
+      chatContext: String
+  ): String? {
+    val ai = chatAnswerResult
+    val referenceVeto =
+        ClarificationReferenceDetector.wantsFormOrHistoryContext(prompt + "\n" + chatContext)
+    return ClarifySkipPolicy.skipReason(
+        needsClarification = ai?.needsClarification,
+        needsToolContext = ai?.needsToolContext,
+        hasClarificationAnswers = clarificationContext.isNotBlank(),
+        referenceVeto = referenceVeto)
+  }
+
   private fun tryClarification(
       prompt: String,
       modelId: String,
@@ -22260,7 +22574,16 @@ class AICodBiAssistant : IPluginServletAction {
       // them (or the installed prompt predates the key) — then the deterministic detectors decide
       // and
       // every unmatched section fails OPEN (kept).
-      val sections: Set<String> = emptySet()
+      val sections: Set<String> = emptySet(),
+      // LEVER 1 (clarify skip): the tier-1 answer to "must the user be asked something before the
+      // change can be built?", decided by MEANING in any language. `null` = the key was absent
+      // (older installed prompt, strict-retry response, classification failure) → fail open, i.e.
+      // the clarify round runs exactly as before. See [ClarifySkipPolicy].
+      val needsClarification: Boolean? = null,
+      // LEVER 1 (clarify skip): the server-side context the round must load BEFORE it can decide
+      // (`"form_list"` / `"chat_history"`, by MEANING in any language). `null` = key absent → fail
+      // open; an empty set = explicitly "nothing to load".
+      val needsToolContext: Set<String>? = null
   )
 
   /** Reads the `chatHistory` request param (JSON array of {user, assistant} turns). */
@@ -22523,6 +22846,15 @@ class AICodBiAssistant : IPluginServletAction {
               ?.toSet() ?: emptySet()
       val topics = stringSet("topics")
       val sections = stringSet("sections")
+      // LEVER 1 (clarify skip): read with an explicit PRESENCE check. A missing key must stay
+      // `null`
+      // (fail open → run the clarify round) and must never default to `false` / empty, which would
+      // authorise a skip the model never approved.
+      val needsClarification: Boolean? =
+          obj.get("needsClarification")?.let { if (it.isJsonPrimitive) it.asBoolean else null }
+      val needsToolContext: Set<String>? =
+          if (obj.get("needsToolContext")?.isJsonArray == true) stringSet("needsToolContext")
+          else null
       ChatAnswer(
           hasQuestion = obj.get("hasQuestion")?.asBoolean ?: false,
           hasInstructions = obj.get("hasInstructions")?.asBoolean ?: false,
@@ -22530,7 +22862,9 @@ class AICodBiAssistant : IPluginServletAction {
           tokensIn = estimateTokens(messagesJson),
           tokensOut = estimateTokens(raw),
           topics = topics,
-          sections = sections)
+          sections = sections,
+          needsClarification = needsClarification,
+          needsToolContext = needsToolContext)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Could not parse chat answer: {}", e.message)
       null

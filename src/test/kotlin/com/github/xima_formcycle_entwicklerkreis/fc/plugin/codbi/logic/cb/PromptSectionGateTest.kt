@@ -37,11 +37,14 @@ class PromptSectionGateTest {
   }
 
   @Test
-  fun `a plain field request without trigger words detects nothing gated`() {
+  fun `a plain field request triggers no capability tag, only the build-scope tag`() {
     val detected =
         PromptSectionGate.detect(
             "Füge ein Pflichtfeld für den Vornamen und ein Auswahlfeld für die Anrede hinzu.")
-    assertTrue(detected.isEmpty(), "detected=$detected")
+    // Adding fields IS a build-scope request, so `field_creation` is correct and intended here (the
+    // verb "hinzu…" fired). What must NOT fire is any CodBi-CAPABILITY tag — that is the original
+    // intent of this guard.
+    assertEquals(setOf("field_creation"), detected)
   }
 
   @Test
@@ -151,6 +154,29 @@ class PromptSectionGateTest {
   }
 
   @Test
+  fun `a costly tag is honoured only when the detector matches too`() {
+    // "when UNSURE, INCLUDE it" is right for a cheap capability tag, but `svg` gates ~15-20k chars
+    // of the XSpan illustration half. An AI-only inclusion must therefore not keep it; a real
+    // keyword must.
+    val cssOnlyAnimation =
+        "Die Stichpunkte sollen interaktiv animiert sein, wenn man mit der Maus darüber fährt."
+    assertFalse("svg" in PromptSectionGate.resolveKeepTags(listOf("svg"), cssOnlyAnimation))
+    assertTrue(
+        "svg" in
+            PromptSectionGate.resolveKeepTags(
+                listOf("svg"), "Bitte eine animierte SVG Illustration einbauen"))
+    assertFalse(
+        "customjs" in PromptSectionGate.resolveKeepTags(listOf("custom_js"), cssOnlyAnimation))
+    assertTrue(
+        "customjs" in
+            PromptSectionGate.resolveKeepTags(listOf("custom_js"), "Das geht per JavaScript"))
+    // Cheap capability tags keep the AI signal alone ...
+    assertTrue("designedtext" in PromptSectionGate.resolveKeepTags(listOf("designed_text"), null))
+    // ... and the detector still adds a tag the AI did not mention.
+    assertTrue("designedtext" in PromptSectionGate.resolveKeepTags(null, "schöner Text mit Design"))
+  }
+
+  @Test
   fun `resolveKeepTags normalises variant spellings returned by the AI`() {
     val keep = PromptSectionGate.resolveKeepTags(listOf("designed-text", "EP Wiring"), null)
     assertTrue("designedtext" in keep, "keep=$keep")
@@ -217,5 +243,63 @@ class PromptSectionGateTest {
     assertTrue(
         gated.length <
             PromptSectionGate.applySectionGates(text, PromptSectionGate.KNOWN_TAGS).length)
+  }
+
+  @Test
+  fun `a plain label edit triggers neither build-scope tag`() {
+    // Regression: the bare NOUN ("field"/"Feld") must never fire `field_creation` — otherwise a
+    // plain edit keeps the ~12 k chars of construction rules it does not need (which made the
+    // token count go UP after the first version of this marking).
+    val plainEdits =
+        listOf(
+            "Ändere das Label des Vorname-Feldes auf Vor-Name.",
+            "Change the field label to Vor-Name.",
+            "Setze den Hilfetext des E-Mail Feldes.",
+            "Rename the container title.")
+    for (corpus in plainEdits) {
+      val detected = PromptSectionGate.detect(corpus)
+      assertFalse("field_creation" in detected, "$corpus -> detected=$detected")
+      assertFalse("removal" in detected, "$corpus -> detected=$detected")
+    }
+  }
+
+  @Test
+  fun `creating fields and removing elements trigger their build-scope tags`() {
+    assertTrue(
+        "field_creation" in PromptSectionGate.detect("Füge ein Feld für die E-Mail-Adresse hinzu."))
+    assertTrue(
+        "field_creation" in
+            PromptSectionGate.detect("Add a new field for the customer's phone number."))
+    assertTrue("removal" in PromptSectionGate.detect("Entferne das Feld Nachname."))
+    assertTrue("removal" in PromptSectionGate.detect("delete the address field"))
+  }
+
+  @Test
+  fun `a plain edit drops the build-scope rules of the structure core and keeps the core rules`() {
+    val resource =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md"
+    val text =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(resource)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() }
+    assertTrue(
+        text != null && text.contains("<!--SECTION:field_creation-->"),
+        "the structure core must carry the build-scope markers")
+    val gated = PromptSectionGate.applySectionGates(text!!, emptySet())
+    // Build-scope rules are dropped for a request that builds nothing ...
+    assertFalse(gated.contains("ROW GROUPING RULES"), "row grouping should be gated away")
+    assertFalse(gated.contains("COMPLETE FORM RULES"), "complete-form rules should be gated away")
+    assertFalse(gated.contains("REMOVALS — REMOVE A FIELD"), "removal rules should be gated away")
+    assertFalse(gated.contains("BUTTON ACTIONS"), "button actions should be gated away")
+    // ... while the always-on core of the same file survives verbatim.
+    assertTrue(gated.contains("HOW TO READ THE FORM DUMP"), "the reading convention must stay")
+    assertTrue(gated.contains("CONDITIONAL PROPERTIES"), "conditionals must stay")
+    assertTrue(gated.contains("RELATIVE PLACEMENT OF A NEW ELEMENT"), "placement must stay")
+    assertTrue(gated.contains("REUSE INSTEAD OF DUPLICATING"), "reuse-instead-of-dup must stay")
+    assertTrue(gated.contains("FLAT ITEMS WITH PROPERTY-LEVEL REFERENCES"), "flat-items must stay")
+    assertTrue(gated.length < text.length, "gating must actually shorten the prompt")
   }
 }

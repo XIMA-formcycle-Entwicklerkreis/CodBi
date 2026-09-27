@@ -379,8 +379,47 @@ object AiAssistantLog {
                           }
                         }
                       }
+                      // Container detection: an item is a CONTAINER when another logged item's
+                      // recorded `parent` is its name. The tree adds the extra "element only"
+                      // (without children) re-apply button for exactly these.
+                      val parentNames = LinkedHashSet<String>()
+                      for (section in listOf("created", "changed")) {
+                        form?.getAsJsonArray(section)?.forEach { el ->
+                          val parent =
+                              el.takeIf { it.isJsonObject }
+                                  ?.asJsonObject
+                                  ?.get("parent")
+                                  ?.takeIf { it.isJsonPrimitive }
+                                  ?.asString
+                          if (!parent.isNullOrBlank()) parentNames.add(parent)
+                        }
+                      }
+                      val containerNames = JsonArray()
+                      for (parent in parentNames) {
+                        if (names.any { it.asString == parent }) containerNames.add(parent)
+                      }
+                      // The workflow paths this entry can re-create individually (each carries the
+                      // full task spec in `items.workflow.nodes`). Only entries recorded with the
+                      // richer payload have them; the tree offers the per-node button only for
+                      // these
+                      // names.
+                      val workflowNames = JsonArray()
+                      obj.getAsJsonObject("workflow")?.getAsJsonArray("nodes")?.forEach { el ->
+                        val pwName =
+                            el.takeIf { it.isJsonObject }
+                                ?.asJsonObject
+                                ?.get("name")
+                                ?.takeIf { it.isJsonPrimitive }
+                                ?.asString
+                        if (!pwName.isNullOrBlank() &&
+                            workflowNames.none { it.asString == pwName }) {
+                          workflowNames.add(pwName)
+                        }
+                      }
                       e.addProperty("hasItems", true)
                       e.add("itemNames", names)
+                      if (containerNames.size() > 0) e.add("containerItems", containerNames)
+                      if (workflowNames.size() > 0) e.add("workflowItemNames", workflowNames)
                     }
               }
           entry.appliedFrom?.let { e.addProperty("appliedFrom", it) }
@@ -769,6 +808,91 @@ object AiAssistantLog {
     } catch (e: Exception) {
       logger.warn("[AiAssistantLog] Failed to compute applied items: {}", e.message)
       null
+    }
+  }
+
+  /**
+   * Builds the WORKFLOW half of the `items` payload stored with a change-log entry: one restorable
+   * workflow node per created workflow PATH (task), each carrying the FULL [WorkflowTaskSpec] the
+   * AI generated, so the change log can re-create that path later **without another inference**.
+   *
+   * The specs are attached to the node-log paths by `AICodBiAssistant.runWorkflowCreation` under
+   * the private key `_spec` (they are not part of the change DESCRIPTION — the description holds
+   * only labels). This method EXTRACTS them into the payload shape `{ "workflow": { "nodes":
+   * [ { "name": "<task name>", "spec": {…} } ] } }` and, in the same pass, REMOVES the private
+   * `_spec` from every path so it is neither stored in `workflow_changes` (which is returned to the
+   * client and used for the tree) nor duplicated.
+   *
+   * Remove/replace operations carry no `_spec` and are therefore not re-appliable (there is no
+   * element to "re-generate"). Returns `null` when no path carries a spec.
+   */
+  fun computeAppliedWorkflowItems(nodeLog: JsonArray?): JsonObject? {
+    if (nodeLog == null) return null
+    return try {
+      val nodes = JsonArray()
+      for (el in nodeLog) {
+        val path = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        val spec = path.get("_spec")?.takeIf { it.isJsonObject } ?: continue
+        val name =
+            path.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+                ?: continue
+        val o = JsonObject()
+        o.addProperty("name", name)
+        o.add("spec", spec)
+        nodes.add(o)
+      }
+      // The private `_spec` is an internal re-apply payload only — strip it from every path (also
+      // when no spec was found) so `workflow_changes` stays the lean change DESCRIPTION.
+      for (el in nodeLog) {
+        el.takeIf { it.isJsonObject }?.asJsonObject?.remove("_spec")
+      }
+      if (nodes.size() == 0) return null
+      val workflow = JsonObject()
+      workflow.add("nodes", nodes)
+      val out = JsonObject()
+      out.add("workflow", workflow)
+      out
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to compute applied workflow items: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Combines the FORM half ([computeAppliedItems]) and the WORKFLOW half
+   * ([computeAppliedWorkflowItems]) into the single `items` payload stored with a change-log entry.
+   * Either half may be missing (a form-only or workflow-only run); returns `null` when both are.
+   */
+  fun mergeAppliedItems(form: JsonObject?, workflow: JsonObject?): JsonObject? {
+    if (form == null && workflow == null) return null
+    val out = JsonObject()
+    form?.getAsJsonObject("form")?.let { out.add("form", it) }
+    workflow?.getAsJsonObject("workflow")?.let { out.add("workflow", it) }
+    return out
+  }
+
+  /**
+   * The `workflowVersionId` of a change-log entry, or `null` when the row does not exist / belongs
+   * to another form. Needed to re-apply a logged WORKFLOW path without an inference (the node/task
+   * API works on the workflow version).
+   */
+  fun loadEntryWorkflowVersionId(
+      emf: EntityManagerFactory?,
+      entryId: Long,
+      formKey: String?
+  ): Long? {
+    val em = emf?.createEntityManager() ?: return null
+    try {
+      val row = em.find(CodbiAiAssistantLog::class.java, entryId) ?: return null
+      if (!formKey.isNullOrBlank() && !row.formKey.isNullOrBlank() && row.formKey != formKey) {
+        return null
+      }
+      return row.workflowVersionId
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to load entry workflow version: {}", e.message)
+      return null
+    } finally {
+      em.close()
     }
   }
 

@@ -721,6 +721,17 @@ cb-ai-assistant-log {
     cursor: default;
 }
 
+/* The extra "apply this element WITHOUT its child elements" button, shown next to the normal
+   re-apply button on CONTAINER rows only (a distinct amber tint so the two are easy to tell apart). */
+.cb-log-node__apply-again--only {
+    color: #8a6d3b;
+}
+
+.cb-log-node__apply-again--only:hover {
+    background: #efe6d5;
+    color: #b45309;
+}
+
 .cb-log-node__children {
     margin: 2px 0 2px 22px;
     border-left: 1px solid #e3e6ea;

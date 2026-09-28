@@ -1,43 +1,25 @@
 BÜRGERSERVICE FIELD NAMING (Formcycle Bürgerservices-Plugin — BundID / BayernID / ELSTER)
 
-When this section is present, the AI MUST name generated form fields with the EXACT canonical `properties.name` (technical ID) below, so the Formcycle **Bürgerservices-Plugin** (BundID / BayernID / ELSTER) can automatically fill the fields after login — without the form author having to rename them. The semantic fields follow the XÖV/e-government identity attributes (Vorname, Familienname, Geburtsdatum, …); the *technical IDs* are the plugin's own convention (`tfAntragsteller…`/`tfOrg…` prefix, recognized `fsBK…` fieldsets).
+When this section is present, the AI MUST name generated form fields with the EXACT canonical `properties.name` (technical ID) below, so the Formcycle Bürgerservices-Plugin (BundID / BayernID / ELSTER) can auto-fill them after login. The *technical IDs* are the plugin's own convention (`tfAntragsteller…`/`tfOrg…` prefix, recognized `fsBK…` fieldsets).
 
-BÜRGERSERVICES-PLUGIN FIELDSETS (MANDATORY when the plugin is used)
-- The plugin auto-recognizes these EXACT fieldset names for marking/verifying filled data:
-  - `fsBKDaten` — fieldset holding the PERSON's data (Bürgerkonto-Daten)
-  - `fsBKOrgDaten` — fieldset holding ORGANIZATION data
-  - `fsBKAllDaten` — fieldset holding BOTH person + organization data
-- Use the matching fieldset name for the data area; keep the name UNCHANGED (a custom suffix is only needed for multiple logins in one form). Add the attribute `noRibbon` only when no verification ribbon is wanted.
-- **NEVER ask the user which fields a Bürger-Services fieldset (`fsBKDaten` / `fsBKOrgDaten` / `fsBKAllDaten`) should contain** — the exact field set is predefined by the catalogs below (Person fields for `fsBKDaten`; Organisation/ELSTER fields for `fsBKOrgDaten`). In particular, an **ELSTER-Organisationslogin** fieldset (`fsBKOrgDaten`) MUST include the ELSTER organisation fields `tfOrgName`, `tfOrgRechtsform`, `tfOrgRechtsformText`, `tfOrgRegisterNummer`, `tfOrgRegistergericht`, `tfOrgRegisterart`, `selOrgPersTyp`, `tfTaetigkeit`, `tfTaetigkeitText`, `tfDatenkranzTyp`, `BPK2`, `TrustLevel` (see the "Organisation (inside `fsBKOrgDaten`)" and "ELSTER / Authentifizierung / Systemfelder" tables below). Do NOT ask which ones to include — use the canonical set. The mandatory authentication/system fields `selOrgPersTyp`, `BPK2` and `TrustLevel` are ALWAYS required in `fsBKOrgDaten` — NEVER omit them.
+FIELDSETS / CONTAINERS (auto-recognized; use verbatim; add `noRibbon` only when no verification ribbon is wanted):
+- `fsBKDaten` — PERSON data · `fsBKOrgDaten` — ORGANIZATION data · `fsBKAllDaten` — BOTH. Any other container for a Bürger-Services login (e.g. `fdPersonData`) is treated the same.
+- NEVER leave ANY created container (XContainer/"Gruppe"/fieldset) with an EMPTY `elements` array — it must NEVER be left empty: populate it with the fields below.
+- NEVER ask which fields a container holds — the set is predefined below (Person for `fsBKDaten`/person-data containers; Organisation/ELSTER for `fsBKOrgDaten`). `fsBKOrgDaten` MUST include the ELSTER org fields AND the mandatory `selOrgPersTyp`, `BPK2`, `TrustLevel` — NEVER omit them.
+- CREATE input fields INSIDE the container (`elements`). When the user names a login method (BundID/eID/eIDAS/Smart eID/ELSTER/FINK), include that method's mandatory fields; "verifiziert" = autofill.
+- Always mandatory (every method): `selPersTyp`, `tfPersTyp`, `selOrgPersTyp`, `BPK2`, `TrustLevel`, `tfAuthentifizierungsLevel`, `tfAuthentifizierungsName`, `IdentitaetsPruefer`.
+- Person data container (`fsBKDaten` or any person-data container) MUST include `tfAntragstellerVorname`, `tfAntragstellerName`, `tfAntragstellerGeburtsdatum`, `tfAntragstellerGeburtsort`, `tfAntragstellerGeburtsname`, `tfAntragstellerAdresse`, `tfAntragstellerPLZ`, `tfAntragstellerOrt`, `tfAntragstellerLand`.
 
-RULES:
-- Use EXACTLY the canonical `name` shown, including prefix and case (e.g. `tfAntragstellerVorname` — ONE "s" in "Antragsteller"; NOT `vorname`, `tfAntragsstellerVorname` or `tfAntragstellerVorname_1`).
-- Use the canonical `name` EVERYWHERE the field is referenced: its `properties.name`, its `id` (per the `xi-…` convention), the page/container `elements` array, `[%…%]` placeholders, `data-cb-*` parameters, `hiddenif`/`readonlyif` properties, and workflow node references.
-- The `label` stays a meaningful, language-consistent display text (e.g. "Vorname", "Geburtsdatum"). Only the technical `name`/`id` is fixed.
+HARD RULES:
+- Use EXACTLY the canonical `name` including prefix and case (e.g. `tfAntragstellerVorname` — ONE "s" in "Antragsteller"; NOT `vorname`/`tfAntragsstellerVorname`/`tfAntragstellerVorname_1`).
+- Use the canonical `name` EVERYWHERE it is referenced: `properties.name`, `id` (`xi-…`), container `elements`, `[%…%]` placeholders, `data-cb-*`, `hiddenif`/`readonlyif`, workflow node references.
+- `label` stays meaningful display text ("Vorname"); only the technical `name`/`id` is fixed. Apply by MEANING in any language ("Straße"/"street", …).
 - Only ONE field per canonical name; for a duplicate (e.g. "Vorname des Kindes") append a distinguishing suffix (`tfAntragstellerVornameKind`).
-- Apply by MEANING in any language (German "Straße", English "street", …).
-- Fields NOT in this table keep the default naming convention (`tf…`, `sel…`, `cb…`, `fd…`, `btn…`) with a descriptive, unique name.
-- Do NOT add `data-cb-func` (no OpenPLZ.Autocomplete, no ldap.autocomplete, …) to any `tfAntragsteller*` / `tfOrg*` / technical field below — the Bürger-Services plugin itself maps the authentication response data after login. CSS classes for client-side formatting/validation (CodBi_People_Name, CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ, CodBi_People_BuildingNumber) are still allowed.
-- **No LDAP address autocomplete for Bürger-Services forms.** The person's address data arrives via the login/authentication response (tfAntragstellerPLZ, tfAntragstellerOrt, …) or is filled by the German OpenPLZ.Autocomplete (`CodBi_OpenPLZ_AC_SET_*` classes on PLZ/Ort/Straße/Hausnummer). A person is either a citizen or an employee — a citizen is NOT in an Active Directory — so NEVER apply `LDAP.Autocomplete` / `CodBi_LDAP_AC_*` to the person/address fields of a Bürger-Services form and NEVER ask the user for an LDAP server URL/endpoint. Apply LDAP only when the request explicitly asks for an LDAP/employee-directory lookup, and even then never ask for the endpoint.
-- **Straße/Hausnummer in a Bürger-Services address group:** when the prompt asks for German autocomplete of street / house number ("PLZ/Ort/Straße/Hausnummer sollen sich ... befüllen"), CREATE the general fields `tfStrasse` (label "Straße") and `tfHausnummer` (label "Hausnummer") with `CodBi_OpenPLZ_AC_SET_Street` / `CodBi_OpenPLZ_AC_SET_BuildingNumber` — NOT `tfAntragsteller*` fields (the plugin's canonical combined address is `tfAntragstellerAdresse`). Place them in the same fieldset as `tfAntragstellerPLZ` / `tfAntragstellerOrt` and give BOTH the SAME 'rowid' so the street and its house number share ONE line (see ROW GROUPING RULES).
-
-FILL & VERIFICATION SEMANTICS (from the plugin's "Bürger Services Elemente" catalog columns)
-- Per field the catalog states how it is filled by **ELSTER** and by each **BundID / BayernID** method: **BN/PW** (Basisregistrierung — Benutzername/Passwort), **eID** (permanent/temporär), **eIDAS** (permanent/temporär), **Smart eID** (permanent/temporär), **ELSTER** (permanent/temporär), **FINK** (hoch / substanziell / Basisregistrierung).
-- Column values mean:
-  - **Pflichtfeld** — the login method ALWAYS writes this field.
-  - **verifiziert / teilweise verifiziert / nicht verifiziert** — quality of the identity data: verified (identity provider confirmed it) vs. only self-asserted.
-  - **Pflichtfeld (IdNr)** — ELSTER **personal** certificate (IdNr); **Pflichtfeld (StNr)** — ELSTER **organization** certificate (StNr).
-  - **optional (…)** — only filled when the citizen provided the data (e.g. "optional (Datenkranz AO)" = only when the AO data frame is connected).
-  - **nein** — never filled by that method; keep the field optional / user-editable.
-
-AUTH METHOD → FIELD REQUIREMENTS (condensed from the catalog)
-- **Always mandatory (every method)**: `selPersTyp`, `tfPersTyp`, `selOrgPersTyp`, `BPK2`, `TrustLevel`, `tfAuthentifizierungsLevel`, `tfAuthentifizierungsName`, `IdentitaetsPruefer`.
-- **Person identity — Pflichtfeld & verified (eID / eIDAS / Smart-eID / ELSTER / FINK)**: `tfAntragstellerVorname`, `tfAntragstellerName`, `tfAntragstellerGeburtsdatum`, `tfAntragstellerGeburtsort`, `tfAntragstellerGeburtsname` (Leerwert erlaubt), `tfAntragstellerAdresse`, `tfAntragstellerPLZ`, `tfAntragstellerOrt`, `tfAntragstellerLand`.
-- **Contact / personal — Pflichtfeld (nicht verifiziert) or optional**: `tfAntragstellerEmail`, `tfAntragstellerTelefon`, `tfAntragstellerDeMail`, `tfAntragstellerTitel`, `tfAntragstellerAnrede`, `selAntragstellerGeschlecht`, `tfAntragstellerOrtsteil`, `tfAntragstellerErgaenzung`.
-- **eIDAS (+ FINK hoch)**: `tfAntragstellerStaatsangehörigkeit` (optional verifiziert), `tfAntragstellerEIDASAusstellerLand` (Pflichtfeld verifiziert — nur eIDAS).
-- **ELSTER-only (never BundID/eID)**: `tfOrgName` (StNr), `tfOrgRechtsform`, `tfOrgRechtsformText`, `tfTaetigkeit`, `tfTaetigkeitText`, `tfDatenkranzTyp`, `tfOrgRegisterart`; plus, only when the **AO Datenkranz** is connected (optional): `tfOrgUStId`, `tfOrgGruendungsDatum`, `tfOrgBetriebsbeendigungsdatum`.
-- **PostboxId**: Pflichtfeld for BN/PW, eID, eIDAS permanent, Smart eID and ELSTER permanent; otherwise optional/nein (only relevant when the Postbox is connected).
-- When the user names a specific login method (BundID normal/BN-PW, eID, eIDAS, Smart-eID, ELSTER, FINK), include that method's mandatory fields; where the catalog says "verifiziert" the field is autofill (read-only after login). Ask the user instead of guessing when the method is ambiguous.
+- Fields NOT in the tables keep the default naming convention (`tf…`, `sel…`, `cb…`, `fd…`, `btn…`) with a descriptive, unique name.
+- Do NOT add `data-cb-func` (no OpenPLZ.Autocomplete, no ldap.autocomplete, …) to any `tfAntragsteller*`/`tfOrg*`/technical field — the plugin maps the auth response after login. CSS formatting/validation classes (CodBi_People_Name/Mail/Phone/PLZ/BuildingNumber) are still allowed.
+- NO LDAP address autocomplete for Bürger-Services forms: the person's address arrives via the auth response or German OpenPLZ.Autocomplete (`CodBi_OpenPLZ_AC_SET_*`). A citizen is NOT in an Active Directory — NEVER apply `LDAP.Autocomplete`/`CodBi_LDAP_AC_*` to person/address fields and NEVER ask for an LDAP endpoint. Apply LDAP only if the request explicitly asks for an LDAP/employee-directory lookup.
+- Street/house-number autocomplete in a Bürger-Services address group ("PLZ/Ort/Straße/Hausnummer sollen sich … befüllen"): CREATE `tfStrasse` (label "Straße") and `tfHausnummer` (label "Hausnummer") with `CodBi_OpenPLZ_AC_SET_Street`/`_BuildingNumber` — NOT `tfAntragsteller*` (the canonical combined address is `tfAntragstellerAdresse`). Place them in the same fieldset as `tfAntragstellerPLZ`/`tfAntragstellerOrt` and give BOTH the SAME `rowid` (share one line).
+- Fields the plugin marks Pflichtfeld/verifiziert ("must the login method fill") should be `required` where the form needs them; "verifiziert" fields are read-only/autofill after login (see the tables; e.g. the ELSTER-personal IdNr person fields and ELSTER-org StNr org fields).
 
 CANONICAL TECHNICAL IDS (`properties.name`) — EXACT names from the plugin's "Bürger Services Elemente" catalog:
 

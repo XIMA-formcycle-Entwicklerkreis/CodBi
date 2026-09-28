@@ -161,6 +161,9 @@ a table edit, not hand-surgery on multi-KB rule lines.
 | Build-scope carve-out | The two build-scope tags are EXCLUDED from "when UNSURE, INCLUDE it" in both envelopes — a needless `field_creation` keeps ~12 k chars | [`codbi-chat-system-prompt.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-chat-system-prompt.md:12), [`codbi-retry-chat.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-retry-chat.md:1) |
 | Verb-only detectors | `field_creation` matches a creation VERB, never the bare noun ("Feld"/"field") — the noun fired on a plain label edit and defeated the saving | [`PromptSectionGate.kt:283`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/PromptSectionGate.kt:283) |
 | `DETECTOR_REQUIRED_TAGS` | `svg` and `custom_js` are honoured only when the deterministic detector ALSO matched — an AI-only "unsure" inclusion used to keep the ~15–20 k illustration half of the XSpan template | [`PromptSectionGate.kt:295`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/PromptSectionGate.kt:295) |
+| svg force-include removed | `runFormModification` used to do `sectionKeepTags = gatedKeepTags + setOf("designed_text", "svg")`, so ANY design/interactive/animated request (matching the BROADER `DesignedTextDetector.wantsDesignedTextOrIllustration`) pulled the large `svg` illustration half back in even when the request never asked for a drawing. NOW it force-includes **only** `designed_text`; `svg` stays gated by its deterministic detector / AI (held to it by `DETECTOR_REQUIRED_TAGS`). Regression test: `WidgetSectionGatingTest` "a designed animated text WITHOUT an illustration …" | [`AICodBiAssistant.kt:3236`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:3236), [`WidgetSectionGatingTest.kt`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/WidgetSectionGatingTest.kt) |
+| Widget-template name-index fallback | When pass-2's `widgetIds` is empty the FULL `formcycle.widgets` reference (36,056 chars ≈ 12 k tokens) is no longer shipped; `buildWidgetDetailsSection` now returns a condensed **FORMCYCLE WIDGET NAME INDEX** (all allowed widget classNames verbatim + a `need_codbi_details` demand-load instruction) via [`FormcycleElementFilter.renderWidgetNameIndex`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/FormcycleElementFilter.kt). Names come from the real `## <Name>` headings, de-duplicated and filtered with `isWidgetAllowed` so a forbidden widget is never advertised (fail-open on the keep set is preserved). Regression tests: `WidgetSectionGatingTest` "the name-index fallback is a small fraction …", "…lists every widget name…", "…carries no per-widget build prose", "…omits a widget forbidden…", "…never leaks a forbidden widget…" | [`AICodBiAssistant.kt:21370`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:21370), [`FormcycleElementFilter.kt`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/FormcycleElementFilter.kt), [`WidgetSectionGatingTest.kt`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/WidgetSectionGatingTest.kt) |
+| Bürger-Services naming trimmed | The naming block (was 11,801 chars / 11,384 chars body ≈ 2.8–3.8 k tokens) is condensed to ~7,993 chars (~32 % smaller, ~3.4 k chars saved **per pass**, paid on BOTH pass-1 and pass-2 whenever `useBuergerserviceNaming=true`). All four canonical-ID tables (Person / Organisation / ELSTER system fields / further common fields), the `fsBK*` fieldsets, the exact-name + one-per-name hard rules, the NO-`data-cb-func`/no-LDAP autofill rules and the mandatory `selOrgPersTyp`/`BPK2`/`TrustLevel` fields are preserved **verbatim**; the verbose "FILL & VERIFICATION SEMANTICS" / "AUTH METHOD → FIELD REQUIREMENTS" prose and worked examples were dropped BUT their operative imperative (create input fields inside the fieldset, include the login method's mandatory fields; `verifiziert`→autofill) was restored in condensed form after the first cut caused the "input fields are not generated anymore" regression (2026-09-28). Prompt-only rewrite (invariant #2 — no `.md`→`.kt` text move), so both injections auto-shrink with no Kotlin change. Regression tests: `BuergerserviceNamingPromptTest` (7 cases: all four groups' canonical ids, fieldset + exact-name + noRibbon, mandatory auth fields, **field-creation imperative** (added 2026-09-28), antisocial autofill rules, verbose prose absent, size cap) | [`codbi-buergerservice-naming.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-buergerservice-naming.md), [`BuergerserviceNamingPromptTest.kt`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/BuergerserviceNamingPromptTest.kt) |
 
 **Measured baseline — same build prompt, two consecutive runs (change-log `trips`):**
 
@@ -182,8 +185,8 @@ full rate** on this provider, so it is a latency feature, not a cost one.
 
 | # | Lever | Expected | Verify with | State |
 |---|---|---|---|---|
-| 1 | **Split the multi-tag block** — [`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md) line 43 is tagged `designed_text,svg`, so a CSS-only design request keeps the illustration rules through the `designed_text` half. Split it into a `designed_text` part and an `svg` part. | several k tokens on CSS-only design requests | `illustration checklist included:` must flip to `false`; `widgetTemplates=<n>` should drop from ~33 k | open — **this is the next step** |
-| 2 | **Gate the Bürger-Services naming block** (11,384 chars ≈ 2.8 k tokens) — it is sent whenever the request merely says "Antragsteller", not only for the canonical Bürger-Services field set | ~2.8 k tokens per build run | `Pass-2 system prompt composition: … buergerservice=<n>` | open |
+| 1 | **Split the multi-tag block** — [`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md) line 43 was tagged `designed_text,svg`, so a CSS-only design request kept the illustration rules through the `designed_text` half. **Implemented 2026-09-28**: split into a separate `designed_text` block and an `svg` block; the `designed_text,svg,custom_js` PARTIAL-HTML-EDITS block stays multi-tag (it genuinely applies to all three). Guarded by a new `PromptSectionGateTest` case. **Follow-up**: the assistant's keep-set construction force-included BOTH `designed_text` **and** `svg` on any design/interactive/animated request, which re-kept the illustration half even without a drawing request — that force-include now adds only `designed_text` (see "Implemented and verified" above). | several k tokens on CSS-only design requests | `Pass-2 … illustration checklist included:` must flip to `false` on a CSS-only request; `widgetTemplates=<n>` drops | done — next is lever 2 |
+| 2 | **Trim the Bürger-Services naming block** (was 11,801 chars ≈ 2.8–3.8 k tokens; now ~8,246 chars ≈ 30 % smaller) — condensed to the canonical-ID catalog + the ELSTER fields + the hard rules, verbose prose/worked examples dropped. Sent on BOTH pass-1 and pass-2, so each byte saved is paid twice. **Implemented 2026-09-28** (Approach A: prompt-only `.md` rewrite, invariant #2 kept). **REGRESSION + FIX 2026-09-28**: the first cut dropped the "AUTH METHOD → FIELD REQUIREMENTS" imperative, so the model created the `fsBKDaten` fieldset but left its `elements` empty ("input fields are not generated anymore"); a condensed field-creation imperative block was restored **and then STRENGTHENED 2026-09-28** to cover ANY container the AI creates (not just the literal `fsBK*` — the failing run created a generic `fdPersonData` XContainer with empty `elements`), raising the size cap from 8,000 → 8,500 for the legitimate generalization (9 `BuergerserviceNamingPromptTest` cases incl. the field-creation and any-container guards). **CRITICAL — stale DB seed**: the user's failing run was served a STALE DB block (`buergerservice=7617`), NOT the fixed source — the fix never reached the model until the prompts are re-seeded. **Verify from the log**: `Pass-2 system prompt composition: … buergerservice=<n>` should drop accordingly after a re-seed restart | ~2–3 k tokens per build run | `Pass-2 system prompt composition: … buergerservice=<n>` | done — next is lever 2.3 |
 | 3 | **Merge `classify-intent` into `chat-classify`** | ~2.1 k tokens | first check whether it still runs at all — it is **absent from the 636/643 `trips`**, so either it is skipped or unreported (a measurement gap worth closing) | open |
 | 4 | Shrink the clarify prompt (only non-skipped rounds); give the workflow branch the same decision-core split | share of ~14 k / large for workflow runs | `clarification prompt assembly: … gatedLen=` | open |
 | 5 | `_codbiApplicability` derived from the diff instead of generated; monitor the output the identity rule now adds (`completionChars`) | small per run | `re-emission stats`, `completionChars` | open |
@@ -201,7 +204,7 @@ full rate** on this provider, so it is a latency feature, not a cost one.
 - `Clarify-check SKIPPED — …` / `Blind CodBi reconsideration SKIPPED — …` / `Pass-1 diff has N item(s) WITHOUT identity …`.
 - The change-log `trips` array (`tokensIn`, `tokensOut`, `cachedIn`, `promptChars`, `completionChars`, `cost`).
 
-**Two mistakes from this session that must not be repeated:**
+**Three mistakes from this session that must not be repeated:**
 
 1. **A cost-bearing tag must not inherit "when UNSURE, INCLUDE it."** That guidance is correct for a
    cheap capability tag and wrong for one that gates a large block — it silently disabled the whole
@@ -209,6 +212,14 @@ full rate** on this provider, so it is a latency feature, not a cost one.
 2. **A detector must match a VERB, not a bare noun.** `feld`/`field`/`row`/`container` matched a
    plain label edit and kept the blocks the AI had correctly omitted. A detector miss is fail-open
    (safe); a false positive is expensive.
+3. **A "verbose essay" is not always dead weight — it can carry the operative imperative.** The
+   Bürger-Services condensation dropped the "AUTH METHOD → FIELD REQUIREMENTS" prose, which read
+   "When the user names a login method … include that method's mandatory fields" and listed the
+   always-mandatory + person-identity fields. Removing it made the model create the `fsBKDaten`
+   fieldset but leave its `elements` empty — the "input fields are not generated anymore" regression.
+   A condensation must first separate a block's **data/tables** from its **imperatives**, keep every
+   imperative (even in terse form), and only then cut prose. A regression test must assert the
+   imperative survives, not just that the tables and the size cap hold.
 
 **Files touched this session** (for review/diff on the other machine): `PromptSectionGate.kt`,
 `ClarifySkipPolicy.kt` (new), `CodbiBlindPassPolicy.kt` (new), `FormItemIdentity.kt` (new),
@@ -244,7 +255,8 @@ full rate** on this provider, so it is a latency feature, not a cost one.
   — sent to pass-1 — so the omission itself becomes rarer and the `considered`/`applied` lists stay
   alive, which keeps the cheaper *targeted* rerun path in play.
 - Tests: [`CodbiBlindPassPolicyTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/CodbiBlindPassPolicyTest.kt)
-  (8 tests, green); `ClarifySkipPolicyTest` (10) and `PromptSectionGateTest` (17) still green.
+  (8 tests, green); `ClarifySkipPolicyTest` (10) and `PromptSectionGateTest` (22, incl. the new
+  multi-tag `designed_text`/`svg` split case) still green.
 - **Prompt re-seed required** for the canonical-output-rules change (same restart mechanism).
 - **Expected:** the plain-edit case no longer sends the 72.8 k-char widget reference at all — the
   whole blind pass disappears, which is where most of the remaining ~23 k sits. Verify from the log:
@@ -347,16 +359,32 @@ inventing" is a clarify-phase rule; skipping removes the only chance to obtain t
 
 pass-2 is 48 % of the run (~28.7 k in ≈ 93.5 k chars of system prompt). Sub-items, best value first:
 
-1. **Widget-template fallback.** When pass-1 requests **no** widget id, pass-2 sends the WHOLE
-   `formcycle.widgets` reference (36,056 chars ≈ 12 k tokens) — verified still true at
-   [`buildWidgetDetailsSection()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:21263)
-   (`if (widgetIds.isEmpty())`). Gate the widget sub-sections with the run's `sectionKeepTags` (same
-   mechanism already used for `XSpan`) and/or require an id list from pass-1. Fail-open keeps every
-   block when the keep set is empty.
-   - **Expected:** up to ~12 k in on the blind branch.
-2. **Bürger-Services naming block** (11,384 chars ≈ 3.8 k). Send the canonical ID list + the ELSTER
-   fields instead of the prose/worked examples.
-   - **Expected:** ~2–3 k in. Low risk.
+1. **Widget-template fallback.** When pass-1 requests **no** widget id, pass-2 used to send the WHOLE
+   `formcycle.widgets` reference (36,056 chars ≈ 12 k tokens) at
+   [`buildWidgetDetailsSection()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:21370)
+   (`if (widgetIds.isEmpty())`). **Done**: the empty-`widgetIds` branch is gated with the run's
+   `sectionKeepTags` (fail-open) **and** now returns a condensed FORMCYCLE WIDGET NAME INDEX
+   ([`FormcycleElementFilter.renderWidgetNameIndex`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/FormcycleElementFilter.kt))
+   listing the allowed widget classNames verbatim with a `need_codbi_details` demand-load instruction,
+   instead of the full per-widget build prose (~36 KB).
+   - **Expected/measured:** up to ~12 k in on the blind branch (name index is a small fraction of the
+     full reference; guarded by tests).
+2. **Bürger-Services naming block** (was 11,384 chars ≈ 3.8 k). **Done**: condensed to the canonical
+   ID list + the ELSTER fields instead of the prose/worked examples (11,801 → 7,291 chars, ~38 %,
+   paid on both passes) via a prompt-only `.md` rewrite — all canonical-ID tables and hard rules kept,
+   verbose prose removed (2026-09-28). **Regression + fix (2026-09-28):** the first cut also dropped
+   the "AUTH METHOD → FIELD REQUIREMENTS" imperative, so the model left `fsBKDaten.elements` empty
+   ("input fields are not generated anymore"); a condensed field-creation imperative was restored,
+   then **STRENGTHENED** so the imperative applies to ANY container the AI creates (not only the
+   literal `fsBK*` — the failing run produced a generic `fdPersonData` XContainer with empty
+   `elements`). File now ~8,246 chars; the 8,000 size cap was raised to 8,500 to admit this legitimate
+   generalization (still ~3.5 k under the 11,801 original). Regression tests: `BuergerserviceNamingPromptTest`
+   (9 cases, incl. the `any created container must be populated…` guard, green).
+   - **CRITICAL — stale DB seed:** the user's failing run was served `buergerservice=7617` (an old DB
+     copy that predates even the first fix), NOT the current ~8,246-char source — the fix never reached
+     the model. The `.md` change is INERT until the prompts are re-seeded (plugin restart / version bump
+     or `-Dcodbi.prompt.reseed=true`). See "Prompt re-seed" below.
+   - **Expected/measured:** ~2–3 k in. Low risk. Verified by the reduced `buergerservice=` log component.
 3. **De-duplicate `formcycle-general-apply` against `codbi-form-structure-rules.decision`.** Conditional
    properties, repeatable containers, panels and placement are stated in both. Each rule moves to ONE
    place (mechanism B — still present in the pass that needs it).
@@ -452,7 +480,10 @@ pass-2 is 48 % of the run (~28.7 k in ≈ 93.5 k chars of system prompt). Sub-it
 
 ## 6. Implementation checklist
 
-- [ ] **Lever 1 (E, corrected):** the clarify round is the **only** consumer of `need_form_list` /
+- [x] **Lever 1 (E, corrected):** the clarify round is the **only** consumer of `need_form_list` /
+      `need_chat_history`, and its `changeHistoryContext` reaches pass-1, the workflow pass and the
+      mail/endpage i18n passes (the skip part implemented 2026-09-27). The multi-tag `designed_text,svg`
+      split of the structure core (the "immediate next step") was implemented 2026-09-28.
       `need_chat_history`, and its `changeHistoryContext` reaches pass-1, the workflow pass and the
       mail/endpage i18n passes.
       - [ ] **Primary (language-agnostic, low risk):** shrink the clarify prompt — condense
@@ -464,9 +495,26 @@ pass-2 is 48 % of the run (~28.7 k in ≈ 93.5 k chars of system prompt). Sub-it
             signal authorises; **the skip never depends on a keyword detector's absence**). The
             deterministic detector only **vetoes** (forces the round). Remaining: the corpus
             validation (a/b/c above) and the optional server-title veto — deferred, see item (4).
-- [ ] **Lever 2.1 (C):** gate `buildWidgetDetailsSection`'s empty-`widgetIds` fallback with
-      `sectionKeepTags`; keep fail-open.
-- [ ] **Lever 2.2 (B):** trim the Bürger-Services naming block to canonical names + ELSTER fields.
+- [x] **Lever 2.1 (C):** gate `buildWidgetDetailsSection`'s empty-`widgetIds` fallback with
+      `sectionKeepTags` (fail-open) **and** replace the full `formcycle.widgets` reference with a
+      condensed widget NAME INDEX (`need_codbi_details` demand-load). Implemented + regression tests
+      (2026-09-28).
+- [x] **Lever 2.2 (B):** trim the Bürger-Services naming block to canonical names + ELSTER fields.
+      Implemented 2026-09-28 — prompt-only `.md` shrink, canonical-ID tables + ELSTER fields + hard
+      rules kept verbatim, verbose prose dropped. **REGRESSION + FIX 2026-09-28**: removing the
+      "AUTH METHOD → FIELD REQUIREMENTS" essay also removed the "include that method's mandatory
+      fields" imperative → the model created the `fsBKDaten` fieldset but left it empty ("input
+      fields are not generated anymore"). Fix: restored a condensed field-creation imperative (3
+      bullets: never leave a fieldset empty + the always-mandatory auth fields + the person-identity
+      field list) and added the `the field-creation imperative is preserved…` regression case.
+      **STRENGTHENED 2026-09-28**: the imperative now covers ANY container/fieldset the AI creates
+      (not just `fsBK*`) — the failing run created a generic `fdPersonData` XContainer with empty
+      `elements`. New `any created container must be populated…` guard; file at ~8,246 chars, size
+      cap raised 8,000 → 8,500 (still ~3.5 k under the 11,801 original). Now 9 cases, all green.
+      **CRITICAL — stale DB seed:** the failing run was served `buergerservice=7617` (an old DB copy
+      predating even the first fix), so the fix never reached the model. Re-seed required — a plugin
+      restart/redeploy with a bumped version (or `-Dcodbi.prompt.reseed=true`) installs the current
+      source before the saving is measurable.
 - [ ] **Lever 2.3 (B):** de-duplicate `formcycle-general-apply` vs.
       `codbi-form-structure-rules.decision` (one authoritative home per rule).
 - [ ] **Lever 2.4 (C):** evaluate NAME-ONLY pass-1 catalogs on the corpus.

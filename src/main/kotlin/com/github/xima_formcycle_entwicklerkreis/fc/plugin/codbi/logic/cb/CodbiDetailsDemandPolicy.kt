@@ -26,4 +26,30 @@ internal object CodbiDetailsDemandPolicy {
    */
   fun isSpecified(elements: Collection<String>, widgets: Collection<String>): Boolean =
       elements.isNotEmpty() || widgets.isNotEmpty()
+
+  /**
+   * DEGENERATE-LOOP GUARD: true when a newly received `need_codbi_details` demand names the SAME
+   * elements AND the SAME widgets that were already sent for the current rerun (set-equal,
+   * order-insensitive so a reordered request is still recognized as a repeat).
+   *
+   * This happens when the model misuses the "elements" field (which is for CodBi FUNCTION ids) by
+   * listing FORM element names — e.g. "spIntro", "cbShowData", "fdPersonData" — that never resolve
+   * to a CodBi id. Because the name index (rather than targeted details) is sent back, the model
+   * never gets the targeted templates it expects and re-asks for the exact same thing on every
+   * rerun, degrading a run into ~10 full ~62KB payload re-emissions (~200k+ tokens) for a
+   * near-identical form. Re-sending an identical payload cannot produce anything new, so a repeat
+   * is a signal to stop looping and escalate to the forced final complete-form pass.
+   *
+   * Safety contract (fail-open): only an EXACT set-equal repeat of BOTH lists is suppressed. A
+   * demand that names anything NEW (an extra element, an extra widget, or a changed list) still
+   * reruns — a genuine request for fresh details is never dropped.
+   */
+  fun repeatsPreviouslySent(
+      newElements: Collection<String>,
+      newWidgets: Collection<String>,
+      sentElements: Collection<String>,
+      sentWidgets: Collection<String>
+  ): Boolean =
+      newElements.toSortedSet() == sentElements.toSortedSet() &&
+          newWidgets.toSortedSet() == sentWidgets.toSortedSet()
 }

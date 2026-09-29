@@ -187,7 +187,7 @@ full rate** on this provider, so it is a latency feature, not a cost one.
 |---|---|---|---|---|
 | 1 | **Split the multi-tag block** — [`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md) line 43 was tagged `designed_text,svg`, so a CSS-only design request kept the illustration rules through the `designed_text` half. **Implemented 2026-09-28**: split into a separate `designed_text` block and an `svg` block; the `designed_text,svg,custom_js` PARTIAL-HTML-EDITS block stays multi-tag (it genuinely applies to all three). Guarded by a new `PromptSectionGateTest` case. **Follow-up**: the assistant's keep-set construction force-included BOTH `designed_text` **and** `svg` on any design/interactive/animated request, which re-kept the illustration half even without a drawing request — that force-include now adds only `designed_text` (see "Implemented and verified" above). | several k tokens on CSS-only design requests | `Pass-2 … illustration checklist included:` must flip to `false` on a CSS-only request; `widgetTemplates=<n>` drops | done — next is lever 2 |
 | 2 | **Trim the Bürger-Services naming block** (was 11,801 chars ≈ 2.8–3.8 k tokens; now ~8,246 chars ≈ 30 % smaller) — condensed to the canonical-ID catalog + the ELSTER fields + the hard rules, verbose prose/worked examples dropped. Sent on BOTH pass-1 and pass-2, so each byte saved is paid twice. **Implemented 2026-09-28** (Approach A: prompt-only `.md` rewrite, invariant #2 kept). **REGRESSION + FIX 2026-09-28**: the first cut dropped the "AUTH METHOD → FIELD REQUIREMENTS" imperative, so the model created the `fsBKDaten` fieldset but left its `elements` empty ("input fields are not generated anymore"); a condensed field-creation imperative block was restored **and then STRENGTHENED 2026-09-28** to cover ANY container the AI creates (not just the literal `fsBK*` — the failing run created a generic `fdPersonData` XContainer with empty `elements`), raising the size cap from 8,000 → 8,500 for the legitimate generalization (9 `BuergerserviceNamingPromptTest` cases incl. the field-creation and any-container guards). **CRITICAL — stale DB seed**: the user's failing run was served a STALE DB block (`buergerservice=7617`), NOT the fixed source — the fix never reached the model until the prompts are re-seeded. **Verify from the log**: `Pass-2 system prompt composition: … buergerservice=<n>` should drop accordingly after a re-seed restart | ~2–3 k tokens per build run | `Pass-2 system prompt composition: … buergerservice=<n>` | done — next is lever 2.3 |
-| 3 | **Merge `classify-intent` into `chat-classify`** | ~2.1 k tokens | first check whether it still runs at all — it is **absent from the 636/643 `trips`**, so either it is skipped or unreported (a measurement gap worth closing) | open |
+| 3 | ✅ **Merge `classify-intent` into `chat-classify`** — *implemented 2026-09-29* | ~2.1 k tokens | measurement gap closed: it runs as the separate phase-1 HTTP request (absent from the phase-2 `trips` by design). Phase-1 kept; the **chatMode reclassify** duplicate ~2.1 k inference folded into `chat-classify` | done |
 | 4 | Shrink the clarify prompt (only non-skipped rounds); give the workflow branch the same decision-core split | share of ~14 k / large for workflow runs | `clarification prompt assembly: … gatedLen=` | open |
 | 5 | `_codbiApplicability` derived from the diff instead of generated; monitor the output the identity rule now adds (`completionChars`) | small per run | `re-emission stats`, `completionChars` | open |
 | 6 | One conversation for pass-1 + pass-2 | only with a **prefix-cache-discounting** provider; a stateless API re-sends the core, and this provider bills hits at full rate | `cachedIn` vs `cost` | open, provider-dependent |
@@ -403,6 +403,41 @@ pass-2 is 48 % of the run (~28.7 k in ≈ 93.5 k chars of system prompt). Sub-it
 - **Risk:** low-medium (format drift → strict retry; keep `sections`/`topics` first-class in the `.md`
   prompt, never appended from Kotlin).
 
+**Measurement gap closed (2026-09-29):** `classify-intent` is **not** skipped and **not** a silent
+loss — it runs as a **separate phase-1 HTTP request** (frontend [`ai-assistant.ts`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant/ai-assistant.ts:3781)
+calls the backend `phase=1` handler, which runs `classifyIntent` and returns `need_data` + `intent`,
+then calls `runPhase2` with that `intent`). The run-636/643 `trips` arrays are the **phase-2 build
+request** only, so `classify-intent`'s absence there is expected, not a skip.
+
+**Phase-1 CANNOT be eliminated:** the phase-2 request payload structurally depends on the phase-1
+`intent` — [`runPhase2`](../src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/ai-assistant/ai-assistant.ts:3853)
+uses `intent` to decide WHICH context to collect and send (form intent sends
+`persist`/`formElements`/`currentStandards`/`aiSetStandards`; workflow/both sends
+`workflowVersionId`/`formElements`/`persist`). Removing phase-1 would need a risky frontend
+re-architecture that would defeat the per-intent context optimisation.
+
+**The real duplicate removed — the chatMode reclassify (implemented 2026-09-29):** the frontend
+always sends `intent:"both"` for chat turns, and the backend previously re-ran a full
+`classifyIntent` inference (`handleRun` chatMode block) just to narrow it. Since `produceChatAnswer`
+("chat-classify") `intent` already runs on every phase-2, that duplicate ~2.1 k inference is now gone:
+
+- `codbi-chat-system-prompt.md` — `intent` added to the envelope
+  (`"intent": "form"|"workflow"|"both"|"none"`, `"none"` when `hasInstructions` is false) and to the
+  always-include CRITICAL keys.
+- [`ChatAnswer`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:22611)
+  — new `val intent: String? = null`.
+- [`parseChatAnswerRaw`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:22893)
+  — parses `intent`, validated to `form`/`workflow`/`both`/`none`, else `null` (fail open).
+- [`handleRun`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:1882)
+  — the chatMode reclassify now reads `chatAnswerResult?.intent` (with
+  `upgradeWorkflowIntentToBothIfAddingFormElement` preserved). When `intent` is missing (older
+  installed prompt, strict retry, classification failure) it **fails open** and keeps the frontend
+  intent (for chat turns that is `"both"`, matching the old catch-fallback).
+- **Prompt re-seed required** for the `codbi-chat-system-prompt.md` change (same restart mechanism).
+- Tests: full `mvn test` green (exit 0).
+- **To verify at runtime:** in the change log a chat turn that commands an edit should no longer show a
+  `classify-intent` trip inside the phase-2 row; the intent comes from `chat-classify`.
+
 ### Lever 4 — Multi-language translation in ONE pass *(mechanism C/E)*
 
 - `runSequentialWholeFormTranslation` currently costs **one full-form inference per language**, i.e.
@@ -518,7 +553,8 @@ pass-2 is 48 % of the run (~28.7 k in ≈ 93.5 k chars of system prompt). Sub-it
 - [ ] **Lever 2.3 (B):** de-duplicate `formcycle-general-apply` vs.
       `codbi-form-structure-rules.decision` (one authoritative home per rule).
 - [ ] **Lever 2.4 (C):** evaluate NAME-ONLY pass-1 catalogs on the corpus.
-- [ ] **Lever 3 (E):** merge `classify-intent` into `chat-classify`.
+- [x] **Lever 3 (E):** merge `classify-intent` into `chat-classify` — the chatMode reclassify duplicate
+  is folded into `chat-classify` (phase-1 classify kept; see Lever 3 section).
 - [ ] **Lever 4 (C/E):** single-pass multi-language translation.
 - [ ] **Lever 5 (C):** workflow prompt decision-core split.
 - [ ] **Lever 6 (A/G):** derive `_codbiApplicability` from the diff.

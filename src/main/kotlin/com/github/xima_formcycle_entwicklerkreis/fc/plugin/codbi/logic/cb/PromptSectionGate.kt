@@ -66,7 +66,12 @@ internal object PromptSectionGate {
           // actually BUILDS form structure (creates/groups fields, buttons) or REMOVES elements.
           // A plain edit (rename a label) needs none of them.
           "field_creation",
-          "removal")
+          "removal",
+          // The server-variable placeholder catalog [%\$...%] is large (~3KB) and only useful when
+          // the request/email body actually references a placeholder. Demand-gated in the pass-2
+          // apply prompt: kept only when the request/form references a [%\$...%] placeholder; the
+          // plain /email/ form edits do not need it.
+          "server_vars")
 
   /**
    * [KNOWN_TAGS] normalised to the comparison form. The AI is TOLD the exact members and told never
@@ -287,7 +292,10 @@ internal object PromptSectionGate {
           // Label des Vorname-Feldes" must not fire it (the noun "Feld" is not an instruction to
           // build), and a false positive here keeps ~12 k chars of construction rules that a plain
           // edit does not need. A missed creation request only keeps those rules (fail-open), which
-          // is the safe direction.
+          // is the safe direction. "einfügen"/"platzieren" are included because a creation request
+          // often phrases placement as "Füge ein Feld ein" / "Platziere ein Feld unter …" — without
+          // the familiar "hinzu/anlegen/erstell" verbs — and the placement rules would otherwise be
+          // dropped for a request that is actually building.
           "field_creation" to
               patterns(
                   "hinzu",
@@ -296,6 +304,11 @@ internal object PromptSectionGate {
                   "erstell",
                   "erzeuge",
                   "gruppier",
+                  "füge",
+                  "fuege",
+                  "einfüg",
+                  "einfueg",
+                  "platzier",
                   "\\badd a (new )?field\\b",
                   "\\badd (a )?new\\b",
                   "\\bnew field\\b",

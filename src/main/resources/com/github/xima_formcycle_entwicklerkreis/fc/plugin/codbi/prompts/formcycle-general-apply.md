@@ -15,6 +15,7 @@ ECONDITIONTYPE CODES (enum de.xima.fc.form.common.statics.EConditionType — the
 - 9 = EMPTY — when the controlling field has NO value (is empty). For a checkbox: hidden while UNCHECKED, shown once CHECKED.
 `hiddenifclear` / `readonlyifclear` control the value while the condition is met: "false" or 0 = preserve the value, "1" = clear it, "2" = disable but keep it. `readonlyifmode` exists only on some element types — keep the designer default unless the request needs a specific locking mode. For a field that is ALWAYS locked set the plain flag "isreadonly":"1"; for an always-disabled field "isdisabled":"1". NEVER emit disabledif / disabledifcomp / disabledifvalue / availableif — those keys do not exist and are silently ignored.
 
+<!--SECTION:server_vars-->
 ## Server Variables (Placeholders)
 
 AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax):
@@ -81,3 +82,4 @@ APPOINTMENTS:
 - [%\$APPOINTMENT%] — appointment data
 - [%\$APPOINTMENT_LIST%] — appointments list (HTML)
 - [%\$APPOINTMENT_LINK%] — appointment booking link
+<!--/SECTION:server_vars-->

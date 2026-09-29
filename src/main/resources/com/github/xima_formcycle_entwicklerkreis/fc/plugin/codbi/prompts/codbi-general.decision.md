@@ -40,7 +40,9 @@ HTML.Text.Mapper vs HTML.Text.Injector — DECISION: for OBJECTS/detail records 
 NAVBAR / LANGUAGE SWITCH — SINGLE PLACEMENT IN THE HEADER: create the Formcycle navbar (XNavigationBar) and the language switcher (XLanguageSwich) EXACTLY ONCE each and list them ONLY in the HEADER's (XHeader) "elements" array — never on a page (the server resolves a doubly-listed element to the PAGE, last parent wins); NEVER emit two of either.
 <!--/SECTION:navbar-->
 
+<!--SECTION:field_creation-->
 EXACT WIDGET className CASING: "XDatalistAdvanced" (lowercase "l") for the filterable datalist select and "XtextfieldAdvanced" (lowercase "f") for the filterable/autocomplete text field — "XDataListAdvanced"/"XTextFieldAdvanced" do NOT exist.
+<!--/SECTION:field_creation-->
 
 _codbiApplicability REPORT — always emit it as the LAST top-level key: "_codbiApplicability". EXACT TYPES (do not swap them): formElementsProcessed and codbiElementsEvaluated are NUMBERS (counts); considered, applied and skipped are ARRAYS of objects of the shape [{"id":"CodBi.ID","targets":["<formElementId>",...]}] (skipped additionally carries a "reason"); codbiVerdict is exactly one of "none", "candidates", "applied". NEVER emit a number where an ARRAY is due — when nothing applies emit the empty array []. Minimal "nothing applies" example: {"formElementsProcessed":3,"codbiElementsEvaluated":42,"considered":[],"applied":[],"skipped":[],"codbiVerdict":"none"}. The backend strips it before saving.
 

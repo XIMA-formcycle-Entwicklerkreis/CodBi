@@ -294,10 +294,25 @@ class PromptSectionGateTest {
     assertFalse(gated.contains("COMPLETE FORM RULES"), "complete-form rules should be gated away")
     assertFalse(gated.contains("REMOVALS — REMOVE A FIELD"), "removal rules should be gated away")
     assertFalse(gated.contains("BUTTON ACTIONS"), "button actions should be gated away")
+    // Newly-gated build-scope rules (creation/placement/naming) are dropped too ...
+    assertFalse(
+        gated.contains("RELATIVE PLACEMENT OF A NEW ELEMENT"),
+        "relative placement is a build-scope rule and must be gated away for a plain edit")
+    assertFalse(
+        gated.contains("ELEMENT NAMES use a type prefix"),
+        "element-naming is a build-scope rule and must be gated away for a plain edit")
+    assertFalse(
+        gated.contains("INTRO AT POSITION 0"),
+        "intro-position is a build-scope rule and must be gated away for a plain edit")
+    assertFalse(
+        gated.contains("NEVER invent a className"),
+        "className-validity is a build-scope rule and must be gated away for a plain edit")
+    assertFalse(
+        gated.contains("Buttons (submit, back, next) are NOT standalone widgets"),
+        "button-structure is a build-scope rule and must be gated away for a plain edit")
     // ... while the always-on core of the same file survives verbatim.
     assertTrue(gated.contains("HOW TO READ THE FORM DUMP"), "the reading convention must stay")
     assertTrue(gated.contains("CONDITIONAL PROPERTIES"), "conditionals must stay")
-    assertTrue(gated.contains("RELATIVE PLACEMENT OF A NEW ELEMENT"), "placement must stay")
     assertTrue(gated.contains("REUSE INSTEAD OF DUPLICATING"), "reuse-instead-of-dup must stay")
     assertTrue(gated.contains("FLAT ITEMS WITH PROPERTY-LEVEL REFERENCES"), "flat-items must stay")
     assertTrue(gated.length < text.length, "gating must actually shorten the prompt")
@@ -332,5 +347,194 @@ class PromptSectionGateTest {
     val both = PromptSectionGate.applySectionGates(text, setOf("designed_text", "svg"))
     assertTrue(both.contains(designedTextMarker), "the designed-text rules must stay")
     assertTrue(both.contains(illustrationMarker), "the illustration rules must stay")
+  }
+
+  @Test
+  fun `a plain edit drops the newly-gated build-scope blocks of the general and task cores`() {
+    fun loadCorpus(path: String): String =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(path)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("no such resource: $path")
+
+    val general =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general.decision.md"
+    val task =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-task-instruction.decision.md"
+
+    // A plain edit (empty keep set) must drop the creation-only blocks we just tagged ...
+    val generalGated = PromptSectionGate.applySectionGates(loadCorpus(general), emptySet())
+    assertFalse(
+        generalGated.contains("EXACT WIDGET className CASING"),
+        "className-casing is build-scope; a plain edit does not need it")
+    // A plain edit also drops the removal block (empty keep set keeps no build-scope tag) ...
+    assertFalse(
+        generalGated.contains("REMOVING A FUNCTIONALITY FROM AN EXISTING ELEMENT"),
+        "removal rules are build-scope; a plain edit does not need them")
+    // ... while the always-on cross-cutting rules of the same file survive verbatim.
+    assertTrue(generalGated.contains("PRESERVE EXISTING ATTRIBUTES"), "preserve must stay")
+    assertTrue(
+        generalGated.contains("MOVING ELEMENTS PRESERVES EVERYTHING ELSE"), "moving must stay")
+    assertTrue(
+        generalGated.contains("MODIFYING AN EXISTING ELEMENT IN PLACE KEEPS ALL OTHER ELEMENTS"),
+        "modify-in-place must stay")
+
+    val taskGated = PromptSectionGate.applySectionGates(loadCorpus(task), emptySet())
+    assertFalse(
+        taskGated.contains("PLACE EVERY CREATED ELEMENT"),
+        "create-placement is build-scope; a plain edit does not need it")
+    assertFalse(
+        taskGated.contains("NO DIRECT WIDGET CREATION"),
+        "direct-creation protocol is build-scope; a plain edit does not need it")
+    // CONTROL TYPES is deliberately kept ungated (a conversion edit needs it without a verb).
+    assertTrue(taskGated.contains("CONTROL TYPES:"), "control types must stay")
+  }
+
+  @Test
+  fun `a creation request keeps the newly-gated build-scope blocks of all three cores`() {
+    val keep = PromptSectionGate.resolveKeepTags(null, "Füge ein neues Feld für die Adresse hinzu.")
+    // resolveKeepTags returns tags in NORMALIZED form (lowercased, separators stripped), so the
+    // marker tag `field_creation` surfaces as `fieldcreation`.
+    assertTrue("fieldcreation" in keep, "keep=$keep")
+
+    fun loadCorpus(path: String): String =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(path)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("no such resource: $path")
+
+    val general =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general.decision.md"
+    val task =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-task-instruction.decision.md"
+    val structure =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md"
+
+    assertTrue(
+        PromptSectionGate.applySectionGates(loadCorpus(general), keep)
+            .contains("EXACT WIDGET className CASING"),
+        "creation request keeps className-casing")
+    assertTrue(
+        PromptSectionGate.applySectionGates(loadCorpus(task), keep)
+            .contains("PLACE EVERY CREATED ELEMENT"),
+        "creation request keeps create-placement")
+    assertTrue(
+        PromptSectionGate.applySectionGates(loadCorpus(task), keep)
+            .contains("NO DIRECT WIDGET CREATION"),
+        "creation request keeps direct-creation protocol")
+    assertTrue(
+        PromptSectionGate.applySectionGates(loadCorpus(structure), keep)
+            .contains("RELATIVE PLACEMENT OF A NEW ELEMENT"),
+        "creation request keeps relative placement")
+    // Regression: a creation request must keep the explicit "never emit a container with an empty
+    // 'elements' when the request asked for content inside it" imperative. Without it the AI emits
+    // a
+    // bare container (e.g. `fdPersonData`) with NO input fields inside — the empty-container
+    // regression.
+    val gatedStructure = PromptSectionGate.applySectionGates(loadCorpus(structure), keep)
+    assertTrue(
+        gatedStructure.contains("create ALL of those child input items IN THE SAME RESPONSE"),
+        "creation request keeps the never-empty-container imperative")
+    assertTrue(
+        gatedStructure.contains("empty 'elements':[]"),
+        "creation request keeps the empty-elements prohibition")
+    // A REMOVAL request keeps the removal block of the general core.
+    val removalKeep = PromptSectionGate.resolveKeepTags(null, "Entferne das Feld Nachname.")
+    assertTrue("removal" in removalKeep, "removalKeep=$removalKeep")
+    assertTrue(
+        PromptSectionGate.applySectionGates(loadCorpus(general), removalKeep)
+            .contains("REMOVING A FUNCTIONALITY FROM AN EXISTING ELEMENT"),
+        "removal request keeps the removal rules")
+  }
+
+  @Test
+  fun `the German einfuegen and platzieren verbs fire the build-scope detector`() {
+    // Regression for the detector expansion: a request phrased purely as placement/insertion must
+    // still be recognised as build-scope — otherwise the placement rules are dropped for a request
+    // that actually builds. The separable-prefix imperative "Füge ... ein" (prefix split from the
+    // stem) is caught by the bare "füge" verb, and the infinitive "einfügen" by the contiguous
+    // form.
+    assertTrue(
+        "field_creation" in PromptSectionGate.detect("Füge ein Texteingabefeld ein."),
+        "split-prefix füge must fire field_creation")
+    assertTrue(
+        "field_creation" in PromptSectionGate.detect("Ich möchte ein Texteingabefeld einfügen."),
+        "contiguous einfügen must fire field_creation")
+    assertTrue(
+        "field_creation" in
+            PromptSectionGate.detect("Platziere ein Pflichtfeld unter dem Adress-Container."),
+        "platzieren must fire field_creation")
+    assertTrue(
+        "field_creation" in PromptSectionGate.detect("Fuege ein neues Feld ein."),
+        "fuege (ASCII) must fire field_creation")
+    // A plain edit still must not fire it.
+    assertFalse(
+        "field_creation" in PromptSectionGate.detect("Ändere das Label des Vorname-Feldes."),
+        "a plain edit must not fire field_creation")
+  }
+
+  @Test
+  fun `the server_vars catalog is demand-gated but the EConditionType codes stay on`() {
+    // Regression for the demand-gated Server-Variables catalog lever: the ~3KB placeholder catalog
+    // (`[%\$NAME%]` system placeholders) is only needed when the request/form actually references a
+    // placeholder, so it is wrapped in SECTION:server_vars and must be dropped for a plain edit —
+    // while the EConditionType numeric codes (untagged, same file) must survive verbatim because a
+    // conversion edit can need them (e.g. hiddenifcomp="9") without ever mentioning a placeholder.
+    fun loadCorpus(path: String): String =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(path)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("no such resource: $path")
+
+    val resource =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-general-apply.md"
+    val raw = loadCorpus(resource)
+
+    // Drift guard: the markers must be present and the tag must be a known, actable tag.
+    assertTrue(raw.contains("<!--SECTION:server_vars-->"), "raw must carry the open marker")
+    assertTrue(raw.contains("<!--/SECTION:server_vars-->"), "raw must carry the close marker")
+    assertTrue(
+        "server_vars" in PromptSectionGate.KNOWN_TAGS, "server_vars must be a KNOWN_TAG to gate")
+
+    // A plain edit (or any request that does not reference a placeholder) keeps EConditionType but
+    // drops the whole server-variable catalog.
+    val gatedOut = PromptSectionGate.applySectionGates(raw, emptySet())
+    assertTrue(
+        gatedOut.contains("ECONDITIONTYPE CODES"), "EConditionType codes must stay (untagged)")
+    assertTrue(gatedOut.contains("MANDATORY"), "EConditionType '0 = MANDATORY' must stay")
+    assertTrue(gatedOut.contains("9 = EMPTY"), "EConditionType '9 = EMPTY' must stay")
+    assertFalse(
+        gatedOut.contains("AVAILABLE SERVER VARIABLES"),
+        "the server-variables catalog must be gated out for a plain edit")
+    assertFalse(gatedOut.contains("FORM RECORD"), "FORM RECORD block must be dropped")
+    // The corpus documents the placeholders as [%\u0024...%] with the dollar escaped for Markdown,
+    // so match the literal backslash-dollar bytes actually present in the file.
+    assertFalse(gatedOut.contains("[%\\\$PROCESS_ID%]"), "server-variable literals must be dropped")
+    assertFalse(
+        gatedOut.contains("<!--SECTION:server_vars-->"),
+        "gated out markers must be stripped, not left dangling")
+
+    // A request/email/parameter insert that references a placeholder keeps the catalog and strips
+    // only the marker comments.
+    val kept = PromptSectionGate.applySectionGates(raw, setOf("server_vars"))
+    assertTrue(
+        kept.contains("AVAILABLE SERVER VARIABLES"), "a placeholder request keeps the catalog")
+    assertTrue(kept.contains("[%\\\$PROCESS_ID%]"), "a placeholder request keeps the literals")
+    assertFalse(kept.contains("<!--SECTION:"), "markers must be stripped when kept")
+
+    // Caching mode (KNOWN_TAGS as keep set) must also keep the catalog — nothing may be dropped
+    // mid-prompt in the cacheable variant.
+    val cached = PromptSectionGate.applySectionGates(raw, PromptSectionGate.KNOWN_TAGS)
+    assertTrue(cached.contains("AVAILABLE SERVER VARIABLES"), "cache mode keeps the catalog")
+    assertFalse(cached.contains("<!--/SECTION:"), "cache mode strips the close markers")
+
+    // And the gated-out variant is materially shorter (that is the point of the lever ~3KB).
+    assertTrue(gatedOut.length < kept.length, "gating out must shorten the prompt")
   }
 }

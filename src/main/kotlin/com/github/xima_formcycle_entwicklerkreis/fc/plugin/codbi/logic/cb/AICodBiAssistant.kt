@@ -1878,29 +1878,22 @@ class AICodBiAssistant : IPluginServletAction {
       tokensOut += chatAnswerResult.tokensOut
     }
     // A chat turn that contains instructions must run with the correct intent (form / workflow /
-    // both) — the frontend always sends "both" for chat turns, so re-classify before executing.
+    // both) — the frontend always sends "both" for chat turns, so narrow it before executing.
+    // LEVER 3 (merge classify-intent): the intent is decided by the SAME chat-classification call
+    // (chatAnswerResult.intent, /"chat-classify"/), so no separate classify-intent inference runs
+    // here. When the intent is missing (older installed prompt, strict retry, or classification
+    // failure), we fail open and keep the frontend intent (for chat turns that is "both").
     if (chatMode) {
-      try {
-        val (reclassifiedIntent, usage) =
-            classifyIntent(
-                prompt,
-                modelId,
-                instance,
-                emptyList(),
-                chatContext,
-                formStructureContext,
-                clarificationContext)
+      val classifiedIntent = chatAnswerResult?.intent
+      if (classifiedIntent != null && classifiedIntent in setOf("form", "workflow", "both")) {
         val effectiveReclassified =
-            upgradeWorkflowIntentToBothIfAddingFormElement(prompt, reclassifiedIntent)
+            upgradeWorkflowIntentToBothIfAddingFormElement(prompt, classifiedIntent)
         intent = effectiveReclassified
-        tokensIn += usage.input
-        tokensOut += usage.output
-        logger.info("[AICodBiAssistant] chatMode re-classified intent as: {}", intent)
-      } catch (e: Exception) {
+        logger.info("[AICodBiAssistant] chatMode intent from chat-classify: {}", intent)
+      } else {
         logger.warn(
-            "[AICodBiAssistant] chatMode re-classification failed; keeping intent '{}': {}",
-            intent,
-            e.message)
+            "[AICodBiAssistant] chatMode intent not available from chat-classify; keeping '{}'",
+            intent)
       }
     }
     if (chatAnswerResult != null &&
@@ -3563,6 +3556,15 @@ class AICodBiAssistant : IPluginServletAction {
             null
           }
       val allItems = baseObj?.getAsJsonArray("items") ?: JsonArray()
+      // Demand signal for the server-variable placeholder catalog: it is only useful when the
+      // request (or the form already contains) a [%\$...%] placeholder. A plain edit that builds
+      // form structure without referencing any placeholder never needs the ~3KB catalog, so it is
+      // gated out of the pass-2 apply prompt to save tokens. Computed once for every pass (pass-2
+      // and the forced final pass) from both the user prompt and the form dump (a request to put a
+      // server variable into an email/parameter may reference the placeholder only by an existing
+      // one in the form). Keeps EConditionType codes always-on (they are untagged in the same
+      // file).
+      val serverVarsDemanded = (prompt + formBase).contains("[%$")
 
       val retryMessagesJson: String
 
@@ -3797,9 +3799,18 @@ class AICodBiAssistant : IPluginServletAction {
           logger.info(
               "[AICodBiAssistant] Forcing the detailed XSpan template into pass-2 (request needs the designed-text/illustration rules)")
         }
+        // serverVarsDemanded is computed once at the top of rerunWithCodbiDetails (shared with the
+        // forced final pass below) and gates the ~3KB server-variable catalog out of this pass-2
+        // apply prompt when the request/form references no [%\$...%] placeholder (EConditionType
+        // codes stay, being untagged in the same file).
         val applySystemPrompt =
             loadCodbiApplyPrompt(
-                requested, widgetsForDetails, useCodbi, useBuergerserviceNaming, sectionKeepTags) +
+                requested,
+                widgetsForDetails,
+                useCodbi,
+                useBuergerserviceNaming,
+                sectionKeepTags,
+                includeServerVariables = serverVarsDemanded) +
                 historySection +
                 clarificationSection +
                 chatSection +
@@ -3941,14 +3952,36 @@ class AICodBiAssistant : IPluginServletAction {
       if (rerunCount < effectiveMaxFormReruns) {
         val pass2Details = extractCodbiDetailsRequest(pass2Cleaned)
         if (pass2Details != null) {
-          logger.info(
-              "[AICodBiAssistant] Pass-{} again requested details (elements={}, widgets={}) — rerunning (pass {})",
-              rerunCount + 2,
-              pass2Details.elements,
-              pass2Details.widgets,
-              rerunCount + 3)
-          return rerunWithCodbiDetails(
-              pass2Details.elements, pass2Details.widgets, useCodbi, rerunCount + 1)
+          // DEGENERATE-LOOP GUARD: the model re-requests details for the SAME elements AND SAME
+          // widgets it was just sent for THIS rerun (set-equal, order-insensitive). Observed when
+          // the
+          // model keeps listing FORM element names - e.g. "spIntro", "cbShowData", "fdPersonData" -
+          // in "elements" (the CodBi-FUNCTION-id field) instead of real CodBi ids. Those names
+          // never
+          // resolve, so the model never receives targeted details and re-asks for the exact same
+          // thing on every rerun, degrading a run into ~10 full ~62KB payload re-emissions (~200k+
+          // tokens) for a near-identical form. Re-sending an identical payload cannot produce
+          // anything new, so treat it as a degenerate loop and fall through to the forced final
+          // complete-form pass instead of looping again.
+          val repeatsPreviousRequest =
+              CodbiDetailsDemandPolicy.repeatsPreviouslySent(
+                  pass2Details.elements, pass2Details.widgets, requested, widgets)
+          if (repeatsPreviousRequest) {
+            logger.warn(
+                "[AICodBiAssistant] Pass-{} re-requested the SAME details already sent for this rerun (elements={}, widgets={}) — degenerate loop, forcing the final complete-form pass instead of re-running",
+                rerunCount + 2,
+                pass2Details.elements,
+                pass2Details.widgets)
+          } else {
+            logger.info(
+                "[AICodBiAssistant] Pass-{} again requested details (elements={}, widgets={}) — rerunning (pass {})",
+                rerunCount + 2,
+                pass2Details.elements,
+                pass2Details.widgets,
+                rerunCount + 3)
+            return rerunWithCodbiDetails(
+                pass2Details.elements, pass2Details.widgets, useCodbi, rerunCount + 1)
+          }
         }
       }
       // If the AI is STILL asking for details, OR returned only prose (neither a form nor a
@@ -3983,7 +4016,12 @@ class AICodBiAssistant : IPluginServletAction {
         // IDs (pure blind reconsideration).
         val finalSystemPrompt =
             loadCodbiApplyPrompt(
-                requested, widgets, useCodbi, useBuergerserviceNaming, sectionKeepTags) +
+                requested,
+                widgets,
+                useCodbi,
+                useBuergerserviceNaming,
+                sectionKeepTags,
+                includeServerVariables = serverVarsDemanded) +
                 chatSection +
                 "\n\n" +
                 (loadPromptWithClasspathFallback("codbi.retry_form") ?: "")
@@ -21204,14 +21242,18 @@ class AICodBiAssistant : IPluginServletAction {
    * only for widget templates), the condensed elements list is appended instead of the full API
    * reference; the full reference is only sent for a pure blind reconsideration (both lists empty).
    * When [widgetIds] is non-empty, only the requested formcycle widget sections are appended
-   * instead of the full widget reference.
+   * instead of the full widget reference. When [includeServerVariables] is false, the large
+   * server-variable placeholder catalog ([%\$...%]) inside the formcycle apply annex is gated out
+   * (only kept when the request/form actually references such a placeholder). Defaults to true so
+   * every caller that does not compute a demand signal keeps the catalog — fail-open.
    */
   private fun loadCodbiApplyPrompt(
       requestedIds: List<String> = emptyList(),
       widgetIds: List<String> = emptyList(),
       useCodbi: Boolean = true,
       useBuergerserviceNaming: Boolean = false,
-      sectionKeepTags: Set<String> = emptySet()
+      sectionKeepTags: Set<String> = emptySet(),
+      includeServerVariables: Boolean = true
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_apply") ?: ""
@@ -21267,7 +21309,19 @@ class AICodBiAssistant : IPluginServletAction {
       // carries the legacy "return the COMPLETE modified form JSON" wording, which CONTRADICTS this
       // pass's diff protocol and would make the model re-emit the whole form. Falling back to the
       // decision core is both cheaper and diff-compatible.
-      val formcycleGeneral = fc["formcycle.general_apply"] ?: fc["formcycle.general_decision"] ?: ""
+      val rawFormcycleGeneral =
+          fc["formcycle.general_apply"] ?: fc["formcycle.general_decision"] ?: ""
+      // Demand-gate the server-variable placeholder catalog: it is ~3KB and only useful when the
+      // request/email body actually references a [%\$...%] placeholder. When the caller computed a
+      // demand signal and it is false, remove `server_vars` from the keep set so the section window
+      // is dropped while the (untagged) EConditionType codes above it stay — they are always
+      // needed. Caching mode must keep the static prefix byte-identical, so there the raw catalog
+      // is used unchanged (the section-gated strip would change the prefix bytes).
+      val formcycleGeneral =
+          if (!includeServerVariables && !promptCachingEnabled)
+              PromptSectionGate.applySectionGates(
+                  rawFormcycleGeneral, effectiveKeepTags - "server_vars")
+          else rawFormcycleGeneral
       // The Bürger-Services canonical field naming MUST also be carried into pass-2 — the model
       // actually builds the form in this apply pass, and without it the canonical tfAntragsteller*
       // /
@@ -21354,12 +21408,14 @@ class AICodBiAssistant : IPluginServletAction {
                   "\n\n"
           else ""
       logger.info(
-          "[AICodBiAssistant] Pass-2 system prompt composition: cache-friendly={}, static prefix={} chars, structureRules={} (raw {}), formcycleGeneral={}, codbiDecisionCore={}, codbiDetails+nameIndex={}, widgetTemplates={}, buergerservice={}, canonical={} chars (requested codbi ids={}, requested widgets={}, kept sections={})",
+          "[AICodBiAssistant] Pass-2 system prompt composition: cache-friendly={}, static prefix={} chars, structureRules={} (raw {}), formcycleGeneral={} (raw {}, server_vars={}), codbiDecisionCore={}, codbiDetails+nameIndex={}, widgetTemplates={}, buergerservice={}, canonical={} chars (requested codbi ids={}, requested widgets={}, kept sections={})",
           promptCachingEnabled,
           staticPrefix.length,
           structureRules.length,
           rawStructureRules.length,
           formcycleGeneral.length,
+          rawFormcycleGeneral.length,
+          if (includeServerVariables) "included" else "gated-out",
           base.length,
           codbiPart.length,
           widgetPart.length,
@@ -22639,7 +22695,12 @@ class AICodBiAssistant : IPluginServletAction {
       // LEVER 1 (clarify skip): the server-side context the round must load BEFORE it can decide
       // (`"form_list"` / `"chat_history"`, by MEANING in any language). `null` = key absent → fail
       // open; an empty set = explicitly "nothing to load".
-      val needsToolContext: Set<String>? = null
+      val needsToolContext: Set<String>? = null,
+      // LEVER 3 (merge classify-intent): the kind of CHANGE this request commands, decided by the
+      // SAME chat-classification call (no extra inference) — `"form"` / `"workflow"` / `"both"`, or
+      // `"none"` when hasInstructions is false. `null` = key absent (older installed prompt, strict
+      // retry, or classification failure) → fail open, i.e. the caller keeps the frontend intent.
+      val intent: String? = null
   )
 
   /** Reads the `chatHistory` request param (JSON array of {user, assistant} turns). */
@@ -22911,6 +22972,14 @@ class AICodBiAssistant : IPluginServletAction {
       val needsToolContext: Set<String>? =
           if (obj.get("needsToolContext")?.isJsonArray == true) stringSet("needsToolContext")
           else null
+      // LEVER 3 (merge classify-intent): the intent (form / workflow / both / none) is decided by
+      // the SAME chat-classification call. A missing / unrecognised key stays `null` (fail open) so
+      // the caller keeps the frontend intent.
+      val intent: String? =
+          obj.get("intent")
+              ?.takeIf { it.isJsonPrimitive && it.asString.isNotBlank() }
+              ?.let { it.asString.trim().lowercase() }
+              ?.takeIf { it in setOf("form", "workflow", "both", "none") }
       ChatAnswer(
           hasQuestion = obj.get("hasQuestion")?.asBoolean ?: false,
           hasInstructions = obj.get("hasInstructions")?.asBoolean ?: false,
@@ -22920,7 +22989,8 @@ class AICodBiAssistant : IPluginServletAction {
           topics = topics,
           sections = sections,
           needsClarification = needsClarification,
-          needsToolContext = needsToolContext)
+          needsToolContext = needsToolContext,
+          intent = intent)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Could not parse chat answer: {}", e.message)
       null

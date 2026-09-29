@@ -334,4 +334,45 @@ internal object FormcycleElementFilter {
 
   private fun Set<String>.normalizeSet(): Set<String> =
       map { normalize(it) }.filter { it.isNotEmpty() }.toSet()
+
+  /**
+   * Renders the condensed FORMCYCLE WIDGET NAME INDEX used as the fallback when a pass asked for no
+   * widget details.
+   *
+   * The full `formcycle.widgets` reference is ~36 KB (≈ 12k tokens) of per-widget build prose; what
+   * the AI actually needs in a no-request pass is the AUTHORITATIVE list of widget names — so it
+   * never invents or guesses one — plus the instruction to pull the detailed, section-gated
+   * template of exactly the widgets it needs via `need_codbi_details`.
+   *
+   * Names are taken from the `## <Name>` headings of the real [full] reference, de-duplicated and
+   * filtered through [isWidgetAllowed] so a widget forbidden for the current user is never
+   * advertised. The preamble (rules before the first `##` heading) is trimmed.
+   *
+   * `internal` so the fallback's rendering can be unit-tested against the real bundled reference
+   * without an [EntityManager].
+   */
+  internal fun renderWidgetNameIndex(full: String): String {
+    val names =
+        Regex("(?m)^##\\s+(.+?)\\s*$")
+            .findAll(full)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotEmpty() }
+            .filter { isWidgetAllowed(it) }
+            .toList()
+            .distinct()
+            .sorted()
+    val title =
+        "\n## FORMCYCLE WIDGET NAME INDEX (authoritative class names — use EXACTLY these, never " +
+            "invent or guess one)\n"
+    val instruction =
+        "Only the formcycle widget classNames listed here exist. When you need to create a widget, " +
+            "list its className EXACTLY as shown below in a details request " +
+            "(\"status\":\"need_codbi_details\",\"widgets\":[\"<WidgetClass>\", ...]) instead of " +
+            "guessing its JSON — the server then sends the parameter-complete template to build in " +
+            "the next pass.\n"
+    val list =
+        if (names.isEmpty()) "(no formcycle widgets available for this request)\n"
+        else names.joinToString("") { "- $it\n" }
+    return title + instruction + "\n" + list
+  }
 }

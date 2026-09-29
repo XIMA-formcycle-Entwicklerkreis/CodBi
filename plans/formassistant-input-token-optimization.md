@@ -39,7 +39,11 @@ Deliberately NOT done in this iteration (documented follow-ups):
 
 - **`AIFormAssistant` is not gated.** Its prompt is built from the FULL `codbi.*` files (e.g.
   `codbi-general.md` at 86.4 KB), which carry no markers yet, and it has no chat-classification
-  signal — so gating there needs a separate, larger marking pass. It is a no-op there today.
+  signal — so gating there needs a separate, larger marking pass. **Moot for token cost (verified
+  2026-09-27):** [`AIFormAssistant`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AIFormAssistant.kt:49) is
+  `@Deprecated` and neither the web layer nor this codebase calls `name=CodBi_AIFormAssistant` any
+  more, so no tokens are spent there. Gating it only pays off if a legacy out-of-band caller is
+  ever re-enabled (or the class is deleted).
 - **`conditional` / `state_availability` blocks stay always-on.** They are core to a large share of
   requests and their detection is less reliable than the marked set; gating them is a higher-risk
   follow-up, not part of this iteration.

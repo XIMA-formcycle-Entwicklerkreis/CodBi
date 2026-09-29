@@ -423,10 +423,41 @@ class AIFormAssistant : IPluginServletAction {
     cleaned = normalizeMatomoTrackingInRawJson(cleaned)
 
     val requestedDetails = extractCodbiDetailsRequest(cleaned)
-    if (requestedDetails != null) {
+    // A need_codbi_details signal that names NOTHING (empty "elements" AND empty "widgets") is an
+    // unspecified demand (see CodbiDetailsDemandPolicy). Re-running would re-send the full compact
+    // API purely as a blind pass — which the fall-through branch below already performs with the
+    // correct (recovery) semantics. Treating the blank signal as "no details requested" avoids a
+    // redundant full-API inference while keeping every recovery path (created widgets / applied /
+    // considered / blind pass) intact. Named demands still rerun exactly as before.
+    val detailsRequested =
+        requestedDetails != null &&
+            CodbiDetailsDemandPolicy.isSpecified(
+                requestedDetails.elements, requestedDetails.widgets)
+    if (detailsRequested) {
+      // NOTE: the signal has two distinct vocabularies — "elements" are the CodBi FUNCTION ids the
+      // model wants (e.g. CodBi.OpenPLZ.Address), while "widgets" are the Formcycle WIDGET
+      // templates
+      // it wants (e.g. XSpan, XCheckbox). Label them separately so a widgets-only demand cannot be
+      // mistaken for a blank/unspecified one. A sid-less, widget-less signal is already rejected by
+      // CodbiDetailsDemandPolicy, so this branch always names at least one of the two groups.
+      val codbiPart =
+          requestedDetails.elements
+              .filter { it.isNotBlank() }
+              .distinct()
+              .takeIf { it.isNotEmpty() }
+              ?.joinToString(", ")
+      val widgetPart =
+          requestedDetails.widgets
+              .filter { it.isNotBlank() }
+              .distinct()
+              .takeIf { it.isNotEmpty() }
+              ?.joinToString(", ")
+      val namedFor =
+          listOfNotNull(codbiPart?.let { "codbi: $it" }, widgetPart?.let { "widgets: $it" })
+              .joinToString(" | ")
       logger.info(
           "[AIFormAssistant] AI requested CodBi details for: {} — rerunning with full compact API",
-          requestedDetails.elements.ifEmpty { listOf("<unspecified>") }.joinToString(", "))
+          namedFor)
       if (!requestedDetails.applicabilityReport.isNullOrBlank()) {
         logger.info(
             "[AIFormAssistant] AI CodBi applicability report (detail request): {}",
@@ -442,6 +473,10 @@ class AIFormAssistant : IPluginServletAction {
             return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
           }
     } else {
+      if (requestedDetails != null) {
+        logger.info(
+            "[AIFormAssistant] AI sent an EMPTY need_codbi_details signal (no elements, no widgets) — skipping the full-API rerun; falling through to the normal handling below")
+      }
       // If the AI created formcycle widgets in pass-1 WITHOUT requesting their details first, their
       // exact JSON templates were never provided and the AI hallucinated the persist structure.
       // Force pass-2 to include those widget templates so the widgets are rebuilt correctly.
@@ -1772,16 +1807,29 @@ class AIFormAssistant : IPluginServletAction {
       // Split camelCase names into words (e.g. "tfAntragstellerPLZ" -> [tf, antragsteller, plz]) so
       // unrelated names (e.g. "tfReport") never match by accident.
       val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }
+      // A postal-code field is identified LANGUAGE-INDEPENDENTLY by its datatype: "plzDE" can only
+      // mean a (German) postal code no matter what happened to the field's name or label.
+      val datatype = props.get("datatype")?.asString ?: ""
+      val label = (props.get("label")?.asString ?: "").lowercase()
       val cls =
           when {
-            words.any { it in setOf("street", "strasse", "straße") } ->
-                "CodBi_OpenPLZ_AC_SET_Street"
-            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ->
-                "CodBi_OpenPLZ_AC_SET_BuildingNumber"
+            datatype.equals("plzDE", true) -> "CodBi_OpenPLZ_AC_SET_PLZ"
+            words.any { it in setOf("street", "strasse", "straße") } ||
+                setOf("street", "strasse", "straße", "adresse", "address").any {
+                  label.contains(it)
+                } -> "CodBi_OpenPLZ_AC_SET_Street"
+            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ||
+                setOf("hausnummer", "hausnr", "building", "building number", "house").any {
+                  label.contains(it)
+                } -> "CodBi_OpenPLZ_AC_SET_BuildingNumber"
             words.any {
               it in setOf("postal", "postalcode", "postleitzahl", "plz", "zip", "zipcode")
-            } -> "CodBi_OpenPLZ_AC_SET_PLZ"
-            words.any { it in setOf("locality", "city", "ort", "wohnort") } ->
+            } ||
+                setOf("postleitzahl", "plz", "postal", "postal code", "zip", "zipcode").any {
+                  label.contains(it)
+                } -> "CodBi_OpenPLZ_AC_SET_PLZ"
+            words.any { it in setOf("locality", "city", "ort", "wohnort") } ||
+                setOf("city", "ort", "wohnort", "locality", "town").any { label.contains(it) } ->
                 "CodBi_OpenPLZ_AC_SET_Locality"
             else -> null
           }

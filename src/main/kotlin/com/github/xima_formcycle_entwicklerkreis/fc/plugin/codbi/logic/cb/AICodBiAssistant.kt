@@ -3228,12 +3228,21 @@ class AICodBiAssistant : IPluginServletAction {
     // `designed_text,svg,custom_js` blocks (see formcycle-widgets.md), and pass-2 ships that
     // section
     // gated with the same keep set. [DesignedTextDetector] force-adds `XSpan` to the requested
-    // widgets whenever the request talks about design / animation / illustration — so the SAME
-    // signal must also keep those blocks, otherwise that force-in would deliver a section whose
-    // rules were just gated away. Using one detector for both guarantees they can never disagree.
+    // widgets whenever the request talks about design / animation / illustration, so the SAME
+    // signal must keep the `designed_text` block (the designed/interactive-text rules) AND the
+    // `designed_text,svg,custom_js` mechanism block (kept whenever ANY of those three tags is in
+    // the set). It must NOT, however, also keep the dedicated `svg` illustration half: a request
+    // for a designed / interactive / ANIMATED text (which matches
+    // [DesignedTextDetector.wantsDesignedTextOrIllustration] via hints like "design", "interaktiv",
+    // "animier") is not an ILLUSTRATION request, and force-including `svg` would keep the large
+    // illustration rules + the pass-2 illustration checklist (~20 KB of worked examples and the
+    // forbidden-composition list) for a request that never asked for a drawing. `svg` therefore
+    // stays gated purely by its deterministic keyword detector (and an AI `svg` held to the same
+    // detector by [PromptSectionGate.DETECTOR_REQUIRED_TAGS]) — only designed `text` semantics are
+    // force-included here.
     val sectionKeepTags =
         if (DesignedTextDetector.wantsDesignedTextOrIllustration(prompt))
-            gatedKeepTags + setOf("designed_text", "svg")
+            gatedKeepTags + setOf("designed_text")
         else gatedKeepTags
     val baseSystemPrompt = buildFormSystemPrompt(useCodbi, useBuergerserviceNaming, sectionKeepTags)
     val systemPrompt =
@@ -4075,10 +4084,43 @@ class AICodBiAssistant : IPluginServletAction {
       }
     } else {
       val requestedDetails = extractCodbiDetailsRequest(cleaned)
-      if (requestedDetails != null) {
+      // A need_codbi_details signal that names NOTHING (empty "elements" AND empty "widgets") is an
+      // unspecified demand (see CodbiDetailsDemandPolicy). Re-running would re-send the full
+      // compact
+      // API purely as a blind pass — which the fall-through branch below already performs with the
+      // correct (recovery) semantics. Treating the blank signal as "no details requested" avoids a
+      // redundant full-API inference while keeping every recovery path (created widgets / applied /
+      // considered / blind pass) intact. Named demands still rerun exactly as before.
+      val detailsRequested =
+          requestedDetails != null &&
+              CodbiDetailsDemandPolicy.isSpecified(
+                  requestedDetails.elements, requestedDetails.widgets)
+      if (detailsRequested) {
+        // NOTE: the signal has two distinct vocabularies — "elements" are the CodBi FUNCTION ids
+        // the
+        // model wants (e.g. CodBi.OpenPLZ.Address), while "widgets" are the Formcycle WIDGET
+        // templates it wants (e.g. XSpan, XCheckbox). Label them separately so a widgets-only
+        // demand cannot be mistaken for a blank/unspecified one. A sid-less, widget-less signal is
+        // already rejected by CodbiDetailsDemandPolicy, so this branch always names at least one of
+        // the two groups.
+        val codbiPart =
+            requestedDetails.elements
+                .filter { it.isNotBlank() }
+                .distinct()
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(", ")
+        val widgetPart =
+            requestedDetails.widgets
+                .filter { it.isNotBlank() }
+                .distinct()
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(", ")
+        val namedFor =
+            listOfNotNull(codbiPart?.let { "codbi: $it" }, widgetPart?.let { "widgets: $it" })
+                .joinToString(" | ")
         logger.info(
             "[AICodBiAssistant] AI requested CodBi details for: {} â€” rerunning with full compact API",
-            requestedDetails.elements.ifEmpty { listOf("<unspecified>") }.joinToString(", "))
+            namedFor)
         if (!requestedDetails.applicabilityReport.isNullOrBlank()) {
           logger.info(
               "[AICodBiAssistant] AI CodBi applicability report (detail request): {}",
@@ -4086,6 +4128,10 @@ class AICodBiAssistant : IPluginServletAction {
         }
         cleaned = rerunWithCodbiDetails(requestedDetails.elements, requestedDetails.widgets)
       } else {
+        if (requestedDetails != null) {
+          logger.info(
+              "[AICodBiAssistant] AI sent an EMPTY need_codbi_details signal (no elements, no widgets) — skipping the full-API rerun; falling through to the normal handling below")
+        }
         // If the AI created formcycle widgets in pass-1 WITHOUT requesting their details first,
         // their
         // exact JSON templates were never provided and the AI hallucinated the persist structure.
@@ -5394,16 +5440,29 @@ class AICodBiAssistant : IPluginServletAction {
       // Split camelCase names into words (e.g. "tfPostalCode" -> [tf, postal, code]) and match the
       // address-part tokens so unrelated names (e.g. "tfReport") never match by accident.
       val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }
+      // A postal-code field is identified LANGUAGE-INDEPENDENTLY by its datatype: "plzDE" can only
+      // mean a (German) postal code no matter what happened to the field's name or label.
+      val datatype = props.get("datatype")?.asString ?: ""
+      val label = (props.get("label")?.asString ?: "").lowercase()
       val cls =
           when {
-            words.any { it in setOf("street", "strasse", "straße") } ->
-                "CodBi_OpenPLZ_AC_SET_Street"
-            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ->
-                "CodBi_OpenPLZ_AC_SET_BuildingNumber"
+            datatype.equals("plzDE", true) -> "CodBi_OpenPLZ_AC_SET_PLZ"
+            words.any { it in setOf("street", "strasse", "straße") } ||
+                setOf("street", "strasse", "straße", "adresse", "address").any {
+                  label.contains(it)
+                } -> "CodBi_OpenPLZ_AC_SET_Street"
+            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ||
+                setOf("hausnummer", "hausnr", "building", "building number", "house").any {
+                  label.contains(it)
+                } -> "CodBi_OpenPLZ_AC_SET_BuildingNumber"
             words.any {
               it in setOf("postal", "postalcode", "postleitzahl", "plz", "zip", "zipcode")
-            } -> "CodBi_OpenPLZ_AC_SET_PLZ"
-            words.any { it in setOf("locality", "city", "ort", "wohnort") } ->
+            } ||
+                setOf("postleitzahl", "plz", "postal", "postal code", "zip", "zipcode").any {
+                  label.contains(it)
+                } -> "CodBi_OpenPLZ_AC_SET_PLZ"
+            words.any { it in setOf("locality", "city", "ort", "wohnort") } ||
+                setOf("city", "ort", "wohnort", "locality", "town").any { label.contains(it) } ->
                 "CodBi_OpenPLZ_AC_SET_Locality"
             else -> null
           }
@@ -21364,20 +21423,13 @@ class AICodBiAssistant : IPluginServletAction {
       sectionKeepTags: Set<String>
   ): String {
     if (widgetIds.isEmpty()) {
-      // Full-widget fallback — scrub out widgets not allowed for the current request, then gate the
-      // section-tagged XSpan sub-blocks exactly like the requested path does.
-      val full =
-          PromptSectionGate.applySectionGates(
-              FormcycleElementFilter.scrubWidgetSections(
-                  PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: ""),
-              sectionKeepTags)
-      logger.info(
-          "[AICodBiAssistant] Pass-2 widget details: FULL reference ({} chars, XSpan section included: {}, designed-text rules included: {}, illustration checklist included: {})",
-          full.length,
-          full.contains("## XSpan"),
-          full.contains("RICH / DESIGNED / INTERACTIVE TEXT"),
-          full.contains("FORBIDDEN COMPOSITIONS"))
-      return full
+      // Name-index fallback — the model asked for no widget details, so shipping the FULL
+      // `formcycle.widgets` reference (~36 KB ≈ 12k tokens) would be dead weight. Instead send a
+      // condensed NAME INDEX: every allowed widget name verbatim (so one is never invented) plus an
+      // instruction to pull the detailed, pre-gated template of exactly the widgets it needs via
+      // `need_codbi_details`. The XSpan designed-text/illustration rules therefore only reach the
+      // build pass if the model actually requests XSpan (or the DesignedTextDetector forces it in).
+      return buildWidgetNameIndex(em)
     }
     val all = PromptLoader.loadSectionMap(em, "formcycle.widgets.")
     val sb = StringBuilder("\nFORMCYCLE WIDGET DETAILS (requested)\n")
@@ -21414,6 +21466,20 @@ class AICodBiAssistant : IPluginServletAction {
         sb.contains("FORBIDDEN COMPOSITIONS"))
     return sb.toString().trimEnd()
   }
+
+  /**
+   * Builds the condensed FORMCYCLE WIDGET NAME INDEX used as the fallback when [widgetIds] is empty
+   * (the model asked for no widget details).
+   *
+   * The full `formcycle.widgets` reference is ~36 KB (≈ 12k tokens) of per-widget build prose. For
+   * a pass that requested nothing it is dead weight; what the AI actually needs is the
+   * AUTHORITATIVE list of widget names — so it never invents one — plus the instruction to pull the
+   * detailed, section-gated template of exactly the widgets it needs via `need_codbi_details`. See
+   * [FormcycleElementFilter.renderWidgetNameIndex].
+   */
+  private fun buildWidgetNameIndex(em: EntityManager): String =
+      FormcycleElementFilter.renderWidgetNameIndex(
+          PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
 
   // region Clarification
 
@@ -21692,32 +21758,24 @@ class AICodBiAssistant : IPluginServletAction {
           if (!formElements.isNullOrBlank()) "\nFORM ELEMENTS available: $formElements\n" else ""
       val formStructureBlock =
           if (!formStructureContext.isNullOrBlank()) {
-            "\nCURRENT FORM STRUCTURE (pages, fieldsets, containers and their titles/names — use it " +
-                "to resolve references to existing elements like \"the two fieldsets on the first " +
-                "page\"):\n" +
+            "\nCURRENT FORM STRUCTURE (pages/fieldsets/containers + labels — use to resolve references " +
+                "to existing elements):\n" +
                 formStructureContext +
                 "\n"
           } else ""
       // Digest of every XSpan's readable TEXT content (from `properties.rtevalue`), paired with the
-      // element's name. XSpans are design widgets and therefore are NOT in FORM ELEMENTS (which
-      // only
-      // lists interactive inputs/buttons) and their HTML is omitted from the condensed FORM
-      // STRUCTURE
-      // above. Without it the clarification AI could not see that a described piece of content
-      // (e.g.
-      // "der Rechner" / "der Text zum Rechner") already lives inside a span and wrongly asked WHICH
-      // existing element holds it. With it, the AI locates the element by its content itself and
-      // answers NO_CLARIFICATION.
+      // element's name. XSpans are design widgets, NOT in FORM ELEMENTS, and their HTML is omitted
+      // from the condensed FORM STRUCTURE. Without this digest the AI wrongly asks WHICH existing
+      // element holds a described piece of content; with it, the AI locates the element by its
+      // content and answers NO_CLARIFICATION. NEVER truncate the digest below.
       val textSpanContentBlock =
           if (!textSpanContentContext.isNullOrBlank()) {
-            "\nEXISTING TEXT CONTENT INSIDE DESIGN SPANS (XSpan) — this is the span's technical `name` " +
-                "followed by its FULL readable text (each entry is \"- XSpan '<name>' contains text: \" + that " +
-                "span's entire cleaned text, up to a very large cap). When the request refers to content that " +
-                "is already IN the form (e.g. \"der Rechner\", \"der Text zum Rechner\", \"die Wettervorhersage\"), " +
-                "the described text IS in one of these entries whenever the content lives in a design span — scan " +
-                "the FULL text of every entry, find the span whose content contains the described thing, and target " +
-                "that EXACT span by its name. NEVER ask the user which existing element contains it; answer " +
-                "NO_CLARIFICATION unless a genuinely NEW value is missing:\n" +
+            "\nEXISTING TEXT CONTENT INSIDE DESIGN SPANS (XSpan) — each entry is the span's technical `name` " +
+                "followed by its FULL readable text. When the request refers to content already IN the form " +
+                "(e.g. \"der Rechner\", \"der Text zum Rechner\", \"die Wettervorhersage\"), scan the FULL text of " +
+                "every entry, find the span whose content contains the described thing, and target that EXACT span " +
+                "by its name. NEVER ask the user which existing element contains it; answer NO_CLARIFICATION unless " +
+                "a genuinely NEW value is missing:\n" +
                 textSpanContentContext +
                 "\n"
           } else ""
@@ -21773,10 +21831,9 @@ class AICodBiAssistant : IPluginServletAction {
           }
       val completionPagesBlock =
           if (!completionPages.isNullOrBlank()) {
-            "\nAVAILABLE ABSCHLUSSSEITEN (completion pages) for this workflow — when the request needs a success/failure " +
-                "Abschlussseite (e.g. FC_DOI_INIT successPage/failurePage, FC_SHOW_TEMPLATE), ask the user to PICK ONE BY " +
-                "NAME from this list (offer the names as multiple-choice options). NEVER ask for a target URL/\"Ziel-URL\" " +
-                "and NEVER ask for a free-text page identifier:\n" +
+            "\nAVAILABLE ABSCHLUSSSEITEN (completion pages) — when a success/failure Abschlussseite is needed " +
+                "(FC_DOI_INIT successPage/failurePage, FC_SHOW_TEMPLATE), ask the user to PICK ONE BY NAME from this list " +
+                "(multiple-choice options). NEVER ask for a target URL/\"Ziel-URL\" or a free-text page identifier:\n" +
                 completionPages +
                 "\n"
           } else ""
@@ -21788,11 +21845,10 @@ class AICodBiAssistant : IPluginServletAction {
           } else ""
       val workflowMailsBlock =
           if (!workflowMails.isNullOrBlank()) {
-            "\nEXISTING WORKFLOW MAIL NODES — the workflow of the current form ALREADY sends these mails " +
-                "(recipient(s), subject, sender). When the user refers to the recipient/sender/subject of an " +
-                "already-sent mail — e.g. \"die gleiche E-Mail-Adresse, an die bereits eine Mail geschickt wird\", " +
-                "\"the same address a mail is already sent to\", \"wie bei der letzten Mail\" — REUSE that value " +
-                "from this list and do NOT ask for it:\n" +
+            "\nEXISTING WORKFLOW MAIL NODES — the current form's workflow ALREADY sends these mails (recipient(s), " +
+                "subject, sender). When the user means the recipient/sender/subject of an already-sent mail (e.g. \"die " +
+                "gleiche E-Mail-Adresse, an die bereits eine Mail geschickt wird\", \"wie bei der letzten Mail\"), REUSE " +
+                "that value from this list and do NOT ask for it:\n" +
                 workflowMails +
                 "\n"
           } else ""

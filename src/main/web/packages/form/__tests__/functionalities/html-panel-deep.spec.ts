@@ -571,10 +571,11 @@ describe("HTML_Panel functionality — deep coverage", () => {
       expect((panelP as any).CodBi_HTML_Panel_Folded).toBe(false);
     });
 
-    it("prevents submission when a folded panel's field stays hidden after unfold (hidden ancestor wrapper)", () => {
+    it("allows submission when a folded panel's field stays hidden after unfold (hidden ancestor wrapper)", () => {
       // Simulates a FormCycle ancestor (e.g. an outer container) that keeps `display:none` even
-      // though the CodBi panel itself is unfolded. Such a field must still block submission,
-      // otherwise it would slip through and the form would be sent.
+      // though the CodBi panel itself is unfolded. The field is NOT actually gated by the fold — it is
+      // hard-hidden by the FormCycle wrapper, so it can never be seen or filled. Blocking submission on
+      // it forever would deadlock the form. It must therefore NOT block submission.
       const outerHidden = document.createElement("div");
       outerHidden.id = "outerHidden";
       outerHidden.style.display = "none";
@@ -607,8 +608,10 @@ describe("HTML_Panel functionality — deep coverage", () => {
         }
       }
 
-      expect(result).toEqual(expect.objectContaining({ preventSubmission: true }));
+      // The folded panel is still unfolded (so the user sees it), but the still-hidden field must
+      // not block submission.
       expect((panel as any).CodBi_HTML_Panel_Folded).toBe(false);
+      expect(result).toEqual(expect.objectContaining({ preventSubmission: false }));
     });
 
     it("allows submission when an empty required field is hidden by a Formcycle property (not in a folded panel)", () => {
@@ -709,6 +712,35 @@ describe("HTML_Panel functionality — deep coverage", () => {
 
       expect(result).toEqual({ valid: false });
       expect((panel as any).CodBi_HTML_Panel_Folded).toBe(false);
+    });
+
+    it("validator begin does NOT force failure for a folded field that stays hidden in a hidden ancestor wrapper", () => {
+      // A field that remains hidden (hard-hidden by a FormCycle wrapper) even after its CodBi panel is
+      // unfolded can never be seen or filled. Forcing a validation failure on it would deadlock every
+      // submit, so the validator "begin" callback must NOT force a failure for such a field.
+      const outerHidden = document.createElement("div");
+      outerHidden.style.display = "none";
+      document.body.appendChild(outerHidden);
+
+      const { panel } = createPanelDOM();
+      const input = document.createElement("input") as HTMLInputElement;
+      input.setAttribute("aria-required", "true");
+      input.setAttribute("data-name", "fieldFoldedHiddenWrapper");
+      input.value = "";
+      panel.appendChild(input);
+      outerHidden.appendChild(panel);
+
+      HTML_Panel.functionality({ folded: "true" }, panel);
+
+      const beginCalls = (globalThis as any).xm_validator.on.mock.calls.filter((call: any[]) => call[0] === "begin");
+      expect(beginCalls.length).toBeGreaterThan(0);
+      const beginCallback = beginCalls[beginCalls.length - 1][1];
+
+      HTML_Panel.submissionInProgress = true;
+      const result = beginCallback({ items: [], silent: false, type: "main" });
+
+      // No forced failure for a field that can never be revealed by unfolding.
+      expect(result).toBeUndefined();
     });
 
     it("validator begin does NOT unfold a folded panel when no submission is in progress (blur)", () => {

@@ -302,4 +302,35 @@ class PromptSectionGateTest {
     assertTrue(gated.contains("FLAT ITEMS WITH PROPERTY-LEVEL REFERENCES"), "flat-items must stay")
     assertTrue(gated.length < text.length, "gating must actually shorten the prompt")
   }
+
+  @Test
+  fun `the designed-text and svg blocks are split so a css-only design request drops the illustration rules`() {
+    // Lever 1 (the immediate next step): the structure core used to carry ONE block tagged
+    // `designed_text,svg`, so a CSS-only design request kept the illustration rules through the
+    // `designed_text` half. The block is now split into a `designed_text` part and an `svg` part.
+    val resource =
+        "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md"
+    val text =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(resource)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("bundled $resource not found on the classpath")
+    val designedTextMarker = "RICH / DESIGNED / INTERACTIVE TEXT — DECISION RULES"
+    val illustrationMarker = "ILLUSTRATION — DECISION RULE"
+    // A CSS-only / animation design request keeps only the designed-text part ...
+    val cssOnly = PromptSectionGate.applySectionGates(text, setOf("designed_text"))
+    assertTrue(cssOnly.contains(designedTextMarker), "the designed-text rules must stay")
+    assertFalse(cssOnly.contains(illustrationMarker), "the illustration rules must be dropped")
+    // ... an illustration request keeps only the svg part ...
+    val illustration = PromptSectionGate.applySectionGates(text, setOf("svg"))
+    assertFalse(
+        illustration.contains(designedTextMarker), "the designed-text rules must be dropped")
+    assertTrue(illustration.contains(illustrationMarker), "the illustration rules must stay")
+    // ... and a request needing both still gets both.
+    val both = PromptSectionGate.applySectionGates(text, setOf("designed_text", "svg"))
+    assertTrue(both.contains(designedTextMarker), "the designed-text rules must stay")
+    assertTrue(both.contains(illustrationMarker), "the illustration rules must stay")
+  }
 }

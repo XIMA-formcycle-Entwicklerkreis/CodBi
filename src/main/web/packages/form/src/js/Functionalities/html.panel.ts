@@ -642,15 +642,6 @@ export class HTML_Panel {
         setTimeout(() => {
           HTML_Panel.submissionInProgress = false;
         }, 0);
-        // #region Diagnostic logging (temporary).
-        const submitParams = params as { submissionBlocked?: boolean };
-        window.codbi?.reportInfo?.(
-          `HTML.Panel submit handler: submissionBlocked=${submitParams.submissionBlocked}, ` +
-            `aria-required=${document.querySelectorAll('[aria-required="true"]').length}, ` +
-            `aria-invalid=${document.querySelectorAll('[aria-invalid="true"]').length}, ` +
-            `folded-panels=${document.querySelectorAll(".CodBi.--HTML_Panel.--folded").length}`,
-        );
-        // #endregion Diagnostic logging (temporary).
         // #region Untag missing required fields.
         for (const untag of document.querySelectorAll(".CodBi_HTML_Panel_MissingRequiredField")) {
           untag.classList.remove("CodBi_HTML_Panel_MissingRequiredField");
@@ -783,11 +774,18 @@ export class HTML_Panel {
             continue;
           }
 
-          // A field that is empty-required or invalid and is either visible or sits inside a folded
-          // panel must block submission. Folded-panel fields are skipped by the Formcycle validator
-          // (they are hidden), so without this proactive check such a field would slip through and
-          // the form would be sent.
+          // Unfold folded ancestor panels so the field becomes visible and the user can fill it.
           HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
+
+          // After unfolding, the field MUST have become visible for it to count as genuinely gated by
+          // a folded panel. If it is STILL hidden, it is not collapsed by the CodBi panel but hard-hidden
+          // by a Formcycle property or a hidden ancestor wrapper (e.g. hidden-if). Formcycle handles
+          // such fields itself, so they must NOT block submission — otherwise a field that can never be
+          // seen or filled would keep blocking every submit and deadlock the form. Genuinely folded
+          // fields are revealed by unfoldPanelAncestors, so they still block below as intended.
+          if (isDisplayNone(candidate as HTMLElement)) {
+            continue;
+          }
 
           let checkedSelection = false;
 
@@ -814,11 +812,6 @@ export class HTML_Panel {
             (candidate as HTMLElement).classList.add("CodBi_HTML_Panel_MissingRequiredField");
 
             window.codbi.triggers?.invalidSubmission?.();
-            window.codbi?.reportInfo?.(
-              `HTML.Panel submit handler: blocking submission for field ${
-                (candidate as HTMLElement).getAttribute("data-name") ?? (candidate as HTMLElement).id
-              } (requiredEmpty=${isEmptyRequired}, invalid=${isMarkedInvalid}, displayNone=${isDisplayNone(candidate as HTMLElement)})`,
-            );
             return { preventSubmission: true };
           }
         }
@@ -892,11 +885,13 @@ export class HTML_Panel {
 
               if (hasFoldedPanelAncestor(candidate as HTMLElement)) {
                 HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
-                window.codbi?.reportInfo?.(
-                  `HTML.Panel validator: forcing validation failure for hidden/folded field ${
-                    candidate.getAttribute("data-name") ?? candidate.id
-                  }`,
-                );
+
+                // If the field is STILL hidden after unfolding, it is not collapsed by the CodBi panel
+                // but hard-hidden by a Formcycle property/anonymous wrapper. A field that can never be
+                // seen or filled must not force the whole validation to fail (which deadlocks submit).
+                if (isDisplayNone(candidate as HTMLElement)) {
+                  continue;
+                }
                 return { valid: false };
               }
             }

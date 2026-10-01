@@ -146,14 +146,14 @@ Return the form JSON normally. Include a top-level "_codbiApplicability" field w
 - formElementsProcessed: number of form elements processed
 - codbiElementsEvaluated: number of CodBi elements evaluated
 - considered: [{"id":"CodBi.ID","targets":["formElementId",...]}] — functionality IDs with form element ids they could apply to
-- applied: [{"id":"CodBi.ID","targets":["formElementId",...]}] — standard configuration names ONLY (e.g., Holistic.Matomo.Tracking)
+- applied: [{"id":"CodBi.ID","targets":[]}] — ONLY the footprint-less HOLISTIC standard configurations, each with an EMPTY targets array: Holistic.CSS.Standard, Holistic.Matomo.Tracking, Holistic.Media.Input.Speech, Holistic.Media.Input.Speech.Whisper. Do NOT list any footprint-bearing CodBi function here — the server derives those automatically from the before/after form diff.
 - skipped: [{"id":"CodBi.ID","targets":["formElementId",...],"reason":"..."}]
 - codbiVerdict: ALWAYS include exactly one of these values:
   - "none" — you evaluated the CodBi elements and NONE is applicable to this form.
   - "candidates" — at least one CodBi element could apply (listed in considered).
   - "applied" — you applied one or more CodBi elements.
 
-The server will handle functionality application in a second pass if candidates are found. This metadata field is removed server-side before the form is applied.
+The server will handle functionality application in a second pass if candidates are found. The server derives the full list of applied footprint-bearing functions automatically from the form diff, so you do NOT need to enumerate them in "applied" — only the 4 footprint-less Holistic standard activations above belong there (they leave no trace in the form JSON and must be reported explicitly). This metadata field is removed server-side before the form is applied.
 For each listed element, use your judgment to decide if a functionality is useful for a field or if it applies standalone (no field needed). Consider BOTH whether it could benefit AND whether it would be inappropriate.
 
 ## CRITICAL — STRICT VALID JSON OUTPUT
@@ -439,7 +439,7 @@ When the request does NOT say WHERE a new element shall go, the FIRST PAGE is me
 
 Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; an input field that must NOT allow certain characters (character blacklist, e.g. "nicht erlaubt: e$%") → HTML.Input.REGEX; a multi-line text field that should be a rich text / WYSIWYG editor (e.g. "write a story with a rich text editor") → HTML.Input.TinyMCE; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set an attribute / visual style of an element (e.g. title, opacity) → HTML.SETAttribute; console output → Sys.Log.Console; display/show/view the columns of a Formcycle DataQuery as a table (e.g. "add a table that views the columns Alter, Name of HolaQuery", "zeige die Spalten Alter, Name der Abfrage HolaQuery als Tabelle") → DQ.Table.View. When one request combines several of these on the same element, apply ALL matching functionalities in one comma-separated data-cb-func.
 
-CRITICAL — Sys.Log.Console is a STANDALONE functionality that does NOT need any existing form element. When the prompt asks to output/print/log/show anything to the browser console, ALWAYS include Sys.Log.Console in the considered/applied arrays AND create a NEW **invisible XSpan** (the plain-text/HTML element of Formcycle — NEVER invent class names like "XText" or "XButton"; XTextField is an INPUT element, not plain text; the log output "XItem missing 'XText' using XDefault" proves invented names do NOT render) at the top of the first page. List it as a separate item in the root "items" array with EXACTLY this shape:
+CRITICAL — Sys.Log.Console is a STANDALONE functionality that does NOT need any existing form element. When the prompt asks to output/print/log/show anything to the browser console, ALWAYS include Sys.Log.Console in "considered" (it is footprint-bearing, so the server derives it from the form diff — do NOT list it in "applied") AND create a NEW **invisible XSpan** (the plain-text/HTML element of Formcycle — NEVER invent class names like "XText" or "XButton"; XTextField is an INPUT element, not plain text; the log output "XItem missing 'XText' using XDefault" proves invented names do NOT render) at the top of the first page. List it as a separate item in the root "items" array with EXACTLY this shape:
 
 ```
 {

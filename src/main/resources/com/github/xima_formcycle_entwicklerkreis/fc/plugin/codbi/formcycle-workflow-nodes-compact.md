@@ -6,6 +6,77 @@ Output format: Output EITHER a single JSON object (for ONE workflow lane) OR an 
 
 LANGUAGE — write taskName, ALL node names/labels, and the endpointState label in the SAME language as the user's request (a German prompt → German labels, e.g. "Zeilen als JSON in Hulu schreiben", and the endpoint "Empfangen" instead of "Received"; an English prompt → English). Never fall back to a default language.
 
+CRITICAL — output rules for form element identifiers (technicalId vs displayText):
+  FORM ELEMENTS entries have: 'technicalId' (always), 'displayText' (visible label/text), 'type' (e.g. XTextField, BUTTON),
+  and optionally: 'required' (boolean), 'placeholder', 'options' (for XSelect — array of {text,value}), 'actionPage' (for BUTTON — e.g. 'submit', 'submitNoCheck').
+  'technicalId' is an ARBITRARY internal database key — it can look like anything (e.g. 'tfHurra', 'x9q', 'abc123').
+  'displayText' is what the user sees in the browser.
+  The user's prompt refers to 'displayText'. Find the matching element, then copy its 'technicalId' EXACTLY.
+  NEVER use a 'displayText' value in the output. NEVER guess or invent a technicalId.
+  Even if the 'technicalId' looks wrong or random, copy it character-for-character.
+  Elements with type 'BUTTON' are individual clickable buttons. For triggerParams.buttonName always use
+  the 'technicalId' of the individual BUTTON whose 'displayText' matches — never use a container's id.
+  BUTTON entries may have 'actionPage' (e.g. 'submit', 'submitNoCheck', 'next', 'prev') — use this to
+  identify which button submits the form when the user says 'submit button', 'Absende-Button', etc.
+  NO-MATCH RULE: If no BUTTON in FORM ELEMENTS matches the description, use triggerParams:{} (matches any
+  button) instead of inventing a buttonName. NEVER construct names like 'btnSubmitOnP2' or similar.
+
+AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax, no curly braces):
+  FORM RECORD:
+    [%\$PROCESS_ID%] — form record process ID (string)
+    [%\$RECORD_ID%] — form record database ID (numeric)
+    [%\$RECORD_SUBJECT%] — form record subject/title
+    [%\$RECORD_READ%] — true/false whether record has been read
+    [%\$RECORD_UNREAD%] — true/false whether record is unread
+    [%\$RECORD_ATTR%] or [%\$RECORD_ATTR.customKey%] — custom record attributes
+    [%\$SOURCE_SERVER%] — source server name
+    [%\$SOURCE_SERVER_URL%] — source server URL
+  WORKFLOW STATUS:
+    [%\$STATUS_ID%] — current workflow status ID
+    [%\$STATUS_TYPE%] — current workflow status type
+    [%\$STATUS_NAME%] — current workflow status name
+  PROJECT:
+    [%\$PROJECT_ID%] — project ID
+    [%\$PROJECT_ALIAS%] — project alias
+    [%\$PROJECT_NAME%] — project name
+    [%\$PROJECT_TITLE%] — project title
+    [%\$PROJECT_DESCRIPTION%] — project description
+  CLIENT:
+    [%\$CLIENT_ID%] — client/mandant ID
+    [%\$COUNTER_CLIENT%] or [%\$COUNTER_CLIENT.someKey%] — client counter
+    [%\$DEFAULT_MAIL_SENDER%] — system default mail sender address
+    [%\$CLIENT_MAIL_SENDER%] — client mail sender address
+    [%\$DEFAULT_MAIL_SENDERNAME%] — system default mail sender name
+    [%\$CLIENT_MAIL_SENDERNAME%] — client mail sender name
+  USER DATA (supports JSONPath, e.g. [%\$USER.firstName%]):
+    [%\$USER%] — current user data (JSON)
+    [%\$INITIAL_USER%] — initial submitter data (JSON)
+    [%\$LAST_USER%] — last editor data (JSON)
+  LINKS:
+    [%\$FORM_LINK%] — link to the form
+    [%\$FORM_REVIEW_LINK%] — link to review the form record
+    [%\$FORM_PROCESS_LINK%] — link to the process view (the current state of the record) — use DIRECTLY for "link to the form / current state" in a mail body
+    [%\$FORM_INVITE_LINK%] — invitation link
+    [%\$FORM_VERIFY_LINK%] — DOI email verification link
+    [%\$FORM_VERIFY_PAGE_LINK%] — DOI verification page link
+    [%\$FORM_INBOX_LINK%] — link to the form inbox
+    [%\$FORM_INBOX_NAME%] — form inbox name
+    [%\$FORM_PROCESS_HTML%] — process protocol as HTML
+    [%\$PORTAL_LINK%] — user portal link
+    [%\$PORTAL_FORM_RECORDS_LINK%] — portal form records link
+  WORKFLOW ERRORS (prefix: CURRENT_, LATEST_, or LAST_):
+    [%\$CURRENT_ERROR%] — the thrown error object
+    [%\$CURRENT_ERROR_CODE%] — the error code/type
+    [%\$CURRENT_ERROR_MESSAGE%] — the error message
+    [%\$CURRENT_ERROR_NODE_NAME%] — name of the node that threw the error
+    [%\$CURRENT_ERROR_NODE_TYPE%] — type of the node that threw the error
+    (same with LATEST_ or LAST_ prefix, e.g. [%\$LATEST_ERROR_MESSAGE%]). For an error-notification mail use the LATEST_ variants, NEVER CURRENT_.
+    Optional: append (index) for a specific exception, e.g. [%\$CURRENT_ERROR(0)%]
+  APPOINTMENTS:
+    [%\$APPOINTMENT%] — appointment data
+    [%\$APPOINTMENT_LIST%] — appointments list (HTML)
+    [%\$APPOINTMENT_LINK%] — appointment booking link
+
 ## Trigger Types
 
 ### FC_FORM_SUBMIT_BUTTON

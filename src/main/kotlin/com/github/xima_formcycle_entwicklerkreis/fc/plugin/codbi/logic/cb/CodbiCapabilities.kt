@@ -286,24 +286,28 @@ internal object CodbiCapabilities {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // PASS-1 CONDENSED VARIANTS
+  // PASS-1 NAME-ONLY VARIANTS
   //
   // Pass-1 ONLY decides what to change and which details to request (see the "NO DIRECT WIDGET
   // CREATION" rule) — the exact JSON specs arrive in pass-2. The same pass-1 prompt ALSO carries
-  // the
-  // decision cores, which already state the decision-critical rules. So pass-1 does not need the
-  // full per-entry build-syntax prose of the catalogs; it needs the element NAMES (to build a
-  // `need_codbi_details` request) plus a one-line "what it is". The variants below keep every
-  // heading and truncate each entry's prose to its first sentence, cutting the two catalogs roughly
-  // in half. The FULL catalogs remain in use everywhere else (pass-2 details, other paths).
+  // the decision cores, which already state the decision-critical rules. So pass-1 does not need
+  // the per-entry prose of the catalogs; it needs the element NAMES (to build a
+  // `need_codbi_details`
+  // request). The variants below keep every heading AND the section PREAMBLE verbatim (the preamble
+  // carries the decision-critical GENERAL RULES — e.g. the widget catalog's "LABELS — never use
+  // generic placeholders such as 'Label'" rule — which must NEVER be dropped) and DROP each entry's
+  // body prose entirely. This is the "NAME-ONLY" step of Lever 2.4: the previous leverage already
+  // truncated every entry to its first sentence; names alone are enough to *request* details, so
+  // the first sentence — which the decision cores already make redundant for choosing — is removed
+  // too. The FULL catalogs remain in use everywhere else (pass-2 details, other paths).
   // ---------------------------------------------------------------------------------------------
 
-  /** CONDENSED [buildSection] for pass-1 (heading + first sentence per element). */
-  fun buildSectionCondensed(): String = condenseEntryBodies(buildSection())
+  /** NAME-ONLY [buildSection] for pass-1 (every heading + preamble, NO per-entry prose). */
+  fun buildSectionCondensed(): String = condenseEntryNames(buildSection())
 
-  /** CONDENSED [buildWidgetsSection] for pass-1 (heading + first sentence per widget). */
+  /** NAME-ONLY [buildWidgetsSection] for pass-1 (every heading + preamble, NO per-widget prose). */
   fun buildWidgetsSectionCondensed(): String =
-      condenseEntryBodies(dropClarificationOnlyParagraphs(buildWidgetsSection()))
+      condenseEntryNames(dropClarificationOnlyParagraphs(buildWidgetsSection()))
 
   /**
    * Removes the widget-catalog PREAMBLE paragraphs that only concern the CLARIFICATION round, which
@@ -359,6 +363,40 @@ internal object CodbiCapabilities {
               else t.lastIndexOf(' ', maxProseChars).takeIf { it > 0 } ?: maxProseChars
           t.substring(0, minOf(cut, t.length)).trimEnd() + " …"
         }
+      }
+    }
+  }
+
+  /**
+   * Name-ONLY variant of [condenseEntryBodies]: keeps every heading (`#` / `##` / `###`) and the
+   * section PREAMBLE verbatim, and DROPS each entry's body prose ENTIRELY (not even its first
+   * sentence).
+   *
+   * Pass-1 uses this for its catalogs (Lever 2.4): names alone let the model build a
+   * `need_codbi_details` request, and the decision cores carried in the same prompt already state
+   * how to choose the right element. The preamble is kept on purpose — it holds the
+   * decision-critical GENERAL RULES (e.g. the widget catalog's "LABELS — never use generic
+   * placeholders such as 'Label'" rule) that must never be dropped.
+   */
+  private fun condenseEntryNames(text: String): String {
+    var inEntry = false
+    return text.lines().joinToString("\n") { line ->
+      val t = line.trim()
+      when {
+        t.isEmpty() -> line
+        t.startsWith("#") -> {
+          // Any heading deeper than the file title (## or ###) starts an ENTRY — the widget catalog
+          // uses `## <WidgetName>`, the elements catalog `### <name>` under `## <Group>`. The
+          // preamble before the first such heading is kept verbatim, and so are all headings; only
+          // the per-entry BODY prose is dropped.
+          inEntry = t.startsWith("##")
+          line
+        }
+        // Keep the preamble (before the first entry heading) verbatim too — it carries the
+        // decision-critical general rules.
+        !inEntry -> line
+        // Inside an entry: the heading is one line above; drop this body line entirely.
+        else -> ""
       }
     }
   }

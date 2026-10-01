@@ -11,8 +11,8 @@ even when NO CodBi element applies. A response that omits it forces the server i
 re-evaluation pass that re-sends the entire CodBi/widget reference — many times the size of your
 whole answer. When nothing applies, emit exactly:
 `"_codbiApplicability": {"codbiVerdict": "none", "considered": [], "applied": [], "skipped": []}`
-When something DOES apply, list it in `applied` / `considered` AND request its exact details with
-`{"status":"need_codbi_details", "elements": [...], "widgets": [...]}` in the SAME response.
+When something DOES apply, list the footprint-bearing function/standard candidates in `considered` AND request its exact details with
+`{"status":"need_codbi_details", "elements": [...], "widgets": [...]}` in the SAME response. Keep `applied` EMPTY unless a FOOTPRINT-LESS holistic standard is activated (see the `_codbiApplicability Report` section): only `Holistic.CSS.Standard` / `Holistic.Matomo.Tracking` / `Holistic.Media.Input.Speech` / `Holistic.Media.Input.Speech.Whisper` ever appear there (each with an EMPTY `targets` array), because the server derives every footprint-bearing applied function from the before/after form diff.
 
 ### 0b. `name` / `id` belong in EVERY item — they are not "unchanged properties"
 

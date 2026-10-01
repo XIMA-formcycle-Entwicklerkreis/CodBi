@@ -1952,6 +1952,23 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] Clarification workflow mail nodes loaded: {} chars",
         clarificationWorkflowMails?.length ?: 0)
+    // Lever 2 (input-token reduction): give the WORKFLOW branch of the clarify round the same
+    // decision-core split the form branch already has. This is a CONDENSED workflow structure
+    // (task name + trigger type + each existing node's name/type in its parent/child tree, NO node
+    // parameters) so a workflow request that references an existing node ("add an approval step
+    // after the 'Freigabe' node", "attach the submit button to node X") can target that EXACT node
+    // instead of asking which one — the clarify round never builds/verifies, so the heavy
+    // parameters are irrelevant. Only workflow/both rounds get it (form-only rounds never reference
+    // workflow nodes). Fail-open: a blank/null structure injects nothing.
+    val clarificationWorkflowStructure: String? =
+        if (intent == "workflow" || intent == "both") {
+          params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()?.let { wid ->
+            buildWorkflowStructureContext(wid, getUserContext(params), condensed = true)
+          }
+        } else null
+    logger.info(
+        "[AICodBiAssistant] Clarification workflow structure (condensed decision core) loaded: {} chars",
+        clarificationWorkflowStructure?.length ?: 0)
     // FORMCYCLE DATASOURCES ("Quellen") configured for the request's client. Injected into BOTH the
     // clarification and the form prompts so the AI uses an EXISTING datasource name for an
     // XSelect's
@@ -2004,6 +2021,27 @@ class AICodBiAssistant : IPluginServletAction {
     // (large) loop body; `clarification` then stays null and the build path continues.
     for (round in 0 until (if (clarifySkipReason != null) 0 else 5)) {
       clarifyRound = round + 1
+      // Lever 1 (input-token reduction): the CLARIFICATION round gets a CONDENSED form-structure
+      // context (element names/labels/titles + the page/fieldset tree, but no per-element
+      // "already configured" flag suffix) — it only resolves references and never builds/verifies,
+      // so the build/validate detail is irrelevant. Chat and pass-1 keep the full context. This is
+      // the decision-core split for the clarify round: it reaches the WORKFLOW branch too (a
+      // workflow request may still reference existing elements, e.g. "when 'Genehmigen' is
+      // clicked"), so both the form and the workflow clarify rounds resolve references against the
+      // same lean core. `buildFormStructureContext` returns null when the persist JSON is blank.
+      val clarifyFormStructureContext =
+          if (intent == "form" || intent == "both" || intent == "workflow") {
+            buildFormStructureContext(
+                params.requestParameters["persist"]?.firstOrNull(), condensed = true)
+          } else null
+      // Lever 1 (input-token reduction): the CLARIFY round also gets CONDENSED form elements — the
+      // per-element `required`/`placeholder`/`actionPage` build/validate config is dropped (the
+      // clarify round never builds or verifies), while `technicalId`/`type`/`displayText` and the
+      // XSelect `options` ({text,value}) mapping are retained so references still resolve and
+      // option-value questions are not re-asked. Chat and pass-1 keep the FULL form elements.
+      // Re-condensed every round because `latestFormElements` may be updated between rounds (e.g.
+      // when the frontend sends a refreshed `formElements` list after the form changed).
+      val clarifyFormElements = condenseFormElementsForClarify(latestFormElements)
       val check =
           try {
             tryClarification(
@@ -2011,8 +2049,9 @@ class AICodBiAssistant : IPluginServletAction {
                 modelId,
                 instance,
                 intent,
-                latestFormElements,
-                formStructureContext,
+                clarifyFormElements,
+                clarifyFormStructureContext,
+                clarificationWorkflowStructure,
                 textSpanContentContext,
                 clarificationContext,
                 chatContext,
@@ -2163,10 +2202,13 @@ class AICodBiAssistant : IPluginServletAction {
                 it.lowercase() != formBaseLang.lowercase() &&
                 it.lowercase() !in existingFormLangs
           }
-      // Base-first full language list when the sequential mode engages (authoritative for the
-      // workflow multilingualize pass below); null = normal single-pass flow.
+      // Base-first full language list when a whole-form translation engages (authoritative for the
+      // workflow multilingualize pass below); null = normal single-pass flow. The translation DELTA
+      // protocol (plan §6B) engages whenever ALL requested languages are new (>= 1) — it replaces
+      // the expensive full-form echo with one slim base view + N small per-language deltas; the
+      // legacy sequential `runFormModification` path is superseded by it.
       val sequentialFormLanguages: List<String>? =
-          if (translationPlan.first && plannedNewLangs.size >= 2) {
+          if (translationPlan.first && plannedNewLangs.size >= 1) {
             (listOf(formBaseLang) + plannedNewLangs).distinct()
           } else {
             null
@@ -2189,20 +2231,11 @@ class AICodBiAssistant : IPluginServletAction {
       val (formJson, applicabilityReport, formTokenUsage) =
           try {
             if (sequentialFormLanguages != null) {
-              runSequentialWholeFormTranslation(
-                  prompt,
-                  persistJson,
-                  plannedNewLangs,
-                  modelId,
-                  instance,
-                  imageParts,
-                  useCodbi,
-                  useBuergerserviceNaming,
-                  clarificationContext,
-                  chatContext,
-                  changeHistoryContext,
-                  matomoStatsContext,
-                  availableDatasourceNames)
+              // Translation DELTA protocol (plan §6B): one slim base-language-only view + N small
+              // per-language completions returning only the translations, spliced into the original
+              // persist. Supersedes the legacy runSequentialWholeFormTranslation full-form echo.
+              runTranslationDelta(
+                  prompt, persistJson, plannedNewLangs, formBaseLang, modelId, instance)
             } else if (repeatTranslationNoop) {
               logger.info(
                   "[AICodBiAssistant] Repeat whole-form translation: every requested language is already on the form — leaving the form unchanged (workflow multilingualize still runs).")
@@ -3172,6 +3205,551 @@ class AICodBiAssistant : IPluginServletAction {
         langs.size,
         finalJson.length)
     return Triple(finalJson, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+  }
+
+  /**
+   * Builds a slim BASE-LANGUAGE-ONLY view of [persistJson] used as the input to the translation
+   * delta completion (the translation-workflow input-token optimization, plan §6B). Unlike the full
+   * form that [runFormModification] ships, this view contains NO structure and NO other language:
+   * it is a flat keyed map of every consumer-visible base-language string, keyed by element/option/
+   * button identity so the AI can return a compact per-language delta instead of re-emitting the
+   * whole form.
+   *
+   * Shape:
+   * ```
+   * { "lang": "<baseLang>",
+   *   "form": { "<baseProperty>": "<base text>", ... },
+   *   "elements": {
+   *     "<elementName>":      { "label": "...", "placeholder": "...", ... },
+   *     "<elementName>/<opt>": { "value": "<base option text>" },
+   *     "<elementName>/<btn>": { "value": "<base label>", "title": "<base title>" } } }
+   * ```
+   *
+   * Returns null when the form has nothing translatable (or cannot be parsed).
+   */
+  private fun buildTranslationDeltaView(persistJson: String?, baseLang: String): String? {
+    if (persistJson.isNullOrBlank()) return null
+    val stripHtml = Regex("<[^>]*>")
+    val cleanStr: (JsonElement?) -> String = { el ->
+      el?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+          ?.asString
+          ?.let { stripHtml.replace(it, "").replace(Regex("\\s+"), " ").trim() } ?: ""
+    }
+    // These are the user-visible base properties the AI may translate in the delta.
+    val CONTENT_PROPS =
+        listOf(
+            "label",
+            "placeholder",
+            "legend",
+            "header",
+            "subheader",
+            "title",
+            "alt",
+            "helptext",
+            "rtevalue",
+            "dynamicAddText",
+            "dynamicDeleteText")
+    // Form-level user-visible base properties that may be translated too (kept alongside title).
+    val FORM_LEVEL_PROPS = listOf("description", "submit_button_label")
+    // Human-readable widget type per className, so the model can pick the right register ("Click
+    // here" button vs. static description text, an image's alt vs. a field label, etc.).
+    fun elementType(className: String): String =
+        when (className) {
+          "XTextField" -> "TextInput"
+          "XTextArea" -> "TextArea"
+          "XSelect" -> "Select"
+          "XCheckBox" -> "CheckBox"
+          "XRadio" -> "RadioGroup"
+          "XFileUpload" -> "Upload"
+          "XDateField" -> "DateField"
+          "XImage" -> "Image"
+          "XSpan" -> "StaticText"
+          "XAppointment" -> "Appointment"
+          "XSubmit" -> "Submit"
+          "XAnonymousSubmit",
+          "XAnonymous" -> "AnonymousSubmit"
+          else -> className.removePrefix("X")
+        }
+    fun headingOf(className: String, props: JsonObject): String {
+      val candidates =
+          when (className) {
+            "XFieldSet" -> listOf("legend", "label", "title")
+            "XPage",
+            "XHeader",
+            "XFooter" -> listOf("label", "title")
+            else -> emptyList()
+          }
+      for (c in candidates) {
+        val v = cleanStr(props.get(c))
+        if (v.isNotBlank()) return v
+      }
+      val n = cleanStr(props.get("name"))
+      return if (n.isNotBlank()) "(name: $n)" else ""
+    }
+    val elementsObj = JsonObject()
+    // A content value that LITERALLY contains HTML tags is rich text (e.g. an XSpan `rtevalue` that
+    // holds a heading + paragraphs + an inline `<style>`/`<script>` block). Rich text MUST be shown
+    // to
+    // the model in FULL so a translation can preserve the markup. Stripping the tags first would
+    // collapse the distinct visible blocks into one unbroken run — observed: the translated
+    // rtevalue
+    // came back with ALL markup deleted and every fragment jammed together (no separators, no
+    // tags),
+    // so the rendered page lost its headings, paragraphs and benefits cards. Plain strings keep the
+    // slim flattened form.
+    fun addProp(props: JsonObject, target: JsonObject, prop: String) {
+      val raw =
+          props.get(prop)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+      if (raw.isNullOrBlank()) return
+      val value =
+          // The value itself is HTML (contains a real `<tag>`/`</tag>`): keep it verbatim so the
+          // model
+          // returns complete translated HTML. Otherwise flatten (strip tags, collapse whitespace).
+          if (raw.contains(Regex("<\\s*[a-zA-Z/]"))) raw
+          else stripHtml.replace(raw, "").replace(Regex("\\s+"), " ").trim()
+      if (value.isNotBlank()) target.add(prop, JsonPrimitive(value))
+    }
+    // [pathSoFar] is the "page › fieldset › ..." heading path (semantic group context, item 1).
+    fun walk(items: JsonArray, pathSoFar: List<String>) {
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val obj = item.asJsonObject
+        val className = obj.get("className")?.asString ?: continue
+        val props = obj.getAsJsonObject("properties") ?: continue
+        if (className == "XButtonList") {
+          val listName = cleanStr(props.get("name"))
+          val buttons = props.getAsJsonArray("buttons") ?: continue
+          for (btn in buttons) {
+            if (!btn.isJsonObject) continue
+            val b = btn.asJsonObject
+            val bName = cleanStr(b.get("name"))
+            val key = if (listName.isNotBlank() && bName.isNotBlank()) "$listName/$bName" else bName
+            if (key.isBlank()) continue
+            val entry = JsonObject()
+            val bValue = cleanStr(b.get("value"))
+            val bTitle = cleanStr(b.get("title"))
+            // Buttons resolve by their own name/action; type/parent context is not needed on a
+            // title-keyed button, but giving the parent path helps with context for the small set
+            // of
+            // button entries that carry only a value. Include it only when a heading exists.
+            if (bValue.isNotBlank()) entry.add("value", JsonPrimitive(bValue))
+            if (bTitle.isNotBlank()) entry.add("title", JsonPrimitive(bTitle))
+            if (pathSoFar.isNotEmpty() && entry.size() > 0) {
+              entry.add("parent", JsonPrimitive(pathSoFar.joinToString(" › ")))
+            }
+            if (entry.size() > 0) elementsObj.add(key, entry)
+          }
+          continue
+        }
+        val name = cleanStr(props.get("name"))
+        if (name.isBlank()) continue
+        val entry = JsonObject()
+        for (prop in CONTENT_PROPS) addProp(props, entry, prop)
+        if (entry.size() > 0) {
+          // Item 3: element type — context only, never echoed into i18n.
+          entry.add("type", JsonPrimitive(elementType(className)))
+          // Item 1: the heading path the element lives under (page › fieldset › ...) — context.
+          if (pathSoFar.isNotEmpty()) {
+            entry.add("parent", JsonPrimitive(pathSoFar.joinToString(" › ")))
+          }
+        }
+        val options = props.getAsJsonArray("options")
+        if (options != null) {
+          for (opt in options) {
+            if (!opt.isJsonObject) continue
+            val o = opt.asJsonObject
+            val optText = cleanStr(o.get("text")).ifBlank { cleanStr(o.get("value")) }
+            if (optText.isBlank()) continue
+            val optEntry = JsonObject().also { it.add("value", JsonPrimitive(optText)) }
+            elementsObj.add("$name/$optText", optEntry)
+          }
+        }
+        if (entry.size() > 0) elementsObj.add(name, entry)
+        // Descend into containers, extending the heading path with this container's own heading.
+        if (className in
+            setOf(
+                "XPage", "XFieldSet", "XContainer", "XContainerInvisible", "XHeader", "XFooter")) {
+          val els = props.getAsJsonArray("elements")
+          if (els != null) {
+            val h = headingOf(className, props)
+            walk(els, if (h.isNotBlank()) pathSoFar + h else pathSoFar)
+          }
+        }
+      }
+    }
+    return try {
+      val root = JsonParser.parseString(persistJson).asJsonObject
+      val out = JsonObject()
+      out.add("lang", JsonPrimitive(baseLang))
+      val formObj = JsonObject()
+      val fTitle = cleanStr(root.get("title"))
+      if (fTitle.isNotBlank()) formObj.add("title", JsonPrimitive(fTitle))
+      // Item 4: keep other form-level user-visible translatable metadata when present.
+      for (p in FORM_LEVEL_PROPS) addProp(root, formObj, p)
+      if (formObj.size() > 0) out.add("form", formObj)
+      val items = root.getAsJsonArray("items")
+      if (items != null) walk(items, emptyList())
+      if (elementsObj.size() > 0) out.add("elements", elementsObj)
+      // Nothing but the language marker → there is nothing to translate.
+      if (out.keySet().size <= 1) return null
+      gson.toJson(out)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not build translation delta view: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Writes a translation delta entry (`translations` = `baseProperty -> translated string`) into
+   * the `i18n[lang]` object of [target]. For a plain element [target] is its `properties` object,
+   * so the i18n lands at `properties.i18n[lang]`; for an option/button [target] is the
+   * option/button object itself, so it lands at `options[i].i18n[lang]` / `buttons[i].i18n[lang]` —
+   * exactly matching Formcycle's storage and the `copyLangI18n` / `overlayNestedI18n` merge
+   * semantics.
+   */
+  private fun writeElementDeltaI18n(target: JsonObject, lang: String, translations: JsonObject) {
+    val tI18n =
+        target.get("i18n")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: JsonObject().also { target.add("i18n", it) }
+    val tLang =
+        tI18n.get(lang)?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: JsonObject().also { tI18n.add(lang, it) }
+    for ((key, value) in translations.entrySet()) {
+      // Never write READ-ONLY CONTEXT keys (type/parent) into i18n even if a model echoes them
+      // back.
+      if (key in TRANSLATION_CONTEXT_KEYS) continue
+      if (value.isJsonPrimitive && value.asJsonPrimitive.isString) {
+        tLang.add(key, value)
+      }
+    }
+  }
+
+  /**
+   * Splices a per-language translation [delta] (as produced by [runTranslationDelta]'s completion)
+   * into the [root] form for language [lang]. The delta keys are element/option/button identities
+   * (resolved by `properties.name`/`id`, and nested `"<name>/<opt>"` / `"<name>/<btn>"` by their
+   * displayed text or value/name); each maps to an object of `baseProperty -> translation` that is
+   * written into the target's `i18n[lang]`. Structural fields of [root] are NEVER touched.
+   */
+  private fun spliceTranslationDelta(root: JsonObject, delta: JsonObject, lang: String) {
+    val formObj = delta.get("form")?.takeIf { it.isJsonObject }?.asJsonObject
+    if (formObj != null) writeElementDeltaI18n(root, lang, formObj)
+    val elements = delta.get("elements")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+    val byKey = LinkedHashMap<String, JsonObject>()
+    fun index(list: JsonArray) {
+      for (el in list) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        val props = item.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+        val id = props.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+        if (!name.isNullOrBlank() && !byKey.containsKey(name)) byKey[name] = item
+        if (!id.isNullOrBlank() && !byKey.containsKey(id)) byKey[id] = item
+        val els = props.getAsJsonArray("elements")
+        if (els != null) index(els)
+      }
+    }
+    val items = root.getAsJsonArray("items")
+    if (items != null) index(items)
+    for ((key, value) in elements.entrySet()) {
+      if (!value.isJsonObject) continue
+      val slash = key.indexOf('/')
+      val elementKey = if (slash >= 0) key.substring(0, slash) else key
+      val target = byKey[elementKey] ?: continue
+      val tProps = target.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+      if (slash < 0) {
+        writeElementDeltaI18n(tProps, lang, value.asJsonObject)
+        continue
+      }
+      val subKey = key.substring(slash + 1)
+      val options = tProps.getAsJsonArray("options")
+      if (options != null) {
+        for (opt in options) {
+          if (!opt.isJsonObject) continue
+          val o = opt.asJsonObject
+          val text = cleanDeltaKey(o.get("text"))
+          val v = cleanDeltaKey(o.get("value"))
+          if (text == subKey || v == subKey) {
+            writeElementDeltaI18n(o, lang, value.asJsonObject)
+          }
+        }
+      }
+      val buttons = tProps.getAsJsonArray("buttons")
+      if (buttons != null) {
+        for (btn in buttons) {
+          if (!btn.isJsonObject) continue
+          val b = btn.asJsonObject
+          val bName = cleanDeltaKey(b.get("name"))
+          val bText = cleanDeltaKey(b.get("text"))
+          val bValue = cleanDeltaKey(b.get("value"))
+          if (bName == subKey || bText == subKey || bValue == subKey) {
+            writeElementDeltaI18n(b, lang, value.asJsonObject)
+          }
+        }
+      }
+    }
+  }
+
+  private fun cleanDeltaKey(el: JsonElement?): String {
+    if (el?.isJsonPrimitive != true || !el.asJsonPrimitive.isString) return ""
+    return el.asString.trim()
+  }
+
+  /**
+   * Translates a whole form into [addLanguages] using the translation DELTA protocol (plan §6B):
+   * the slim base-language-only view is sent ONCE, and ONE small per-language completion returns
+   * only the translations (keyed by identity) which are spliced into the ORIGINAL persist — never a
+   * re-emitted full form. This collapses the output from `N × full form` to `N × (translated
+   * strings only)`.
+   *
+   * Returns the merged form JSON (the original persist, spliced with each language's i18n, carrying
+   * a `_workflowMailLanguages` base-first marker for the downstream workflow multilingualize pass),
+   * a null applicability report (a translation adds no CodBi element), and total token usage. Fails
+   * open per invariant #1: a pass that errors or returns non-JSON is skipped, never aborting the
+   * run.
+   */
+  /**
+   * Max estimated translation-OUTPUT tokens a multi-language BATCH may target (Lever 4, plan §6B).
+   *
+   * We know the translatable payload size up front (the base view is exactly the set of strings the
+   * model must translate), so a language's output is estimable BEFORE generation and the request
+   * can be batched (several languages in ONE completion) or split (each language on its own). Kept
+   * well under the provider's per-response cap (`StandardConfig.maxTokens`, default 2048) so a
+   * batched completion never truncates a language; any language or group that would exceed this
+   * budget is translated individually. Sized conservatively (≈ 39 % of the 2048 cap) — tune after a
+   * §5 corpus measurement; the solo fallback keeps a language loss impossible regardless.
+   */
+  private val TRANSLATION_BATCH_OUTPUT_BUDGET = 800
+
+  /**
+   * Element-level keys in the base view that are READ-ONLY CONTEXT, not text to translate. They
+   * give the model disambiguating context (the element's parent heading path and its widget type)
+   * but must never be treated as translatable payload: they are excluded from the output-token
+   * estimate and guarded out of the spliced i18n even if a model echoes them back.
+   */
+  private val TRANSLATION_CONTEXT_KEYS = setOf("type", "parent")
+
+  private fun runTranslationDelta(
+      prompt: String,
+      persistJson: String,
+      addLanguages: List<String>,
+      baseLang: String,
+      modelId: String,
+      instance: Standard
+  ): Triple<String, String?, TokenUsage> {
+    val langs = addLanguages.filter { it.isNotBlank() }.distinct()
+    if (langs.isEmpty()) return Triple(persistJson, null, TokenUsage(0, 0))
+    val instruction = loadTranslationDeltaInstruction()
+    val baseView = buildTranslationDeltaView(persistJson, baseLang)
+    var tokensIn = 0
+    var tokensOut = 0
+    var finalRoot: JsonObject? = null
+
+    // Lazy parse of the ORIGINAL persist, done at most once per run.
+    val rootOnce = {
+      finalRoot
+          ?: runCatching { JsonParser.parseString(persistJson).asJsonObject }
+              .getOrNull()
+              ?.also { finalRoot = it }
+    }
+
+    // Splices a single-language completion into the (once) parsed original; a non-JSON response is
+    // skipped (fail-open), never aborting the run.
+    fun splice(raw: String, lang: String) {
+      val root = rootOnce() ?: return
+      val cleaned = extractJson(stripThinkTags(raw))
+      val delta = runCatching { JsonParser.parseString(cleaned) }.getOrNull()
+      if (delta == null || !delta.isJsonObject) {
+        logger.warn(
+            "[AICodBiAssistant] Translation delta for '{}' is not a JSON object — skipping that language",
+            lang)
+        return
+      }
+      spliceTranslationDelta(root, delta.asJsonObject, lang)
+    }
+
+    // One completion for a SINGLE language (the guaranteed-safe, bounded path).
+    fun callSingle(lang: String) {
+      val messagesJson = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(instruction)}},""")
+        val user =
+            "Translate the form's base language ('$baseLang') into language '$lang'.\n\n" +
+                "Base-language view to translate (values are WHAT to translate, never to echo back):\n$baseView"
+        append("""{"role":"user","content":${gson.toJson(user)}}""")
+        append("]")
+      }
+      tokensIn += estimateTokens(messagesJson)
+      val raw = instance.performFormAssist(modelId, messagesJson)
+      tokensOut += estimateTokens(raw)
+      splice(raw, lang)
+    }
+
+    // Lever 4 (plan §6B): group the requested languages into batches whose estimated output fits
+    // under TRANSLATION_BATCH_OUTPUT_BUDGET, so several languages share ONE base-view completion;
+    // larger languages are split into their own pass. A batch that truncates / fails to parse is
+    // re-issued, one language at a time, so a language is NEVER lost (invariant #1).
+    val batches = groupTranslationBatches(langs, estimateTranslationOutputTokens(baseView))
+    for (batch in batches) {
+      runTripPrefix.set("translate[${batch.joinToString("+")}]/ ")
+      try {
+        if (batch.size == 1) {
+          callSingle(batch[0])
+          continue
+        }
+        // Multi-language batch completion — same slim base view, several languages in one response.
+        val messagesJson = buildString {
+          append("[")
+          append("""{"role":"system","content":${gson.toJson(instruction)}},""")
+          val user =
+              "Translate the form's base language ('$baseLang') into these languages: " +
+                  batch.joinToString(", ") +
+                  ".\n\n" +
+                  "Base-language view to translate (values are WHAT to translate, never to echo back):\n$baseView"
+          append("""{"role":"user","content":${gson.toJson(user)}}""")
+          append("]")
+        }
+        tokensIn += estimateTokens(messagesJson)
+        val raw = instance.performFormAssist(modelId, messagesJson)
+        tokensOut += estimateTokens(raw)
+        val batchDelta = parseBatchDelta(raw)
+        val root = rootOnce()
+        if (root != null && batchDelta != null) {
+          for ((lang, delta) in batchDelta) {
+            spliceTranslationDelta(root, delta, lang)
+          }
+        }
+        // Languages the batch did NOT return (truncated / unparsable / absent) are re-issued alone.
+        val missing = batch.filter { lang -> batchDelta?.containsKey(lang) != true }
+        for (lang in missing) {
+          logger.warn(
+              "[AICodBiAssistant] Batch translation missing '{}' (truncated or unparsable) — re-issuing it alone",
+              lang)
+          callSingle(lang)
+        }
+      } catch (e: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] Translation delta pass for '{}' failed ({}): {}",
+            batch.joinToString(","),
+            e.javaClass.simpleName,
+            e.message)
+        // A thrown failure also falls back to re-issuing each language of the batch individually.
+        for (lang in batch) {
+          try {
+            callSingle(lang)
+          } catch (e2: Exception) {
+            logger.warn(
+                "[AICodBiAssistant] Translation delta fallback for '{}' failed ({}): {}",
+                lang,
+                e2.javaClass.simpleName,
+                e2.message)
+          }
+        }
+      } finally {
+        runTripPrefix.set("")
+      }
+    }
+    if (finalRoot == null) return Triple(persistJson, null, TokenUsage(tokensIn, tokensOut))
+    // Base-first full language list, authoritative for the workflow multilingualize pass — mirrors
+    // the existing "_workflowMailLanguages" marker contract and is stripped downstream in
+    // handleRun.
+    finalRoot.add("_workflowMailLanguages", gson.toJsonTree((listOf(baseLang) + langs).distinct()))
+    val finalJson = gson.toJson(finalRoot)
+    logger.info(
+        "[AICodBiAssistant] Translation delta merged {} language(s) in {} pass(es); final form {} chars",
+        langs.size,
+        batches.size,
+        finalJson.length)
+    return Triple(finalJson, null, TokenUsage(tokensIn, tokensOut))
+  }
+
+  /**
+   * Estimates the OUTPUT capacity a translation of [baseView] needs, in tokens (chars/4, matching
+   * [estimateTokens]). The base view is exactly the set of strings the model must translate, so its
+   * total string length is a direct proxy for the completion size, computable BEFORE any
+   * generation.
+   */
+  private fun estimateTranslationOutputTokens(baseView: String?): Int {
+    if (baseView.isNullOrBlank()) return 0
+    val obj =
+        runCatching { JsonParser.parseString(baseView) }
+            .getOrNull()
+            ?.takeIf { it.isJsonObject }
+            ?.asJsonObject ?: return 0
+    val chars = StringBuilder()
+    fun walk(el: JsonElement?) {
+      when {
+        el == null -> {}
+        // Skip READ-ONLY CONTEXT keys (type/parent): the model does not emit them back, so they
+        // must
+        // not inflate the estimated translated-output size used for batch sizing.
+        el.isJsonObject ->
+            el.asJsonObject.entrySet().forEach { (k, v) ->
+              if (k !in TRANSLATION_CONTEXT_KEYS) walk(v)
+            }
+        el.isJsonArray -> el.asJsonArray.forEach { walk(it) }
+        el.isJsonPrimitive && el.asJsonPrimitive.isString -> chars.append(el.asString)
+        else -> {}
+      }
+    }
+    walk(obj)
+    return chars.length / 4 + 1
+  }
+
+  /**
+   * Groups [langs] into translation BATCHES whose combined estimated output undercuts
+   * [TRANSLATION_BATCH_OUTPUT_BUDGET]; a language at or over the budget forms its own
+   * single-language batch, so it is always attempted individually (and can be safely re-issued
+   * alone on failure). Returns at least one batch when [langs] is non-empty.
+   */
+  private fun groupTranslationBatches(
+      langs: List<String>,
+      estimatedOutputTokens: Int
+  ): List<List<String>> {
+    if (langs.isEmpty()) return emptyList()
+    if (estimatedOutputTokens <= 0) {
+      // Nothing measurable to translate — batch everything (still bounded by the keyed-delta output
+      // contract, never a full form).
+      return listOf(langs)
+    }
+    val budget = TRANSLATION_BATCH_OUTPUT_BUDGET
+    val batches = ArrayList<List<String>>()
+    val current = ArrayList<String>()
+    var running = 0
+    for (lang in langs) {
+      if (current.isNotEmpty() && running + estimatedOutputTokens > budget) {
+        batches.add(current.toList())
+        current.clear()
+        running = 0
+      }
+      current.add(lang)
+      running += estimatedOutputTokens
+    }
+    if (current.isNotEmpty()) batches.add(current.toList())
+    return batches
+  }
+
+  /**
+   * Parses a multi-language translation completion into a map of `lang -> per-language delta` (see
+   * the multi-language output contract in `codbi-translation-delta-instruction.md`). Returns null
+   * when the response is not a JSON object or carries no `translations` object — the caller then
+   * re-issues every requested language individually. A present-but-unparseable inner delta is
+   * simply absent from the map, so its language is also re-issued alone.
+   */
+  private fun parseBatchDelta(raw: String): Map<String, JsonObject>? {
+    val cleaned = extractJson(stripThinkTags(raw))
+    val obj =
+        runCatching { JsonParser.parseString(cleaned) }
+            .getOrNull()
+            ?.takeIf { it.isJsonObject }
+            ?.asJsonObject ?: return null
+    val translations =
+        obj.get("translations")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
+    val out = LinkedHashMap<String, JsonObject>()
+    for ((lang, v) in translations.entrySet()) {
+      if (v.isJsonObject) out[lang] = v.asJsonObject
+    }
+    return out
   }
 
   // endregion Intent Classification
@@ -4404,7 +4982,14 @@ class AICodBiAssistant : IPluginServletAction {
       // items, so it must run on the finished form). Skipped entirely when the request explicitly
       // asks for Cleave formatting.
       val peopleForm = applyPeopleClassesToForm(openPlzForm, prompt)
-      Triple(peopleForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+      // Lever 6: the model no longer lists footprint-bearing CodBi FUNCTIONS in "applied" (dropped
+      // to save output tokens — the bulky {"id",targets} entries). Reconstruct those from the
+      // before/after form diff (which `data-cb-func` values appeared on elements that did not carry
+      // them before) and merge them into the applicability report, while PRESERVING the model's
+      // footprint-less Holistic.* standard activations and its considered / codbiVerdict signals.
+      val derivedApplied = deriveAppliedFunctionsFromDiff(persistJson, peopleForm)
+      val enrichedReport = mergeDerivedAppliedIntoReport(applicabilityReport, derivedApplied)
+      Triple(peopleForm, enrichedReport, TokenUsage(tokensIn, tokensOut))
     } catch (e: Exception) {
       logger.warn(
           "[AICodBiAssistant] Form AI returned unparseable response ({} chars): {}",
@@ -4712,6 +5297,152 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (_: Exception) {
       cleanedJson to null
     }
+  }
+
+  /**
+   * Lever 6: reconstructs the footprint-bearing CodBi FUNCTIONS the model applied from a
+   * before/after form diff. The model no longer lists these bulky `{"id",targets}` entries in
+   * `_codbiApplicability.applied` (they cost ~200-400 output tokens/run); the server derives them
+   * from which `data-cb-func` values appear on elements (by `properties.name`) that did NOT carry
+   * them in [originalJson] — i.e. a pre-existing element that gained the function, or a newly
+   * created element that carries it. Footprint-less `Holistic.*` standard activations (empty
+   * targets) are NOT reconstructed here — the model still reports those directly. Best-effort: any
+   * parse failure yields an empty array, never an exception.
+   *
+   * @return a JSON array of `{"id": "<CodBi.Function>", "targets": ["<elementName>", …]}` entries
+   */
+  private fun deriveAppliedFunctionsFromDiff(
+      originalJson: String?,
+      modifiedJson: String?
+  ): JsonArray {
+    val out = JsonArray()
+    if (originalJson.isNullOrBlank() || modifiedJson.isNullOrBlank()) return out
+    return try {
+      val before = indexDataCbFuncByElementName(originalJson)
+      val after = indexDataCbFuncByElementName(modifiedJson)
+      for ((func, names) in after) {
+        if (func.isBlank()) continue
+        val added = (names - before[func].orEmpty()).toSortedSet()
+        if (added.isEmpty()) continue
+        val entry = JsonObject()
+        entry.addProperty("id", func)
+        val targets = JsonArray()
+        added.forEach { targets.add(it) }
+        entry.add("targets", targets)
+        out.add(entry)
+      }
+      out
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Failed to derive applied functions from diff: {} ({})",
+          e.message,
+          originalJson.take(80))
+      out
+    }
+  }
+
+  /**
+   * Indexes the `data-cb-func` attribute values of every root `items` element by that element's
+   * `properties.name` (the same identifier the model uses for `targets`). Attributes are stored
+   * canonically as `properties.attributes` = `[{"text":"data-cb-func","value":"<id>"}]`; a stray
+   * object-map shape with a `data-cb-func` key is also tolerated. Best-effort.
+   */
+  private fun indexDataCbFuncByElementName(formJson: String): Map<String, MutableSet<String>> {
+    val map = mutableMapOf<String, MutableSet<String>>()
+    try {
+      JsonParser.parseString(formJson).asJsonObject.getAsJsonArray("items")?.forEach { el ->
+        if (!el.isJsonObject) return@forEach
+        val obj = el.asJsonObject
+        val props = obj.getAsJsonObject("properties") ?: return@forEach
+        val name =
+            props
+                .get("name")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                ?.asString ?: return@forEach
+        val attrs = props.get("attributes") ?: return@forEach
+        val funcIds = mutableListOf<String>()
+        if (attrs.isJsonArray) {
+          attrs.asJsonArray.forEach { attr ->
+            if (attr.isJsonObject && attr.asJsonObject.get("text")?.asString == "data-cb-func") {
+              attr.asJsonObject
+                  .get("value")
+                  ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                  ?.asString
+                  ?.let { splitFuncIds(it) }
+                  ?.let { funcIds.addAll(it) }
+            }
+          }
+        } else if (attrs.isJsonObject) {
+          attrs.asJsonObject
+              .get("data-cb-func")
+              ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+              ?.asString
+              ?.let { splitFuncIds(it) }
+              ?.let { funcIds.addAll(it) }
+        }
+        for (f in funcIds) {
+          map.getOrPut(f) { mutableSetOf() }.add(name)
+        }
+      }
+    } catch (_: Exception) {
+      /* malformed JSON — empty index */
+    }
+    return map
+  }
+
+  /**
+   * Splits a `data-cb-func` attribute value into its individual functionality ids. The contract
+   * allows MULTIPLE functionalities combined COMMA-SEPARATED in a SINGLE `data-cb-func` value (e.g.
+   * `"CodBi_NoFutureDate,CodBi_TrimOnBlur"`), so the diff-derivation must index each one separately
+   * or it would report the whole comma string as one unknown function id.
+   */
+  private fun splitFuncIds(raw: String): List<String> =
+      raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+  /**
+   * Merges the server-derived footprint-bearing functions into the model's `_codbiApplicability`
+   * report, preserving the model's signals. Only the model's FOOTPRINT-LESS `Holistic.*` standard
+   * activations are kept from its `applied` array (those carry empty targets and leave no form
+   * footprint, so they cannot be derived); all other model `applied` entries are replaced by the
+   * diff-derived ones. The model's `considered`/`skipped`/`codbiVerdict`/counts are preserved
+   * verbatim. Returns the enriched report JSON (never null — the report is synthesized when the
+   * model omitted it, so downstream Holistic activation still sees an `applied` array).
+   */
+  private fun mergeDerivedAppliedIntoReport(
+      reportJson: String?,
+      derivedApplied: JsonArray
+  ): String {
+    val report = JsonObject()
+    if (!reportJson.isNullOrBlank()) {
+      try {
+        val parsed = JsonParser.parseString(reportJson)
+        if (parsed.isJsonObject) {
+          parsed.asJsonObject.entrySet().forEach { (k, v) -> report.add(k, v) }
+        }
+      } catch (_: Exception) {
+        /* start from a synthesized report */
+      }
+    }
+    // Keep the model's footprint-less Holistic standard activations (mechanism 3 needs them).
+    val keptHolistic = JsonArray()
+    val modelApplied = report.get("applied")
+    if (modelApplied != null && modelApplied.isJsonArray) {
+      for (entry in modelApplied.asJsonArray) {
+        val id =
+            when {
+              entry.isJsonObject -> entry.asJsonObject.get("id")?.asString
+              entry.isJsonPrimitive -> entry.asString
+              else -> null
+            }
+        if (id?.startsWith("Holistic.") == true) keptHolistic.add(entry)
+      }
+    }
+    val applied = JsonArray()
+    for (entry in derivedApplied) applied.add(entry)
+    for (entry in keptHolistic) applied.add(entry)
+    if (applied.size() > 0) report.add("applied", applied) else report.remove("applied")
+    // The server now owns the "applied" derivation — leave "considered"/"skipped"/verdict intact.
+    return gson.toJson(report)
   }
 
   private fun extractConsideredCodbiIds(cleanedJson: String): List<String> {
@@ -9346,8 +10077,14 @@ class AICodBiAssistant : IPluginServletAction {
    * page") WITHOUT asking the user which elements are meant. Returns null when the JSON cannot be
    * parsed or yields nothing.
    */
-  private fun buildFormStructureContext(persistJson: String?): String? {
+  private fun buildFormStructureContext(persistJson: String?, condensed: Boolean = false): String? {
     if (persistJson.isNullOrBlank()) return null
+    // `condensed` is used for the CLARIFICATION round only. It drops each element's "already
+    // configured" flag suffix (required/visible-if/readonly/validation — detail the clarify round
+    // never acts on; it only resolves references) while keeping every element's NAME/LABEL/TITLE
+    // and
+    // the page/fieldset tree, so the AI can still resolve "the two fieldsets on the first page"
+    // without the build-time flags. Chat and pass-1 keep the full (default) variant unchanged.
     val stripHtml = Regex("<[^>]*>")
     val clean: (JsonElement?) -> String = { el ->
       el?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
@@ -9445,8 +10182,12 @@ class AICodBiAssistant : IPluginServletAction {
               name.isNotBlank() -> "(name: $name)"
               else -> ""
             }
-        val flags = configFlags(props)
-        val flagText = if (flags.isEmpty()) "" else " [" + flags.joinToString("; ") + "]"
+        val flagText =
+            if (condensed) ""
+            else
+                (configFlags(props)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { " [" + it.joinToString("; ") + "]" } ?: "")
         lines.add("$indent- ${typeName(className)} $label$flagText".trimEnd())
         if (className in
             setOf(
@@ -9704,6 +10445,43 @@ class AICodBiAssistant : IPluginServletAction {
       logger.warn(
           "[AICodBiAssistant] Failed to extract form elements from form JSON: {}", e.message)
       null
+    }
+  }
+
+  /**
+   * Condenses a FORM ELEMENTS JSON document for the CLARIFICATION round only. The clarify round
+   * never builds or verifies the form — it only resolves references and decides whether to ask the
+   * user — so the per-element build/validate config (`required`, `placeholder`, `actionPage`) is
+   * dead weight there and is dropped. Kept per element: `technicalId`, `type`, `displayText` and —
+   * critically for XSelect — `options` ({text, value}), so the AI can still resolve which value an
+   * option like "Ja" maps to and does not wrongly re-ask the user. Chat and pass-1 keep the FULL
+   * form elements (mirroring how `buildFormStructureContext` is condensed only for clarify via
+   * `clarifyFormStructureContext`). Fail-open: if the input is not a parseable JSON array of
+   * objects, the original input is returned unchanged so a malformed block never starves the
+   * clarify round of context.
+   */
+  private fun condenseFormElementsForClarify(formElements: String?): String? {
+    if (formElements.isNullOrBlank()) return formElements
+    return try {
+      val root = JsonParser.parseString(formElements)
+      if (!root.isJsonArray) return formElements
+      val condensed = JsonArray()
+      for (el in root.asJsonArray) {
+        if (!el.isJsonObject) continue
+        val obj = el.asJsonObject
+        val keep = JsonObject()
+        obj.get("technicalId")?.takeIf { it.isJsonPrimitive }?.let { keep.add("technicalId", it) }
+        obj.get("type")?.takeIf { it.isJsonPrimitive }?.let { keep.add("type", it) }
+        obj.get("displayText")?.takeIf { it.isJsonPrimitive }?.let { keep.add("displayText", it) }
+        // XSelect options carry the {text, value} mapping the clarify round needs to resolve
+        // option-value references (e.g. "when 'Ja' is chosen"); keep them verbatim.
+        obj.get("options")?.takeIf { it.isJsonArray }?.let { keep.add("options", it) }
+        condensed.add(keep)
+      }
+      gson.toJson(condensed)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to condense form elements for clarify: {}", e.message)
+      formElements
     }
   }
 
@@ -14155,8 +14933,19 @@ class AICodBiAssistant : IPluginServletAction {
    * with every node's type/name/description and customParameters) as JSON, so the chat AI can
    * answer questions about or verify the workflow with ALL details. Returns null when the workflow
    * cannot be read (the chat then simply lacks the workflow section).
+   *
+   * When [condensed] is true the output is the CLARIFY-round decision core: only the task `name` +
+   * trigger `type` and each node's `name` + `type` (in the parent/child tree), with the heavy
+   * `description` / `customParameters` / `id` dropped. The clarify round never builds or verifies —
+   * it only resolves references (e.g. "add an approval step after the 'Freigabe' node", "attach the
+   * submit button to node X"), so the build/validate detail is irrelevant; this mirrors the
+   * condensed form-structure core the clarify round already gets.
    */
-  private fun buildWorkflowStructureContext(workflowVersionId: Long, userContext: Any): String? {
+  private fun buildWorkflowStructureContext(
+      workflowVersionId: Long,
+      userContext: Any,
+      condensed: Boolean = false
+  ): String? {
     val em = formcycleEntityManager(userContext) ?: return null
     return try {
       val taskRows =
@@ -14183,16 +14972,18 @@ class AICodBiAssistant : IPluginServletAction {
         if (cols.size < 6) continue
         val id = cols[0]?.toString() ?: continue
         val node = JsonObject()
-        node.addProperty("id", id)
+        if (!condensed) node.addProperty("id", id)
         node.addProperty("type", cols[1]?.toString() ?: "")
         node.addProperty("name", cols[2]?.toString() ?: "")
-        node.addProperty("description", cols[3]?.toString() ?: "")
-        val custom = cols[4]?.toString()
-        if (!custom.isNullOrBlank()) {
-          try {
-            node.add("customParameters", JsonParser.parseString(custom))
-          } catch (_: Exception) {
-            node.addProperty("customParameters", custom)
+        if (!condensed) {
+          node.addProperty("description", cols[3]?.toString() ?: "")
+          val custom = cols[4]?.toString()
+          if (!custom.isNullOrBlank()) {
+            try {
+              node.add("customParameters", JsonParser.parseString(custom))
+            } catch (_: Exception) {
+              node.addProperty("customParameters", custom)
+            }
           }
         }
         val parentId = cols[5]?.toString()
@@ -14215,11 +15006,11 @@ class AICodBiAssistant : IPluginServletAction {
         if (cols.size < 6) continue
         val t = JsonObject()
         t.addProperty("name", cols[1]?.toString() ?: "")
-        t.addProperty("description", cols[2]?.toString() ?: "")
+        if (!condensed) t.addProperty("description", cols[2]?.toString() ?: "")
         val tr = JsonObject()
         tr.addProperty("type", cols[3]?.toString() ?: "")
         val triggerCustom = cols[4]?.toString()
-        if (!triggerCustom.isNullOrBlank()) {
+        if (!condensed && !triggerCustom.isNullOrBlank()) {
           try {
             tr.add("customParameters", JsonParser.parseString(triggerCustom))
           } catch (_: Exception) {
@@ -21046,6 +21837,21 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Loads the per-language translation-delta instruction prompt (see the bundled
+   * `codbi-translation-delta-instruction.md`). This is the AI-facing output contract for the
+   * whole-form translation delta protocol: the delta completion returns ONLY keyed translations for
+   * ONE language, never a re-emitted form. A short inline fallback guarantees the fail-open gate
+   * (invariant #1) never produces an empty instruction — the substantive prompt text always lives
+   * in the registered `.md` resource.
+   */
+  private fun loadTranslationDeltaInstruction(): String {
+    return loadPromptWithClasspathFallback("codbi.translation_delta_instruction")
+        ?: ("Translate into ONLY the requested language. Reply with ONLY a compact JSON delta object " +
+            "{\"lang\":\"<code>\",\"form\":{...},\"elements\":{\"<name>\":{...},\"<name>/<opt>\":{\"value\":\"...\"}}} " +
+            "whose values are the translations; never emit form structure, ids, or base-language text.")
+  }
+
+  /**
    * Loads the change-log schema description (bundled `.md` / DB) used to decode earlier AI runs.
    */
   private fun loadChangeLogSchema(): String =
@@ -21059,7 +21865,12 @@ class AICodBiAssistant : IPluginServletAction {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_form_system") ?: ""
     try {
-      val fc = PromptLoader.loadCategory(em, "formcycle")
+      // Targeted single-key load: only `formcycle.general_decision` is consumed below, so loading
+      // the WHOLE `formcycle` category here would materialise the ~109 KB
+      // `formcycle.workflow_nodes`
+      // CLOB into memory on every form request for nothing. `formcycle.workflow_nodes` is workflow-
+      // assistant-only and must never enter a form-assistant prompt (see WorkflowNodesGuardTest).
+      val fcFormcycleGeneralDecision = PromptLoader.loadPrompt(em, "formcycle.general_decision")
       val cb = if (useCodbi) PromptLoader.loadCategory(em, "codbi") else emptyMap()
       val taskInstruction =
           loadPromptWithClasspathFallback("codbi.form_task_instruction_decision") ?: ""
@@ -21117,7 +21928,7 @@ class AICodBiAssistant : IPluginServletAction {
               "\n\n" +
               (loadPromptWithClasspathFallback("codbi.form_structure_rules_decision") ?: "") +
               "\n\n" +
-              (fc["formcycle.general_decision"] ?: "")
+              (fcFormcycleGeneralDecision ?: "")
       val requestCatalogs = widgetsSectionCondensed + codbiPart
       val composed =
           if (promptCachingEnabled)
@@ -21197,7 +22008,11 @@ class AICodBiAssistant : IPluginServletAction {
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_rethink") ?: ""
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
-      val fc = PromptLoader.loadCategory(em, "formcycle")
+      // Targeted single-key load: this rethink (form) pass only consumes `formcycle.widgets`, so
+      // loading the whole `formcycle` category here would materialise the ~109 KB
+      // `formcycle.workflow_nodes` CLOB (a workflow-assistant-only reference that must never enter
+      // a form-assistant prompt) for nothing.
+      val fcWidgets = PromptLoader.loadPrompt(em, "formcycle.widgets")
       val taskInstruction = loadPromptWithClasspathFallback("codbi.rethink_instruction") ?: ""
       // The blind rethink pass is only reached when pass-1 explicitly reported that NO CodBi
       // element placeholders / functionalities AND NO widget templates apply (requested.isEmpty()
@@ -21223,7 +22038,7 @@ class AICodBiAssistant : IPluginServletAction {
               // reference), so keep every block and only STRIP the markers — a raw marker comment
               // must never reach the model.
               PromptSectionGate.applySectionGates(
-                  FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: ""),
+                  FormcycleElementFilter.scrubWidgetSections(fcWidgets ?: ""),
                   PromptSectionGate.KNOWN_TAGS) +
               "\n" +
               "{{CODBI_ELEMENTS_SECTION}}")
@@ -21301,7 +22116,14 @@ class AICodBiAssistant : IPluginServletAction {
       // element identifiers) MUST be carried into every rerun — the AI drops a repeatable
       // container otherwise, because the REPEATABLE CONTAINERS rule lives in formcycle.general and
       // this apply prompt is what replaces the full system prompt on pass-2/3/4 reruns.
-      val fc = PromptLoader.loadCategory(em, "formcycle")
+      // Targeted single-key loads instead of loading the whole `formcycle` category: only the
+      // general_apply (with general_decision fallback) is consumed in this pass. This spares the
+      // ~109 KB `formcycle.workflow_nodes` CLOB (a workflow-assistant-only reference that must
+      // never
+      // enter a form-assistant prompt) from being materialised on every form request.
+      val fcFormcycleGeneral =
+          PromptLoader.loadPrompt(em, "formcycle.general_apply")
+              ?: PromptLoader.loadPrompt(em, "formcycle.general_decision")
       // Use the lean apply variant (decision core + EConditionType codes + server-variable catalog)
       // instead of the full 49.8KB formcycle.general — the full file's worked build examples are
       // redundant in the pass-2 apply prompt where the model rebuilds the form from the requested
@@ -21309,8 +22131,7 @@ class AICodBiAssistant : IPluginServletAction {
       // carries the legacy "return the COMPLETE modified form JSON" wording, which CONTRADICTS this
       // pass's diff protocol and would make the model re-emit the whole form. Falling back to the
       // decision core is both cheaper and diff-compatible.
-      val rawFormcycleGeneral =
-          fc["formcycle.general_apply"] ?: fc["formcycle.general_decision"] ?: ""
+      val rawFormcycleGeneral = fcFormcycleGeneral ?: ""
       // Demand-gate the server-variable placeholder catalog: it is ~3KB and only useful when the
       // request/email body actually references a [%\$...%] placeholder. When the caller computed a
       // demand signal and it is false, remove `server_vars` from the keep set so the section window
@@ -21535,7 +22356,11 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private fun buildWidgetNameIndex(em: EntityManager): String =
       FormcycleElementFilter.renderWidgetNameIndex(
-          PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
+          // Single-key load: only `formcycle.widgets` is needed (the parser materialises that one
+          // ~36 KB reference). Loading the whole `formcycle` category here would additionally pull
+          // in the ~109 KB `formcycle.workflow_nodes` CLOB — a workflow-assistant-only reference
+          // that must never enter a form-assistant prompt.
+          PromptLoader.loadPrompt(em, "formcycle.widgets") ?: "")
 
   // region Clarification
 
@@ -21768,6 +22593,7 @@ class AICodBiAssistant : IPluginServletAction {
       intent: String,
       formElements: String?,
       formStructureContext: String?,
+      workflowStructureContext: String? = null,
       textSpanContentContext: String?,
       clarificationContext: String,
       chatContext: String,
@@ -21807,16 +22633,33 @@ class AICodBiAssistant : IPluginServletAction {
       val currentlyOpenForm =
           if (!currentFormKey.isNullOrBlank() || !currentFormTitle.isNullOrBlank()) {
             "\nCURRENTLY OPEN FORM: title=${gson.toJson(currentFormTitle ?: "")}, " +
-                "key=${gson.toJson(currentFormKey ?: "")} — this is the form the user is editing " +
-                "right now. When the user names a DIFFERENT form by its title, treat it as another form.\n"
+                "key=${gson.toJson(currentFormKey ?: "")} (the form being edited now). A DIFFERENT form named by title is another form.\n"
           } else ""
       val formElementsBlock =
-          if (!formElements.isNullOrBlank()) "\nFORM ELEMENTS available: $formElements\n" else ""
+          if (!formElements.isNullOrBlank())
+              "\nFORM ELEMENTS (interactive fields + options): $formElements\n"
+          else ""
       val formStructureBlock =
           if (!formStructureContext.isNullOrBlank()) {
-            "\nCURRENT FORM STRUCTURE (pages/fieldsets/containers + labels — use to resolve references " +
-                "to existing elements):\n" +
+            "\nCURRENT FORM STRUCTURE — resolve references to existing elements below:\n" +
                 formStructureContext +
+                "\n"
+          } else ""
+      // The WORKFLOW decision core (task name + trigger type + each existing node's name/type in
+      // its
+      // parent/child tree, condensed — no node parameters). The clarify round never
+      // builds/verifies,
+      // it only resolves references, so a workflow request that names an existing node ("add an
+      // approval step after the 'Freigabe' node", "attach the submit button to node X") can target
+      // that EXACT node instead of asking which one. Mirrors the condensed form-structure core
+      // above.
+      val workflowStructureBlock =
+          if (!workflowStructureContext.isNullOrBlank()) {
+            "\nCURRENT WORKFLOW STRUCTURE (existing triggers and nodes) — resolve references to existing " +
+                "workflow tasks/nodes below (each entry: trigger type or node type + node name, as a " +
+                "parent/child tree). When the request names an existing node by name, target that EXACT " +
+                "node; do NOT ask which node it means:\n" +
+                workflowStructureContext +
                 "\n"
           } else ""
       // Digest of every XSpan's readable TEXT content (from `properties.rtevalue`), paired with the
@@ -21826,85 +22669,74 @@ class AICodBiAssistant : IPluginServletAction {
       // content and answers NO_CLARIFICATION. NEVER truncate the digest below.
       val textSpanContentBlock =
           if (!textSpanContentContext.isNullOrBlank()) {
-            "\nEXISTING TEXT CONTENT INSIDE DESIGN SPANS (XSpan) — each entry is the span's technical `name` " +
-                "followed by its FULL readable text. When the request refers to content already IN the form " +
-                "(e.g. \"der Rechner\", \"der Text zum Rechner\", \"die Wettervorhersage\"), scan the FULL text of " +
-                "every entry, find the span whose content contains the described thing, and target that EXACT span " +
-                "by its name. NEVER ask the user which existing element contains it; answer NO_CLARIFICATION unless " +
-                "a genuinely NEW value is missing:\n" +
+            "\nDESIGN-SPAN (XSpan) TEXT — each entry: span technical `name`, then its FULL readable text. When the " +
+                "request refers to content already IN the form, scan the FULL text of every entry, find the span whose " +
+                "content matches, and target that EXACT span by name. NEVER ask which existing element contains it; " +
+                "answer NO_CLARIFICATION unless a NEW value is genuinely missing:\n" +
                 textSpanContentContext +
                 "\n"
           } else ""
       val clarificationHistoryBlock =
           if (clarificationContext.isNotBlank()) {
-            "\nQUESTIONS THE USER ALREADY ANSWERED (treat these as authoritative). " +
-                "NEVER re-ask a question whose answer is already given above, and NEVER ask the same " +
-                "question twice. Use the provided answers and respond with " +
-                "{\"status\":\"NO_CLARIFICATION\"} unless a genuinely NEW, still-unanswered question " +
-                "remains:\n" +
+            "\nQUESTIONS THE USER ALREADY ANSWERED (authoritative). NEVER re-ask a question already answered above or ask the " +
+                "same question twice. Use the answers and respond {\"status\":\"NO_CLARIFICATION\"} unless a genuinely NEW, " +
+                "still-unanswered question remains:\n" +
                 clarificationContext +
                 "\n"
           } else ""
       val chatHistoryBlock =
           if (chatContext.isNotBlank()) {
-            "\nCHAT HISTORY (previous turns in the form-chat popup — treat as authoritative context):\n" +
-                "The user's current message may refer to earlier chat turns (e.g. \"apply options 1, 2, 5 and 7\"). " +
-                "Resolve such references from this history BEFORE asking the user anything.\n" +
+            "\nCHAT HISTORY (previous form-chat turns — authoritative context). The current message may refer to earlier turns " +
+                "(e.g. \"apply options 1, 2, 5 and 7\"); resolve such references from this history BEFORE asking anything:\n" +
                 chatContext +
                 "\n"
           } else ""
       val changeHistoryBlock =
           if (!changeHistoryContext.isNullOrBlank()) {
-            "\nPRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n" +
-                "The change log below is a JSON array of earlier AI runs; each entry describes ONE earlier run.\n\n" +
-                "CHANGE LOG SCHEMA — what each property means:\n" +
+            "\nPRIOR CHANGE HISTORY (JSON array; each entry = ONE earlier AI run). Interpret it using the schema below, " +
+                "identify the entry/entries the request refers to, then decide whether you still need information from the user.\n" +
+                "CHANGE LOG SCHEMA:\n" +
                 loadChangeLogSchema() +
-                "\n\n" +
-                "CHANGE LOG:\n" +
+                "\n\nCHANGE LOG:\n" +
                 changeHistoryContext +
-                "\n\nIdentify the entry/entries the user's request refers to and determine whether you still need information from the user.\n"
+                "\n"
           } else ""
       val formListBlock =
           if (!formListContext.isNullOrBlank()) {
-            "\nAVAILABLE FORMS ON THE SERVER (each entry has \"id\", \"key\" = the technical identifier to pass in need_chat_history, " +
-                "\"name\"/\"title\" = the form's TITLE as users refer to it, and \"current\": true marks the form being edited right now):\n" +
+            "\nAVAILABLE FORMS ON THE SERVER (\"key\" = technical identifier for need_chat_history; \"name\"/\"title\" = the form's " +
+                "TITLE as users refer to it; \"current\": true = the form being edited now):\n" +
                 formListContext +
                 "\n" +
-                "You now HAVE the form list — never respond {\"status\":\"need_form_list\"} again. " +
-                "Pick the form whose title best matches the user's request and respond ONLY with " +
-                "{\"status\":\"need_chat_history\",\"formKey\":\"<that form's key>\"} — or, if no form reasonably matches, " +
-                "ask the user which form they meant via need_clarification.\n"
+                "You now HAVE the form list — never respond {\"status\":\"need_form_list\"} again. Pick the form whose title best " +
+                "matches and respond ONLY with {\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} — or, if none reasonably matches, " +
+                "ask the user which form via need_clarification.\n"
           } else ""
       val changeHistoryStatus =
           if (changeHistoryContext.isNullOrBlank()) {
-            "\nThe change history is NOT shown by default. If the user's request refers to earlier AI runs / prior work on " +
-                "THIS form (e.g. \"apply the same functionalities as a week ago\", \"like before\", \"what was configured earlier\", " +
-                "\"what another user prompted\"), fetch it first: respond ONLY with {\"status\":\"need_chat_history\"} (current form) " +
-                "or {\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} (another form).\n"
+            "\nChange history is NOT shown by default. If the request refers to earlier AI runs / prior work on THIS form " +
+                "(\"like before\", \"what was configured earlier\", \"what another user prompted\"), fetch it first: respond ONLY " +
+                "with {\"status\":\"need_chat_history\"} (current form) or {\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} (another form).\n"
           } else {
-            "\nYou ALREADY have the PRIOR CHANGE HISTORY above (with the schema). Do NOT request the change history again — " +
-                "interpret it and decide whether you still need information from the user.\n"
+            "\nYou ALREADY have the PRIOR CHANGE HISTORY above (with schema). Do NOT request it again — interpret it and decide.\n"
           }
       val completionPagesBlock =
           if (!completionPages.isNullOrBlank()) {
-            "\nAVAILABLE ABSCHLUSSSEITEN (completion pages) — when a success/failure Abschlussseite is needed " +
-                "(FC_DOI_INIT successPage/failurePage, FC_SHOW_TEMPLATE), ask the user to PICK ONE BY NAME from this list " +
-                "(multiple-choice options). NEVER ask for a target URL/\"Ziel-URL\" or a free-text page identifier:\n" +
+            "\nAVAILABLE ABSCHLUSSSEITEN (completion pages) — when one is needed, ask the user to PICK ONE BY NAME from " +
+                "this list (multiple-choice options). NEVER ask for a target URL/\"Ziel-URL\" or a free-text page identifier:\n" +
                 completionPages +
                 "\n"
           } else ""
       val formVariablesBlock =
           if (!formVariables.isNullOrBlank()) {
-            "\nFORM GLOBAL VARIABLES (Formularvariablen) exist on this form (NOT form fields): $formVariables. " +
-                "These are referenced at runtime with [%variableName%]. NEVER ask whether they exist / are to be created, " +
-                "and NEVER offer to create hidden form fields for them — use the [%variableName%] placeholder directly.\n"
+            "\nFORM GLOBAL VARIABLES (Formularvariablen, NOT form fields): $formVariables, referenced at runtime as " +
+                "[%variableName%]. NEVER ask whether they exist; NEVER offer to create hidden form fields for them — use " +
+                "the [%variableName%] placeholder directly.\n"
           } else ""
       val workflowMailsBlock =
           if (!workflowMails.isNullOrBlank()) {
-            "\nEXISTING WORKFLOW MAIL NODES — the current form's workflow ALREADY sends these mails (recipient(s), " +
-                "subject, sender). When the user means the recipient/sender/subject of an already-sent mail (e.g. \"die " +
-                "gleiche E-Mail-Adresse, an die bereits eine Mail geschickt wird\", \"wie bei der letzten Mail\"), REUSE " +
-                "that value from this list and do NOT ask for it:\n" +
+            "\nEXISTING WORKFLOW MAIL NODES (recipient(s), subject, sender) — the form's workflow ALREADY sends these. " +
+                "When the user means an already-sent mail's recipient/sender/subject, REUSE that value from this list; " +
+                "do NOT ask for it:\n" +
                 workflowMails +
                 "\n"
           } else ""
@@ -21936,6 +22768,7 @@ class AICodBiAssistant : IPluginServletAction {
               .replace("{{CHANGE_HISTORY_BLOCK}}", changeHistoryBlock)
               .replace("{{FORM_LIST_BLOCK}}", formListBlock)
               .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) +
+              workflowStructureBlock +
               completionPagesBlock +
               formVariablesBlock +
               workflowMailsBlock +
@@ -21952,8 +22785,9 @@ class AICodBiAssistant : IPluginServletAction {
           applyClarificationSections(
               finalPrompt, prompt + "\n" + clarificationContext, clarificationTopics)
       logger.info(
-          "[AICodBiAssistant] clarification prompt assembly: placeholderPresent={}, textSpanBlockLen={}, digestInFinalPrompt={}, templateLen={}, finalLen={}, gatedLen={}",
+          "[AICodBiAssistant] clarification prompt assembly: placeholderPresent={}, workflowStructBlockLen={}, textSpanBlockLen={}, digestInFinalPrompt={}, templateLen={}, finalLen={}, gatedLen={}",
           hasPlaceholder,
+          workflowStructureBlock.length,
           textSpanContentBlock.length,
           (!textSpanContentBlock.isNullOrBlank() &&
               gatedPrompt.contains(textSpanContentBlock.trim().take(40))),
@@ -22587,6 +23421,7 @@ class AICodBiAssistant : IPluginServletAction {
       intent: String,
       formElements: String?,
       formStructureContext: String?,
+      workflowStructureContext: String? = null,
       textSpanContentContext: String?,
       clarificationContext: String,
       chatContext: String,
@@ -22610,6 +23445,7 @@ class AICodBiAssistant : IPluginServletAction {
             intent,
             formElements,
             formStructureContext,
+            workflowStructureContext,
             textSpanContentContext,
             clarificationContext,
             chatContext,

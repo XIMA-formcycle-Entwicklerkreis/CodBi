@@ -188,7 +188,7 @@ full rate** on this provider, so it is a latency feature, not a cost one.
 | 1 | **Split the multi-tag block** — [`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md) line 43 was tagged `designed_text,svg`, so a CSS-only design request kept the illustration rules through the `designed_text` half. **Implemented 2026-09-28**: split into a separate `designed_text` block and an `svg` block; the `designed_text,svg,custom_js` PARTIAL-HTML-EDITS block stays multi-tag (it genuinely applies to all three). Guarded by a new `PromptSectionGateTest` case. **Follow-up**: the assistant's keep-set construction force-included BOTH `designed_text` **and** `svg` on any design/interactive/animated request, which re-kept the illustration half even without a drawing request — that force-include now adds only `designed_text` (see "Implemented and verified" above). | several k tokens on CSS-only design requests | `Pass-2 … illustration checklist included:` must flip to `false` on a CSS-only request; `widgetTemplates=<n>` drops | done — next is lever 2 |
 | 2 | **Trim the Bürger-Services naming block** (was 11,801 chars ≈ 2.8–3.8 k tokens; now ~8,246 chars ≈ 30 % smaller) — condensed to the canonical-ID catalog + the ELSTER fields + the hard rules, verbose prose/worked examples dropped. Sent on BOTH pass-1 and pass-2, so each byte saved is paid twice. **Implemented 2026-09-28** (Approach A: prompt-only `.md` rewrite, invariant #2 kept). **REGRESSION + FIX 2026-09-28**: the first cut dropped the "AUTH METHOD → FIELD REQUIREMENTS" imperative, so the model created the `fsBKDaten` fieldset but left its `elements` empty ("input fields are not generated anymore"); a condensed field-creation imperative block was restored **and then STRENGTHENED 2026-09-28** to cover ANY container the AI creates (not just the literal `fsBK*` — the failing run created a generic `fdPersonData` XContainer with empty `elements`), raising the size cap from 8,000 → 8,500 for the legitimate generalization (9 `BuergerserviceNamingPromptTest` cases incl. the field-creation and any-container guards). **CRITICAL — stale DB seed**: the user's failing run was served a STALE DB block (`buergerservice=7617`), NOT the fixed source — the fix never reached the model until the prompts are re-seeded. **Verify from the log**: `Pass-2 system prompt composition: … buergerservice=<n>` should drop accordingly after a re-seed restart | ~2–3 k tokens per build run | `Pass-2 system prompt composition: … buergerservice=<n>` | done — next is lever 2.3 |
 | 3 | ✅ **Merge `classify-intent` into `chat-classify`** — *implemented 2026-09-29* | ~2.1 k tokens | measurement gap closed: it runs as the separate phase-1 HTTP request (absent from the phase-2 `trips` by design). Phase-1 kept; the **chatMode reclassify** duplicate ~2.1 k inference folded into `chat-classify` | done |
-| 4 | Shrink the clarify prompt (only non-skipped rounds); give the workflow branch the same decision-core split | share of ~14 k / large for workflow runs | `clarification prompt assembly: … gatedLen=` | open |
+| 4 | Shrink the clarify prompt (only non-skipped rounds); give the workflow branch the same decision-core split | share of ~14 k / large for workflow runs | `clarification prompt assembly: … gatedLen=` | **partial** — FORM-ELEMENTS + WORKFLOW-STRUCTURE decision-cores landed 2026-10-01 (`condenseFormElementsForClarify` + `buildWorkflowStructureContext(…, condensed=true)` → `workflowStructureBlock`); completion-pages / form-variables / workflow-mail blocks still open |
 | 5 | `_codbiApplicability` derived from the diff instead of generated; monitor the output the identity rule now adds (`completionChars`) | small per run | `re-emission stats`, `completionChars` | open |
 | 6 | One conversation for pass-1 + pass-2 | only with a **prefix-cache-discounting** provider; a stateless API re-sends the core, and this provider bills hits at full rate | `cachedIn` vs `cost` | open, provider-dependent |
 
@@ -393,6 +393,16 @@ pass-2 is 48 % of the run (~28.7 k in ≈ 93.5 k chars of system prompt). Sub-it
    the next size after the decision cores.
    - **Expected:** ~2–3 k in. Medium (the first sentence helps *choose* the right element) — measure
      before changing.
+   - **DONE (2026-09-30):** [`buildSectionCondensed`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/CodbiCapabilities.kt)
+     / [`buildWidgetsSectionCondensed`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/CodbiCapabilities.kt)
+     now use the NAME-ONLY `condenseEntryNames`: every heading + the section PREAMBLE kept verbatim
+     (the decision-critical GENERAL RULES, e.g. the widget "LABELS — never use generic placeholders"
+     rule), per-entry prose DROPPED entirely. Pass-1 only DECIDES + requests details; names are enough
+     to build the `need_codbi_details` request. The FULL catalogs remain in use elsewhere (pass-2,
+     other paths). Regression: `CodbiCapabilitiesPass1NameOnlyTest` (5 cases — headings kept, prose
+     dropped, preamble/LABELS preserved, clarification-only widget paragraphs still stripped, name-only
+     catalogs are a fraction of the full ones), plus existing `CodbiCapabilitiesNameIndexTest` (4) and
+     `WidgetSectionGatingTest` (13) — all green.
 
 ### Lever 3 — Merge `classify-intent` into `chat-classify` *(mechanism E)*
 
@@ -453,25 +463,74 @@ always sends `intent:"both"` for chat turns, and the backend previously re-ran a
   applies; likely large for workflow runs.
 - **Why nothing is lost:** identical method (B/C/D) already proven on the form path.
 
-### Lever 6 — Output-side leftovers *(mechanism A/G)*
+### Lever 6 — Output-side leftovers *(mechanism A/G)* — DONE (2026-10-01)
 
-- `_codbiApplicability` (~200–400 output tokens/run) could be **derived from the diff** instead of
-  generated — the server already knows which items changed.
+`_codbiApplicability` (~200–400 output tokens/run) derived from the diff instead of generated — the
+server already knows which items changed.
+
+**HYBRID design (resolved 2026-10-01):**
+- **Drop footprint-bearing applied from model output.** The model no longer lists bulky
+  `{"id", "targets"}` entries for footprint-bearing CodBi functions (HTML.Panel, Sys.Log.Console,
+  Time.Frame, HTML.Input.REGEX, …) that leave a `data-cb-func` trace in the form JSON.
+- **Keep footprint-less `Holistic.*` standards in the model's `applied`** — Holistic.CSS.Standard,
+  Holistic.Matomo.Tracking, Holistic.Media.Input.Speech(.Whisper) leave no form trace, so they must
+  still be reported explicitly with empty `targets`.
+- **Server derives the rest from the diff.** Compare `data-cb-func` values indexed by element
+  `properties.name` between original (`persistJson`) and final form (`peopleForm`); functions added
+  to elements that didn't carry them before are re-emitted into `applied`.
+
+**Implementation:**
+- [`deriveAppliedFunctionsFromDiff(originalJson, modifiedJson)`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:5257)
+  — indexes `data-cb-func` per element name before/after, emits `{"id", "targets": [names]}` for the added ones.
+- [`indexDataCbFuncByElementName`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:5293)
+  — now uses the new [`splitFuncIds`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:5340)
+  helper to split **comma-separated** multi-function `data-cb-func` values (previously the whole
+  comma string was treated as one unknown id — a latent bug caught by the new tests).
+- [`mergeDerivedAppliedIntoReport(reportJson, derivedApplied)`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:5354)
+  — keeps only `Holistic.*` from the model's `applied`, appends the derived entries, preserves
+  `considered` / `codbiVerdict` / element counts; synthesizes the report if it was omitted.
+- Called in [`runFormModification`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:4933)
+  at lines 4933-4934 immediately after extraction.
+
+**Prompt edits:** footprint-bearing panel + Sys.Log.Console sections moved from `applied` to
+`considered` across [`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md:107),
+[`codbi-general-rethink.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general-rethink.md:95),
+[`codbi-general.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general.md:442);
+`codbi-canonical-output-rules.md` / `codbi-general.decision.md` / `codbi-standard-configurations.md`
+were already consistent with the Hybrid rule.
+
+**Regression:** new [`DeriveAppliedFunctionsTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/DeriveAppliedFunctionsTest.kt)
+— 11 cases covering derivation (new/existing elements, unchanged, object-map vs. array attribute
+shapes, blank input), the comma-split, and merge (replaces footprint-bearing, keeps Holistic,
+synthesizes report, preserves considered/verdict). Full suite green (exit 0).
+
 - The forced-final and retry passes re-emit what the previous attempt already produced; measure the
   `re-emission stats` log line before changing anything.
-- **Risk:** small per run; measure first.
+- **Risk:** small per run; the reported `applied` set is now derived from the form diff, so a
+  function the server cannot see as a diff (e.g. a pure server config like Holistic.Matomo without a
+  `Matomo_SiteID`) must stay footprint-less and be reported by the model explicitly.
 
-### Lever 7 — DB/memory hygiene (no token effect, but it is real waste)
+### Lever 7 — DB/memory hygiene (no token effect, but it is real waste) — DONE (2026-09-30)
 
 - `PromptLoader.loadCategory(em, "formcycle")` materialises the **whole** category — including the
   109 KB `formcycle.workflow_nodes` CLOB — into a map on every form request
   ([`buildCodbiFormSystemPrompt()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:20862),
   [`loadCodbiApplyPrompt()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:21100)).
-- Replace with targeted key loads (`loadPrompt(em, "formcycle.general_decision")`, `formcycle.widgets`
-  only where used). This also makes the "workflow nodes are not in the form path" invariant explicit
-  rather than accidental.
-- **Guard:** add a regression test asserting `formcycle.workflow_nodes` never appears in a
-  form-assistant pass-1 prompt.
+- **Implemented (2026-09-30):** replaced the whole-category load with targeted single-key loads in
+  every form-assistant path:
+  - `buildCodbiFormSystemPrompt` → `loadPrompt(em, "formcycle.general_decision")` (was the whole map).
+  - `loadCodbiApplyPrompt` → `loadPrompt(em, "formcycle.general_apply") ?: loadPrompt(em, "formcycle.general_decision")`.
+  - `buildWidgetNameIndex` → `loadPrompt(em, "formcycle.widgets")`.
+  - `loadCodbiRethinkPrompt` → `loadPrompt(em, "formcycle.widgets")`.
+- This makes the "workflow nodes are not in the form path" invariant explicit rather than accidental.
+- **Guard:** new `WorkflowNodesGuardTest` (4 cases) asserts the three form keys
+  (`formcycle-general.decision` / `formcycle-general-apply` / `formcycle-widgets`) never carry the
+  workflow-only output markers (`triggerParams` / `endpointType` / `chainedNodes` / `FC_DOI_INIT` /
+  the `Formcycle Workflow Nodes` heading), the workflow-nodes reference stays a separate live file,
+  and each form key stays lean (≪ the 109 KB CLOB).
+- **Deferred (out of form scope):** `buildWorkflowSystemPrompt` still loads the whole category
+  (`formcycle.general_workflow` / `formcycle.general` only) — same CLOB waste on the workflow path,
+  but changing it is a workflow-behaviour edit outside Lever 7. Candidate for a later follow-up.
 
 ---
 
@@ -521,9 +580,39 @@ always sends `intent:"both"` for chat turns, and the backend previously re-ran a
       split of the structure core (the "immediate next step") was implemented 2026-09-28.
       `need_chat_history`, and its `changeHistoryContext` reaches pass-1, the workflow pass and the
       mail/endpage i18n passes.
-      - [ ] **Primary (language-agnostic, low risk):** shrink the clarify prompt — condense
+      - [x] **Primary (language-agnostic, low risk):** shrink the clarify prompt — condense
             `latestFormElements` / `formStructureContext` / the completion pages / the form variables
             / the workflow-mail summary. No behaviour change.
+            - **FORM ELEMENTS condensation — DONE (2026-10-01):** the clarify round is the only
+              consumer that gets a condensed `formElements` (`condenseFormElementsForClarify` in
+              `AICodBiAssistant.kt` around `extractFormElementsFromJson`, wired at the clarify
+              call site only — chat & pass-1 keep the full block, mirroring the already-condensed
+              `clarifyFormStructureContext`). Dropped per element: `required`, `placeholder`,
+              `actionPage` (build/validate config the clarify round never reads — it only resolves
+              references and asks). Kept: `technicalId`, `type`, `displayText` and — critically —
+              the XSelect `options` ({text,value}) so option-value mapping ("which value maps to
+              'Ja'") still resolves and is never re-asked. Fail-open: non-JSON-array or blank input
+              passes through untouched. Regression test
+              [`ClarifyFormElementsCondenseTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ClarifyFormElementsCondenseTest.kt))
+              — names/labels/types/options survive, config flags dropped, strictly smaller, fail-open.
+              Full `mvnw -q -o test` green. (2026-10-01) **WORKFLOW decision-core split — DONE:**
+              the workflow/both clarify round now receives its own condensed core via
+              `buildWorkflowStructureContext(wid, ctx, condensed = true)` (wired at the clarify load
+              site in `handleRun`, gated to `intent == "workflow" || "both"`, fail-open null/blank ⇒
+              nothing). It serializes task `name` + trigger `type` and each existing node's `name` +
+              `type` in its parent/child tree, dropping `id`/`description`/`customParameters` — the
+              heavy parameters the clarify round never reads (it only RESOLVES references, e.g.
+              "add an approval step after the 'Freigabe' node"). The core reaches the final prompt
+              as the `workflowStructureBlock` ("CURRENT WORKFLOW STRUCTURE … target that EXACT node;
+              do NOT ask which node it means"), mirrored after the condensed form-structure core and
+              logged via `workflowStructBlockLen=` in the `clarification prompt assembly:` line.
+              Regression test
+              [`ClarifyWorkflowStructureCoreTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ClarifyWorkflowStructureCoreTest.kt))
+              — non-blank workflow structure injects the block with the EXACT-node imperative and
+              its node/task names reach the final prompt; null/blank injects nothing (fail-open).
+              Targeted `mvnw -q -o test -Dtest=ClarifyWorkflowStructureCoreTest,…` green. The
+              remaining clarify-block sub-targets (completion pages / form variables / workflow-mail
+              summary) are still open candidates.
       - [x] **Secondary (implemented 2026-09-27):** the tier-1 envelope carries
             `needsClarification` + `needsToolContext`, and `tryClarification` is skipped **only** on
             `needsClarification == false && needsToolContext empty && both keys present` (the AI
@@ -550,17 +639,175 @@ always sends `intent:"both"` for chat turns, and the backend previously re-ran a
       predating even the first fix), so the fix never reached the model. Re-seed required — a plugin
       restart/redeploy with a bumped version (or `-Dcodbi.prompt.reseed=true`) installs the current
       source before the saving is measurable.
-- [ ] **Lever 2.3 (B):** de-duplicate `formcycle-general-apply` vs.
-      `codbi-form-structure-rules.decision` (one authoritative home per rule).
-- [ ] **Lever 2.4 (C):** evaluate NAME-ONLY pass-1 catalogs on the corpus.
+- [x] **Lever 2.3 (B):** de-duplicate `formcycle-general-apply` vs.
+      `codbi-form-structure-rules.decision` (one authoritative home per rule). Verified —
+      `FormcycleGeneralApplyDedupTest` 6/6.
+- [x] **Lever 2.4 (C):** NAME-ONLY pass-1 catalogs — every heading + preamble kept verbatim, per-entry
+      prose dropped (`buildSectionCondensed` / `buildWidgetsSectionCondensed` →
+      `condenseEntryNames`). Regression `CodbiCapabilitiesPass1NameOnlyTest` 5/5 (self-contained,
+      no corpus required). See the Lever 2 §2.4 note.
 - [x] **Lever 3 (E):** merge `classify-intent` into `chat-classify` — the chatMode reclassify duplicate
   is folded into `chat-classify` (phase-1 classify kept; see Lever 3 section).
-- [ ] **Lever 4 (C/E):** single-pass multi-language translation.
-- [ ] **Lever 5 (C):** workflow prompt decision-core split.
-- [ ] **Lever 6 (A/G):** derive `_codbiApplicability` from the diff.
-- [ ] **Lever 7:** targeted `formcycle` key loads + regression test that
+- [x] **Lever 4 (C/E):** single-pass multi-language translation — **implemented 2026-10-01** as the
+  translation-delta protocol with **adaptive batch-or-split output budgeting** (see §6B): per-language
+  bounded deltas spliced into the untouched original, batched greedily so each completion's cumulative
+  output estimate stays ≤ `TRANSLATION_BATCH_OUTPUT_BUDGET` (800); any truncated/unparsable batch's
+  missing languages are re-issued solo (fail-open — no language lost). Regression:
+  `TranslationDeltaProtocolTest` 7 new batching tests + full suite green.
+- [x] **Lever 5 (C):** workflow prompt decision-core split — incl. the `formcycle-general-workflow`
+      de-dup; `WorkflowGeneralDedupTest` + `FormcycleGeneralApplyDedupTest` 6/6 each.
+- [x] **Lever 6 (A/G):** derive `_codbiApplicability` from the diff — **implemented 2026-10-01** as the
+      HYBRID design (drop footprint-bearing `applied` from the model, keep footprint-less
+      `Holistic.*`, derive the rest from the form diff; see Lever 6 section). Implementation +
+      comma-split `splitFuncIds` fix + prompt edits + `DeriveAppliedFunctionsTest` 11/11; full suite green.
+- [x] **Lever 7:** targeted `formcycle` key loads + regression test (WorkflowNodesGuardTest) that
       `formcycle.workflow_nodes` never enters a form-assistant prompt.
 - [ ] Re-measure per §5 after each landed lever and update the two existing plans' status tables.
+
+---
+
+## 6B. Translation-workflow optimisation — Lever 4 (implemented)
+
+Status: **IMPLEMENTED** (2026-10-01) — the translation-delta protocol with adaptive batch-or-split
+output budgeting, superseding the original single-pass Lever 4 (which the user rejected because a
+one-completion multi-language output on a big form is too large and truncates). Implemented in
+`runTranslationDelta` (`AICodBiAssistant.kt:3409`) + helpers `estimateTranslationOutputTokens`
+(3546), `groupTranslationBatches` (3570), `parseBatchDelta` (3604); multi-language output contract in
+[`codbi-translation-delta-instruction.md`](../src/main/resources/.../prompts/codbi-translation-delta-instruction.md).
+Requires a prompt re-seed at runtime to pick up the `.md` addition.
+
+**Context enrichment of the base view (2026-10-01).** `buildTranslationDeltaView` (`AICodBiAssistant.kt:3207`)
+now enriches each element entry with READ-ONLY CONTEXT so the model can disambiguate short/ambiguous
+labels without re-sending any form structure:
+- **(1) `parent`** — the heading path (`page › fieldset › container`) each element lives under
+  (`"Name"` under `Fahrzeug` = vehicle, under `Kontakt` = person). Built by a depth-first `walk` over the
+  real nested container `elements` arrays.
+- **(3) `type`** — the human-readable widget kind (`TextInput`, `Select`, `StaticText`, …) via
+  `elementType(className)`, so the model picks the right register (an input label vs. a heading vs. an
+  alt text).
+- **(4) form-level metadata** — beyond `title`, also `description` and `submit_button_label`
+  (`FORM_LEVEL_PROPS`) are emitted under the `form` object.
+
+These context keys are excluded from the output-token estimate (`estimateTranslationOutputTokens` skips
+`TRANSLATION_CONTEXT_KEYS = {type, parent}`) so batch sizing stays accurate, and `writeElementDeltaI18n`
+guards them out of spliced `i18n` — even a model echoing `type`/`parent` back can never corrupt
+`properties.i18n` (invariant: omission = unchanged). The `.md` instruction prompt documents that `type`
+and `parent` are CONTEXT ONLY and must NOT be echoed into the output delta. Regression coverage in
+`TranslationDeltaProtocolTest` (`contextFormJson` + `nestedItemByName` helpers).
+
+**Rich HTML handling (2026-10-01, real-bug fix).** A rich XSpan `rtevalue` (heading + paragraphs +
+inline `<style>`/`<script>` + `.cbBenefitCard` cards) was being translated into a flat, concatenated
+string with ALL markup stripped and every fragment jammed together — because `cleanStr`'s
+`stripHtml = Regex("<[^>]*>")` + whitespace collapse flattened distinct blocks into one unbroken run
+before the model saw them, and the splice then wrote that flat blob back as the whole `rtevalue`.
+Fix in `addProp` (`AICodBiAssistant.kt:3262`): if a content value LITERALLY contains an HTML tag
+(`Regex("<\\s*[a-zA-Z/]")`), it is emitted in the base view **verbatim** so the model returns COMPLETE
+translated HTML; plain strings keep the slim stripped/flattened form. `rtevalue` is sent/returned as
+full HTML — matching the established `runFormModification` precedent ("an HTML property you change is
+sent COMPLETE, with its unchanged markup") — while `label`/`placeholder`/etc. stay slim. This
+sacrifices token savings for the rich-HTML minority to guarantee correct structure; the `.md` gained a
+dedicated "Rich HTML" rule (copy every tag/attribute/class/entity/CSS byte-for-byte, translate ONLY the
+visible text, never strip markup or collapse blocks). Regression coverage in `TranslationDeltaProtocolTest`
+(`richHtmlFormJson` + 3 rich-HTML tests: verbatim retain, plain still stripped, splice-back intact).
+Requires a prompt re-seed at runtime to pick up the `.md` addition.
+
+### Why both the current flow AND the original Lever 4 are wasteful
+
+`runSequentialWholeFormTranslation` (`AICodBiAssistant.kt:3110`) does one full `runFormModification`
+pass **per new language**. Each pass:
+
+1. **Input:** re-sends the whole `persistJson` (full form) N times.
+2. **Output:** re-emits the **entire modified form JSON** N times, even though a translation only ever
+   touches `properties.i18n[<lang>]` (+ form-level `i18n`, per-option / per-button / per-nested-object
+   `i18n`). Everything else is byte-identical to the original.
+
+So a "translate into en, fr, it" costs ≈ `N × (full input + full output)`. The original single-pass
+Lever 4 cut the *input* waste but made the **output** `N × full form` in ONE completion — which
+truncates on big forms (the exact failure the per-language design was built to avoid).
+
+### The core insight
+
+A whole-form translation is **structurally different** from a general form modification. It never
+edits structure — it only *adds a language* to the existing per-language `i18n` maps. So the model
+should **not** re-emit the form at all; it should emit **only the translated strings**, and the plugin
+splices them into the untouched original. The existing `overlayElementI18n` / `overlayNestedI18n` /
+`copyLangI18n` merge helpers (already proven in this flow) give us the splice machinery for free.
+
+### Proposed design — form-translation delta protocol
+
+Replace the N× full-form echo with **one slim input + N small bounded deltas**:
+
+1. **Shared input, sent once.** Build a **base-language-only view** of the form: reuse the existing
+   pass-1 `NAME-ONLY` catalogs (Lever 2.4: `buildSectionCondensed` / `buildWidgetsSectionCondensed`)
+   so the input has the element names + base-language strings but **no** structural noise and **no**
+   already-present i18n. This is a single description of *what needs translating*.
+
+2. **Per-language delta completion (bounded output).** For each new language, one small completion
+   returns **only that language's delta**, keyed by element/option/button identity, e.g.:
+
+   ```json
+   {
+     "lang": "en",
+     "form": { "title": "Registration" },
+     "elements": {
+       "tfVorname":        { "label": "First name", "placeholder": "Enter first name" },
+       "selAnrede/opt1":   { "value": "Mr" }
+     }
+   }
+   ```
+
+   The instruction is explicit: **never** emit structure, **never** emit base-language text, **never**
+   touch any other language — only this keyed map of translations.
+
+3. **Server-side splice.** Walk the ORIGINAL `persistJson`, resolve each key via the existing
+   id/name index, and write `properties.i18n["en"][...]` for every field. `overlayElementI18n` already
+   does the positional/`id`/`name` matching for nested options/buttons; the same resolver handles the
+   delta keys. Structural fields are never replaced — the same guarantee the merge already enforces.
+
+### Resulting token profile (N new languages)
+
+| Variant | Input | Output | Truncation risk |
+|---|---|---|---|
+| Current sequential | `N × full form` | `N × full form` | none (bounded per pass) |
+| Original Lever 4 (one completion) | `1 × full form` | `N × full form` in one | high on big forms |
+| **Delta protocol (implemented)** | `1 × slim base view` | `M × strings (≤ budget each)` | none (bounded per batch) |
+
+Output collapses from `N × full form` to per-batch `strings only` — typically **5–20× smaller** — which
+both solves the user's big-form truncation concern and removes the N× input re-send.
+
+### Adaptive batch-or-split (per-language output budgeting)
+
+Because the amount to translate is known up front (`buildTranslationDeltaView`), each language's
+output is estimated as `chars/4` (`estimateTranslationOutputTokens`) and languages are greedily
+grouped into batches so a batch's cumulative estimate ≤ `TRANSLATION_BATCH_OUTPUT_BUDGET = 800`
+(≈39 % of the default 2048 `max_tokens` cap). A single language whose estimate alone exceeds the
+budget runs solo. Each completion returns the envelope
+`{"translations":{"<lang>":{<per-language delta>},...}}` (`parseBatchDelta`) and every returned
+language is spliced via `spliceTranslationDelta`. Any missing/truncated/unparsable language in a
+batch is re-issued **alone** (fail-open — no language is ever lost), which is the same invariant as
+the sequential design's per-pass bound.
+
+### Why it satisfies the invariants (§4)
+
+- **(2) omission = unchanged:** the plugin, not the model, owns structure; only `i18n[<lang>]` is
+  written, so any element the model omits is simply untranslated (falls back to base) — never altered.
+- **(3) demand-loading:** the slim base view reuses the already-requestable `NAME-ONLY` catalogs; no
+  prompt-text storage change.
+- **(6) measure, don't intuit:** land behind the existing `planWholeFormTranslation` gate, compare the
+  `logReEmissionStats` / usage log line for the same corpus before/after.
+
+### Rollout (keeps risk low)
+
+1. **DONE** — `runTranslationDelta` is the delta-only pass path engaged when the plan produced
+   `plannedNewLangs.size >= 1`, replacing the N× full-form echo.
+2. **DONE** — because output is now small, per-language steps are batched (M languages per completion)
+   by `groupTranslationBatches` under the 800-token output budget — recapturing the original Lever 4
+   *only* now that output is bounded.
+3. Remaining validation: live run on the big multilingual form from
+   [`plans/whole-form-translation-sequential-languages.md`](whole-form-translation-sequential-languages.md)
+   (the one that truncated at ~15.6 k chars), asserting the `Translation delta merged N language(s) in
+   M pass(es)` log line and NO "unparseable response" / missing-language warnings. Requires a prompt
+   re-seed/restart for the `.md` contract change.
 
 ---
 

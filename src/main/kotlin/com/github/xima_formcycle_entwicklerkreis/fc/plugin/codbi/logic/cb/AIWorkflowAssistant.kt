@@ -433,7 +433,8 @@ class AIWorkflowAssistant : IPluginServletAction {
     if (template.isBlank()) return loadFallbackPrompt("codbi.fallback_workflow")
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     val general =
-        em?.let { PromptLoader.loadCategory(it, "formcycle")["formcycle.general"] ?: "" } ?: ""
+        em?.let { PromptLoader.loadCategory(it, "formcycle")["formcycle.general_workflow"] ?: "" }
+            ?: ""
     val workflowReference =
         em?.let {
           if (requestedNodes.isNotEmpty() || requestedTriggers.isNotEmpty()) {
@@ -570,7 +571,7 @@ class AIWorkflowAssistant : IPluginServletAction {
     if (em == null) return loadFallbackPrompt("codbi.fallback_workflow")
     try {
       val categories = PromptLoader.loadCategory(em, "formcycle")
-      val general = categories["formcycle.general"] ?: ""
+      val general = categories["formcycle.general_workflow"] ?: ""
       val workflowRef =
           if (requestedNodes.isNotEmpty() || requestedTriggers.isNotEmpty()) {
             PromptLoader.buildWorkflowNodeDetails(em, requestedNodes, requestedTriggers)

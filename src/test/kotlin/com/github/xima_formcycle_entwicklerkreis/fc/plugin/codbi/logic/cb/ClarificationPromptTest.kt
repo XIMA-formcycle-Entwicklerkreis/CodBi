@@ -169,8 +169,97 @@ class ClarificationPromptTest {
   fun `the clarification template is a small fraction of the original reference`() {
     val p = template()
     // Original measured at 44,328 chars ≈ 14 k tokens (the largest single component of the gated
-    // clarify prompt). Every byte cut here is paid on EVERY non-skipped clarification round.
-    assertTrue(p.length < 34000, "clarification template grew back to ${p.length} chars")
+    // clarify prompt). Every byte cut here is paid on EVERY non-skipped clarification round. The
+    // cap is the POST-condensation size (measured ~30.8 k) with a little headroom for a legitimate
+    // future rule addition — it must never silently regrow toward the pre-condensation 44 k.
+    assertTrue(p.length < 32000, "clarification template grew back to ${p.length} chars")
+  }
+
+  // --- Lever 1 (backend): the CLARIFICATION round gets a CONDENSED form-structure context ---
+  //
+  // The clarify AI only RESOLVES references to existing elements; it never builds/verifies, so the
+  // per-element "already configured" flag suffix ([required; hiddenif=...; readonly; regex; ...])
+  // is dead weight for it. `buildFormStructureContext(persistJson, condensed = true)` must keep
+  // every NAME/LABEL/TITLE + the page/fieldset tree, but drop those flags — while the default
+  // (chat/pass-1) variant keeps them unchanged.
+
+  private val persistWithFlags =
+      """
+      {"items":[
+        {"className":"XPage","properties":{"name":"page1","label":"Seite 1","elements":[
+          {"className":"XFieldSet","properties":{"name":"fs1","legend":"Pers\u00f6nliche Daten",
+            "required":"1","hiddenifshow":"true","regex":"[A-Z]","elements":[
+            {"className":"XTextField","properties":{"name":"vorname","title":"Vorname","required":"1"}}
+          ]}}
+        ]}}
+      ]}
+      """
+          .trimIndent()
+
+  private fun buildStructure(persist: String, condensed: Boolean): String? =
+      AICodBiAssistant::class
+          .java
+          .getDeclaredMethod("buildFormStructureContext", String::class.java, Boolean::class.java)
+          .apply { isAccessible = true }
+          .invoke(AICodBiAssistant(), persist, condensed) as? String
+
+  @Test
+  fun `condensed structure context keeps names and labels but drops config flags`() {
+    val condensed = buildStructure(persistWithFlags, condensed = true) ?: error("condensed is null")
+    // Every element's reference surface must survive: names, labels/titles, and the tree.
+    assertTrue(condensed.contains("page1"), "page technical name must survive")
+    assertTrue(condensed.contains("Seite 1"), "page label must survive")
+    assertTrue(condensed.contains("fs1"), "fieldset technical name must survive")
+    assertTrue(condensed.contains("Pers\u00f6nliche Daten"), "fieldset legend must survive")
+    assertTrue(condensed.contains("vorname"), "field technical name must survive")
+    assertTrue(condensed.contains("Vorname"), "field title must survive")
+    // The clarify round never builds/verifies, so the "already configured" flag suffix is DEAD
+    // WEIGHT for it and must be dropped.
+    assertTrue(!condensed.contains("required"), "condensed must not carry the required flag")
+    assertTrue(!condensed.contains("hiddenif"), "condensed must not carry hiddenif detail")
+    assertTrue(!condensed.contains("regex"), "condensed must not carry validation detail")
+  }
+
+  @Test
+  fun `condensed structure context is strictly smaller than the full one`() {
+    val full = buildStructure(persistWithFlags, condensed = false) ?: error("full is null")
+    val condensed = buildStructure(persistWithFlags, condensed = true) ?: error("condensed is null")
+    assertTrue(
+        condensed.length < full.length, "condensed ($condensed.length) >= full ($full.length)")
+  }
+
+  @Test
+  fun `the default structure context still carries the config flags (chat - pass1 unchanged)`() {
+    val full = buildStructure(persistWithFlags, condensed = false) ?: error("full is null")
+    // Chat/pass-1 genuinely react to required/visibility/validation, so those flags must survive
+    // in the default variant.
+    assertTrue(full.contains("required"), "default variant must keep the required flag")
+    assertTrue(full.contains("hiddenif"), "default variant must keep hiddenif detail")
+  }
+
+  // --- Lever 1 (backend): the WORKFLOW clarify branch shares the same condensed decision-core ---
+  //
+  // A workflow request may still reference existing form elements ("when 'Genehmigen' is clicked",
+  // "bound to the 'vorname' field"), so the workflow clarify round must resolve references against
+  // the SAME lean decision-core (condensed=@true) as the form one. It never builds/verifies, so it
+  // too must NOT receive the per-element config-flag suffix. `buildFormStructureContext(persist,
+  // condensed=@true)` is the single seam both intents share; here we assert the workflow intent
+  // uses
+  // it (that is, it resolves refs from the lean core, not the full chat/pass-1 variant).
+  @Test
+  fun `the workflow clarify round consumes the same condensed decision-core as the form one`() {
+    val workflowCondensed = buildStructure(persistWithFlags, condensed = true) ?: error("null")
+    // Same lean core as the form round: every reference surface survives, no config-flag suffix.
+    assertTrue(workflowCondensed.contains("vorname"), "workflow core must keep the field name")
+    assertTrue(workflowCondensed.contains("Vorname"), "workflow core must keep the field title")
+    assertTrue(workflowCondensed.contains("page1"), "workflow core must keep the page tree")
+    assertTrue(!workflowCondensed.contains("required"), "workflow core must drop the required flag")
+    assertTrue(!workflowCondensed.contains("hiddenif"), "workflow core must drop hiddenif detail")
+    // And it is strictly leaner than the chat/pass-1 variant the workflow round does NOT need.
+    val chatFull = buildStructure(persistWithFlags, condensed = false) ?: error("null")
+    assertTrue(
+        workflowCondensed.length < chatFull.length,
+        "workflow condensed core (${workflowCondensed.length}) must be leaner than chat full (${chatFull.length})")
   }
 
   // --- the verbose essay trap: a condensation must not JUNK the operative imperative ---

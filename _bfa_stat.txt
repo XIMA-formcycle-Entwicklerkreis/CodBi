@@ -1,0 +1,34 @@
+commit bfa731c5693b6166b67362297a11fef192f99b9b
+Author: CallariS <callaris@users.noreply.github.com>
+Date:   Sun Sep 27 22:07:42 2026 +0200
+
+    FA > Optimized prompts with tag-section to further save tokens when altering a form.
+
+ plans/formassistant-apply-from-log.md              |  53 ++-
+ plans/formassistant-input-token-optimization.md    |   5 +
+ plans/formassistant-output-token-optimization.md   |   5 +
+ plans/formassistant-token-reduction-remaining.md   | 498 +++++++++++++++++++++
+ scripts/add-section-markers.mjs                    |  65 +++
+ .../fc/plugin/codbi/logic/cb/AICodBiAssistant.kt   | 404 +++++++++++++++--
+ .../fc/plugin/codbi/logic/cb/AiAssistantLog.kt     | 124 +++++
+ .../fc/plugin/codbi/logic/cb/ClarifySkipPolicy.kt  | 145 ++++++
+ .../plugin/codbi/logic/cb/CodbiBlindPassPolicy.kt  |  84 ++++
+ .../fc/plugin/codbi/logic/cb/FormItemIdentity.kt   |  74 +++
+ .../fc/plugin/codbi/logic/cb/PromptSectionGate.kt  |  63 ++-
+ .../codbi/prompts/codbi-canonical-output-rules.md  |  15 +
+ .../codbi/prompts/codbi-chat-system-prompt.md      |   8 +-
+ .../prompts/codbi-form-structure-rules.decision.md |  12 +
+ .../plugin/codbi/prompts/codbi-general.decision.md |   4 +
+ .../fc/plugin/codbi/prompts/codbi-retry-chat.md    |   2 +-
+ .../src/app/ai-assistant-log/ai-assistant-log.html |   2 +
+ .../src/app/ai-assistant-log/ai-assistant-log.scss |  11 +
+ .../src/app/ai-assistant-log/ai-assistant-log.ts   | 128 +++++-
+ .../src/app/ai-assistant-log/log-tree-node.ts      |  78 +++-
+ .../manager/src/app/ai-assistant/ai-assistant.ts   |  88 +++-
+ .../fc/plugin/codbi/logic/cb/ApplyLogEntryTest.kt  |  43 ++
+ .../codbi/logic/cb/ApplyLogEntryWorkflowTest.kt    | 167 +++++++
+ .../plugin/codbi/logic/cb/ClarifySkipPolicyTest.kt | 100 +++++
+ .../codbi/logic/cb/CodbiBlindPassPolicyTest.kt     |  96 ++++
+ .../plugin/codbi/logic/cb/FormItemIdentityTest.kt  | 104 +++++
+ .../plugin/codbi/logic/cb/PromptSectionGateTest.kt |  88 +++-
+ 27 files changed, 2360 insertions(+), 106 deletions(-)

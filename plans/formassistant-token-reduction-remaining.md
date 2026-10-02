@@ -188,9 +188,9 @@ full rate** on this provider, so it is a latency feature, not a cost one.
 | 1 | **Split the multi-tag block** — [`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md) line 43 was tagged `designed_text,svg`, so a CSS-only design request kept the illustration rules through the `designed_text` half. **Implemented 2026-09-28**: split into a separate `designed_text` block and an `svg` block; the `designed_text,svg,custom_js` PARTIAL-HTML-EDITS block stays multi-tag (it genuinely applies to all three). Guarded by a new `PromptSectionGateTest` case. **Follow-up**: the assistant's keep-set construction force-included BOTH `designed_text` **and** `svg` on any design/interactive/animated request, which re-kept the illustration half even without a drawing request — that force-include now adds only `designed_text` (see "Implemented and verified" above). | several k tokens on CSS-only design requests | `Pass-2 … illustration checklist included:` must flip to `false` on a CSS-only request; `widgetTemplates=<n>` drops | done — next is lever 2 |
 | 2 | **Trim the Bürger-Services naming block** (was 11,801 chars ≈ 2.8–3.8 k tokens; now ~8,246 chars ≈ 30 % smaller) — condensed to the canonical-ID catalog + the ELSTER fields + the hard rules, verbose prose/worked examples dropped. Sent on BOTH pass-1 and pass-2, so each byte saved is paid twice. **Implemented 2026-09-28** (Approach A: prompt-only `.md` rewrite, invariant #2 kept). **REGRESSION + FIX 2026-09-28**: the first cut dropped the "AUTH METHOD → FIELD REQUIREMENTS" imperative, so the model created the `fsBKDaten` fieldset but left its `elements` empty ("input fields are not generated anymore"); a condensed field-creation imperative block was restored **and then STRENGTHENED 2026-09-28** to cover ANY container the AI creates (not just the literal `fsBK*` — the failing run created a generic `fdPersonData` XContainer with empty `elements`), raising the size cap from 8,000 → 8,500 for the legitimate generalization (9 `BuergerserviceNamingPromptTest` cases incl. the field-creation and any-container guards). **CRITICAL — stale DB seed**: the user's failing run was served a STALE DB block (`buergerservice=7617`), NOT the fixed source — the fix never reached the model until the prompts are re-seeded. **Verify from the log**: `Pass-2 system prompt composition: … buergerservice=<n>` should drop accordingly after a re-seed restart | ~2–3 k tokens per build run | `Pass-2 system prompt composition: … buergerservice=<n>` | done — next is lever 2.3 |
 | 3 | ✅ **Merge `classify-intent` into `chat-classify`** — *implemented 2026-09-29* | ~2.1 k tokens | measurement gap closed: it runs as the separate phase-1 HTTP request (absent from the phase-2 `trips` by design). Phase-1 kept; the **chatMode reclassify** duplicate ~2.1 k inference folded into `chat-classify` | done |
-| 4 | Shrink the clarify prompt (only non-skipped rounds); give the workflow branch the same decision-core split | share of ~14 k / large for workflow runs | `clarification prompt assembly: … gatedLen=` | **partial** — FORM-ELEMENTS + WORKFLOW-STRUCTURE decision-cores landed 2026-10-01 (`condenseFormElementsForClarify` + `buildWorkflowStructureContext(…, condensed=true)` → `workflowStructureBlock`); completion-pages / form-variables / workflow-mail blocks still open |
-| 5 | `_codbiApplicability` derived from the diff instead of generated; monitor the output the identity rule now adds (`completionChars`) | small per run | `re-emission stats`, `completionChars` | open |
-| 6 | One conversation for pass-1 + pass-2 | only with a **prefix-cache-discounting** provider; a stateless API re-sends the core, and this provider bills hits at full rate | `cachedIn` vs `cost` | open, provider-dependent |
+| 4 | Shrink the clarify prompt (only non-skipped rounds); give the workflow branch the same decision-core split | share of ~14 k / large for workflow runs | `clarification prompt assembly: … gatedLen=` | **done (2026-10-02)** — FORM-ELEMENTS + WORKFLOW-STRUCTURE decision-cores landed 2026-10-01 (`condenseFormElementsForClarify` + `buildWorkflowStructureContext(…, condensed=true)` → `workflowStructureBlock`); then completion-pages / workflow-mail sub-blocks landed 2026-10-02 (`condenseCompletionPagesForClarify` drops the per-page `uuid` → a name-only list; `fetchWorkflowMailNodesSummary` drops `id`/`type` → `{name, subject, sender, recipient}`; form variables were already a lean name-only list). Regression [`ClarifyCompletionPagesCondenseTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ClarifyCompletionPagesCondenseTest.kt) green |
+| 5 | `_codbiApplicability` derived from the diff instead of generated; monitor the output the identity rule now adds (`completionChars`) | small per run | `re-emission stats`, `completionChars` | **done (2026-10-01)** — hybrid design, `DeriveAppliedFunctionsTest` 11/11 green (see Lever 6 section); table was late to reflect the checklist |
+| 6 | One conversation for pass-1 + pass-2 | only with a **prefix-cache-discounting** provider; a stateless API re-sends the core, and this provider bills hits at full rate | `cachedIn` vs `cost` | **NOT TO APPLY** (closed 2026-10-02): the current provider bills cache/prefix hits at the FULL input rate (measured `cachedIn` 4,096/6,400 in run 643 — a latency feature, not a cost one), so merging saves ~nothing; it also entangles the deliberate decision/apply split and enlarges pass-2's window. The `AI_Assistant_PromptCaching` mode already captures any prefix-cache saving that a discounting provider would offer; if one is later adopted, re-evaluate only when cached tokens are near-free AND the merged pass-2 stays lean — not by default |
 
 **Instruments — the exact log lines to read (all already emitted):**
 
@@ -610,9 +610,27 @@ synthesizes report, preserves considered/verdict). Full suite green (exit 0).
               [`ClarifyWorkflowStructureCoreTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ClarifyWorkflowStructureCoreTest.kt))
               — non-blank workflow structure injects the block with the EXACT-node imperative and
               its node/task names reach the final prompt; null/blank injects nothing (fail-open).
-              Targeted `mvnw -q -o test -Dtest=ClarifyWorkflowStructureCoreTest,…` green. The
-              remaining clarify-block sub-targets (completion pages / form variables / workflow-mail
-              summary) are still open candidates.
+              Targeted `mvnw -q -o test -Dtest=ClarifyWorkflowStructureCoreTest,…` green.
+              **COMPLETION PAGES / WORKFLOW-MAIL condensation — DONE (2026-10-02):** the remaining
+              clarify sub-blocks are now shrunk too.
+              - **completion pages** — new `condenseCompletionPagesForClarify` (in
+                `AICodBiAssistant.kt` next to `condenseFormElementsForClarify`, wired at the clarify
+                load site in `handleRun` for `intent == "workflow" || "both"`): `fetchCompletionPages`
+                returns a rich `[{"name":…,"uuid":…},…]` array, but the clarify round only offers these
+                as multiple-choice options BY NAME ("PICK ONE BY NAME") and never persists a page, so
+                the per-page `uuid` is dead weight and is dropped — the digest becomes a comma-separated
+                name list. Fail-open: non-array/blank input passes through unchanged.
+              - **workflow-mail summary** — `fetchWorkflowMailNodesSummary` now emits only
+                `{name, subject, sender, recipient}` (drops `id`/`type`); the clarify block only needs
+                the `name` to identify which mail plus the recipient/sender/subject values being REUSED.
+              - **form variables** — already emitted a lean comma-separated name list; no change.
+              Regression test
+              [`ClarifyCompletionPagesCondenseTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ClarifyCompletionPagesCondenseTest.kt))
+              — name-list condensation drops the uuid and is strictly smaller, fail-open on
+              malformed/blank/null; the condensed name list, lean workflow-mail block and form-variable
+              block all assemble their blocks with the needed values reaching the final prompt.
+              Targeted `mvnw -q -o test -Dtest=ClarifyCompletionPagesCondenseTest,…` + broad
+              regression green.
       - [x] **Secondary (implemented 2026-09-27):** the tier-1 envelope carries
             `needsClarification` + `needsToolContext`, and `tryClarification` is skipped **only** on
             `needsClarification == false && needsToolContext empty && both keys present` (the AI
@@ -662,6 +680,12 @@ synthesizes report, preserves considered/verdict). Full suite green (exit 0).
       comma-split `splitFuncIds` fix + prompt edits + `DeriveAppliedFunctionsTest` 11/11; full suite green.
 - [x] **Lever 7:** targeted `formcycle` key loads + regression test (WorkflowNodesGuardTest) that
       `formcycle.workflow_nodes` never enters a form-assistant prompt.
+- [x] **Lever 6 (open-levers row 6) — decision: NOT TO APPLY (closed 2026-10-02).** One-conversation for
+      pass-1 + pass-2 was assessed against the measured billing: the provider bills prefix-cache hits at
+      the full input rate, so merging saves no cost and instead entangles the decision/apply split and
+      grows the effective pass-2 context. The existing `AI_Assistant_PromptCaching` mode already realises
+      any prefix-cache saving a discounting provider could offer; re-open only if a provider charges
+      near-free cached tokens AND the merged pass-2 is kept lean (not by default).
 - [ ] Re-measure per §5 after each landed lever and update the two existing plans' status tables.
 
 ---
@@ -808,6 +832,56 @@ the sequential design's per-pass bound.
    (the one that truncated at ~15.6 k chars), asserting the `Translation delta merged N language(s) in
    M pass(es)` log line and NO "unparseable response" / missing-language warnings. Requires a prompt
    re-seed/restart for the `.md` contract change.
+
+---
+
+## 8. Remaining tasks — the queue (all ordered levers, no longer "open" but still worth doing)
+
+> **Context.** The seven formal levers above are all done or closed. What remains is a set of smaller,
+> individually-verifiable follow-ups that were deliberately left out of the big-lever scope, plus one
+> piece of output-side hygiene and one free-to-try configuration. They are listed in "verifiable one
+> after another" order; each has its own expected-value, verify-with, and regression coverage, and none
+> of them changes the information the model genuinely needs (the §4 invariants still apply).
+
+| # | Follow-up | What | Expected | Verify with | State |
+|---|---|---|---|---|---|
+| A | **Workflow-path category-load hygiene** | `buildWorkflowSystemPrompt` materialised the **whole** `formcycle` category (incl. the ~109 KB `formcycle.workflow_nodes` CLOB) into a map just to read `formcycle.general_workflow` (fallback `formcycle.general`). Lever 7 fixed the form paths to targeted `PromptLoader.loadPrompt(em, key)` calls but explicitly deferred the workflow path. **Applied then REVERTED 2026-10-02**: the targeted `loadPrompt` swap was measured as **using more tokens than before**, so it was reverted to the original `loadCategory(em, "formcycle")` + `fc[...]` access. Root cause not fully confirmed; the whole-category load stays (its 109 KB materialisation is memory-only — only the `general_workflow`/`general` entries reach `{{GENERAL}}`). | *(reverted)* | workflow prompt renders `{{GENERAL}}` from `general_workflow` → `general` | **reverted (2026-10-02)** |
+| B | **Gate the compact server-variables catalog on placeholder references** | The compact workflow reference's `AVAILABLE SERVER VARIABLES` catalog (lines 24–79, ~55 lines ≈ 1.5–2 k tokens) is the `[%$...%]` placeholder dictionary — always sent in full on the pass-1 build, though it is dead weight when the request references no placeholder. **Applied then REVERTED 2026-10-02** (originally implemented 2026-10-02): wrapped the catalog in `<!--SECTION:server_vars-->` markers (compact `.md`), added a `server_vars` deterministic detector, and threaded the request corpus through `buildWorkflowSystemPrompt` → `buildWorkflowNodesCondensed` so the pass-1 reference was gated. The runtime measurement showed the gate used **more tokens than before**, so the markers, the `server_vars` detector patterns, the `requestCorpus` threading and the `WorkflowGeneralDedupTest` gate cases were all removed; the compact reference ships its server-variable catalog unconditionally again (pass-2's detailed reference was always ungated, so nothing is lost). | *(reverted)* | n/a — the catalog is always sent again | **reverted (2026-10-02)** |
+| C | **Gate the `conditional` / `state_availability` always-on blocks** | [`plans/formassistant-input-token-optimization.md`](formassistant-input-token-optimization.md) left the `conditional` and `state_availability` blocks always-on as a **higher-risk** follow-up, estimated at ~40,000 chars ≈ 11–12 k tokens. **REJECTED 2026-10-02 after re-measuring the prompt:** the actual always-on conditional/state content is only ≈ 8 k chars total (≈ 2.2 k tokens) — STATE-DEPENDENT AVAILABILITY ~2.5 k + CONDITIONAL PROPERTIES ~2.1 k + CONTAINER FOR CONDITIONALLY SHOWN FIELDS ~0.3 k in [`codbi-form-structure-rules.decision.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md), plus the pass-2 EConditionType annex ~3 k in [`formcycle-general-apply.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-general-apply.md) — i.e. ≈ 1.3 k tokens on pass-1, roughly **9× below** the plan's figure. The §9.1 rejection stands unchanged: these blocks gate **silent** failure modes (a wrong `*ifcomp` code, `statusdependent` hiding instead of read-only, an emptied area), so the risk/benefit is unfavourable for ~1.3 k tokens. | 0 (rejected) | — | **rejected (2026-10-02)** |
+| D | **Second clarify-template always-on residual trim** | The clarify template was estimated at ~44 k chars gated to ~33 k, with a ~11 k always-on residual to trim. **REJECTED 2026-10-02 after re-measuring the prompt:** the template is **30,862 chars** and its always-on slice (after the `<!--CLARIFY:-->` payment/livedata/http/approval gating) is ≈ **24.7 k chars of distinct anti-ask decision rules** — not per-entry prose the clarify round never reads — so a ~11 k trim would delete ~45 % of those rules and invite the exact "re-asked" regression the follow-up warns about. The injected blocks are already condensed (the XSpan digest strips `<style>`/HTML and caps at 4,096 chars in [`buildTextSpanContentContext()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:10225); Lever 4 did completion pages / workflow mails / form variables / form structure / workflow structure). The only provably lossless reduction is ≈ 2 k chars of exact duplication (mechanism B), ≈ 0.5 k tokens — not worth a prompt rewrite + re-seed. | 0 (rejected) | — | **rejected (2026-10-02)** |
+| E | **Output-side re-emission / forced-final waste + duplicate `_codbiApplicability` report** | **DONE (2026-10-02).** (1) The forced-final pass already uses the `_diff`/`_unchangedItems` + `sliceFormForPass2` protocol, so it does not re-emit untouched items — the missing piece was *observability*, now fixed by logging `form-forced-final re-emission stats` exactly like pass-1/pass-2. (2) [`mergeDerivedAppliedIntoReport()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:5414) now emits **each `applied` id exactly once** — a diff-derived entry wins over a kept model `Holistic.*` entry with the same id (the only overlap path); `considered`/`skipped`/`codbiVerdict`/counts stay verbatim. | exact-once `applied` set; forced-final re-emission now measurable | `DeriveAppliedFunctionsTest` new case *"emits each applied id exactly once …"* + the existing 11 cases; the `form-forced-final re-emission stats` log line | **done (2026-10-02)** |
+| F | **Provider prompt-caching config flip (free to try)** | The `AI_Assistant_PromptCaching` mode re-sends gated-dropped blocks relying on a provider prefix-cache *discount*. On the current provider cache hits are billed at FULL rate (latency feature, not cost) — so flipping it on is free-to-try and may help models with aggressive low-level caching, but is expected to be cost-neutral until a discounting provider is adopted. Just a config flip + re-measure via the `cachedIn` / `cost` trip counters. | no change expected on-cost now; clears the path for a discounting provider later | `cachedIn` vs `cost` across a run before/after; no token/cost regression | open — config only, no code |
+
+**Tracking checklist (work one at a time):**
+
+- [-] **Follow-up A:** workflow-path `loadCategory` → targeted `loadPrompt` — **applied then REVERTED
+      2026-10-02**: runtime measurement showed it used **more tokens than before**, so
+      `buildWorkflowSystemPrompt` (`AICodBiAssistant.kt`) is back to the original `loadCategory(em,
+      "formcycle")` + `fc[...]` access. The `WorkflowNodesGuardTest` lean-size guard was kept (the
+      `general_workflow`/`general` entries must stay lean) with its docs updated to the reverted design.
+- [-] **Follow-up B:** gate the compact **server-variables catalog** on whether the request references a
+      placeholder, fail-open — **applied then REVERTED 2026-10-02**: the runtime measurement showed the
+      gate used **more tokens than before**, so the `<!--SECTION:server_vars-->` markers, the
+      `server_vars` detector patterns, the `requestCorpus` threading and the `WorkflowGeneralDedupTest`
+      gate cases were removed. The compact reference ships its server-variable catalog unconditionally
+      again; pass-2's detailed reference was always ungated.
+- [-] **Follow-up C:** gate `conditional` / `state_availability` always-on blocks with verb-matching
+      detectors — **REJECTED 2026-10-02**: re-measuring the prompt showed the target content is only
+      ≈ 8 k chars (≈ 2.2 k tokens, ~1.3 k on pass-1), ~9× below the plan's 11–12 k estimate, and the
+      blocks gate *silent* defects (a wrong `*ifcomp` code, `statusdependent` hiding instead of
+      read-only). See the §9.1 rejection. Not worth the risk.
+- [-] **Follow-up D:** second clarify-template always-on residual trim — **REJECTED 2026-10-02**: the
+      template (30,862 chars) gates to ~24.7 k always-on, which is a tight set of anti-ask decision
+      rules, not dead prose; a ~11 k trim would remove ~45 % of them and risk *re-asking*. The
+      injected blocks are already condensed (XSpan digest strips HTML and caps at 4,096 chars).
+      Only ≈ 2 k chars of exact duplication is safely removable (~0.5 k tokens) — not worth a
+      prompt rewrite + re-seed.
+- [x] **Follow-up E:** output-side — `mergeDerivedAppliedIntoReport` now emits each `applied` id
+      exactly once (a diff-derived entry wins over a duplicate kept `Holistic.*`); the forced-final
+      pass already uses the diff/slice protocol, so it gained the missing `form-forced-final
+      re-emission stats` observability line. `DeriveAppliedFunctionsTest` (12 cases) green.
+- [ ] **Follow-up F:** try `AI_Assistant_PromptCaching`, re-measure `cachedIn` vs `cost`.
+- [ ] Re-measure per §5 and update the two existing plans' status tables after each landed follow-up.
 
 ---
 

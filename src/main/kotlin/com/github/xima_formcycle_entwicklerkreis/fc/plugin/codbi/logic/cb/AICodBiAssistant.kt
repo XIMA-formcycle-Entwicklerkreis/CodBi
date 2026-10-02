@@ -1927,7 +1927,10 @@ class AICodBiAssistant : IPluginServletAction {
     val clarificationCompletionPages: String? =
         if (intent == "workflow" || intent == "both") {
           params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()?.let { wid ->
-            fetchCompletionPages(getUserContext(params), wid)
+            // LEVER 4: shrink the [{"name","uuid"}] digest to just the page NAMES — the clarify
+            // round only offers them as multiple-choice options BY NAME, the uuid is never used.
+            val raw = fetchCompletionPages(getUserContext(params), wid)
+            raw?.let { condenseCompletionPagesForClarify(it) }
           }
         } else null
     logger.info(
@@ -4641,6 +4644,10 @@ class AICodBiAssistant : IPluginServletAction {
         tokensOut += assistUsage?.completionTokens ?: estimateTokens(finalRaw)
         reportTrip("form-forced-final", modelId, assistUsage, finalMessagesJson, finalRaw)
         val finalCleaned = repairAiJson(extractJson(stripThinkTags(finalRaw)))
+        // Measure this pass's re-transmission exactly like pass-1/pass-2, so a forced final (which
+        // uses the same _diff/_unchangedItems + sliceFormForPass2 protocol) is observable in the
+        // `re-emission stats` log and any regression that re-emits unchanged items is caught.
+        logReEmissionStats("form-forced-final", finalCleaned, persistJson)
         logger.info(
             "[AICodBiAssistant] Final forced pass raw result: {}",
             truncateForLog(compactJsonForLog(finalCleaned)))
@@ -5437,9 +5444,27 @@ class AICodBiAssistant : IPluginServletAction {
         if (id?.startsWith("Holistic.") == true) keptHolistic.add(entry)
       }
     }
+    // Emit each applied id EXACTLY ONCE. `derivedApplied` wins over a kept model entry with the
+    // same id: a duplicate can only arise when the model's footprint-less `Holistic.*` activation
+    // ALSO shows up as a diff-derived `data-cb-func` (the two merge paths overlap there), and the
+    // server-derived entry is the authoritative one.
     val applied = JsonArray()
-    for (entry in derivedApplied) applied.add(entry)
-    for (entry in keptHolistic) applied.add(entry)
+    val appliedIds = mutableSetOf<String>()
+    for (entry in derivedApplied) {
+      val id = entry.takeIf { it.isJsonObject }?.asJsonObject?.get("id")?.asString
+      if (id != null && !appliedIds.add(id)) continue
+      applied.add(entry)
+    }
+    for (entry in keptHolistic) {
+      val id =
+          when {
+            entry.isJsonObject -> entry.asJsonObject.get("id")?.asString
+            entry.isJsonPrimitive -> entry.asString
+            else -> null
+          }
+      if (id != null && !appliedIds.add(id)) continue
+      applied.add(entry)
+    }
     if (applied.size() > 0) report.add("applied", applied) else report.remove("applied")
     // The server now owns the "applied" derivation — leave "considered"/"skipped"/verdict intact.
     return gson.toJson(report)
@@ -10486,6 +10511,37 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * LEVER 4 (token reduction) — shrinks the completion-pages digest to just the page NAMES.
+   *
+   * [fetchCompletionPages] returns a rich `[{"name":...,"uuid":...},...]` JSON array, but the
+   * clarify round only ever offers these as multiple-choice options BY NAME (see the AVAILABLE
+   * ABSCHLUSSSEITEN block) — the per-page `uuid` is never consumed for any clarify decision. The
+   * clarify round resolves references, it never persists a page, so the uuid is dead weight here.
+   * Fail-open: null/blank input or a parse failure passes the original through.
+   *
+   * @return A comma-separated list of the page names (e.g. `Standard-Fehlerseite, Danke-Seite`), or
+   *   the original input unchanged when it cannot be condensed.
+   */
+  private fun condenseCompletionPagesForClarify(completionPages: String?): String? {
+    if (completionPages.isNullOrBlank()) return completionPages
+    return try {
+      val root = JsonParser.parseString(completionPages)
+      if (!root.isJsonArray) return completionPages
+      val names = mutableListOf<String>()
+      for (el in root.asJsonArray) {
+        if (!el.isJsonObject) continue
+        val name = el.asJsonObject.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        if (name.isNotBlank()) names.add(name)
+      }
+      if (names.isEmpty()) completionPages else names.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Failed to condense completion pages for clarify: {}", e.message)
+      completionPages
+    }
+  }
+
+  /**
    * Queries the database for available Abschlussseiten (completion pages) for the given workflow
    * version's project. Uses JPQL with FORMCYCLE entity class names first (most reliable), then
    * falls back to native SQL with schema-discovery.
@@ -14868,11 +14924,12 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * Compact summary of the mail nodes (FC_EMAIL / FC_DOI_INIT) already present in the workflow of
-   * the given version — id, type, name, recipient(s), subject and sender. This is injected into the
-   * CLARIFICATION prompt so the AI can reuse an address the user references as "the address a mail
-   * is already sent to" / "die gleiche, an die bereits eine Mail geschickt wird" / "wie bei der
-   * letzten Mail" instead of re-asking for it (the clarification round otherwise sees NO workflow
-   * context). Returns null when the workflow has no mail node or cannot be read.
+   * the given version — name, recipient(s), subject and sender (id/type are dropped for the clarify
+   * round, which only needs name to identify the mail plus the reused values). This is injected
+   * into the CLARIFICATION prompt so the AI can reuse an address the user references as "the
+   * address a mail is already sent to" / "die gleiche, an die bereits eine Mail geschickt wird" /
+   * "wie bei der letzten Mail" instead of re-asking for it (the clarification round otherwise sees
+   * NO workflow context). Returns null when the workflow has no mail node or cannot be read.
    */
   private fun fetchWorkflowMailNodesSummary(userContext: Any, workflowVersionId: Long): String? {
     val em = formcycleEntityManager(userContext) ?: return null
@@ -14888,8 +14945,9 @@ class AICodBiAssistant : IPluginServletAction {
         val cols = row as? Array<*> ?: continue
         if (cols.size < 4) continue
         val obj = com.google.gson.JsonObject()
-        obj.addProperty("id", cols[0]?.toString())
-        obj.addProperty("type", cols[1]?.toString() ?: "")
+        // LEVER 4: the column order is (id, type, name, customParameters); id and type are dead
+        // weight for the clarify round (the workflowMails block only needs the name to identify
+        // which mail plus the recipient/sender/subject values being REUSED), so we only carry name.
         obj.addProperty("name", cols[2]?.toString() ?: "")
         var subject = ""
         var sender = ""

@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test
  */
 class WorkflowNodesGuardTest {
 
-  /** The keys the form-assistant paths actually load (targeted single-key loads). */
+  /** The keys the FORM-assistant paths actually load (targeted single-key loads). */
   private val formKeys =
       listOf(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-general.decision.md",
@@ -36,6 +36,21 @@ class WorkflowNodesGuardTest {
   /** The workflow-only reference that must NEVER enter a form-assistant prompt. */
   private val workflowNodesResource =
       "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md"
+
+  /**
+   * The WORKFLOW-path general keys consumed by `buildWorkflowSystemPrompt` for the {{GENERAL}}
+   * slot: `formcycle.general_workflow` (fallback `formcycle.general`). Even though the whole
+   * `formcycle` category is loaded via `loadCategory(em, "formcycle")` to reach them, ONLY these
+   * two map entries are consumed into {{GENERAL}} — so they must stay LEAN decision cores and must
+   * never grow back into the ~109 KB workflow-nodes CLOB (which would collapse into the slot).
+   * NOTE: unlike the form keys they legitimately MENTION the workflow markers (`triggerParams` /
+   * `chainedNodes` / `endpointType`) as pointers to {{WORKFLOW_REFERENCE}}, so they are NOT checked
+   * against `wfOnlyMarkers` — only for lean size.
+   */
+  private val workflowGeneralResource =
+      "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-general-workflow.md"
+  private val workflowGeneralFallbackResource =
+      "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-general.md"
 
   private fun read(resource: String): String =
       WorkflowNodesGuardTest::class
@@ -99,6 +114,25 @@ class WorkflowNodesGuardTest {
           size >= wfSize,
           "$resource grew to ${size} chars (>= the ${wfSize}-char workflow-nodes reference) — " +
               "formcycle.workflow_nodes may have been merged into a form-assistant key")
+    }
+  }
+
+  @Test
+  fun `the workflow general keys stay lean decision cores (reverted Task A)`() {
+    // Task A (2026-10-02) switched buildWorkflowSystemPrompt's {{GENERAL}} load to a targeted
+    // single-key loadPrompt, but the runtime measurement showed MORE tokens than before, so it was
+    // REVERTED back to loading the whole `formcycle` category via loadCategory and consuming only
+    // the `formcycle.general_workflow` / `formcycle.general` entries. Even in the reverted form
+    // only
+    // those two entries reach the model, so they must remain small decision cores, far smaller than
+    // the ~109 KB workflow-nodes reference (which must never collapse into the {{GENERAL}} slot).
+    val wfSize = read(workflowNodesResource).length
+    for (resource in listOf(workflowGeneralResource, workflowGeneralFallbackResource)) {
+      val size = read(resource).length
+      assertFalse(
+          size >= wfSize,
+          "$resource grew to ${size} chars (>= the ${wfSize}-char workflow-nodes reference) — " +
+              "the whole formcycle category (incl. formcycle.workflow_nodes) may have been merged into the workflow {{GENERAL}} slot")
     }
   }
 }

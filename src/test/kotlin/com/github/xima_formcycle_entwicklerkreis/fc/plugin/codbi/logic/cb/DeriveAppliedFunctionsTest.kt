@@ -236,4 +236,28 @@ class DeriveAppliedFunctionsTest {
     assertEquals(
         "CodBi_TrimOnBlur", out.get("applied").asJsonArray[0].asJsonObject.get("id").asString)
   }
+
+  @Test
+  fun `emits each applied id exactly once when the model report and the diff overlap`() {
+    // The merge appends the diff-derived entries AND the kept footprint-less Holistic entries into
+    // ONE `applied` array. When an id appears in BOTH (the model reported a Holistic id that the
+    // diff also derived from a data-cb-func value), it must be emitted ONCE — the derived entry
+    // wins. This is the Follow-up E "exactly one _codbiApplicability applied entry" guarantee.
+    val modelReport =
+        """
+        {
+          "codbiVerdict": "applied",
+          "considered": [],
+          "applied": [{"id":"Holistic.CSS.Standard","targets":[]}]
+        }
+        """
+            .trimIndent()
+    val derived =
+        JsonParser.parseString("""[{"id":"Holistic.CSS.Standard","targets":["tfA"]}]""").asJsonArray
+
+    val out = JsonParser.parseString(merge(modelReport, derived)).asJsonObject
+    val ids = out.get("applied").asJsonArray.map { it.asJsonObject.get("id").asString }
+
+    assertEquals(listOf("Holistic.CSS.Standard"), ids, "each applied id must appear exactly once")
+  }
 }

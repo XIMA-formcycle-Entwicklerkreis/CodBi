@@ -116,6 +116,36 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private val runTripPrefix = ThreadLocal.withInitial { "" }
 
+  /**
+   * Auxiliary inference roles whose model can be overridden independently of the user-selected
+   * build model (`X-Model`), via the plugin property `AI_Assistant_AuxModel` (all roles) and
+   * `AI_Assistant_AuxModel_<role>` (one role, which wins over the global). Routing happens ONLY
+   * through [auxModelFor], whose unconfigured behaviour is a strict identity.
+   */
+  internal enum class AuxRole(val propertySuffix: String) {
+    CLASSIFY("classify"),
+    CLARIFY("clarify"),
+    REPAIR("repair"),
+    TRANSLATE("translate")
+  }
+
+  /**
+   * Per-role model overrides for the AUXILIARY inferences (see [AuxRole]), resolved in [initialize]
+   * from the plugin properties. EMPTY by default; [auxModelFor] then returns the run's selected
+   * model UNCHANGED, so an assistant with no `AI_Assistant_AuxModel*` configured behaves
+   * byte-for-byte as before this feature existed.
+   */
+  private val auxModels = mutableMapOf<AuxRole, String>()
+
+  /**
+   * The model id an auxiliary inference of [role] must run on: the configured override when it is
+   * present AND non-blank, otherwise [selected] (the run's `X-Model`) verbatim. This is a PURE
+   * identity whenever no `AI_Assistant_AuxModel*` property is set — the guarantee that the feature
+   * is inert until it is deliberately configured.
+   */
+  private fun auxModelFor(role: AuxRole, selected: String): String =
+      routeAuxModel(selected, auxModels[role])
+
   /** Records one AI inference of the current run from already-resolved token counts. */
   private fun reportTrip(
       phase: String,
@@ -607,6 +637,12 @@ class AICodBiAssistant : IPluginServletAction {
           ?.takeIf { it >= 0 }
           ?.let { specialistMaxFormReruns[specialistName] = it }
     }
+    // Per-role model overrides for the AUXILIARY inferences (classify/clarify/repair/translate).
+    // `parseAuxModels` is pure and cannot throw, and an absent/blank value leaves a role on the
+    // run's selected model — so this is a strict no-op until `AI_Assistant_AuxModel*` is
+    // deliberately configured. Placed LAST so it can never perturb the reads above.
+    auxModels.clear()
+    auxModels.putAll(parseAuxModels(configData.properties))
   }
 
   /**
@@ -1583,6 +1619,16 @@ class AICodBiAssistant : IPluginServletAction {
     // previously aborted run is cleared too) so the change-log entry records only this run's calls.
     runTrips.get().clear()
     runTripPrefix.set("")
+    // Fail-open diagnostic: the model each inference role will ACTUALLY use this run. With no
+    // `AI_Assistant_AuxModel*` configured, every value equals the selected `modelId` — so the
+    // server log alone proves the routing is inert until it is deliberately configured.
+    logger.info(
+        "[AICodBiAssistant] Model routing: selected='{}', classify='{}', clarify='{}', repair='{}', translate='{}'",
+        modelId,
+        auxModelFor(AuxRole.CLASSIFY, modelId),
+        auxModelFor(AuxRole.CLARIFY, modelId),
+        auxModelFor(AuxRole.REPAIR, modelId),
+        auxModelFor(AuxRole.TRANSLATE, modelId))
 
     // Formcycle UI language (sent by the frontend) — used to localize stored change-log text such
     // as the "earlier chat turns" context label so it matches the Formcycle UI.
@@ -1651,7 +1697,7 @@ class AICodBiAssistant : IPluginServletAction {
           try {
             // imageParts intentionally omitted: intent classification only needs the text prompt;
             // sending vision-format array content to text-only models causes HTTP 400 errors.
-            classifyIntent(prompt, modelId, instance)
+            classifyIntent(prompt, auxModelFor(AuxRole.CLASSIFY, modelId), instance)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] AI returned HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
@@ -2049,7 +2095,7 @@ class AICodBiAssistant : IPluginServletAction {
           try {
             tryClarification(
                 prompt,
-                modelId,
+                auxModelFor(AuxRole.CLARIFY, modelId),
                 instance,
                 intent,
                 clarifyFormElements,
@@ -2194,7 +2240,10 @@ class AICodBiAssistant : IPluginServletAction {
               .map { it.lowercase() }
               .toSet()
       val translationPlan =
-          runCatching { planWholeFormTranslation(prompt, persistJson, modelId, instance) }
+          runCatching {
+                planWholeFormTranslation(
+                    prompt, persistJson, auxModelFor(AuxRole.TRANSLATE, modelId), instance)
+              }
               .getOrNull() ?: Triple(false, emptyList(), TokenUsage(0, 0))
       tokensIn += translationPlan.third.input
       tokensOut += translationPlan.third.output
@@ -2238,7 +2287,12 @@ class AICodBiAssistant : IPluginServletAction {
               // per-language completions returning only the translations, spliced into the original
               // persist. Supersedes the legacy runSequentialWholeFormTranslation full-form echo.
               runTranslationDelta(
-                  prompt, persistJson, plannedNewLangs, formBaseLang, modelId, instance)
+                  prompt,
+                  persistJson,
+                  plannedNewLangs,
+                  formBaseLang,
+                  auxModelFor(AuxRole.TRANSLATE, modelId),
+                  instance)
             } else if (repeatTranslationNoop) {
               logger.info(
                   "[AICodBiAssistant] Repeat whole-form translation: every requested language is already on the form — leaving the form unchanged (workflow multilingualize still runs).")
@@ -4005,6 +4059,9 @@ class AICodBiAssistant : IPluginServletAction {
     // broken answer; a compliant answer never reaches it.
     val unidentifiedPatches = FormItemIdentity.countWithoutIdentity(cleaned)
     if (unidentifiedPatches > 0) {
+      // The identity-repair round is an AUXILIARY inference (see AI_Assistant_AuxModel): it may run
+      // on its own model when configured, and on `modelId` verbatim otherwise.
+      val repairModel = auxModelFor(AuxRole.REPAIR, modelId)
       logger.warn(
           "[AICodBiAssistant] Pass-1 diff has {} item(s) WITHOUT identity (no properties.name, no properties.id) — re-running pass-1 with an explicit identity requirement so the change is not lost",
           unidentifiedPatches)
@@ -4018,11 +4075,11 @@ class AICodBiAssistant : IPluginServletAction {
         append("""{"role":"user","content":${buildUserContent(repairUserContent, imageParts)}}""")
         append("]")
       }
-      val repairRaw = instance.performFormAssist(modelId, repairMessages)
+      val repairRaw = instance.performFormAssist(repairModel, repairMessages)
       val repairUsage = instance.takeLastAssistUsage()
       tokensIn += repairUsage?.promptTokens ?: estimateTokens(repairMessages)
       tokensOut += repairUsage?.completionTokens ?: estimateTokens(repairRaw)
-      reportTrip("form-pass-1-repair", modelId, repairUsage, repairMessages, repairRaw)
+      reportTrip("form-pass-1-repair", repairModel, repairUsage, repairMessages, repairRaw)
       val repaired = repairAiJson(extractJson(stripThinkTags(repairRaw)))
       if (hasTopLevelItems(repaired) && FormItemIdentity.countWithoutIdentity(repaired) == 0) {
         cleaned = repaired
@@ -24084,6 +24141,35 @@ class AICodBiAssistant : IPluginServletAction {
   // endregion Form Chat
 
   companion object {
+    /**
+     * PURE auxiliary-model routing decision: returns [selected] verbatim unless [override] is
+     * present AND non-blank, in which case the override wins. Extracted so the fail-open (identity)
+     * guarantee of the per-pass model selection is unit-testable without a plugin instance.
+     */
+    internal fun routeAuxModel(selected: String, override: String?): String =
+        override?.takeIf { it.isNotBlank() } ?: selected
+
+    /**
+     * Resolves the per-role auxiliary-model overrides (see [AuxRole]) from the plugin properties.
+     * The global `AI_Assistant_AuxModel` applies to every role; the per-role
+     * `AI_Assistant_AuxModel_<role>` (`<role>` in `classify|clarify|repair|translate`) wins over
+     * it. Blank/absent values are ignored, so a role missing from the returned map stays on the
+     * run's selected model. Pure and side-effect free — it can never perturb [initialize].
+     */
+    internal fun parseAuxModels(properties: java.util.Properties): Map<AuxRole, String> {
+      val global =
+          properties.getProperty("AI_Assistant_AuxModel")?.trim()?.takeIf { it.isNotBlank() }
+      val out = LinkedHashMap<AuxRole, String>()
+      for (role in AuxRole.values()) {
+        val perRole =
+            properties.getProperty("AI_Assistant_AuxModel_${role.propertySuffix}")?.trim()?.takeIf {
+              it.isNotBlank()
+            }
+        (perRole ?: global)?.let { out[role] = it }
+      }
+      return out
+    }
+
     /**
      * German/English weekday names mapped to their day-of-week, used by [inferMatomoPeriod] to
      * resolve "Montag"/"Monday" to concrete dates.

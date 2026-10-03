@@ -900,9 +900,9 @@ the sequential design's per-pass bound.
 | 3 | **Gate the always-on clarify injected blocks** -- **applied then REVERTED (2026-10-03)**: `ClarifyInjectionGate` gated completionPages/formVariables/workflowMails/availableDatasources (fail-open), but the measurement showed usage rose, so it was removed (new files deleted, AICodBiAssistant.kt reverted to HEAD). | D | 0 (reverted) | -- | code reverted | **reverted (2026-10-03)** |
 | 4 | **Trim the fixed `sections` vocabulary line** -- **applied then REVERTED (2026-10-03)**: the `sections` line was trimmed 1,853 -> 1,588 chars, but the measurement showed usage rose, so codbi-chat-system-prompt.md is back at HEAD (guard test deleted). | A | 0 (reverted) | -- | code reverted | **reverted (2026-10-03)** |
 | 5 | **Skip/merge phase-1 classify-intent on chat turns** | **Not applicable / already satisfied (2026-10-03)** -- verified in the frontend: chat turns already bypass phase-1 (`runChatTurn()` in ai-assistant.ts:3483 calls `runPhase2(..., "both", ..., {chatMode:true})` directly, with NO phase-1 request). Phase-1 `classifyIntent` (AICodBiAssistant.kt:2881) runs only on the build ("Run") path, and its returned `intent` is LOAD-BEARING: it decides WHICH context the frontend collects and sends (form persist vs workflow) at ai-assistant.ts:3894 and :3952. Removing it there would force sending BOTH contexts on every build (approx the full form + workflow) -- a net input-token INCREASE, not a saving. | E | 0 (nothing to remove) | -- | chat turns already have no phase-1 trip | **n/a (already satisfied) (2026-10-03)** |
-| 6 | **Hard `max_tokens` cap per pass** — bound the wasted completion on a degenerate loop (the historical 42 k-char non-JSON) instead of paying for it and recovering via the forced-final. | E | bounded worst-case output | low | `tokensOut`/`completionChars` of a degenerate run | open |
+| 6 | **Hard `max_tokens` cap per pass** — bound the wasted completion on a degenerate loop (the historical 42 k-char non-JSON) instead of paying for it and recovering via the forced-final. | E | bounded worst-case output | low | `tokensOut`/`completionChars` of a degenerate run | **declined (2026-10-03)** — the cap must exceed the largest legitimate full-form re-emission, so it is only a low-value safety net. |
 | 7 | **`rtevalue` part-edit re-emission** — a modified HTML property must be sent COMPLETE (the plan's acknowledged remaining output sink). A structural HTML-part patch is possible but high-risk; measure `re-emission stats` first. | G | unknown (output side) | high | `re-emission stats` unchanged-props chars | open (measure first) |
-| 8 | **Constrained / JSON-schema decoding** — if the provider supports guided decoding, malformed-JSON retries and the forced-final pass disappear (inference-level saving). | E | a whole pass on retries | provider-dependent | absence of "forcing final complete-form pass" | open |
+| 8 | **Constrained / JSON-schema decoding** — if the provider supports guided decoding, malformed-JSON retries and the forced-final pass disappear (inference-level saving). | E | a whole pass on retries | provider-dependent | absence of "forcing final complete-form pass" | **declined (2026-10-03)** — a fully strict schema cannot express free-form form/workflow content, and the current model rejects `response_format` + `tools`. |
 | 9 | **Per-pass model selection** — **RE-IMPLEMENTED (2026-10-03), fail-open hardened** | The opt-in aux-model routing (`AI_Assistant_AuxModel` + per-role `AI_Assistant_AuxModel_<role>` for classify/clarify/repair/translate) now routes ONLY through the pure identity functions `routeAuxModel()` / `auxModelFor()`, and the property map is resolved by the pure `parseAuxModels()` — both applied LAST in `initialize()` so they can never perturb the other config reads. A per-run `Model routing: selected=…, classify=…, clarify=…, repair=…, translate=…` log line makes the inert state verifiable. Rationale for the rework: the earlier attempt was reverted after a run produced an empty form, but that run's log shows pass-1 on the SELECTED model (`ext-specialist:cerebras`) with an UNCHANGED prompt — the aux routing did not divert the build pass, so causation was doubtful. Every non-identity path is now removed (no `getProperty(key, default)`, no blank-string entries). New guard test: [`AuxModelRoutingTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AuxModelRoutingTest.kt). | -- (cost, not tokens) | large COST saving | medium | `Model routing:` log shows all five ids equal when unset; `AuxModelRoutingTest` green | **re-implemented (2026-10-03)** |
 
 **Tracking checklist (one at a time):**
@@ -914,10 +914,40 @@ the sequential design's per-pass bound.
 - [-] **3** gate the always-on clarify injected blocks -- **applied then REVERTED 2026-10-03** (usage rose).
 - [-] **4** trim the sections vocabulary line -- **applied then REVERTED 2026-10-03** (usage rose).
 - [-] **5** skip/merge phase-1 classify-intent on chat turns -- **N/A (2026-10-03)**: chat turns already bypass phase-1 (`runChatTurn` calls `runPhase2(...,"both",...)`); removing it on the build path would force sending both contexts -> net input increase.
-- [ ] **6** hard per-pass `max_tokens` cap.
-- [ ] **7** `rtevalue` part-edit re-emission (measure first).
-- [ ] **8** constrained / JSON-schema decoding.
+- [-] **6** hard per-pass `max_tokens` cap -- **DECLINED 2026-10-03**: the cap must exceed the largest legitimate full-form re-emission, so it is only a low-value safety net.
+- [ ] **7** `rtevalue` part-edit re-emission (measure first) -- **deferred** (high risk, not pursued).
+- [-] **8** constrained / JSON-schema decoding -- **DECLINED 2026-10-03** (provider-dependent; strict schema cannot express free-form content; current model rejects `response_format`+`tools`).
 - [-] **9** per-pass model selection -- **RE-IMPLEMENTED 2026-10-03 (fail-open hardened)**: routing is a pure identity when `AI_Assistant_AuxModel*` is unset (unit-tested in [`AuxModelRoutingTest`](../src/test/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AuxModelRoutingTest.kt)), applied LAST in `initialize()`, with a per-run `Model routing:` diagnostic log. The earlier revert followed a run whose log shows pass-1 on the selected model with an unchanged prompt, so the aux routing was not the cause.
+
+## 8C. Closure decision (2026-10-03)
+
+**The token-reduction programme is CLOSED.** All formal levers (§1–§7) are closed and every §8 / §8B
+candidate is now resolved:
+
+| Item | Final state |
+|---|---|
+| A, B | reverted |
+| C, D | rejected (silent-defect / re-ask risk) |
+| E | done (commit `9ba5cae3`) |
+| F | config-only (`AI_Assistant_PromptCaching`) |
+| 6 | **declined (2026-10-03)** — a cap must exceed the largest legitimate full-form re-emission, so it is only a low-value safety net; not applied |
+| 8 | **declined (2026-10-03)** — provider-dependent; a fully strict schema cannot express free-form form/workflow content, and the current model (Cerebras gpt-oss-120b) rejects `response_format` + `tools` |
+| 9 | **implemented (commit `ee7feb5e`)** — a **cost** lever, not a token-count lever |
+| 1b, 7 | deferred — high risk with no measured upside |
+
+**What worked** was inference-side, never prompt-byte-side: Follow-up E (output hygiene / merge
+de-duplication) and Lever 9 (optional per-path auxiliary models). **What did not work** — every
+prompt-byte reduction (2, 3, 4) *raised* total usage, because a smaller or less-constraining prompt
+changes model behaviour: it can lengthen the answer, make the classifier less certain (keeping MORE
+gated blocks), or drop data the model then re-asks for (an extra inference). The acceptance metric is
+therefore Σ(tokensIn+tokensOut) + trip count, never prompt size.
+
+**Why closing is justified.** The only untried levers (1b, 7) are both high-risk and
+measurement-blocked: 1b needs a no-context-loss design (pass-1 must see the exact JSON of anything it
+modifies) and 7 is rated high-risk by the plan itself. Given the empirical backfire of prompt-side
+edits, further work has small expected value and a real regression surface, so it is stopped.
+Re-opening should require a NEW measured signal from the change log (a per-trip `promptChars` /
+`tokensOut` anomaly), not another speculative edit.
 
 ---
 

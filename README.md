@@ -17,6 +17,45 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 > **Architectural Vision:** CodBi is a framework that empowers form designers to define complex logic without coding — by composing ready-made CodBi elements — and enables developers to create, share, and reuse those building blocks across the community, growing the library with every contribution. At the same time, it eliminates the trade-off between AI capability and DSGVO/GDPR compliance by running high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma locally on the server via llama.cpp, alongside Whisper for speech-to-text and Tesseract for OCR — so sensitive citizen data never leaves your infrastructure.
 
 
+## 📑 Table of Contents
+
+- [🚀 Key Highlights](#-key-highlights)
+- [🔍 Implementation Highlights](#-implementation-highlights)
+- [📥 Installation](#-installation)
+  - [📖 Interactive Onboarding Guide](#-interactive-onboarding-guide)
+- [🛠 Features](#-features)
+  - [⚡ Functionalities](#-functionalities)
+  - [🔗 Element Placeholders (EPs)](#-element-placeholders-eps)
+  - [📋 Standard Configurations](#-standard-configurations)
+  - [📚 Local API-Documentation Manager](#-local-api-documentation-manager)
+  - [📐 CodBi Elements Template](#-codbi-elements-template)
+  - [🧠 AI](#-ai)
+    - [🏗 System Architecture](#-system-architecture)
+    - [⚙️ Automatic Setup](#-automatic-setup)
+    - [📄 Extraction](#-extraction)
+    - [✅ Validation](#-validation)
+    - [🔒 Privacy & DSGVO/GDPR Compliance](#-privacy--dsgvogdpr-compliance)
+    - [⚙️ Configuration](#-configuration)
+    - [🌐 Network Requirements](#-network-requirements)
+    - [🔌 Air-Gapped / Offline Deployment](#-air-gapped--offline-deployment)
+  - [🤖 Form Assistant](#-form-assistant)
+    - [💡 What it does](#-what-it-does)
+    - [🚀 Advantages](#-advantages)
+    - [⚙️ Inference flow & token usage](#-inference-flow--token-usage)
+- [🌍 Localization](#-localization)
+- [➕ Adding New Configuration Templates](#-adding-new-configuration-templates)
+- [💻 Development](#-development)
+  - [🔨 Build](#-build)
+  - [🧪 Test](#-test)
+  - [🖥 IDE](#-ide)
+  - [🐛 Debugging](#-debugging)
+  - [🎨 Code Style / Formatting](#-code-style--formatting)
+  - [📁 Project Structure](#-project-structure)
+- [📄 API Documentation](#-api-documentation)
+  - [🌐 Automated Documentation Translation / BYOK](#-automated-documentation-translation--byok)
+- [🤝 Contributing](#-contributing)
+- [📜 License & Authorship](#-license--authorship)
+
 ### 🚀 Key Highlights
 
 - **Modular by Design** — Functionalities and EPs are composable building blocks: mix and combine them freely to build a wide range of applications — from simple input masks to AI-powered document processing pipelines — without writing custom code.
@@ -331,6 +370,150 @@ ai/llama_engine/bin/gpu-backend.txt                                 ← e.g. "VU
 **Tesseract** does not require marker files — just place the `.traineddata` and native library files directly.
 
 > **Tip:** The KDoc comments in the Kotlin source files document the exact download URLs and expected file names for each component.
+
+### 🤖 Form Assistant
+
+The **Form Assistant** is the AI co-pilot inside the formcycle form designer. A designer describes what they want in plain language — "add an address block", "make this a two-page form", "translate the whole form into English" — and the assistant plans the change, generates a valid form document, asks focused follow-up questions when a decision is genuinely needed, and explains its work in the chat. It is served by [`AICodBiAssistant`](src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt), works with **any** configured AI (local GGUF models via llama.cpp or external endpoints / BYOK), and is built so the model only ever receives the information a given step actually needs.
+
+#### 💡 What it does
+
+- **Generate & iterate on forms** — create new form structures (fields, containers, pages, buttons, uploads, …) and modify existing ones *in place*, preserving everything the request does not target. Elements are always wired to the installed widget set and the CodBi standard configurations.
+- **Form chat** — answer questions about the current form ("which fields are required?", "where is the e-mail field used?") and discuss changes before they are applied.
+- **Targeted clarification** — asks the user only for decisions that cannot be derived (e.g. missing select options, a missing appointment plan), instead of guessing.
+- **On-demand reference material** — when a step needs the exact JSON of a widget or CodBi element, it requests just that reference rather than shipping the entire catalog up front.
+- **Change log & re-apply** — every run records what changed, and a recorded change can be re-applied deterministically without any new inference.
+- **Prompt manager** — the assistant's prompt blocks are versioned and seeded into the database by `PromptLoader`, so behaviour can be inspected, tuned and updated per server without changing code.
+- **Workflow generation** — can create workflow nodes and triggers, bind submit triggers to buttons, and keep the workflow consistent with the form.
+- **Translations** — whole-form translation (one language per step), incremental *delta* translation for edits, and multilingual consumer mails / end pages.
+- **Correct buttons & navigation** — sets button actions (submit commands, page navigation) and, when the navigation plugin is installed, uses its logical action so buttons keep working even if a page is renamed.
+- **Server-side guard rails** — the finished document is normalised and repaired (deduplicated elements, valid SVG names, page ordering, restored stripped fields, repaired orphaned elements) before it is returned.
+
+#### 🚀 Advantages
+
+- **Drastically faster form development** — a working draft of a form (or a change to one) is produced in a single conversation turn instead of being assembled field by field in the designer.
+- **Fewer errors** — the assistant emits validated, canonical JSON: correct class names, correct property casing, wired containers, required options and standard configurations are applied consistently, and the server-side guard rails fix common structural mistakes automatically.
+- **Extremely lower business costs** — the multi-pass, demand-driven design keeps the (input-heavy) LLM bill small: irrelevant prompt blocks are gated away, large references are loaded only when requested, changes are expressed as diffs instead of whole-form re-emissions, redundant inferences are skipped, and recorded changes can be re-applied with zero inference.
+- **Flexible deployment, no extra data-protection burden** — the assistant runs with **either** a local model **or** an external provider (BYOK), so a local stack can keep the whole pipeline on the formcycle server while external endpoints remain an option. What the model receives is the form *definition* (fields, labels, layout, widget metadata) — not submitted citizen data — so the inference call itself does not introduce a DSGVO/GDPR-relevant data category, whichever provider is configured.
+- **Governance & traceability** — every run is logged with tokens/cost and the changes it made; the change log can be audited and re-applied.
+- **No vendor lock-in** — the same assistant works with local models or external providers, and models can be mixed per role.
+- **Low page weight** — generated forms only pull in the elements they actually use.
+
+#### ⚙️ Inference flow & token usage
+
+Each generation step is a full LLM completion, so the cost is dominated by **input tokens**. The pipeline therefore spends most of its effort making sure every step receives *only* what it needs — without dropping anything the model must act on.
+
+The flow is multi-pass and demand-driven:
+
+1. **Classify intent** — a cheap prompt decides `form` / `workflow` / `both`.
+2. **Chat (two-tier)** — a tier-1 call sees only a condensed structure (never the full form JSON); the full form is attached to a tier-2 call **only** when a question is actually asked. Turns that are pure answers/acknowledgements end here.
+3. **Clarify (optional)** — normally skipped entirely; when it does run, scenario blocks are gated and the form list is fetched on demand.
+4. **Form PASS 1** — emits a *diff* (only changed/new items) using gated decision cores and condensed catalogs.
+5. **Form PASS 2** — runs only when pass-1 asks for details (`need_codbi_details`), sending just the requested widget/CodBi templates; a forced final pass fixes non-JSON output while reusing the pass-2 context.
+6. **Translation** — one language per pass (whole form) or a delta view with bounded batches (edits).
+7. **Server-side merge** — changed items are grafted by name; omissions mean "unchanged" and the server restores the original values.
+8. **Apply-from-log** — replaying a stored artifact needs **zero** inference.
+
+```mermaid
+flowchart LR
+    RUN(["POST /Run<br/>prompt + persist + histories"]) --> CLS
+
+    CLS["Path 0 · Classify intent<br/>classify intent<br/>(form / workflow / both)<br/><br/>Reduction:<br/>• no second inference<br/>• auxiliary model per role<br/>• reasoning budget:<br/>&nbsp;&nbsp;UI > specialist > global<br/>• ≈ 2.1 k in"]
+
+    CLS --> T1
+
+    T1["Path 1 · Chat tier-1<br/>condensed structure,<br/>full form JSON WITHHELD<br/><br/>Reduction:<br/>• withhold ~60 KB form<br/>• answer/ack ends the run<br/>&nbsp;&nbsp;before any build pass<br/>• tier-1 ≈ 11 k in<br/>&nbsp;&nbsp;vs 116 k chars form"]
+
+    T1 -->|"hasInstructions = false"| ANS(["Answer / ack only<br/>NO build pass"])
+    T1 -->|"hasInstructions = true"| T2
+
+    T2["Path 1 · Chat tier-2<br/>full form JSON included<br/><br/>Reduction:<br/>• sent only when<br/>&nbsp;&nbsp;hasQuestion = true"]
+
+    T2 --> CLR
+    T1 --> CLR
+
+    CLR["Path 2 · Clarify check (optional)<br/>runs only when tier-1<br/>needsClarification<br/>or a reference veto<br/><br/>Reduction:<br/>• whole round skipped<br/>&nbsp;&nbsp;by default<br/>• <!--CLARIFY:--> gating<br/>&nbsp;&nbsp;(fail-open: no tag = kept)<br/>• form list only on<br/>&nbsp;&nbsp;need_form_list<br/>• was 8.7 k in → often 0"]
+
+    CLR -->|"NO_CLARIFICATION"| P1
+    CLR -->|"questions"| ASK(["Clarification popup<br/>user answers → re-run"])
+
+    P1["Path 3 · Form PASS 1<br/>gated decision cores +<br/>condensed catalogs<br/><br/>Reduction:<br/>• cores de-duplicated<br/>&nbsp;&nbsp;(single home per rule)<br/>• <!--SECTION:--> gating:<br/>&nbsp;&nbsp;field_creation, removal,<br/>&nbsp;&nbsp;designed_text, svg,<br/>&nbsp;&nbsp;custom_js, translation,<br/>&nbsp;&nbsp;repeatable, panels<br/>• NAME-ONLY CodBi index<br/>• condensed widget catalog<br/>• diff protocol:<br/>&nbsp;&nbsp;changed/new items only<br/>• 27 blocks ≈ 17 k chars<br/>&nbsp;&nbsp;dropped per build run"]
+
+    P1 -->|"no details needed"| MRG
+    P1 -->|"need_codbi_details"| P2
+    P1 -->|"intent = workflow / both"| W1
+
+    P2["Path 4 · Form PASS 2<br/>only the requested<br/>widget / CodBi details<br/>+ targeted templates<br/><br/>Reduction:<br/>• targeted templates only<br/>• avoids the full widget<br/>&nbsp;&nbsp;reference (~20–25 k)<br/>• sliceFormForPass2<br/>• slimPersistJson:<br/>&nbsp;&nbsp;relevant slice only"]
+
+    P2 --> MRG
+    P2 -->|"non-JSON / prose"| FIN
+
+    FIN["Path 4b · Forced final pass<br/>same context as PASS 2<br/><br/>Reduction:<br/>• only on non-JSON<br/>• reuses the pass-2 context,<br/>&nbsp;&nbsp;no re-assembly"]
+
+    FIN --> MRG
+
+    W1["Path 6 · Workflow PASS 1<br/>condensed node / trigger<br/>catalog<br/><br/>Reduction:<br/>• condensed catalog<br/>• schemas deferred to PASS 2"]
+
+    W1 -->|"need_workflow_node_details"| W2
+
+    W2["Path 6 · Workflow PASS 2<br/>only the requested<br/>node / trigger schemas<br/><br/>Reduction:<br/>• schemas on demand"]
+
+    W2 --> APL
+    W1 --> APL
+
+    MRG["Path 7 · Merge / splice<br/>splicePass2IntoPass1<br/>(property-level graft)<br/><br/>Reduction:<br/>• _diff / _removeProps<br/>• omit = unchanged<br/>• server restores the value<br/>• lossless, no full<br/>&nbsp;&nbsp;re-emission"]
+
+    MRG -->|"adds / edits a language"| TR
+    MRG --> APL
+
+    TR["Path 5 · Translation<br/>whole-form: ONE language<br/>per pass<br/>edit: DELTA view +<br/>bounded batches<br/><br/>Reduction:<br/>• only the delta,<br/>&nbsp;&nbsp;not the whole form<br/>• batching: group small<br/>&nbsp;&nbsp;languages together"]
+
+    TR --> APL
+
+    APL["Path 7 · Apply to Formcycle<br/>nodes / items persisted<br/><br/>Reduction:<br/>• none — the write itself<br/>&nbsp;&nbsp;costs no tokens"]
+
+    APL --> PUB
+    LOG["Path 8 · Apply-from-log<br/>replay a stored artifact<br/>deterministically<br/><br/>Reduction:<br/>• zero inference<br/>• 0 tokens"] -->|"re-apply"| PUB
+
+    PUB(["Publish + log tokens & cost"]) --> OUT(["Form JSON to UI"])
+
+    CACHE["Cross-cutting ·<br/>opt-in prompt caching<br/>cache-friendly prefix<br/>(AI_Assistant_PromptCaching)"] -.-> P1
+    CACHE -.-> P2
+    ESC["Cross-cutting ·<br/>compact + unescaped payloads:<br/>• HTML-escaping off<br/>• compact JSON<br/>• in every AI payload<br/>&nbsp;&nbsp;and change-log row"] -.-> RUN
+    AUX["Cross-cutting ·<br/>auxiliary model per role<br/>AI_Assistant_AuxModel<br/>• _classify · _clarify<br/>• _repair · _translate"] -.-> CLS
+    AUX -.-> CLR
+```
+
+**How the token usage is reduced — per step**
+
+- **Skip whole inferences**
+  - Answer/acknowledgement chat turns end before any build pass.
+  - The clarify round is skipped by default (a tier-1 verdict + deterministic detectors decide).
+  - A form/workflow build sends the same content to the pass that acts on it — no duplicate classification call.
+- **Send big references only on demand**
+  - Pass-1 gets a NAME-ONLY CodBi index and condensed widget catalog; full templates arrive in pass-2 only when requested (`need_codbi_details`).
+  - Workflow node/trigger schemas are fetched in a second pass only when needed.
+  - The clarify form list is fetched only on `need_form_list`.
+  - Only the *requested* widget/CodBi templates are sent — never the full widget reference (~20–25 k tokens).
+- **Gate the prompt blocks**
+  - Decision cores carry `<!--SECTION:…-->` tags; a pass keeps only the relevant ones (e.g. a build run keeps `field_creation` and drops `translation`/`removal`/…, ≈ 17 k characters per run).
+  - Clarification scenario blocks use `<!--CLARIFY:…-->`.
+  - The gate is **fail-open**: an unmatched tag is *kept*, so no rule the model needs is ever dropped.
+- **Shrink the payload**
+  - Compact JSON everywhere and HTML-escaping disabled (`slimPersistJson`, `sliceFormForPass2`) — pass-2 receives a relevant slice, not the whole form.
+  - Exactly one home per rule (decision cores de-duplicated), so rules are never sent twice.
+- **Shrink the output**
+  - A diff protocol (`_diff`, `_removeProps`) means "omit = unchanged"; the server restores omitted values, so it is lossless.
+  - Translations use a delta view and bounded batching, so output scales with the change, not the form size.
+- **Re-use instead of re-generating**
+  - The change-log "apply" path replays a stored artifact with **zero** inference.
+- **Cross-cutting configuration**
+  - Optional cache-friendly prompt assembly (`AI_Assistant_PromptCaching`).
+  - Optional per-role auxiliary models (`AI_Assistant_AuxModel`, `AI_Assistant_AuxModel_classify|_clarify|_repair|_translate`) so cheap work can run on a cheaper model.
+  - Reasoning budget resolves from the UI → specialist → global → provider default.
+
+Measured reference run (a plain edit): `form-pass-2` ≈ 48 %, `form-pass-1` ≈ 34 %, `clarify-check` ≈ 15 %, `classify-intent` ≈ 3.5 % — input tokens are ≈ 92 % of the bill, which is why the measures above target input.
+
+> Prompt blocks are seeded into the database by `PromptLoader`; edits to the bundled `.md` prompts (or the section tags) take effect after a plugin rebuild/redeploy and a fresh seed.
 
 ## 🌍 Localization
 

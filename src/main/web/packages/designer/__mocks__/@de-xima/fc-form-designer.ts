@@ -21,6 +21,9 @@ export const registerCustomFormProperty: Module["registerCustomFormProperty"] = 
 export const registerCustomFormCategory: Module["registerCustomFormCategory"] = (category, location) =>
   TestState.customFormCategories.push([category, location]);
 
+export const registerCustomTranslations: Module["registerCustomTranslations"] = (translations) =>
+  TestState.customTranslations.push([translations]);
+
 class BaseEditorMock<K extends keyof IEditorMap> implements IBaseEditor<K> {
   protected _idx: number = 0;
   afterAdd: () => void = () => {};

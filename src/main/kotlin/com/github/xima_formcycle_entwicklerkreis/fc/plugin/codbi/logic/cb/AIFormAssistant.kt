@@ -361,7 +361,11 @@ class AIFormAssistant : IPluginServletAction {
           logger.info(
               "[AIFormAssistant] Forcing the detailed XSpan template into pass-2 (request needs the designed-text/illustration rules)")
         }
-        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgetsForDetails)
+        // GOOGLE reCAPTCHA vs. a generic challenge captcha: force the detailed XReCaptcha template
+        // into the build pass when the request names a reCAPTCHA (see ReCaptchaDetector).
+        val widgetsForDetailsFinal =
+            ReCaptchaDetector.ensureReCaptchaDetails(widgetsForDetails, prompt)
+        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgetsForDetailsFinal)
         val pass2UserContent =
             "Original user request: ${gson.toJson(prompt)}\n\n" +
                 "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
@@ -1012,6 +1016,177 @@ class AIFormAssistant : IPluginServletAction {
       )
 
   /**
+   * Item properties that are ALSO listed in [STRIPPED_ITEM_PROPS] (so they stay OUT of the slim
+   * payload and save tokens) but that the AI is nevertheless allowed to SET.
+   *
+   * The canonical case is the standard `backgroundcolor`: a widget such as an XSignature declares
+   * it (verified against the XSignature plugin jar — `XPropertyEnum.backgroundcolor`), so the AI
+   * may legitimately set the background colour of a new (or existing) element. The strip is only a
+   * payload optimisation, NOT a "the AI may never change this" rule, therefore:
+   * - on a NEW item, a value the AI supplied for one of these keys must SURVIVE the
+   *   [STRIPPED_ITEM_PROPS] removal (there is no original item to restore it from), and
+   * - on an EXISTING item, a value the AI supplied must WIN over the original value (rather than
+   *   being overwritten by it in the restore loop).
+   */
+  private val AI_SETTABLE_STRIPPED_PROPS = setOf("backgroundcolor")
+
+  /**
+   * Natural-language colour synonyms a model may emit for an XSignature item, mapped to the EXACT
+   * property keys the XSignature widget plugin declares (verified against the plugin jar
+   * `ccf80245-…`: `xsignature_stroke_color`, `xsignature_base_line_color`, plus the standard
+   * `backgroundcolor`).
+   *
+   * Keys are NORMALIZED before lookup by lower-casing and stripping every non-alphanumeric
+   * character, so `backgroundColor`, `background_color`, `background-color` and `Backgroundcolor`
+   * all collapse to `backgroundcolor`, and the model's own extrapolations of the `xsignature_*`
+   * naming pattern (`xsignature_background_color`, `xsignature_line_color`, `xsignature_color`, …)
+   * are recognised too — the plugin's naming pattern invites exactly those.
+   */
+  private val XSIGNATURE_COLOR_ALIASES: Map<String, String> =
+      mapOf(
+          // — background colour -> the standard Formcycle property —
+          "backgroundcolor" to "backgroundcolor",
+          "backgroundcolour" to "backgroundcolor",
+          "bgcolor" to "backgroundcolor",
+          "bgcolour" to "backgroundcolor",
+          "fillcolor" to "backgroundcolor",
+          "fillcolour" to "backgroundcolor",
+          "xsignaturebackgroundcolor" to "backgroundcolor",
+          "xsignaturebackgroundcolour" to "backgroundcolor",
+          "signaturebackgroundcolor" to "backgroundcolor",
+          "signaturebackgroundcolour" to "backgroundcolor",
+          // — pen / stroke colour -> xsignature_stroke_color —
+          "xsignaturestrokecolor" to "xsignature_stroke_color",
+          "xsignaturestrokecolour" to "xsignature_stroke_color",
+          "strokecolor" to "xsignature_stroke_color",
+          "strokecolour" to "xsignature_stroke_color",
+          "pencolor" to "xsignature_stroke_color",
+          "pencolour" to "xsignature_stroke_color",
+          "xsignaturepencolor" to "xsignature_stroke_color",
+          "xsignaturepencolour" to "xsignature_stroke_color",
+          "signaturestrokecolor" to "xsignature_stroke_color",
+          "signaturestrokecolour" to "xsignature_stroke_color",
+          // a bare "signature color" is the PEN colour (the visible drawn signature)
+          "xsignaturecolor" to "xsignature_stroke_color",
+          "xsignaturecolour" to "xsignature_stroke_color",
+          "signaturecolor" to "xsignature_stroke_color",
+          "signaturecolour" to "xsignature_stroke_color",
+          "sigcolor" to "xsignature_stroke_color",
+          "sigcolour" to "xsignature_stroke_color",
+          // — baseline ("line") colour -> xsignature_base_line_color —
+          "xsignaturebaselinecolor" to "xsignature_base_line_color",
+          "xsignaturebaselinecolour" to "xsignature_base_line_color",
+          "baselinecolor" to "xsignature_base_line_color",
+          "baselinecolour" to "xsignature_base_line_color",
+          "linecolor" to "xsignature_base_line_color",
+          "linecolour" to "xsignature_base_line_color",
+          "xsignaturelinecolor" to "xsignature_base_line_color",
+          "xsignaturelinecolour" to "xsignature_base_line_color",
+          "signaturelinecolor" to "xsignature_base_line_color",
+          "signaturelinecolour" to "xsignature_base_line_color",
+          "siglinecolor" to "xsignature_base_line_color",
+          "siglinecolour" to "xsignature_base_line_color")
+
+  /** Normalizes a property key for [XSIGNATURE_COLOR_ALIASES] lookup (see the map's KDoc). */
+  private fun normalizeColorKey(key: String): String =
+      key.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+  /**
+   * Resolves [rawKey] to the XSignature colour property it denotes, or `null` when it is not a
+   * signature colour key. First the exact (normalized) alias is tried; then a conservative
+   * SUBSTRING rule catches the model's own wordings (e.g. `xsignature_background_color`,
+   * `sigBaseLineColor`, `penColor`) — a key must carry a colour token AND a signature-colour
+   * qualifier, so an unrelated property (e.g. `bordercolor`, `print_size`) is never rewritten.
+   */
+  private fun canonicalXSignatureColorKey(rawKey: String): String? {
+    val n = normalizeColorKey(rawKey)
+    XSIGNATURE_COLOR_ALIASES[n]?.let {
+      return it
+    }
+    if (!n.contains("color") && !n.contains("colour")) return null
+    if (!(n.contains("sig") ||
+        n.contains("background") ||
+        n.contains("stroke") ||
+        n.contains("pen") ||
+        n.contains("line") ||
+        n.contains("fill") ||
+        n.contains("base")))
+        return null
+    return when {
+      n.contains("background") || n.contains("fill") -> "backgroundcolor"
+      n.contains("stroke") || n.contains("pen") -> "xsignature_stroke_color"
+      n.contains("line") || n.contains("base") -> "xsignature_base_line_color"
+      // a bare "...sig...color" is the PEN colour (the visible drawn signature)
+      else -> "xsignature_stroke_color"
+    }
+  }
+
+  /**
+   * Rewrites colour property keys the AI emitted as natural-language synonyms (e.g. `strokecolor`,
+   * `linecolor`, `backgroundColor`, `xsignature_background_color`) on an **XSignature** item to the
+   * exact keys the widget declares. The plugin reads each colour by its exact key, so a synonym is
+   * silently IGNORED. Scoped to XSignature so a legitimate `linecolor` on another widget (e.g.
+   * XLine) is never touched. The canonical key always wins when both the synonym and the exact key
+   * are present.
+   */
+  private fun normalizeXSignatureColorKeys(item: JsonObject) {
+    if (item.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSignature") return
+    val props = item.getAsJsonObject("properties") ?: return
+    fun log(source: String, canonical: String) {
+      logger.info(
+          "[AIFormAssistant] XSignature '{}': colour '{}' -> '{}' (the widget reads the exact key, so anything else is ignored)",
+          props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "?",
+          source,
+          canonical)
+    }
+    // 1) Direct property keys that are colour synonyms (xsignature_background_color,
+    // xsignature_color,
+    //    strokecolor, backgroundColor, data-cb-backgroundcolor after its promotion, …).
+    val direct =
+        props.entrySet().mapNotNull { e ->
+          val canonical = canonicalXSignatureColorKey(e.key) ?: return@mapNotNull null
+          Triple(e.key, canonical, e.value)
+        }
+    for ((sourceKey, canonical, value) in direct) {
+      if (sourceKey == canonical) continue
+      if (!props.has(canonical) && value.isJsonPrimitive) props.add(canonical, value)
+      props.remove(sourceKey)
+      log(sourceKey, canonical)
+    }
+    // 2) Colour entries smuggled into properties.attributes (the model re-emits them as data-cb-*
+    //    "attributes"). A colour is NOT a data-cb-* functionality attribute, so promote its value
+    // to
+    //    the real property and DROP the attribute entry.
+    val attrs = props.get("attributes")
+    if (attrs != null && attrs.isJsonArray) {
+      val kept = JsonArray()
+      var changed = false
+      for (entry in attrs.asJsonArray) {
+        if (!entry.isJsonObject) {
+          kept.add(entry)
+          continue
+        }
+        val o = entry.asJsonObject
+        val rawName =
+            o.get("text")?.takeIf { it.isJsonPrimitive }?.asString
+                ?: o.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+        val canonical = rawName?.let { canonicalXSignatureColorKey(it) }
+        if (canonical == null) {
+          kept.add(entry)
+          continue
+        }
+        val value = o.get("value")?.takeIf { it.isJsonPrimitive }?.asString
+        if (!props.has(canonical) && value != null) props.addProperty(canonical, value)
+        changed = true
+        log(rawName, canonical)
+      }
+      if (changed) {
+        if (kept.size() == 0) props.remove("attributes") else props.add("attributes", kept)
+      }
+    }
+  }
+
+  /**
    * Visibility/access-control properties that the AI may set on **new** items it creates. Values
    * are validated/normalized by [sanitizeVisibilityProp] before being written into the result: the
    * `*dependent` FLAGS are normalized to the STRING `"1"`/`"0"` (a JSON boolean is accepted too)
@@ -1273,6 +1448,13 @@ class AIFormAssistant : IPluginServletAction {
         props.remove("className")
       }
     }
+    // Normalize colour KEY SYNONYMS on XSignature items to the widget's exact property keys (see
+    // [XSIGNATURE_COLOR_ALIASES]) BEFORE the per-item strip/restore below: an AI-provided
+    // "strokecolor"/"linecolor"/"backgroundColor" then becomes the canonical key and is handled —
+    // and, for "backgroundcolor", preserved — by the normal new/existing-item logic.
+    for (el in resultItems) {
+      if (el.isJsonObject) normalizeXSignatureColorKeys(el.asJsonObject)
+    }
     if (originalItems != null) {
       val originalByName =
           originalItems
@@ -1344,8 +1526,20 @@ class AIFormAssistant : IPluginServletAction {
                   val sanitized = sanitizeVisibilityProp(key, v) ?: return@mapNotNull null
                   key to sanitized
                 }
+            // Save the AI-settable stripped properties (e.g. the standard "backgroundcolor")
+            // BEFORE the strip. On a NEW item there is no original to restore them from, so a
+            // colour the AI set here would otherwise be lost (the exact reason a signature's
+            // background colour silently disappeared).
+            val aiSettableStripped =
+                AI_SETTABLE_STRIPPED_PROPS.mapNotNull { key ->
+                  val v = props.get(key) ?: return@mapNotNull null
+                  if (v.isJsonPrimitive) key to v.asString else null
+                }
             for (key in STRIPPED_ITEM_PROPS) props.remove(key)
             for ((key, value) in validatedVisibility) props.add(key, value)
+            for ((key, value) in aiSettableStripped) {
+              props.addProperty(key, value)
+            }
           }
           continue
         }
@@ -1378,6 +1572,10 @@ class AIFormAssistant : IPluginServletAction {
           }
         }
         for (key in STRIPPED_ITEM_PROPS) {
+          // A value the AI EXPLICITLY supplied for an AI-settable stripped property (e.g. the
+          // standard "backgroundcolor") WINS over the original: the strip is only a payload
+          // optimisation, not a "the AI may not change this" rule.
+          if (key in AI_SETTABLE_STRIPPED_PROPS && resultProps.has(key)) continue
           val v = origProps.get(key)
           if (v != null) resultProps.add(key, v) else resultProps.remove(key)
         }
@@ -1775,6 +1973,29 @@ class AIFormAssistant : IPluginServletAction {
       }
     } catch (_: Exception) {
       /* non-critical — skip normalization on error */
+    }
+    // FINAL colour-key canonicalisation for XSignature items — runs AFTER every other pass so the
+    // persisted form carries ONLY the exact keys the widget reads. Logs the resulting colours.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSignature") continue
+      normalizeXSignatureColorKeys(item)
+      val p = item.getAsJsonObject("properties")
+      val colours =
+          listOf(
+                  "backgroundcolor",
+                  "xsignature_stroke_color",
+                  "xsignature_base_line_color",
+                  "xsignature_base_line_show")
+              .mapNotNull { k ->
+                p?.get(k)?.takeIf { it.isJsonPrimitive }?.asString?.let { "$k=$it" }
+              }
+              .joinToString(", ")
+      logger.info(
+          "[AIFormAssistant] XSignature '{}' FINAL colours: {}",
+          p?.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "?",
+          colours.ifBlank { "<none>" })
     }
     return gson.toJson(result)
   }

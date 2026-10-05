@@ -43,9 +43,11 @@ CRITICAL — EP PARAMETERS & V: EP parameters are RAW, UNQUOTED text (write { Ba
   instruction that is stripped before the form is saved.
 
 ## Button Actions (XButtonList)
-action.page is a FORMCYCLE keyword, NOT a page name: "" (none/custom), "next" (next page), "previous" (previous page), a page name (navigate to it), or a submit command ("submit", "submitNoCheck", "submitSave", "submitSaveNoCheck", "submitPreview", "submitPreviewWindowed").
+action.page is one of: "" (none/custom), a submit command ("submit", "submitNoCheck", "submitSave", "submitSaveNoCheck", "submitPreview", "submitPreviewWindowed"), or — for navigation — the LOGICAL keyword "next" (a 'Weiter'/'Continue' button) / "previous" (a 'Zurück'/'Back' button). The server resolves the concrete target automatically: the FORMCYCLE navigation plugin's action when that plugin is installed (which keeps the button working even after a page is renamed), otherwise the neighbouring page's NAME. Do NOT substitute a page name for "next"/"previous", and never leave action.page empty.
 
-action.check=true validates the CURRENT page's fields before the action runs; action.check=false skips validation. A "next" / 'Weiter' button MUST use check=true ("next page + check") whenever the current page contains a field that can be invalid — a required field, a datatype-validated field, or a field tagged with a CodBi functionality/class (CSS class starting with "CodBi_", e.g. CodBi_People_Name, or a data-cb-func attribute). Only use check=false when the page has no such field. Submit buttons (page="submit") ALWAYS use check=true.
+action.check=true validates the CURRENT page's fields before the action runs; action.check=false skips validation. A 'Weiter' button (action.page="next") MUST use check=true whenever the current page contains a field that can be invalid — a required field, a datatype-validated field, or a field tagged with a CodBi functionality/class (CSS class starting with "CodBi_", e.g. CodBi_People_Name, or a data-cb-func attribute). Only use check=false when the page has no such field. Submit buttons (page="submit") ALWAYS use check=true.
+
+action.optionId is the FORMCYCLE designer's MACHINE value for the dropdown, NOT the label it displays: it is derived from page+check — "submit" → "submit + check", "submitNoCheck"/"submitSave"/"submitSaveNoCheck"/"submitPreview"/"submitPreviewWindowed" → their designer ids, and any page name → the name itself (check=false) or "<name> + check" (check=true). The designer RENDERS the visible label from this value; never store a human label in optionId.
 
 ## Conditional Visibility / Locking / Required (hiddenif, readonlyif, requiredif) and Availability
 

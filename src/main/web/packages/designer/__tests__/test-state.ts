@@ -5,6 +5,8 @@ export interface TestState {
 
   customFormProperties: Parameters<Module["registerCustomFormProperty"]>[];
 
+  customTranslations: Parameters<Module["registerCustomTranslations"]>[];
+
   language: string;
 }
 
@@ -14,6 +16,7 @@ export function createDefaultTestState(): TestState {
   return {
     customFormCategories: [],
     customFormProperties: [],
+    customTranslations: [],
     language: "en",
   };
 }

@@ -117,7 +117,7 @@ Example for Ja/Nein as RADIO BUTTONS (honor the clarified control type):
 
 XSELECT FED BY A FORMCYCLE DATASOURCE ("Quelle" / "Datenquelle" / "source") — this is the element's OWN "Data source" property, NOT a functionality and NOT an EP:
 A "Quelle" / "Datenquelle" / "source" — typically named together with a column ("Spalte 1 in der Quelle Staatsangehörigkeiten", "column 1 of the source X") — means a FORMCYCLE DATASOURCE that is configured server-side in the Formcycle backend. It is NOT an element placeholder (EP): NEVER wire it with data-cb-func="html.select.injection" and NEVER invent an EP like `{ Staatsangehoerigkeit > column1 }` (a datasource name is not an EP id — such a placeholder cannot resolve). Bind the datasource with the XSelect's own properties:
-- `datasource`: the datasource configured in the Formcycle backend — use the name the request gives AS-IS. Datasources are server-side data (like DataQueries): NEVER ask whether the datasource exists, and never ask for its internal ID.
+- `datasource`: the datasource configured in the Formcycle backend. When an "AVAILABLE FORMCYCLE DATASOURCES" list is provided, this MUST be one of the listed names copied VERBATIM (keep any leading number/prefix, e.g. `56_Staatsangehoerigkeiten`; never translate/re-spell/umlaut-correct it) — CHOOSE the listed name BY MEANING (the request's wording need not equal the technical name); if NO listed name clearly fits or MORE THAN ONE could, do NOT guess — ASK the user which datasource to use, offering ONLY the candidate names that plausibly fit (never the whole list) and naming how many candidates fit; if none fits at all, offer the full list. When no list is provided, use the name the request gives AS-IS. Datasources are server-side data (like DataQueries): NEVER ask whether the datasource exists, and never ask for its internal ID.
 - `dstextidx`: the 1-BASED number of the column whose values become the option TEXT (what the user SEES in the list).
 - `dsvalueidx`: the 1-BASED number of the column whose values become the option VALUE (the submitted value).
 - `dstitleidx` (optional): the 1-BASED number of the column whose values become the option title/tooltip. A "Titel-Spalte" / "title column" ALWAYS belongs here.
@@ -165,17 +165,10 @@ Template (initially UNCHECKED):
 
 Button or button group. No label property. 'buttons' array contains button objects each with: 'name' (technical ID), 'value' (display text, may be HTML), 'action' object.
 
-AVAILABLE BUTTON ACTIONS (action.page — verified against Formcycle 8.5, ESubmitButtonAction):
+AVAILABLE BUTTON ACTIONS (action.page — verified against Formcycle 8.5):
 - "" (empty) = no action, or a custom action when action.customAction contains JS
-- "next" = go to the NEXT page
-- "previous" = go back to the PREVIOUS page
-- any page name (e.g. "p2") = navigate to that page
-- "submit" = submit the form to the server (NOT a page name — do NOT replace with 'p1' or any other page)
-- "submitNoCheck" = submit the form WITHOUT validation
-- "submitSave" = submit and save the data as a draft
-- "submitSaveNoCheck" = submit and save as a draft WITHOUT validation
-- "submitPreview" = open the form preview
-- "submitPreviewWindowed" = open the form preview in a new window
+- SUBMIT commands (server-side, NOT page names): "submit" (validate + send), "submitNoCheck" (send WITHOUT validation), "submitSave" (validate + save draft), "submitSaveNoCheck", "submitPreview", "submitPreviewWindowed"
+- NAVIGATION (a 'Weiter'/'Continue' button on a non-final page, a 'Zurück'/'Back' button on a later page): set action.page to the LOGICAL keyword "next" (resp. "previous"). The server resolves the concrete target automatically — it uses the FORMCYCLE navigation plugin's action when that plugin is installed (which keeps the button working even when a page is renamed), otherwise the neighbouring page's NAME. Do NOT substitute a page name for "next"/"previous", and never leave action.page empty.
 
 action.check (boolean) controls VALIDATION of the CURRENT page's fields before the action runs:
 - check=true = validate the current page first; the action is blocked while a field on that page is invalid (a required field is empty, a datatype-validated field has the wrong format, a CodBi-validated field is invalid, etc.)
@@ -183,8 +176,10 @@ action.check (boolean) controls VALIDATION of the CURRENT page's fields before t
 
 RULES for choosing check:
 - Submit buttons (page="submit"): ALWAYS check=true — see the mandatory rule below.
-- "Next page" buttons (page="next", e.g. a 'Weiter'/'Continue' button on a non-final page): use "next page + check" (check=true) whenever the current page contains a field that can be invalid — a REQUIRED field, a field with a 'datatype' (dateDE, email, etc.), or a field tagged with a CodBi functionality/class that validates input (CSS class starting with "CodBi_", e.g. CodBi_People_Name, or a data-cb-func attribute). Use plain "next page" (check=false) ONLY when the current page has no field that can invalidate (e.g. it contains only informational/layout elements).
-- "Previous page" buttons (page="previous"): check=false is fine.
+- A 'Weiter'/'Continue' button (action.page="next") on a non-final page: use check=true whenever the current page contains a field that can be invalid — a REQUIRED field, a field with a 'datatype' (dateDE, email, etc.), or a field tagged with a CodBi functionality/class that validates input (CSS class starting with "CodBi_", e.g. CodBi_People_Name, or a data-cb-func attribute). Use check=false ONLY when the current page has no field that can invalidate (e.g. it contains only informational/layout elements).
+- A 'Zurück'/'Back' button (action.page="previous"): check=false is fine; use check=true only when the current page has invalidatable fields.
+
+DESIGNER ACTION ID (action.optionId) — THE MACHINE VALUE THE DESIGNER STORES, NOT THE LABEL IT SHOWS. Derive it from page+check (verified against the designer's own code): page ""/"-1" → "no action"; "submit" → "submit + check"; "submitNoCheck" → "submit"; "submitSave" → "save + check"; "submitSaveNoCheck" → "save"; "submitPreview" → "submit no save"; "submitPreviewWindowed" → "submit no save popup"; ANY OTHER action value (incl. the logical "next"/"previous" before the server resolves it) → the value itself when check=false ("next") and "<value> + check" when check=true ("next + check"). NEVER put a human label into optionId — the designer renders the label from this value.
 
 MANDATORY RULE — XButtonList submit button: For any button that submits or sends the form (e.g. 'Absenden', 'Senden', 'Einreichen', 'Prüfen und Senden'), use EXACTLY this action: {"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}. The string 'submit' is a FORMCYCLE server-side command — it is NOT a page name and must NEVER be replaced with any page name.
 
@@ -195,7 +190,7 @@ Template (submit button):
 {"className":"XButtonList","properties":{"name":"btlExample","id":"xi-btl-example","buttons":[{"name":"btnExample","value":"Button Text","action":{"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}}]}}
 ```
 
-Template ('Weiter' / next-page button WITH validation — the usual case on a page that has input fields):
+Template ('Weiter' button to the NEXT page WITH validation — the usual case on a page that has input fields; the server resolves the concrete target):
 ```json
 {"className":"XButtonList","properties":{"name":"btlNext","id":"xi-btl-next","buttons":[{"name":"btnNext","value":"Weiter","action":{"page":"next","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"next + check","value":""}}]}}
 ```
@@ -381,11 +376,18 @@ Plain (non-repeatable) container template:
 
 ## XSignature
 
-Signature pad (XSignature Widget Plugin). Supports pen stroke color via "xsignature_stroke_color" (hex e.g. #0000ff for blue), baseline via "xsignature_base_line_show", baseline color via "xsignature_base_line_color", hide baseline in print via "xsignature_base_line_hide_print".
+Signature pad (XSignature Widget Plugin). The three colours use DIFFERENT property keys — using the wrong key is silently ignored, so use the exact names below:
+- Background colour of the signature box (Hintergrundfarbe) — standard property "backgroundcolor" (hex, e.g. "#f2f2f2").
+- Pen / stroke colour, i.e. the colour of the DRAWN signature (Strichfarbe) — property "xsignature_stroke_color" (hex, e.g. "#0000ff" for blue; widget default "#5110dc"). NOT "strokecolor", NOT "color".
+- Baseline ("line") colour of the signature line (Liniefarbe) — property "xsignature_base_line_color" (hex, e.g. "#e7e7e7"). NOT "linecolor".
+- Baseline visibility — property "xsignature_base_line_show" ("1" = show a baseline under the signature, "0" = hide it).
+- Hide the baseline when printing — property "xsignature_base_line_hide_print" ("1" = hide in print, "0" = show).
 
-Template:
+When the user asks for a coloured signature (background / pen colour / line colour), set the matching property above ON THE SAME XSignature item; never invent a new key.
+
+Template (colour properties shown with their exact keys):
 ```json
-{"className":"XSignature","properties":{"name":"sigExample","id":"xi-sig-example","label":"Example","required":"0"}}
+{"className":"XSignature","properties":{"name":"sigExample","id":"xi-sig-example","label":"Example","required":"0","backgroundcolor":"#f2f2f2","xsignature_stroke_color":"#0000ff","xsignature_base_line_color":"#e7e7e7","xsignature_base_line_show":"1","xsignature_base_line_hide_print":"1"}}
 ```
 
 ## XAppointment
@@ -405,11 +407,11 @@ Template:
 
 ## XLine
 
-Horizontal divider. Has no 'label' property.
+Horizontal divider. Has no 'label' property. The line's HEIGHT / THICKNESS ("Höhe", "height", "eine 20px Linie") is the DIRECT property `height` — a CSS length STRING (e.g. `"height":"20px"`). It is NOT a `"style"` string and NOT an `attributes` entry; both are ignored by the XLine renderer. Default (no `height`) = a 1px line.
 
 Template:
 ```json
-{"className":"XLine","properties":{"name":"liExample","id":"xi-li-example"}}
+{"className":"XLine","properties":{"name":"liExample","id":"xi-li-example","height":"1px"}}
 ```
 
 ## XSpacer
@@ -445,11 +447,11 @@ Form footer.
 
 ## XDatalistAdvanced
 
-Filterable select/datalist (DS Widget Plugin). Properties: xda_ds_param (datasource parameter to filter by), xda_use_colvalue ("true" to use 'col'-attribute for filter), xda_colnumber ('col'-attribute column number), xda_filter_colnumber (datasource column to filter on), xda_show_please_select ("true" to show default option).
+Filterable select/datalist (DS Widget Plugin) — a SELECT with a filter box. It is a SUBCLASS of XSelect, so (when used) it binds a datasource exactly like XSelect (`datasource` copied VERBATIM from the AVAILABLE FORMCYCLE DATASOURCES list, `dstextidx`, `dsvalueidx`, `options` []). WIDGET BY INTENT (LANGUAGE-AGNOSTIC — decide from the MEANING in ANY language, never a literal keyword): use it ONLY when the user explicitly asks for a filterable DATALIST; to CHOOSE from a list (the selection/dropdown concept, in ANY language) — even when described as filterable/searchable/type-ahead — stays a plain XSelect. Optional DS-widget filter properties: xda_ds_param (datasource parameter to filter by), xda_use_colvalue ("true" to use the 'col'-attribute for the filter), xda_colnumber ('col'-attribute column number), xda_filter_colnumber (datasource column to filter on), xda_show_please_select ("true" to show the default option). Template: {"className":"XDatalistAdvanced","properties":{"name":"selExample","id":"xi-sel-example","label":"Example","required":"0","fullwidth":"0","datasource":"<listed name VERBATIM>","dstextidx":"1","dsvalueidx":"1","options":[]}}
 
 ## XTextfieldAdvanced
 
-Filterable text field (DS Widget Plugin). Properties: xtf_ds_param (datasource parameter to filter by), xtf_use_colvalue ("true" to use 'col'-attribute for filter), xtf_colnumber ('col'-attribute column number), xtf_filter_colnumber (datasource column to filter on).
+Filterable text field (DS Widget Plugin) — the INPUT FIELD bound to a datasource: it extends XTextField and adds the `datasource` property, so it is the widget to use when the user wants to TYPE into a text field (the input-field concept — "Eingabefeld"/"input field"/the equivalent in ANY language) whose values must be restricted to / autocompleted from a Formcycle datasource. className "XTextfieldAdvanced" with `datasource` copied VERBATIM from the AVAILABLE FORMCYCLE DATASOURCES list, and NO dstextidx/dsvalueidx (it is a text field, not a select). DS-widget filter properties (group "Data sources filter settings"): `xtf_ds_param` — label "filter through" / German "filtern durch" — the `id` of the OTHER form field whose value drives the datasource filter; `xtf_filter_colnumber` — "Apply filter on data source column" — the 1-based datasource column the filter is applied on; `xtf_use_colvalue` — "true" to use the 'col'-attribute for the filter; `xtf_colnumber` — the 'col'-attribute column. TEMPLATE — a datasource input filtered by a separate field (e.g. labelled "Filter"): [ {"className":"XTextfieldAdvanced","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","fullwidth":"0","datasource":"<listed name VERBATIM>","xtf_ds_param":"xi-tf-filter"}}, {"className":"XTextField","properties":{"name":"tfFilter","id":"xi-tf-filter","label":"Filter","required":"0","fullwidth":"0"}} ]. CRITICAL (LANGUAGE-AGNOSTIC — decide from the MEANING in ANY language, never a literal keyword) — when ANOTHER input field acts as a FILTER for the datasource field (one narrows the other, in ANY language), you MUST emit BOTH fields and set the datasource field's `xtf_ds_param` to the second field's `id`.
 
 ## XFormula
 
@@ -494,19 +496,27 @@ Whether a field value is a number, text, or repeated: XFormula computes from OTH
 
 ## XRating
 
-Rating widget (XRating Widget Plugin). Visual rating with configurable icons (stars, thumbs, emoticons). The NUMBER of icons is determined by the 'options' array — each entry generates one clickable icon. A "5-star" / "5-Sterne" / "5 stars" / "Bewertung mit 5 Sternen" rating MUST produce an `options` array of EXACTLY 5 entries (5 star icons), e.g. `[{"icon":"ico-rating-star"},{"icon":"ico-rating-star"},{"icon":"ico-rating-star"},{"icon":"ico-rating-star"},{"icon":"ico-rating-star"}]`. NEVER emit an XRating without an `options` array when the star/level count is requested.
+Rating widget (XRating Widget Plugin). Visual rating with configurable icons (stars, thumbs, emoticons). The NUMBER of icons is determined by the 'options' array — each entry generates one clickable icon. A "5-star" / "5-Sterne" / "5 stars" / "Bewertung mit 5 Sternen" rating MUST produce an `options` array of EXACTLY 5 entries (5 star icons). NEVER emit an XRating without an `options` array when the star/level count is requested.
+
+**CRITICAL — every option MUST carry a sensible `text`, `value` and `title`** (an option with ONLY an `icon` is empty and must never be emitted). For a star/level rating give each star a sequential level:
+- `text` — the human-readable level label, e.g. "1 Stern", "2 Sterne", …, "5 Sterne" (or "1"…"5" for a numeric label);
+- `value` — the submitted numeric value for that level, e.g. "1", "2", "3", "4", "5";
+- `title` — the tooltip text, e.g. "1 von 5 Sternen", "2 von 5 Sternen", …, "5 von 5 Sternen".
+
+Example for a 5-star rating — each entry includes icon + text + value + title:
+`[{"icon":"ico-rating-star","text":"1 Stern","value":"1","title":"1 von 5 Sternen"},{"icon":"ico-rating-star","text":"2 Sterne","value":"2","title":"2 von 5 Sternen"},{"icon":"ico-rating-star","text":"3 Sterne","value":"3","title":"3 von 5 Sternen"},{"icon":"ico-rating-star","text":"4 Sterne","value":"4","title":"4 von 5 Sternen"},{"icon":"ico-rating-star","text":"5 Sterne","value":"5","title":"5 von 5 Sternen"}]`. When the request language is English use the matching English labels ("1 Star", …, "5 Stars"; title "1 of 5 stars", …).
 
 Properties: xrating_icon_inactive (icon for unselected state — common values: "ico-rating-star", "ico-rating-star-outline", "ico-rating-thumb-up", "ico-rating-thumb-down", "ico-rating-emoticon-happy", "ico-rating-emoticon-sad", "ico-rating-emoticon-neutral"), xrating_icon_active (icon for selected state — same icon options), xrating_color_gradient ("true" to enable color gradient), xrating_color_start (start color in rgb() format, e.g. "rgb(181,45,58)" — CRITICAL: use rgb(R,G,B) format, NOT hex like "#b52d3a"), xrating_color_end (end color in rgb() format).
 
 ## XCaptcha
 
-Captcha widget (CAPTCHA Plugin). Displays a hard-to-read challenge text that the user must enter to prove they are human. Standard properties: name, id, label. Has built-in refresh and audio play buttons. No custom properties needed.
+Captcha widget (CAPTCHA Plugin). Displays a hard-to-read challenge text that the user must enter to prove they are human. Standard properties: name, id, label. The CAPTCHA TEXT LENGTH (how many characters the challenge shows) is controlled by the two STANDARD length properties — `minlength` (UI label "Length min") and `maxlength` (UI label "Length max"): to force a challenge of EXACTLY N characters set BOTH `minlength` and `maxlength` to "N" (e.g. a 10-character captcha → {"minlength":"10","maxlength":"10"}). NEVER invent a `length` property — it does NOT exist and is silently ignored. Has built-in refresh and audio play buttons.
 
-CRITICAL — "Captcha-Schutz" / "with CAPTCHA" / "captcha protection" / "mit Captcha" → ALWAYS create an XCaptcha element (className="XCaptcha").
+CRITICAL — "Captcha-Schutz" / "with CAPTCHA" / "captcha protection" / "mit Captcha" → for a GENERIC challenge captcha create an XCaptcha element (className="XCaptcha"). For a GOOGLE reCAPTCHA ("reCAPTCHA" / "Google reCAPTCHA" / "reCaptcha") use the XReCaptcha widget instead (see below) — NEVER the built-in XCaptcha.
 
 ## XReCaptcha
 
-Google reCAPTCHA widget (reCAPTCHA Plugin). Integrates Google reCAPTCHA. Properties: recaptcha_site_key (site key), recaptcha_secret_key (secret key).
+Google reCAPTCHA widget (reCAPTCHA Plugin) — className "XReCaptcha". USE THIS WIDGET (NEVER the XCaptcha widget) whenever the request names a "reCAPTCHA" / "Google reCAPTCHA" / "reCaptcha" (in ANY language — a Google-hosted reCAPTCHA, distinct from the built-in challenge captcha). Properties (EXACT keys): "xrecaptcha_site_key" (Site key) and "xrecaptcha_secret_key" (Secret key) — note the leading "x"; NEVER "recaptcha_site_key"/"recaptcha_secret_key" (those do not exist). When the user did not provide the keys, STILL emit the XReCaptcha (leave the key properties empty/omitted) so the correct widget is created — do NOT substitute the built-in XCaptcha.
 
 ## XHtmlWidget
 
@@ -524,11 +534,17 @@ Navigation bar / progress bar widget (XNavigationBar Plugin). Renders a visual s
 
 Use when the prompt mentions "XIMA Navigationsleiste", "XIMA navbar", "FORMCYCLE navbar", "Navigationsleiste", "Progress Bar", "FC-Navbar", "formcycle navigation bar", or "FC-Navigationsleiste". Standard properties: name, id, label. Steps are defined via the "options" array — each entry creates one step with "text" (display name) and "value" (page identifier). For custom step count, provide that many options entries. Uses custom action button types: xnavbar_next (next page), xnavbar_next_check (next page + validation), xnavbar_prev (previous page), xnavbar_prev_check (previous page + validation).
 
+**CRITICAL — `options` MUST LIST EVERY PAGE (never empty):** the "options" array defines the bar's visible steps AND the pages they navigate to. Create ONE option per FORM PAGE — `"value"` = that XPage's `name` (the identifier the bar navigates to), `"text"` = that page's `header`/title (fall back to its `name`) — in page order, covering EVERY XPage of the form. An EMPTY "options" array (or one shorter than the page count) renders NO steps, so the form's pages cannot be reached from the bar — that is a FAIL.
+
+**AMBIGUOUS "navbar" — CodBi vs Formcycle:** "navbar" / "Navigationsleiste" / "navigation bar" / "Fortschrittsleiste" (ANY language) ALONE does not say WHICH element is meant — the dedicated Formcycle XNavigationBar widget OR CodBi's Form.Navigator functionality. They are NOT interchangeable; a request that names neither is CLARIFIED (which one) in the separate clarification round BEFORE building — never silently substitute one for the other.
+
 CRITICAL — Distinguish from CodBi Form.Navigator: Use XNavigationBar when the prompt mentions FORMCYCLE navbar/navigationsleiste. Use CodBi Form.Navigator (data-cb-func=form.navigator) when the prompt mentions "CodBi Navbar" or "CodBi Navigation".
 
 ## XLanguageSwich
 
 Language selector widget (XLanguageSwich Plugin). Renders one or more language links for switching the form language.
+
+CRITICAL — a request to provide a language switch / language switcher / language selector / "Sprachauswahl" / "Sprachumschalter" / "Sprachwechsel" / "Sprachenumschalter" (decide by MEANING in ANY language) ALWAYS means the DEDICATED XLanguageSwich element — NEVER a dropdown/select (XSelect) and NEVER radio buttons/checkboxes (XButtonList/XCheckbox). There is a dedicated Formcycle element for a language switch, so do NOT ask the user whether a dropdown or radio buttons should be used, and do NOT ask which languages to offer unless they cannot be derived from the request or the form's language list — create XLanguageSwich directly.
 
 Languages are defined via the "options" array — each entry creates one language link with "text" (display name, e.g. "Deutsch") and "value" (language code, e.g. "de"). Standard properties: name, id, label. Custom property: xlangswitch_page_redirect ("0"=off, "1"=remember current page after language switch).
 

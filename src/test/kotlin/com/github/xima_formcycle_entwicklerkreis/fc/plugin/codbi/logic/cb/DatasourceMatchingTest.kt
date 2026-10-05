@@ -64,6 +64,42 @@ class DatasourceMatchingTest {
   }
 
   @Test
+  fun datasourceNamesAreNeverGuessedByCharacters() {
+    // Choosing WHICH datasource fits is the MODEL's job (by meaning). The server matcher must NOT
+    // fold spellings or prefixes, so a name the model re-authored (dropped "56_", added the real
+    // umlaut) does NOT silently bind — the model is expected to have copied a listed name verbatim
+    // or asked instead.
+    val available = listOf("56_Staatsangehoerigkeiten", "Test")
+    assertNull(findClosest("Staatsangehörigkeiten", available))
+    assertNull(findClosest("Staatsangehoerigkeiten", available))
+    assertEquals("56_Staatsangehoerigkeiten", findClosest("56_Staatsangehoerigkeiten", available))
+  }
+
+  @Test
+  fun blockTellsTheModelToChooseByMeaningAndAskWhenUnsure() {
+    val block = buildBlock(listOf("56_Staatsangehoerigkeiten", "Test"))!!
+    assertTrue(block.contains("VERBATIM"))
+    assertTrue(block.contains("CHOOSE BY MEANING"))
+    assertTrue(block.contains("ASK the user"))
+    // When asking, the model must offer ONLY the datasources that plausibly fit (the candidates)
+    // and
+    // say how many fit — never dump the whole list (observed regression: all 3 sources were offered
+    // for a request that clearly matched only 2).
+    assertTrue(block.contains("offer ONLY the candidate names that plausibly FIT"))
+    assertTrue(block.contains("do NOT dump the entire list"))
+    assertTrue(block.contains("naming how many"))
+    // WIDGET BY INTENT (language-agnostic): a requested INPUT FIELD bound to the datasource is the
+    // DS-widget text field XTextfieldAdvanced (a SELECTION stays a plain XSelect).
+    assertTrue(block.contains("XTextfieldAdvanced"))
+    assertTrue(block.contains("WIDGET BY INTENT"))
+    assertTrue(block.contains("LANGUAGE-AGNOSTIC"))
+    // FILTER-THROUGH wiring: the DS-widget property `xtf_ds_param` (label "filter through") must be
+    // set to the id of the separate filter field.
+    assertTrue(block.contains("xtf_ds_param"))
+    assertTrue(block.contains("filter through"))
+  }
+
+  @Test
   fun blankOrNullRequestDoesNotMatch() {
     val available = listOf("Staatsangehörigkeiten")
     assertNull(findClosest(null, available))

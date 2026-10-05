@@ -170,9 +170,11 @@ class ClarificationPromptTest {
     val p = template()
     // Original measured at 44,328 chars ≈ 14 k tokens (the largest single component of the gated
     // clarify prompt). Every byte cut here is paid on EVERY non-skipped clarification round. The
-    // cap is the POST-condensation size (measured ~30.8 k) with a little headroom for a legitimate
-    // future rule addition — it must never silently regrow toward the pre-condensation 44 k.
-    assertTrue(p.length < 32000, "clarification template grew back to ${p.length} chars")
+    // cap is the POST-condensation size (measured ~30.8 k) plus headroom for legitimate future rule
+    // additions — the always-kept `languageswitch` scenario block and the `navbar`
+    // CodBi-vs-Formcycle
+    // clarification gate — it must never silently regrow toward the pre-condensation 44 k.
+    assertTrue(p.length < 34000, "clarification template grew back to ${p.length} chars")
   }
 
   // --- Lever 1 (backend): the CLARIFICATION round gets a CONDENSED form-structure context ---

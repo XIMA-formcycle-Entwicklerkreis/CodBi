@@ -508,10 +508,22 @@ class AIWorkflowAssistant : IPluginServletAction {
       urlTemplates: String?,
       inboxes: String?
   ): String {
+    // SINGLE-PASS substitution with sentinels — the inserted VALUES must never be re-scanned: the
+    // general block itself carries {{WORKFLOW_REFERENCE}} markers, so a chained
+    // .replace().replace()
+    // expands the (large) reference several times per pass. See
+    // AICodBiAssistant.renderWorkflowSystemPrompt.
+    val genSentinel = "\u0000CB_GEN\u0000"
+    val refSentinel = "\u0000CB_REF\u0000"
     var out =
         template
-            .replace("{{GENERAL}}", general)
-            .replace("{{WORKFLOW_REFERENCE}}", workflowReference)
+            .replace("{{GENERAL}}", genSentinel)
+            .replace("{{WORKFLOW_REFERENCE}}", refSentinel)
+            .replace(genSentinel, general)
+            .replace(refSentinel, workflowReference)
+    // Stray markers that arrived INSIDE `general` are dropped (the reference is present once
+    // already).
+    out = out.replace("{{WORKFLOW_REFERENCE}}", "").replace("{{GENERAL}}", "")
     out = applyWorkflowSection(out, "NEED_FORM_DATA", if (isPhase1) " " else null)
     out = applyWorkflowSection(out, "WORKFLOW_DETAILS_REQUEST", if (pass2) null else " ")
     out = applyWorkflowSection(out, "FORM_ELEMENTS", formContext)
@@ -609,6 +621,28 @@ class AIWorkflowAssistant : IPluginServletAction {
   private data class WorkflowDetailsSignal(val nodes: List<String>, val triggers: List<String>)
 
   /**
+   * Reads a node/trigger NAME list from a details request. The model emits the arrays in BOTH
+   * shapes — plain strings (`["FC_EMAIL"]`) and OBJECTS (`[{"nodeType":"FC_EMAIL"}]` /
+   * `[{"triggerType":"FC_FORM_SUBMIT_BUTTON"}]`, sometimes `{"name":…}` / `{"id":…}`). Accepting
+   * only strings made the lists come back EMPTY, so the details request was not recognised and the
+   * response was parsed as a task spec (0 specs) — the run then aborted. Both shapes now resolve.
+   */
+  private fun detailsNameList(arr: List<*>?): List<String> =
+      arr?.mapNotNull { el ->
+        when (el) {
+          is String -> el.trim().takeIf { it.isNotEmpty() }
+          is Map<*, *> -> {
+            @Suppress("UNCHECKED_CAST") val m = el as Map<String, Any?>
+            (m["nodeType"] ?: m["triggerType"] ?: m["name"] ?: m["id"] ?: m["type"])
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+          }
+          else -> null
+        }
+      } ?: emptyList()
+
+  /**
    * Parses a workflow-node details request from the AI's cleaned JSON response. The AI returns this
    * signal in the FIRST pass (which only contains the condensed workflow-nodes reference) when it
    * needs the exact triggerParams/nodeParams of specific triggers/nodes it intends to use:
@@ -621,11 +655,24 @@ class AIWorkflowAssistant : IPluginServletAction {
       if (obj == null) return null
       // Strict form: the prompt asks for the full {"status":"need_workflow_node_details",...}.
       if ((obj["status"] as? String) == "need_workflow_node_details") {
-        val nodesArr = obj["nodes"] as? List<*> ?: emptyList<Any>()
-        val nodes = nodesArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
-        val triggersArr = obj["triggers"] as? List<*> ?: emptyList<Any>()
-        val triggers = triggersArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
-        return WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
+        return WorkflowDetailsSignal(
+            nodes = detailsNameList(obj["nodes"] as? List<*>),
+            triggers = detailsNameList(obj["triggers"] as? List<*>))
+      }
+      // Nested-wrapper form — many models emit the signal NAME as a KEY whose value is the request
+      // object:
+      // {"need_workflow_node_details":{"nodes":["FC_EMAIL"],"triggers":["FC_FORM_SUBMIT_BUTTON"]}}.
+      // Without unwrapping this, the object parses to zero task specs (it carries no task fields
+      // and
+      // no top-level nodes/triggers) and the whole workflow build aborts.
+      val nested = obj["need_workflow_node_details"]
+      if (nested is Map<*, *>) {
+        @Suppress("UNCHECKED_CAST") val nestedMap = nested as Map<String, Any?>
+        val nodes = detailsNameList(nestedMap["nodes"] as? List<*>)
+        val triggers = detailsNameList(nestedMap["triggers"] as? List<*>)
+        if (nodes.isNotEmpty() || triggers.isNotEmpty()) {
+          return WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
+        }
       }
       // Tolerant form — many models omit the "status" field and return only
       // {"nodes":[...],"triggers":[...]}. Treat an object as a details request when it is clearly a
@@ -650,14 +697,8 @@ class AIWorkflowAssistant : IPluginServletAction {
                   "_cases")
               .any { obj.containsKey(it) }
       if (looksLikeTask) return null
-      val nodesArr = obj["nodes"] as? List<*>
-      val triggersArr = obj["triggers"] as? List<*>
-      val nodes =
-          nodesArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
-              ?: emptyList()
-      val triggers =
-          triggersArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
-              ?: emptyList()
+      val nodes = detailsNameList(obj["nodes"] as? List<*>)
+      val triggers = detailsNameList(obj["triggers"] as? List<*>)
       if (nodes.isEmpty() && triggers.isEmpty()) return null
       WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
     } catch (_: Exception) {

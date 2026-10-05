@@ -1347,7 +1347,7 @@ internal object PromptLoader {
             .sortedBy { it.key }
     if (triggers.isNotEmpty()) {
       sb.append("\n## Trigger Types\n")
-      for ((_, v) in triggers) sb.append(v).append("\n")
+      for ((_, v) in triggers) sb.append(condenseCompactEntry(v)).append("\n")
     }
     val nodes =
         map.entries
@@ -1357,9 +1357,33 @@ internal object PromptLoader {
             .sortedBy { it.key }
     if (nodes.isNotEmpty()) {
       sb.append("\n## Node Types\n")
-      for ((_, v) in nodes) sb.append(v).append("\n")
+      for ((_, v) in nodes) sb.append(condenseCompactEntry(v)).append("\n")
     }
-    return sb.toString().trimEnd()
+    val out = sb.toString().trimEnd()
+    // Token instrument: LEVER 2 trades entry parameter-hints for the pass-2 details round. Log the
+    // result so the saving (and any future regression) is visible in one line.
+    logger.info(
+        "[PromptLoader] buildWorkflowNodesCondensed (LEVER 2, first-line-only): {} chars (header={}, {} entries)",
+        out.length,
+        header.length,
+        triggers.size + nodes.size)
+    return out
+  }
+
+  /**
+   * LEVER 2 (token reduction) — keeps only the FIRST LINE of a compact workflow-node/trigger entry.
+   *
+   * The compact seed stores `NAME — purpose` on the entry's first line and, for many nodes, several
+   * further lines of PARAMETER hints (measured: 63 entries = 21,287 chars, i.e. ~338 chars each).
+   * Pass-1 only has to DECIDE which nodes it needs and then requests their exact schemas via
+   * `need_workflow_node_details`; the parameter hints are delivered in full by pass-2. Keeping the
+   * first line preserves the purpose sentence — the information that drives the decision — and
+   * drops hints that would otherwise be paid for on every pass-1. Capped so one runaway entry
+   * cannot dominate the prompt. Fail-open: a blank entry yields nothing.
+   */
+  private fun condenseCompactEntry(entry: String, maxChars: Int = 200): String {
+    val first = entry.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: return ""
+    return if (first.length <= maxChars) first else first.take(maxChars).trimEnd() + " …"
   }
 
   /**
@@ -1376,11 +1400,28 @@ internal object PromptLoader {
     val norm: (String) -> String = { s ->
       s.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").replace(Regex("_+"), "_").trim('_')
     }
-    // Prepend the general workflow rules (output format, taskName, placeholders, server variables,
-    // output rules) so the pass-2 prompt retains the context the AI needs.
-    val header = loadCategory(em, "formcycle.workflow_nodes")["formcycle.workflow_nodes"] ?: ""
+    // TOKEN LEVER (measured 2026-10-05): the `formcycle.workflow_nodes` PARENT body is the ENTIRE
+    // node/trigger catalogue (measured 106,800 chars) because the `.md` splits sub-items only at
+    // `###` — the `## Node Types` / `## Trigger Types` headings stay in the parent body, so the
+    // "general rules" header is really the whole reference. Prepending it turned a 6,425-char
+    // answer
+    // (FC_EMAIL 5,834 + FC_FORM_SUBMIT_BUTTON 591) into a 113,312-char reference and inflated the
+    // pass-2 workflow prompt to ~377 KB (~94 k tokens). That catalogue is ALREADY in the pass-1
+    // condensed reference, and the task template carries the OUTPUT CONTRACT / SCOPE / general
+    // rules,
+    // so pass-2 now keeps ONLY the requested node/trigger sections. Revert = restore the single
+    // `loadCategory(em, "formcycle.workflow_nodes")["formcycle.workflow_nodes"]` line here.
+    val header = ""
     val section = StringBuilder()
     if (header.isNotBlank()) section.append(header).append("\n")
+    // Token instrument: this reference is the single biggest block of the pass-2 workflow prompt
+    // (measured 113,311 chars for just FC_EMAIL + FC_FORM_SUBMIT_BUTTON). It was impossible to tell
+    // whether the bulk is the category HEADER or the requested node/trigger sections, so log both.
+    logger.info(
+        "[PromptLoader] buildWorkflowNodeDetails: requested nodes={}, triggers={} — category header={} chars",
+        nodeNames,
+        triggerNames,
+        header.length)
     section.append("\nFORMCYCLE WORKFLOW NODE DETAILS (requested)\n")
     var appended = 0
 
@@ -1400,6 +1441,7 @@ internal object PromptLoader {
                     ?.value
                 ?: continue
         section.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+        logger.info("[PromptLoader]   requested NODE '{}' details: {} chars", id, content.length)
         appended++
       }
     }
@@ -1419,6 +1461,7 @@ internal object PromptLoader {
                     ?.value
                 ?: continue
         section.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+        logger.info("[PromptLoader]   requested TRIGGER '{}' details: {} chars", id, content.length)
         appended++
       }
     }
@@ -1427,6 +1470,11 @@ internal object PromptLoader {
       // Fallback: no requested section resolved — return the general header at minimum.
       return if (header.isNotBlank()) header else ""
     }
+    logger.info(
+        "[PromptLoader] buildWorkflowNodeDetails total: {} chars (header={} + {} requested section(s))",
+        section.length,
+        header.length,
+        appended)
     return section.toString().trimEnd()
   }
 

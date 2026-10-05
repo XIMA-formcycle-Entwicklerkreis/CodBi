@@ -52,4 +52,38 @@ internal object CodbiDetailsDemandPolicy {
   ): Boolean =
       newElements.toSortedSet() == sentElements.toSortedSet() &&
           newWidgets.toSortedSet() == sentWidgets.toSortedSet()
+
+  /**
+   * DEGENERATE-LOOP GUARD (early) — true when a `need_codbi_details` demand asks for SOMETHING NEW
+   * that nonetheless CANNOT resolve, so the rerun would send the identical name index again and the
+   * model would simply re-ask.
+   *
+   * Measured case: pass-2 answered
+   * `{"status":"need_codbi_details","elements":["btlSend"],"widgets":["XButtonList"]}` where
+   * `btlSend` is a FORM element name (the `elements` field is for CodBi FUNCTION ids) and
+   * `XButtonList` had already been sent. Nothing new resolved, yet the request differed from the
+   * sent set, so the set-equal guard did not fire until AFTER the run had paid one extra full ~57
+   * KB pass-3 inference.
+   *
+   * [resolves] reports whether a set of newly named element ids maps to real CodBi knowledge (the
+   * caller passes `CodbiCapabilities.buildFullSectionFor(ids).isNotBlank()`).
+   *
+   * Safety contract (fail-open): returning true requires ALL three of
+   * - no widget that was not already sent (a new widget template may genuinely resolve), and
+   * - at least one newly named element (an exact repeat is [repeatsPreviouslySent]'s job), and
+   * - every newly named element id failing to resolve. Any genuinely resolvable new id therefore
+   *   still reruns — unchanged behaviour.
+   */
+  fun addsNothingNewThatResolves(
+      newElements: Collection<String>,
+      newWidgets: Collection<String>,
+      sentElements: Collection<String>,
+      sentWidgets: Collection<String>,
+      resolves: (Collection<String>) -> Boolean
+  ): Boolean {
+    if ((newWidgets.toSortedSet() - sentWidgets.toSortedSet()).isNotEmpty()) return false
+    val freshElements = newElements.toSortedSet() - sentElements.toSortedSet()
+    if (freshElements.isEmpty()) return false
+    return !resolves(freshElements)
+  }
 }

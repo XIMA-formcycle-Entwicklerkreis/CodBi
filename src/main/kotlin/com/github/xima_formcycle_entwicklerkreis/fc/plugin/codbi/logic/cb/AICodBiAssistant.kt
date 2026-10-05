@@ -2450,10 +2450,12 @@ class AICodBiAssistant : IPluginServletAction {
       // Final structural normalization: move any page the merge/restore steps appended AFTER the
       // footer back in front of it (otherwise pages 2 & 3 render below the footer), and copy page
       // labels from the Form.Navigator onto empty XPage headers.
+      val useNavigationPlugin = navigationPluginAvailable(params)
       resolvedFormJson =
           runCatching {
                 val obj = JsonParser.parseString(restoredJson).asJsonObject
-                if (normalizeFinalFormStructure(obj)) gson.toJson(obj) else restoredJson
+                if (normalizeFinalFormStructure(obj, useNavigationPlugin)) gson.toJson(obj)
+                else restoredJson
               }
               .getOrDefault(restoredJson)
       // Auto-repair ANY orphaned element: an element that exists in the flat "items" array with a
@@ -3055,8 +3057,9 @@ class AICodBiAssistant : IPluginServletAction {
             "Reply with ONLY this JSON, nothing else:\n" +
             "{\"translationRequest\":true,\"addLanguages\":[\"<code>\",\"<code>\"]}\n" +
             "Rules:\n" +
-            "- translationRequest=true when the request asks to translate the WHOLE form into one or more additional languages (e.g. \"translate to English and French\", \"ins Englische und Französische übersetzen\", \"ins Italienische übersetzen\"). It is ALSO true when those languages are ALREADY present (a repeat translation request) — then addLanguages is empty and translationRequest is still true.\n" +
-            "- translationRequest=false and addLanguages=[] for everything else (partial / field-level translations, non-translation edits, etc.).\n" +
+            "- translationRequest=true ONLY for translating existing form content into additional languages (e.g. \"translate to English and French\", \"ins Englische und Französische übersetzen\", \"ins Italienische übersetzen\"). It is ALSO true when those languages are ALREADY present (a repeat translation request) — then addLanguages is empty and translationRequest is still true.\n" +
+            "- CRUCIAL: translationRequest=false when the request asks to CREATE, ADD or re-place a language-switch / language-selector WIDGET as a form element (e.g. \"Sprachauswahl\", \"Sprachumschalter\", \"Sprache/Sprachen wählbar machen\", \"braucht eine Sprachauswahl mit den Sprachen Italienisch, Latein und Französisch\", \"add a language switch with English and French\", \"language selector element\"). Even though such a request names languages, it is a widget-creation edit, NOT a whole-form translation — return translationRequest=false and addLanguages=[] so the normal form-modification pass can create the switch.\n" +
+            "- translationRequest=false and addLanguages=[] for everything else (partial / field-level translations, non-translation edits, widget creation, etc.).\n" +
             "- addLanguages lists ONLY the NEW languages to ADD (those not yet present), in the order the request names them, using Formcycle language codes (de, en, fr, it, nl, de-CH, ...). Never include the base language '$baseLang' or a language already present; leave it empty when every named language is already present."
     val messagesJson = buildString {
       append("[")
@@ -4176,6 +4179,15 @@ class AICodBiAssistant : IPluginServletAction {
                   chatContext
       val controlTypesSection =
           "\n\n" + (loadPromptWithClasspathFallback("codbi.control_types_rules") ?: "")
+      // The FORMCYCLE DATASOURCES list MUST reach every BUILD pass, not just pass-1: pass-2 (the
+      // targeted rerun), the blind rethink and the forced final pass are where an XSelect is
+      // actually
+      // created/rebuilt. Without the list here the model has no verbatim names to copy and falls
+      // back
+      // to the request's wording, inventing a name (observed: "Staatsangehoerigkeit" instead of the
+      // listed "56_Staatsangehoerigkeiten") which the final guard then clears to user-defined.
+      val datasourceSection =
+          if (availableDatasources.isNullOrBlank()) "" else "\n\n" + availableDatasources.trim()
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
@@ -4219,7 +4231,8 @@ class AICodBiAssistant : IPluginServletAction {
                 historySection +
                 clarificationSection +
                 chatSection +
-                controlTypesSection
+                controlTypesSection +
+                datasourceSection
 
         logger.info(
             "[AICodBiAssistant] Blind rethink pass â€” sending {} item(s) with compact CodBi reference (system-only)",
@@ -4437,6 +4450,17 @@ class AICodBiAssistant : IPluginServletAction {
           logger.info(
               "[AICodBiAssistant] Forcing the detailed XSpan template into pass-2 (request needs the designed-text/illustration rules)")
         }
+        // GOOGLE reCAPTCHA vs. a generic challenge captcha: when the request names a reCAPTCHA,
+        // force the detailed XReCaptcha template into the pass that BUILDS the form too, so the
+        // model always receives the correct widget's properties (observed regression: "reCaptcha
+        // (the one from google)" was built as a plain XCaptcha because the model had requested
+        // only XCaptcha).
+        val widgetsForDetailsFinal =
+            ReCaptchaDetector.ensureReCaptchaDetails(widgetsForDetails, prompt)
+        if (widgetsForDetailsFinal != widgetsForDetails) {
+          logger.info(
+              "[AICodBiAssistant] Forcing the detailed XReCaptcha template into pass-2 (request names a Google reCAPTCHA)")
+        }
         // serverVarsDemanded is computed once at the top of rerunWithCodbiDetails (shared with the
         // forced final pass below) and gates the ~3KB server-variable catalog out of this pass-2
         // apply prompt when the request/form references no [%\$...%] placeholder (EConditionType
@@ -4444,7 +4468,7 @@ class AICodBiAssistant : IPluginServletAction {
         val applySystemPrompt =
             loadCodbiApplyPrompt(
                 requested,
-                widgetsForDetails,
+                widgetsForDetailsFinal,
                 useCodbi,
                 useBuergerserviceNaming,
                 sectionKeepTags,
@@ -4452,7 +4476,8 @@ class AICodBiAssistant : IPluginServletAction {
                 historySection +
                 clarificationSection +
                 chatSection +
-                controlTypesSection
+                controlTypesSection +
+                datasourceSection
 
         val clarificationLine2 =
             if (clarificationContext.isNullOrBlank()) ""
@@ -4604,10 +4629,26 @@ class AICodBiAssistant : IPluginServletAction {
           val repeatsPreviousRequest =
               CodbiDetailsDemandPolicy.repeatsPreviouslySent(
                   pass2Details.elements, pass2Details.widgets, requested, widgets)
-          if (repeatsPreviousRequest) {
+          // EARLY degenerate detection: a demand whose NEW ids cannot resolve adds no information —
+          // the rerun would send the identical name index and the model would re-ask. Measured: the
+          // model named the FORM element 'btlSend' in the CodBi-id field, the rerun resolved
+          // nothing,
+          // and the run paid an extra full ~57KB pass-3 inference before the set-equal guard fired.
+          val addsNothingResolvable =
+              CodbiDetailsDemandPolicy.addsNothingNewThatResolves(
+                  pass2Details.elements,
+                  pass2Details.widgets,
+                  requested,
+                  widgets,
+                  resolves = { ids ->
+                    CodbiCapabilities.buildFullSectionFor(ids.toList()).isNotBlank()
+                  })
+          if (repeatsPreviousRequest || addsNothingResolvable) {
             logger.warn(
-                "[AICodBiAssistant] Pass-{} re-requested the SAME details already sent for this rerun (elements={}, widgets={}) — degenerate loop, forcing the final complete-form pass instead of re-running",
+                "[AICodBiAssistant] Pass-{} re-requested details that cannot add anything (same-set={}, unresolvable-new={}) (elements={}, widgets={}) — degenerate loop, forcing the final complete-form pass instead of re-running",
                 rerunCount + 2,
+                repeatsPreviousRequest,
+                addsNothingResolvable,
                 pass2Details.elements,
                 pass2Details.widgets)
           } else {
@@ -4662,7 +4703,8 @@ class AICodBiAssistant : IPluginServletAction {
                 includeServerVariables = serverVarsDemanded) +
                 chatSection +
                 "\n\n" +
-                (loadPromptWithClasspathFallback("codbi.retry_form") ?: "")
+                (loadPromptWithClasspathFallback("codbi.retry_form") ?: "") +
+                datasourceSection
         // The final forced pass re-sends the whole form and is a major token sink when a preceding
         // pass-2 degenerated to prose. Slice it just like pass-2: containers/pages stay FULL while
         // the untouched leaf majority collapses to structural stubs (the _unchangedItems hint below
@@ -5031,10 +5073,14 @@ class AICodBiAssistant : IPluginServletAction {
       // elements are never touched.
       val guardedForm =
           applyNewDatasourceSelectGuards(finalForm, persistJson, availableDatasourceNames)
+      // Deterministic GOOGLE-reCAPTCHA intent guard: when the request names a reCAPTCHA but the
+      // model still emitted the generic XCaptcha, rewrite it to XReCaptcha so the correct widget is
+      // guaranteed regardless of the model's choice (see ReCaptchaDetector).
+      val recaptchaForm = ReCaptchaDetector.applyReCaptchaIntentGuard(guardedForm, prompt)
       // Drop a duplicate TEXT element (XSpan) a "rebuild" pass re-created for the SAME content, so
       // one request never yields the designed/interactive text twice. Pre-existing elements are the
       // survivor and are never touched — only a NEW copy is dropped.
-      val dedupedForm = dropDuplicateTextSpans(guardedForm, persistJson)
+      val dedupedForm = dropDuplicateTextSpans(recaptchaForm, persistJson)
       // Deterministic OpenPLZ.AC.SET safety net, re-applied to the FINISHED form: the net also runs
       // on the PASS-1 result, but pass-2 re-emits every created widget IN FULL, so those pass-1
       // items
@@ -5109,6 +5155,32 @@ class AICodBiAssistant : IPluginServletAction {
   private data class WorkflowDetailsSignal(val nodes: List<String>, val triggers: List<String>)
 
   /**
+   * Reads a node/trigger NAME list from a details request. The model emits the arrays in BOTH
+   * shapes — plain strings (`["FC_EMAIL"]`) and OBJECTS (`[{"nodeType":"FC_EMAIL"}]` /
+   * `[{"triggerType":"FC_FORM_SUBMIT_BUTTON"}]`, sometimes `{"name":…}` / `{"id":…}`).
+   *
+   * Only accepting strings was a latent abort: the model answered
+   * `{"nodes":[{"nodeType":"FC_EMAIL"}],"triggers":[{"triggerType":"FC_FORM_SUBMIT_BUTTON"}]}`, the
+   * lists came back EMPTY, the details request was not recognised, the response was then parsed as
+   * a task spec (0 specs) and the whole workflow build failed with "The AI did not return a
+   * workflow specification". Both shapes now resolve to names.
+   */
+  private fun detailsNameList(arr: List<*>?): List<String> =
+      arr?.mapNotNull { el ->
+        when (el) {
+          is String -> el.trim().takeIf { it.isNotEmpty() }
+          is Map<*, *> -> {
+            @Suppress("UNCHECKED_CAST") val m = el as Map<String, Any?>
+            (m["nodeType"] ?: m["triggerType"] ?: m["name"] ?: m["id"] ?: m["type"])
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+          }
+          else -> null
+        }
+      } ?: emptyList()
+
+  /**
    * Parses a workflow-node details request from the AI's cleaned JSON response. The AI returns this
    * signal in the FIRST pass (which only contains the condensed workflow-nodes reference) when it
    * needs the exact triggerParams/nodeParams of specific triggers/nodes it intends to use:
@@ -5121,11 +5193,24 @@ class AICodBiAssistant : IPluginServletAction {
       if (obj == null) return null
       // Strict form: the prompt asks for the full {"status":"need_workflow_node_details",...}.
       if ((obj["status"] as? String) == "need_workflow_node_details") {
-        val nodesArr = obj["nodes"] as? List<*> ?: emptyList<Any>()
-        val nodes = nodesArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
-        val triggersArr = obj["triggers"] as? List<*> ?: emptyList<Any>()
-        val triggers = triggersArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
-        return WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
+        return WorkflowDetailsSignal(
+            nodes = detailsNameList(obj["nodes"] as? List<*>),
+            triggers = detailsNameList(obj["triggers"] as? List<*>))
+      }
+      // Nested-wrapper form — many models emit the signal NAME as a KEY whose value is the request
+      // object:
+      // {"need_workflow_node_details":{"nodes":["FC_EMAIL"],"triggers":["FC_FORM_SUBMIT_BUTTON"]}}.
+      // Without unwrapping this, the object parses to zero task specs (it carries no task fields
+      // and
+      // no top-level nodes/triggers) and the whole workflow build aborts.
+      val nested = obj["need_workflow_node_details"]
+      if (nested is Map<*, *>) {
+        @Suppress("UNCHECKED_CAST") val nestedMap = nested as Map<String, Any?>
+        val nodes = detailsNameList(nestedMap["nodes"] as? List<*>)
+        val triggers = detailsNameList(nestedMap["triggers"] as? List<*>)
+        if (nodes.isNotEmpty() || triggers.isNotEmpty()) {
+          return WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
+        }
       }
       // Tolerant form — many models omit the "status" field and return only
       // {"nodes":[...],"triggers":[...]}. Treat an object as a details request when it is clearly a
@@ -5150,14 +5235,8 @@ class AICodBiAssistant : IPluginServletAction {
                   "_cases")
               .any { obj.containsKey(it) }
       if (looksLikeTask) return null
-      val nodesArr = obj["nodes"] as? List<*>
-      val triggersArr = obj["triggers"] as? List<*>
-      val nodes =
-          nodesArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
-              ?: emptyList()
-      val triggers =
-          triggersArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
-              ?: emptyList()
+      val nodes = detailsNameList(obj["nodes"] as? List<*>)
+      val triggers = detailsNameList(obj["triggers"] as? List<*>)
       if (nodes.isEmpty() && triggers.isEmpty()) return null
       WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
     } catch (_: Exception) {
@@ -7323,6 +7402,179 @@ class AICodBiAssistant : IPluginServletAction {
   private val AI_HIDDEN_CONDITION_PROPS = setOf("hiddenif", "hiddenifcomp", "hiddenifclear")
 
   /**
+   * Item properties that are ALSO listed in [STRIPPED_ITEM_PROPS] (so they stay OUT of the slim
+   * payload and save tokens) but that the AI is nevertheless allowed to SET.
+   *
+   * The canonical case is the standard `backgroundcolor`: a widget such as an XSignature declares
+   * it (verified against the XSignature plugin jar — `XPropertyEnum.backgroundcolor`), so the AI
+   * may legitimately set the background colour of a new (or existing) element. The strip is only a
+   * payload optimisation, NOT an "the AI may never change this" rule, therefore:
+   * - on a NEW item, a value the AI supplied for one of these keys must SURVIVE the
+   *   [STRIPPED_ITEM_PROPS] removal (there is no original item to restore it from), and
+   * - on an EXISTING item, a value the AI supplied must WIN over the original value (rather than
+   *   being overwritten by it in the restore loop).
+   */
+  private val AI_SETTABLE_STRIPPED_PROPS = setOf("backgroundcolor")
+
+  /**
+   * Natural-language colour synonyms a model may emit for an XSignature item, mapped to the EXACT
+   * property keys the XSignature widget plugin declares (verified against the plugin jar
+   * `ccf80245-…`: `xsignature_stroke_color`, `xsignature_base_line_color`, plus the standard
+   * `backgroundcolor`).
+   *
+   * Keys are NORMALIZED before lookup by lower-casing and stripping every non-alphanumeric
+   * character, so `backgroundColor`, `background_color`, `background-color` and `Backgroundcolor`
+   * all collapse to `backgroundcolor`, and the model's own extrapolations of the `xsignature_*`
+   * naming pattern (`xsignature_background_color`, `xsignature_line_color`, `xsignature_color`, …)
+   * are recognised too — the plugin's naming pattern invites exactly those.
+   */
+  private val XSIGNATURE_COLOR_ALIASES: Map<String, String> =
+      mapOf(
+          // — background colour -> the standard Formcycle property —
+          "backgroundcolor" to "backgroundcolor",
+          "backgroundcolour" to "backgroundcolor",
+          "bgcolor" to "backgroundcolor",
+          "bgcolour" to "backgroundcolor",
+          "fillcolor" to "backgroundcolor",
+          "fillcolour" to "backgroundcolor",
+          "xsignaturebackgroundcolor" to "backgroundcolor",
+          "xsignaturebackgroundcolour" to "backgroundcolor",
+          "signaturebackgroundcolor" to "backgroundcolor",
+          "signaturebackgroundcolour" to "backgroundcolor",
+          // — pen / stroke colour -> xsignature_stroke_color —
+          "xsignaturestrokecolor" to "xsignature_stroke_color",
+          "xsignaturestrokecolour" to "xsignature_stroke_color",
+          "strokecolor" to "xsignature_stroke_color",
+          "strokecolour" to "xsignature_stroke_color",
+          "pencolor" to "xsignature_stroke_color",
+          "pencolour" to "xsignature_stroke_color",
+          "xsignaturepencolor" to "xsignature_stroke_color",
+          "xsignaturepencolour" to "xsignature_stroke_color",
+          "signaturestrokecolor" to "xsignature_stroke_color",
+          "signaturestrokecolour" to "xsignature_stroke_color",
+          // a bare "signature color" is the PEN colour (the visible drawn signature)
+          "xsignaturecolor" to "xsignature_stroke_color",
+          "xsignaturecolour" to "xsignature_stroke_color",
+          "signaturecolor" to "xsignature_stroke_color",
+          "signaturecolour" to "xsignature_stroke_color",
+          "sigcolor" to "xsignature_stroke_color",
+          "sigcolour" to "xsignature_stroke_color",
+          // — baseline ("line") colour -> xsignature_base_line_color —
+          "xsignaturebaselinecolor" to "xsignature_base_line_color",
+          "xsignaturebaselinecolour" to "xsignature_base_line_color",
+          "baselinecolor" to "xsignature_base_line_color",
+          "baselinecolour" to "xsignature_base_line_color",
+          "linecolor" to "xsignature_base_line_color",
+          "linecolour" to "xsignature_base_line_color",
+          "xsignaturelinecolor" to "xsignature_base_line_color",
+          "xsignaturelinecolour" to "xsignature_base_line_color",
+          "signaturelinecolor" to "xsignature_base_line_color",
+          "signaturelinecolour" to "xsignature_base_line_color",
+          "siglinecolor" to "xsignature_base_line_color",
+          "siglinecolour" to "xsignature_base_line_color")
+
+  /** Normalizes a property key for [XSIGNATURE_COLOR_ALIASES] lookup (see the map's KDoc). */
+  private fun normalizeColorKey(key: String): String =
+      key.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+  /**
+   * Resolves [rawKey] to the XSignature colour property it denotes, or `null` when it is not a
+   * signature colour key. First the exact (normalized) alias is tried; then a conservative
+   * SUBSTRING rule catches the model's own wordings (e.g. `xsignature_background_color`,
+   * `sigBaseLineColor`, `penColor`) — a key must carry a colour token AND a signature-colour
+   * qualifier, so an unrelated property (e.g. `bordercolor`, `print_size`) is never rewritten.
+   */
+  private fun canonicalXSignatureColorKey(rawKey: String): String? {
+    val n = normalizeColorKey(rawKey)
+    XSIGNATURE_COLOR_ALIASES[n]?.let {
+      return it
+    }
+    if (!n.contains("color") && !n.contains("colour")) return null
+    if (!(n.contains("sig") ||
+        n.contains("background") ||
+        n.contains("stroke") ||
+        n.contains("pen") ||
+        n.contains("line") ||
+        n.contains("fill") ||
+        n.contains("base")))
+        return null
+    return when {
+      n.contains("background") || n.contains("fill") -> "backgroundcolor"
+      n.contains("stroke") || n.contains("pen") -> "xsignature_stroke_color"
+      n.contains("line") || n.contains("base") -> "xsignature_base_line_color"
+      // a bare "...sig...color" is the PEN colour (the visible drawn signature)
+      else -> "xsignature_stroke_color"
+    }
+  }
+
+  /**
+   * Rewrites colour property keys the AI emitted as natural-language synonyms (e.g. `strokecolor`,
+   * `linecolor`, `backgroundColor`, `xsignature_background_color`) on an **XSignature** item to the
+   * exact keys the widget declares. The plugin reads each colour by its exact key, so a synonym is
+   * silently IGNORED — this is why a requested background or stroke colour used to "disappear"
+   * while the baseline colour (whose key the model happened to emit verbatim) still worked. Scoped
+   * to XSignature so a legitimate `linecolor` on another widget (e.g. XLine) is never touched. The
+   * canonical key always wins when both the synonym and the exact key are present.
+   */
+  private fun normalizeXSignatureColorKeys(item: JsonObject) {
+    if (item.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSignature") return
+    val props = item.getAsJsonObject("properties") ?: return
+    fun log(source: String, canonical: String) {
+      logger.info(
+          "[AICodBiAssistant] XSignature '{}': colour '{}' -> '{}' (the widget reads the exact key, so anything else is ignored)",
+          props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "?",
+          source,
+          canonical)
+    }
+    // 1) Direct property keys that are colour synonyms (xsignature_background_color,
+    // xsignature_color,
+    //    strokecolor, backgroundColor, data-cb-backgroundcolor after its promotion, …).
+    val direct =
+        props.entrySet().mapNotNull { e ->
+          val canonical = canonicalXSignatureColorKey(e.key) ?: return@mapNotNull null
+          Triple(e.key, canonical, e.value)
+        }
+    for ((sourceKey, canonical, value) in direct) {
+      if (sourceKey == canonical) continue
+      if (!props.has(canonical) && value.isJsonPrimitive) props.add(canonical, value)
+      props.remove(sourceKey)
+      log(sourceKey, canonical)
+    }
+    // 2) Colour entries smuggled into properties.attributes (the model re-emits them as data-cb-*
+    //    "attributes", e.g. {"name":"data-cb-backgroundcolor","value":"#ffff00"}). A colour is NOT
+    // a
+    //    data-cb-* functionality attribute, so promote its value to the real property and DROP the
+    //    attribute entry.
+    val attrs = props.get("attributes")
+    if (attrs != null && attrs.isJsonArray) {
+      val kept = JsonArray()
+      var changed = false
+      for (entry in attrs.asJsonArray) {
+        if (!entry.isJsonObject) {
+          kept.add(entry)
+          continue
+        }
+        val o = entry.asJsonObject
+        val rawName =
+            o.get("text")?.takeIf { it.isJsonPrimitive }?.asString
+                ?: o.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+        val canonical = rawName?.let { canonicalXSignatureColorKey(it) }
+        if (canonical == null) {
+          kept.add(entry)
+          continue
+        }
+        val value = o.get("value")?.takeIf { it.isJsonPrimitive }?.asString
+        if (!props.has(canonical) && value != null) props.addProperty(canonical, value)
+        changed = true
+        log(rawName, canonical)
+      }
+      if (changed) {
+        if (kept.size() == 0) props.remove("attributes") else props.add("attributes", kept)
+      }
+    }
+  }
+
+  /**
    * Sanitizes a single visibility/access-control property value provided by the AI.
    * - Flag properties (`statusdependent`, `readonly_statusdependent`, `usergrouppendent`,
    *   `readonly_usergrouppendant`) accept BOTH a JSON boolean and the design-time string
@@ -7457,6 +7709,9 @@ class AICodBiAssistant : IPluginServletAction {
 
   private fun warnUnknownClassNames(element: JsonElement) {
     val items = element.takeIf { it.isJsonObject }?.asJsonObject?.getAsJsonArray("items") ?: return
+    // Canonicalize first (see canonicalizeLangSwitchClassName) so the language switch is not
+    // flagged as an unknown className before sanitizeAiFormItems gets to it.
+    canonicalizeLangSwitchClassName(items)
     items.forEach { el ->
       if (!el.isJsonObject) return@forEach
       val className = el.asJsonObject.get("className")?.takeIf { it.isJsonPrimitive }?.asString
@@ -7464,6 +7719,30 @@ class AICodBiAssistant : IPluginServletAction {
         logger.warn(
             "[AICodBiAssistant] AI used unknown className '{}' â€” item will not render correctly",
             className)
+      }
+    }
+  }
+
+  /**
+   * Canonicalize the AI-emitted className of the language switch widget. Formcycle's actual
+   * className for this widget carries a HISTORIC MISSPELLING: "XLanguageSwich" (the design-time
+   * name is XLanguageSwitch, but the persisted className is XLanguageSwich). The model regularly
+   * emits the modern, correctly-spelled "XLanguageSwitch" (and occasionally casing variants), which
+   * sanitizeAiFormItems would otherwise drop as an unknown className ("Dropping item with unknown
+   * className 'XLanguageSwitch'" → the switch silently vanishes and the container reference is
+   * pruned). Rewrite every recognised spelling to the canonical class so the item is kept and
+   * renders. Only the language-switch widget gets this treatment; anything else is left untouched
+   * so sanitizeAiFormItems still drops genuinely unknown classes.
+   */
+  private fun canonicalizeLangSwitchClassName(items: JsonArray) {
+    items.forEach { el ->
+      if (!el.isJsonObject) return@forEach
+      val o = el.asJsonObject
+      val cls = o.get("className")?.takeIf { it.isJsonPrimitive }?.asString ?: return@forEach
+      if (cls == "XLanguageSwitch") {
+        o.addProperty("className", "XLanguageSwich")
+        logger.warn(
+            "[AICodBiAssistant] Normalized AI className 'XLanguageSwitch' -> 'XLanguageSwich' (Formcycle spelling)")
       }
     }
   }
@@ -7528,6 +7807,10 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private fun sanitizeAiFormItems(root: JsonObject) {
     val items = root.getAsJsonArray("items") ?: return
+    // 0) Canonicalize the language-switch className so the unknown-class check below does not drop
+    //    the widget (the model emits the correctly-spelled "XLanguageSwitch", but Formcycle's
+    //    persisted className is the historic misspelling "XLanguageSwich").
+    canonicalizeLangSwitchClassName(items)
     // 1) Fold standalone button-like items into XButtonLists.
     val buttonLike = setOf("BUTTON", "BUTTONS", "XSUBMITBUTTON", "SUBMITBUTTON", "SUBMIT_BUTTON")
     val listItems =
@@ -8294,6 +8577,13 @@ class AICodBiAssistant : IPluginServletAction {
         props.remove("className")
       }
     }
+    // Normalize colour KEY SYNONYMS on XSignature items to the widget's exact property keys (see
+    // [XSIGNATURE_COLOR_ALIASES]) BEFORE the per-item strip/restore below: an AI-provided
+    // "strokecolor"/"linecolor"/"backgroundColor" then becomes the canonical key and is handled —
+    // and, for "backgroundcolor", preserved — by the normal new/existing-item logic.
+    for (el in resultItems) {
+      if (el.isJsonObject) normalizeXSignatureColorKeys(el.asJsonObject)
+    }
     // Canonicalize properties.attributes FIRST: FORMCYCLE (and the designer + the render callback)
     // reads attributes ONLY as an array of {"text":"data-cb-*","value":"<string>"} objects, and it
     // requires the "text" key to be a STRING. The AI sometimes emits the CHANGE-LOG attribute shape
@@ -8523,10 +8813,23 @@ class AICodBiAssistant : IPluginServletAction {
                   val v = props.get(key) ?: return@mapNotNull null
                   if (v.isJsonPrimitive) key to v.asString else null
                 }
+            // Save the AI-settable stripped properties (e.g. the standard "backgroundcolor")
+            // BEFORE the strip. On a NEW item there is no original to restore them from, so a
+            // colour the AI set here would otherwise be lost (the exact reason a signature's
+            // background colour silently disappeared).
+            val aiSettableStripped =
+                AI_SETTABLE_STRIPPED_PROPS.mapNotNull { key ->
+                  val v = props.get(key) ?: return@mapNotNull null
+                  if (v.isJsonPrimitive) key to v.asString else null
+                }
             for (key in STRIPPED_ITEM_PROPS) props.remove(key)
             for ((key, value) in validatedVisibility) props.add(key, value)
             // Restore conditional-hidden properties that the AI set on this new item.
             for ((key, value) in hiddenConditions) {
+              props.addProperty(key, value)
+            }
+            // Restore the AI-settable stripped properties (e.g. "backgroundcolor").
+            for ((key, value) in aiSettableStripped) {
               props.addProperty(key, value)
             }
           }
@@ -8563,6 +8866,10 @@ class AICodBiAssistant : IPluginServletAction {
           }
         }
         for (key in STRIPPED_ITEM_PROPS) {
+          // A value the AI EXPLICITLY supplied for an AI-settable stripped property (e.g. the
+          // standard "backgroundcolor") WINS over the original: the strip is only a payload
+          // optimisation, not a "the AI may not change this" rule.
+          if (key in AI_SETTABLE_STRIPPED_PROPS && resultProps.has(key)) continue
           val v = origProps.get(key)
           if (v != null) resultProps.add(key, v) else resultProps.remove(key)
         }
@@ -9510,6 +9817,31 @@ class AICodBiAssistant : IPluginServletAction {
       }
     } catch (_: Exception) {
       /* non-critical â€” skip normalization on error */
+    }
+    // FINAL colour-key canonicalisation for XSignature items — runs AFTER every other pass: the
+    // data-cb-* attribute promotion re-introduces colour keys AND the original-item restore can
+    // re-add stale synonyms, so the persisted form must carry ONLY the exact keys the widget reads.
+    // The resulting colours are logged so a run can be verified straight from the server log.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSignature") continue
+      normalizeXSignatureColorKeys(item)
+      val p = item.getAsJsonObject("properties")
+      val colours =
+          listOf(
+                  "backgroundcolor",
+                  "xsignature_stroke_color",
+                  "xsignature_base_line_color",
+                  "xsignature_base_line_show")
+              .mapNotNull { k ->
+                p?.get(k)?.takeIf { it.isJsonPrimitive }?.asString?.let { "$k=$it" }
+              }
+              .joinToString(", ")
+      logger.info(
+          "[AICodBiAssistant] XSignature '{}' FINAL colours: {}",
+          p?.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "?",
+          colours.ifBlank { "<none>" })
     }
     return gson.toJson(result)
   }
@@ -10566,6 +10898,23 @@ class AICodBiAssistant : IPluginServletAction {
       formElements
     }
   }
+
+  /**
+   * LEVER 1 (token reduction) — the FORM ELEMENTS document handed to the WORKFLOW step.
+   *
+   * The workflow pass never builds or validates a form field: it only REFERENCES one (the
+   * `technicalId` inside `[%name%]` / `triggerParams.buttonName`) and MATCHES it by `displayText`.
+   * So `required`, `placeholder` and `actionPage` are dead weight there. The block is sent on BOTH
+   * workflow passes (pass-1 decides, pass-2 carries the requested node details), so every stripped
+   * character is paid twice per run.
+   *
+   * Delegates to the identical condensation the clarify round uses — the two consumers have the
+   * SAME information need (`technicalId`, `type`, `displayText`, plus the XSelect `options` needed
+   * to resolve an option-value reference), so a single implementation keeps them from drifting.
+   * Fail-open: a blank/unparseable input is returned unchanged.
+   */
+  private fun condenseFormElementsForWorkflow(formElements: String?): String? =
+      condenseFormElementsForClarify(formElements)
 
   /**
    * LEVER 4 (token reduction) — shrinks the completion-pages digest to just the page NAMES.
@@ -14893,16 +15242,34 @@ class AICodBiAssistant : IPluginServletAction {
       if (workflowTemplate.isBlank()) {
         return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
       }
+      // LEVER 1 (token reduction): the workflow step only REFERENCES a form field (its technicalId
+      // inside [%name%] / triggerParams.buttonName) and MATCHES it by displayText; it never sets
+      // `required`/`placeholder` (those are FORM-build/validate config) and never navigates a
+      // button
+      // (`actionPage` is a form concern — the submit trigger binds by buttonName). That dead weight
+      // is pure cost, and because the FORM ELEMENTS block travels on BOTH workflow passes (pass-1
+      // decides, pass-2 carries the requested node details) it is paid twice per run. Reuse the
+      // very
+      // same condensation the clarify round already applies — identical information need:
+      // technicalId, type, displayText and the XSelect `options` needed to resolve an option-value
+      // reference. Fail-open: a blank/unparseable input is passed through unchanged.
+      val workflowFormContext = condenseFormElementsForWorkflow(formContext)
+      // The two NAME lists the workflow step picks from are consumed by NAME only — a node param is
+      // written as `htmlTemplate:"<NAME>"` / `failurePage:"<NAME>"`, never as the per-entry `uuid`.
+      // Condense them to a comma-separated name list (the same condensation the clarify round
+      // already uses), on BOTH passes. Fail-open: a non-array input passes through unchanged.
+      val workflowCompletionPages = condenseCompletionPagesForClarify(completionPages)
+      val workflowHtmlTemplates = condenseCompletionPagesForClarify(htmlTemplates)
       val rendered =
           renderWorkflowSystemPrompt(
               workflowTemplate,
               general = general,
               workflowReference = workflowReference,
               pass2 = pass2,
-              formContext = formContext,
+              formContext = workflowFormContext,
               repeatableContainers = repeatableContainers,
-              completionPages = completionPages,
-              htmlTemplates = htmlTemplates,
+              completionPages = workflowCompletionPages,
+              htmlTemplates = workflowHtmlTemplates,
               inboxes = inboxes,
               messageServices = messageServices,
               triggers = triggers,
@@ -14913,6 +15280,27 @@ class AICodBiAssistant : IPluginServletAction {
               changeHistoryContext = changeHistoryContext,
               changeLogSchema = loadChangeLogSchema(),
               formVariables = formVariables)
+      // Token instrument: the workflow step has no size log (only the FORM passes do), so its cost
+      // was invisible. Prints the total AND the biggest dynamic contributors, so a 143 k-token run
+      // can be attributed to a specific block instead of guessed at — mirror of the form's
+      // "Pass-1 system prompt: … chars (… static block: …)" line.
+      logger.info(
+          "[AICodBiAssistant] Workflow system prompt ({}): {} chars (template={}, general={}, workflowReference={}, formContext={}, repeatableContainers={}, completionPages={}, htmlTemplates={}, existingWorkflowNodes={}, existingStructure={}, clarification={}, chatContext={}, changeHistory={}, formVariables={})",
+          if (pass2) "pass-2" else "pass-1",
+          rendered.length,
+          workflowTemplate.length,
+          general.length,
+          workflowReference.length,
+          "${workflowFormContext?.length ?: 0}/${formContext?.length ?: 0}",
+          repeatableContainers?.length ?: 0,
+          "${workflowCompletionPages?.length ?: 0}/${completionPages?.length ?: 0}",
+          "${workflowHtmlTemplates?.length ?: 0}/${htmlTemplates?.length ?: 0}",
+          existingWorkflowNodes?.length ?: 0,
+          existingWorkflowStructure?.length ?: 0,
+          clarificationContext?.length ?: 0,
+          chatContext?.length ?: 0,
+          changeHistoryContext?.length ?: 0,
+          formVariables?.length ?: 0)
       // When the workflow is being MODIFIED (nodes already exist), give the AI the FULL current
       // content of those nodes (customParameters — incl. an existing
       // FC_WRITE_FORM_RECORD_ATTRIBUTES
@@ -18835,12 +19223,201 @@ class AICodBiAssistant : IPluginServletAction {
    *
    * @return true when the JSON was modified (so the caller re-serializes it).
    */
-  private fun normalizeFinalFormStructure(root: JsonObject): Boolean {
+  /**
+   * Whether the XNavigationBar ("Progress Bar") widget plugin is installed on this system. When it
+   * is, navigation buttons can use its registered custom actions (`xnavbar_next_check`, ...), whose
+   * client JS navigates LOGICALLY — so the button keeps working even after a page is renamed.
+   * Detection reuses [InstalledFormcycleElements] (cached per mandant); any failure is treated as
+   * "not installed" (fail-closed), which falls back to the name-based target.
+   */
+  private fun navigationPluginAvailable(params: IPluginServletActionParams): Boolean =
+      runCatching {
+            InstalledFormcycleElements.snapshotFor(params).widgets.any { w ->
+              val n = w.lowercase()
+              n.contains("navigationbar") || n.contains("xnavbar")
+            }
+          }
+          .getOrDefault(false)
+
+  private fun normalizeFinalFormStructure(root: JsonObject, useNavigationPlugin: Boolean): Boolean {
+    val headerFront = moveHeaderBeforePages(root)
     val reordered = movePagesBeforeFooter(root)
     val treeOrdered = reorderItemsByTreeOrder(root)
     val labeled = applyPageLabelsFromNavigator(root)
+    val filledNavOptions = fillNavigatorOptionsFromPages(root)
     val checked = ensureNextPageValidation(root)
-    return reordered || treeOrdered || labeled || checked
+    val navPages = resolveNavigationPageTargets(root, useNavigationPlugin)
+    val optionIds = normalizeButtonActionOptionIds(root)
+    return headerFront ||
+        reordered ||
+        treeOrdered ||
+        labeled ||
+        filledNavOptions ||
+        checked ||
+        navPages ||
+        optionIds
+  }
+
+  /**
+   * Safety net for multi-page navigation (XButtonList): the FORMCYCLE runtime navigates a button by
+   * its `action.page`, which the server writes VERBATIM into the rendered button as
+   * `data-target-page` and the client passes to `gotoPage(name)` — a lookup by a REAL page name
+   * (`.XPage[data-name="<name>"]`). The keywords "next"/"previous" are NOT valid: the designer
+   * offers no such option (its "Aktion" dropdown lists every page BY NAME, e.g. `Daten + check`)
+   * and `gotoPage("next")` matches nothing, hiding all pages so only the footer remains. This
+   * resolves a "next"/"previous" action to the ACTUAL adjacent page NAME (from the button list's
+   * own page and the page order) and rewrites `optionId`/`value` accordingly — exactly what the
+   * designer stores when the user picks the neighbouring page in the dropdown.
+   *
+   * When [useNavigationPlugin] is true (the XNavigationBar plugin is installed) the button instead
+   * gets that plugin's registered custom action — `xnavbar_next[ _check]` / `xnavbar_prev[ _check]`
+   * with its `customAction`/`customClassNames` — which is what the designer stores for the "next
+   * page ( + check)" option and which navigates LOGICALLY (rename-proof). Returns true when
+   * anything changed.
+   */
+  private fun resolveNavigationPageTargets(
+      root: JsonObject,
+      useNavigationPlugin: Boolean
+  ): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    val formLang = root.get("lang")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+    val itemByName = mutableMapOf<String, JsonObject>()
+    val pageNames = mutableListOf<String>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      val props = item.getAsJsonObject("properties") ?: continue
+      val name = props.get("name")?.asString ?: continue
+      itemByName[name] = item
+      if (item.get("className")?.asString == "XPage") pageNames.add(name)
+    }
+    if (pageNames.size < 2) return false
+    val nestedContainers = setOf("XFieldSet", "XContainer", "XContainerInvisible")
+    val pageOfItem = mutableMapOf<String, String>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XPage") continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      val pageName = props.get("name")?.asString ?: continue
+      val queue = ArrayDeque<String>()
+      props.getAsJsonArray("elements")?.forEach { ref ->
+        if (ref.isJsonPrimitive) queue.addLast(ref.asString)
+      }
+      val seen = mutableSetOf<String>()
+      while (queue.isNotEmpty()) {
+        val childName = queue.removeFirst()
+        if (!seen.add(childName)) continue
+        pageOfItem[childName] = pageName
+        val child = itemByName[childName] ?: continue
+        if (child.get("className")?.asString in nestedContainers) {
+          child.getAsJsonObject("properties")?.getAsJsonArray("elements")?.forEach { ref ->
+            if (ref.isJsonPrimitive) queue.addLast(ref.asString)
+          }
+        }
+      }
+    }
+    var changed = false
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XButtonList") continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      val listName = props.get("name")?.asString ?: continue
+      val ownPage = pageOfItem[listName] ?: continue
+      val idx = pageNames.indexOf(ownPage)
+      if (idx < 0) continue
+      val buttons = props.getAsJsonArray("buttons") ?: continue
+      for (btn in buttons) {
+        if (!btn.isJsonObject) continue
+        val action = btn.asJsonObject.getAsJsonObject("action") ?: continue
+        val page = action.get("page")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        val target =
+            when (page) {
+              "next" -> pageNames.getOrNull(idx + 1)
+              "previous" -> pageNames.getOrNull(idx - 1)
+              else -> null
+            } ?: continue
+        val checkEl = action.get("check")?.takeIf { it.isJsonPrimitive }
+        val checked = checkEl != null && (checkEl.asString == "true" || checkEl.asString == "1")
+        if (useNavigationPlugin) {
+          // Preferred: the XNavigationBar plugin's registered custom action (exactly what the
+          // designer stores for the "next page ( + check)" / "previous page ( + check)" option).
+          // Its
+          // client JS navigates LOGICALLY, so the button survives a later page rename. Validation
+          // is
+          // carried by the "--check" class (not action.check), hence check=false.
+          val dir = if (page == "next") "next" else "prev"
+          val navName = "xnavbar_" + dir + (if (checked) "_check" else "")
+          action.addProperty("page", navName)
+          action.addProperty("check", false)
+          action.addProperty("customAction", navName)
+          action.addProperty(
+              "customClassNames",
+              "xnavbar-button xnavbar-button--" +
+                  dir +
+                  (if (checked) " xnavbar-button--check" else ""))
+          action.addProperty("optionId", navName)
+          action.addProperty("value", navName)
+          action.addProperty("displayName", navigationPluginLabel(dir, checked, formLang))
+        } else {
+          action.addProperty("page", target)
+          val oid = if (checked) "$target + check" else target
+          action.addProperty("optionId", oid)
+          action.addProperty("value", oid)
+        }
+        changed = true
+      }
+    }
+    return changed
+  }
+
+  /** Localized label of an XNavigationBar custom action ("weiter" / "weiter + prüfen", …). */
+  private fun navigationPluginLabel(dir: String, checked: Boolean, lang: String): String {
+    val de = lang.startsWith("de", ignoreCase = true)
+    if (dir == "next") {
+      return if (de) (if (checked) "weiter + prüfen" else "weiter")
+      else (if (checked) "next page + check" else "next page")
+    }
+    return if (de) (if (checked) "zurück + prüfen" else "zurück")
+    else (if (checked) "previous page + check" else "previous page")
+  }
+
+  /**
+   * Moves every XHeader item to the very front of the flat `items` array — before every XPage and
+   * the XFooter — so the header always renders as the TOP of the form. When the AI re-emits a form
+   * it occasionally places the header AFTER the pages (e.g. while appending a new header element in
+   * a rerun pass), and the existing [reorderItemsByTreeOrder] / [movePagesBeforeFooter] both
+   * preserve the relative order of root items, so the displaced header would stay below the pages.
+   * Relocating the header to the leading block restores the canonical Formcycle layout (XHeader,
+   * then XPage items, then XFooter last). Returns true when the `items` array changed.
+   */
+  private fun moveHeaderBeforePages(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    val headers = mutableListOf<JsonElement>()
+    val rest = mutableListOf<JsonElement>()
+    for (i in 0 until items.size()) {
+      val el = items.get(i)
+      if (el.isJsonObject && el.asJsonObject.get("className")?.asString == "XHeader")
+          headers.add(el)
+      else rest.add(el)
+    }
+    if (headers.isEmpty()) return false
+    val reordered = JsonArray()
+    headers.forEach { reordered.add(it) }
+    rest.forEach { reordered.add(it) }
+    var same = true
+    for (i in 0 until items.size()) {
+      if (items.get(i) !== reordered.get(i)) {
+        same = false
+        break
+      }
+    }
+    if (same) return false
+    root.add("items", reordered)
+    logger.info(
+        "[AICodBiAssistant] Moved XHeader to the top of the form so it renders above the pages")
+    return true
   }
 
   /**
@@ -19017,6 +19594,63 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Safety net for the Formcycle navbar (XNavigationBar): the model sometimes emits the element
+   * with an EMPTY `options` array (observed with a bare "navigation bar" request), so the rendered
+   * step indicator shows no steps and the form's pages are not reachable from the bar. When an
+   * XNavigationBar has no usable options and the form has XPage items, EVERY page becomes a step —
+   * `value` = the page's `name` (the identifier the bar navigates to), `text` = the page's `header`
+   * when set, else its `name`. Runs AFTER [applyPageLabelsFromNavigator] so a page title derived
+   * from a (non-empty) navbar is reused. Returns true when any navbar was populated.
+   */
+  private fun fillNavigatorOptionsFromPages(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    val pages = mutableListOf<Pair<String, String>>() // page name -> visible label
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.asString != "XPage") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+      if (name.isEmpty()) continue
+      val header = props.get("header")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+      pages.add(name to if (header.isEmpty()) name else header)
+    }
+    if (pages.isEmpty()) return false
+    var changed = false
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.asString != "XNavigationBar") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val existing = props.getAsJsonArray("options")
+      var hasUsableOptions = false
+      if (existing != null) {
+        for (opt in existing) {
+          if (!opt.isJsonObject) continue
+          val value = opt.asJsonObject.get("value")?.takeIf { it.isJsonPrimitive }?.asString
+          if (!value.isNullOrBlank()) {
+            hasUsableOptions = true
+            break
+          }
+        }
+      }
+      if (hasUsableOptions) continue
+      val options = JsonArray()
+      for ((name, label) in pages) {
+        val opt = JsonObject()
+        opt.addProperty("text", label)
+        opt.addProperty("value", name)
+        options.add(opt)
+      }
+      props.add("options", options)
+      changed = true
+    }
+    if (changed) {
+      logger.info(
+          "[AICodBiAssistant] Filled empty Form.Navigator (XNavigationBar) options from the form's pages")
+    }
+    return changed
+  }
+
+  /**
    * Safety net for multi-page forms: a "Weiter" / next-page button (action.page="next") must
    * validate the current page's fields before navigating (action.check=true) when that page
    * contains a field that can be invalid — a REQUIRED field, a datatype-validated field, or a field
@@ -19087,6 +19721,65 @@ class AICodBiAssistant : IPluginServletAction {
             "[AICodBiAssistant] Upgraded 'Weiter' button '{}' to next page + check (page '{}' contains fields that can invalidate)",
             btnObj.get("name")?.asString ?: buttonListName,
             pageName)
+      }
+    }
+    return changed
+  }
+
+  /**
+   * Safety net for button actions (XButtonList): the `optionId` (and, when it mirrors it, the
+   * action `value`) is the MACHINE value the FORMCYCLE designer stores for the dropdown selection —
+   * NOT the human label it displays. It is derived from `page` + `check` by the designer's own
+   * function (verified in `form-designer.min.js`): submit -> "submit + check", submitNoCheck ->
+   * "submit", submitSave -> "save + check", submitSaveNoCheck -> "save", submitPreview -> "submit
+   * no save", submitPreviewWindowed -> "submit no save popup", and any other page -> the page value
+   * itself, or "<page> + check" when check=true (so "next + check" / "previous + check" — the
+   * designer only DISPLAYS these as "next page + check" / "previous page + check"). This rewrites
+   * an EXISTING string optionId/action-value to that machine value; it NEVER introduces an optionId
+   * where none exists and leaves a custom ("") action untouched. Returns true when anything
+   * changed.
+   */
+  private fun normalizeButtonActionOptionIds(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    var changed = false
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XButtonList") continue
+      val buttons = item.getAsJsonObject("properties")?.getAsJsonArray("buttons") ?: continue
+      for (btn in buttons) {
+        if (!btn.isJsonObject) continue
+        val action = btn.asJsonObject.getAsJsonObject("action") ?: continue
+        val page = action.get("page")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        if (page.isEmpty() || page == "-1") continue
+        val checkEl = action.get("check")?.takeIf { it.isJsonPrimitive }
+        val checked = checkEl != null && (checkEl.asString == "true" || checkEl.asString == "1")
+        // Mirrors the FORMCYCLE 8.5 designer's St(page, check).
+        val canonical =
+            when (page) {
+              "submit" -> "submit + check"
+              "submitNoCheck" -> "submit"
+              "submitSave" -> "save + check"
+              "submitSaveNoCheck" -> "save"
+              "submitPreview" -> "submit no save"
+              "submitPreviewWindowed" -> "submit no save popup"
+              else -> if (checked) "$page + check" else page
+            }
+        // Only repair an existing STRING optionId (a numeric designer id is left untouched).
+        val optionIdEl =
+            action.get("optionId")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+        val current = optionIdEl?.asString
+        if (current != null && current != canonical) {
+          action.addProperty("optionId", canonical)
+          changed = true
+        }
+        // The stock default mirrors optionId into the action value; keep them consistent.
+        val valueEl =
+            action.get("value")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+        if (current != null && valueEl != null && valueEl.asString == current) {
+          action.addProperty("value", canonical)
+          changed = true
+        }
       }
     }
     return changed
@@ -21572,18 +22265,22 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
-   * Normalizes a datasource name for matching: trimmed, internal whitespace runs collapsed to a
-   * single space, lowercased. Used by [findClosestDatasource] so `" 56_Staatsangehörigkeiten "` and
-   * `"56_staatsangehörigkeiten"` are recognized as the same name.
+   * Normalizes a datasource name for the datasource validation/dedupe guards: trimmed, internal
+   * whitespace runs collapsed to a single space, lowercased.
    */
   private fun normalizeDatasourceName(name: String): String =
       name.trim().replace(Regex("\\s+"), " ").lowercase()
 
   /**
-   * Matches a datasource name named by the request against the AVAILABLE datasource [available]
-   * names. Returns the canonical available name on an exact or case/whitespace-insensitive match,
-   * or null when [requested] is blank or unknown/misspelled. Pure (no DB, no side effects) so it is
-   * unit-testable.
+   * Validates a datasource name named by the AI against the AVAILABLE datasource [available] names.
+   * Returns the canonical available name only on an exact (case/whitespace-insensitive) match, else
+   * null.
+   *
+   * NOTE: this is deliberately NOT a fuzzy/character matcher. Choosing WHICH datasource fits a
+   * request is the MODEL's job — it is given the "AVAILABLE FORMCYCLE DATASOURCES" list (see
+   * [buildAvailableDatasourcesBlock]) and must either bind one of those names VERBATIM or ASK the
+   * user which one to use; the server merely verifies that the binding is (still) one of the
+   * configured names. Pure (no DB, no side effects) so it is unit-testable.
    */
   private fun findClosestDatasource(requested: String?, available: List<String>): String? {
     val wanted = requested?.let { normalizeDatasourceName(it) } ?: return null
@@ -21594,16 +22291,41 @@ class AICodBiAssistant : IPluginServletAction {
   /**
    * Builds the "AVAILABLE FORMCYCLE DATASOURCES" context block appended to the clarification and
    * form system prompts. Returns null when no datasource name is available, so nothing is injected
-   * and the AI keeps working unchanged when the lookup is unavailable. Pure (only formats the given
-   * names) so it is unit-testable.
+   * and the AI keeps working unchanged when the lookup is unavailable.
+   *
+   * The block makes the MODEL the decision-maker: it must choose the datasource BY MEANING, bind it
+   * by copying the listed name VERBATIM (the model must never translate/re-spell a name or drop its
+   * numeric prefix), and ASK via a clarification when no listed datasource clearly fits or more
+   * than one could fit. Pure (only formats the given names) so it is unit-testable.
    */
   private fun buildAvailableDatasourcesBlock(names: List<String>): String? {
     val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
     if (cleaned.isEmpty()) return null
-    return "\nAVAILABLE FORMCYCLE DATASOURCES (Formcycle \"Quellen\"/\"Datenquellen\") configured on " +
-        "this system — the datasource a request names MUST match one of these EXACT names:\n" +
-        cleaned.joinToString("\n") { "- $it" } +
-        "\n"
+    return buildString {
+      append(
+          "\nAVAILABLE FORMCYCLE DATASOURCES (Formcycle \"Quellen\"/\"Datenquellen\") configured on this system:\n")
+      append(cleaned.joinToString("\n") { "- $it" })
+      append("\n")
+      append(
+          "RULE — for a datasource-bound XSelect, the `datasource` property MUST be one of the names ABOVE, copied VERBATIM (character-for-character, INCLUDING any leading number/prefix such as \"56_\").\n")
+      append(
+          "- CHOOSE BY MEANING (the datasource's subject/what it contains), NOT by string equality: the wording in the request (e.g. \"Staatsangehörigkeiten\") need not match the technical name (e.g. \"56_Staatsangehoerigkeiten\") — bind the listed name that FITS.\n")
+      append(
+          "- NEVER translate, re-spell, add/remove umlauts, shorten or drop the numeric prefix of a listed name; NEVER invent a name that is not listed.\n")
+      append(
+          "- WIDGET BY INTENT (LANGUAGE-AGNOSTIC — decide from the MEANING in ANY language, NEVER a literal keyword; the parenthesised words are illustrative examples only). If the user wants to CHOOSE a value from a list (the selection/dropdown/combobox CONCEPT — e.g. German \"Auswahl\"/\"Dropdown\", English \"selection\"/\"dropdown\", or the equivalent in ANY language), use a plain \"XSelect\" with the datasource properties above — it STAYS an XSelect even when described as filterable/searchable/type-ahead. If the user wants to TYPE a value into a text field (the input-field/entry-field CONCEPT — e.g. German \"Eingabefeld\"/\"Eingabe\", English \"input field\", or the equivalent in ANY language) and it must be restricted to / autocompleted from the datasource, emit className \"XTextfieldAdvanced\" (Filterable text field, DS Widget Plugin) with the SAME verbatim `datasource` (it extends XTextField and adds the datasource property — NO `dstextidx`/`dsvalueidx`). NEVER turn a requested input field into a select/datalist, and NEVER turn a requested selection into a text field.\n")
+      append(
+          "- FILTER-THROUGH WIRING (LANGUAGE-AGNOSTIC — decide from the MEANING in ANY language, NEVER a literal keyword; illustrative examples only). DS-widget property whose UI LABEL is exactly \"filter through\" / German \"filtern durch\") — when the datasource INPUT FIELD must be narrowed/filtered BY the value of ANOTHER (input) field — one field acts as the other's filter, in ANY language (illustrative, ANY language: \"…soll durch ein zweites Eingabefeld mit dem Titel Filter gefiltert werden\"), CREATE that second field as a normal input (e.g. XTextField, label from the request) AND set the datasource field's `xtf_ds_param` — that \\\"filter through\\\" property — to the `id` of that second field; that is what links the filter. Optionally also set `xtf_filter_colnumber` (the 1-based datasource column the filter applies on) and, for the 'col'-attribute variant, `xtf_use_colvalue` (\"true\") + `xtf_colnumber`. `xtf_ds_param` holds the REFERENCED FIELD's id, NOT the datasource name. Emit BOTH fields (the datasource XTextfieldAdvanced AND the filter input) in the same response.\n")
+      append(
+          "- If EXACTLY ONE listed name clearly fits, bind it — never ask. If MORE THAN ONE could fit, do NOT guess and do NOT emit a guessed name: ASK the user via a clarification question WHICH of those candidates to use. In that question:\n")
+      append(
+          "    * offer ONLY the candidate names that plausibly FIT the request (the ones you matched BY MEANING) as the question's options (multiSelect false) — do NOT dump the entire list;\n")
+      append(
+          "    * state EXPLICITLY that several datasources fit, naming how many (e.g. \"Es gibt zwei Datenquellen, die passen könnten: …\") so the user sees WHY you are asking and that these are the applicable ones;\n")
+      append(
+          "    * only if NO listed name fits AT ALL, offer the full list so the user can pick one.\n")
+      append("- Then bind the name the user picks, VERBATIM.\n")
+    }
   }
 
   /**
@@ -22394,6 +23116,15 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Spelling-normalizes a widget name key so the "XLanguageSwich" vs "XLanguageSwitch" discrepancy
+   * resolves: Formcycle's className (and the seeded section key
+   * `formcycle.widgets.xlanguage_swich`) uses the historic misspelling "Swich", while the model
+   * almost always asks for "Switch". Both spellings must map to the same section. All other widget
+   * names are returned unchanged.
+   */
+  private fun widgetSpellTolerant(s: String): String = s.replace("switch", "swich")
+
+  /**
    * Builds the formcycle widget details section for the pass-2 rerun. When [widgetIds] is
    * non-empty, only the requested widgets' sections (from `formcycle.widgets.<name>`) are appended;
    * otherwise the full widget reference is included as a fallback.
@@ -22432,10 +23163,23 @@ class AICodBiAssistant : IPluginServletAction {
       val norm =
           id.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").replace(Regex("_+"), "_").trim('_')
       if (norm.isEmpty()) continue
+      // The model frequently spells the language-switch widget "XLanguageSwitch" but Formcycle's
+      // className (and the seeded section key "formcycle.widgets.xlanguage_swich") is the historic
+      // "XLanguageSwich". A plain normalized lookup then misses the template, so the created widget
+      // is left WITHOUT its language "options" array. Fall back to a spelling-tolerant match that
+      // treats "switch" and "swich" as equivalent.
       val content =
           all["formcycle.widgets.$norm"]
               ?: all.entries
                   .firstOrNull { (k, _) -> k.removePrefix("formcycle.widgets.").startsWith(norm) }
+                  ?.value
+              ?: all.entries
+                  .firstOrNull { (k, _) ->
+                    val keySuffix = k.removePrefix("formcycle.widgets.")
+                    keySuffix == widgetSpellTolerant(norm) ||
+                        widgetSpellTolerant(keySuffix) == norm ||
+                        widgetSpellTolerant(keySuffix) == widgetSpellTolerant(norm)
+                  }
                   ?.value
               ?: continue
       // Gate the SECTION-tagged sub-blocks of THIS widget (only `XSpan` has any today). Shipping
@@ -23033,6 +23777,27 @@ class AICodBiAssistant : IPluginServletAction {
           "weiger")
 
   /**
+   * Keywords for the ambiguous "navbar" clarification block: Formcycle has a dedicated
+   * `XNavigationBar` widget AND CodBi has its own `Form.Navigator` functionality — a bare
+   * "navbar"/"Navigationsleiste"/"navigation bar" (ANY language) is ambiguous and must be
+   * clarified. The list is deliberately generous across languages (a miss would only drop one
+   * question).
+   */
+  private val clarificationNavbarKeywords =
+      listOf(
+          "navbar",
+          "navigationsleiste",
+          "navigationsleisten",
+          "navigation bar",
+          "navigations-bar",
+          "fortschrittsleiste",
+          "progress bar",
+          "progressbar",
+          "fc-navbar",
+          "form.navigator",
+          "form navigator")
+
+  /**
    * Applies the clarification prompt's OPTIONAL sections. Every `<!--CLARIFY:<tag>[,…]-->` …
    * `<!--/CLARIFY:<tag>-->` block is kept only when the [corpus] (the user's request plus the
    * earlier clarification answers) mentions one of that tag's keywords (see the
@@ -23054,7 +23819,8 @@ class AICodBiAssistant : IPluginServletAction {
             "payment" to clarificationPaymentKeywords,
             "livedata" to clarificationLivedataKeywords,
             "http" to clarificationHttpKeywords,
-            "approval" to clarificationApprovalKeywords)
+            "approval" to clarificationApprovalKeywords,
+            "navbar" to clarificationNavbarKeywords)
     val regex = Regex("<!--CLARIFY:([a-z0-9_,]+)-->([\\s\\S]*?)<!--/CLARIFY:[a-z0-9_,]+-->")
     return regex.replace(text) { match ->
       val tags = match.groupValues[1].split(",").map { it.trim() }
@@ -23158,10 +23924,34 @@ class AICodBiAssistant : IPluginServletAction {
       changeLogSchema: String,
       formVariables: String? = null
   ): String {
+    // SINGLE-PASS substitution with sentinels: the inserted VALUES must never be re-scanned.
+    // The general block itself carries two {{WORKFLOW_REFERENCE}} markers, so the previous
+    // chained .replace().replace() expanded the reference THREE times per pass — measured:
+    // template 43,424 + general 2,185 + reference 24,828 rendered to 120,016 chars (≈ 70,437 would
+    // be correct). Substituting sentinels first and resolving them in a second step guarantees
+    // exactly one insertion per placeholder regardless of what the inserted text contains.
+    val genSentinel = "\u0000CB_GEN\u0000"
+    val refSentinel = "\u0000CB_REF\u0000"
     var out =
         template
-            .replace("{{GENERAL}}", general)
-            .replace("{{WORKFLOW_REFERENCE}}", workflowReference)
+            .replace("{{GENERAL}}", genSentinel)
+            .replace("{{WORKFLOW_REFERENCE}}", refSentinel)
+            .replace(genSentinel, general)
+            .replace(refSentinel, workflowReference)
+    // Stray markers that arrived INSIDE `general` are dropped: the reference is already present
+    // exactly once (from the template), so re-expanding them would pay for it again.
+    out = out.replace("{{WORKFLOW_REFERENCE}}", "").replace("{{GENERAL}}", "")
+    // Token instrument: shows whether the VALUES themselves carry placeholders (the multiplication
+    // bug above) so a future regression is visible in one line.
+    logger.info(
+        "[AICodBiAssistant] renderWorkflowSystemPrompt: template={} chars (GENERAL occurrences={}, WORKFLOW_REFERENCE occurrences={}), general={} chars (WORKFLOW_REFERENCE occurrences={}), workflowReference={} chars, after-replace={} chars",
+        template.length,
+        template.split("{{GENERAL}}").size - 1,
+        template.split("{{WORKFLOW_REFERENCE}}").size - 1,
+        general.length,
+        general.split("{{WORKFLOW_REFERENCE}}").size - 1,
+        workflowReference.length,
+        out.length)
     // Conditional sections: drop the whole {{BEGIN_*}}…{{END_*}} block when data is blank.
     out = applyWorkflowSection(out, "WORKFLOW_DETAILS_REQUEST", if (pass2) null else " ")
     // The NEED_FORM_DATA block instructs the AI to ask for the form element list — only meaningful
@@ -23176,7 +23966,14 @@ class AICodBiAssistant : IPluginServletAction {
     out = applyWorkflowSection(out, "REPEATABLE_CONTAINERS", repeatableContainers)
     out = applyWorkflowSection(out, "COMPLETION_PAGES", completionPages)
     out = applyWorkflowSection(out, "HTML_TEMPLATES", htmlTemplates)
-    out = applyWorkflowSection(out, "URL_TEMPLATES", htmlTemplates)
+    // URL templates are NOT fetched in THIS flow (no URL-template source exists here, unlike
+    // AIWorkflowAssistant which has a real `urlTemplates`). The block used to be filled with the
+    // HTML-template list, which (a) KEPT the large URL-TEMPLATES instruction block — it is dropped
+    // only when its data is blank, and htmlTemplates is exactly the data that is normally present —
+    // and (b) mislabeled every HTML template as a URL template. Both happened on EVERY workflow
+    // pass.
+    // Drop the block instead.
+    out = applyWorkflowSection(out, "URL_TEMPLATES", null)
     out = applyWorkflowSection(out, "INBOXES", inboxes)
     out = applyWorkflowSection(out, "MESSAGE_SERVICES", messageServices)
     out = applyWorkflowSection(out, "TRIGGERS", triggers)

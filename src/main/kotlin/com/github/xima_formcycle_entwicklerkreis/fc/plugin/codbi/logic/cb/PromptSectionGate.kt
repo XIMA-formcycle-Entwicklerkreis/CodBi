@@ -181,6 +181,10 @@ internal object PromptSectionGate {
           "ep_wiring" to
               patterns(
                   "bayvis",
+                  "bayernportal",
+                  "bayern-portal",
+                  "bavaria portal",
+                  "bavarian portal",
                   "elementplaceholder",
                   "element placeholder",
                   "injector",

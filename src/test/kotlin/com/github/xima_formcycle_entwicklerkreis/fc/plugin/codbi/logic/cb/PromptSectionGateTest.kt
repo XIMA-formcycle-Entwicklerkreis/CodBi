@@ -478,6 +478,158 @@ class PromptSectionGateTest {
   }
 
   @Test
+  fun `Bayernportal and Bavarian-portal wording fire the ep_wiring detector`() {
+    // Regression for the live bug report: the user asked for a text field showing an employee's
+    // contact data "der im Bayernportal registriert ist", and the assistant produced a bare
+    // XTextField with codbiVerdict="none". Root cause: the pass-1 ep_wiring block (which carries
+    // the
+    // "Bayernportal == BayVIS" decision rule and the employee-contact HTML.Text.Mapper/EP wiring)
+    // is
+    // GATED, and its deterministic detector only matched the literal word "bayvis". A prompt that
+    // spoke only of the "Bayernportal" therefore dropped the block, so the model never "decided"
+    // BayVIS applies. Adding the portal-synonym keywords makes the detector keep ep_wiring.
+    assertTrue(
+        "ep_wiring" in
+            PromptSectionGate.detect(
+                "Füge ein Textfeld ein welches die Kontaktdaten des Mitarbeiters anzeigt der im Bayernportal registriert ist."),
+        "Bayernportal must fire ep_wiring")
+    assertTrue(
+        "ep_wiring" in PromptSectionGate.detect("alle Ämter im Bayernportal für die Stadt"),
+        "Bayernportal authorities must fire ep_wiring")
+    assertTrue(
+        "ep_wiring" in
+            PromptSectionGate.detect("a text field for contact data from the Bavarian portal"),
+        "Bavarian portal must fire ep_wiring")
+    // The established literal term still fires it.
+    assertTrue("ep_wiring" in PromptSectionGate.detect("BayVIS-Kontaktdaten anzeigen"))
+  }
+
+  @Test
+  fun `a Bayernportal request keeps the employee-contact wiring rules of the ep_wiring block`() {
+    // Regression for the live bug report follow-up: with the ep_wiring block now correctly kept for
+    // a "Bayernportal" request, it must ALSO carry the exact data-cb-* parameter-name lesson so the
+    // model never puts the EP under data-cb-Data (a Sys.Log.Console-only attribute) and never omits
+    // data-cb-property on an HTML.Text.Mapper/Injector element.
+    val keep =
+        PromptSectionGate.resolveKeepTags(
+            null,
+            "Füge ein Textfeld ein welches die Kontaktdaten des Mitarbeiters anzeigt der im Bayernportal registriert ist.")
+    // resolveKeepTags returns tags in NORMALIZED form (lowercased, separators stripped), so the
+    // marker tag `ep_wiring` surfaces as `epwiring` (the same normalization as field_creation ->
+    // fieldcreation).
+    assertTrue("epwiring" in keep, "keep=$keep")
+    val gated =
+        PromptSectionGate.applySectionGates(
+            PromptSectionGate::class
+                .java
+                .classLoader
+                .getResourceAsStream(
+                    "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general.decision.md")
+                ?.bufferedReader(Charsets.UTF_8)
+                ?.use { it.readText() } ?: error("no decision core resource"),
+            keep)
+    assertTrue(gated.contains("data-cb-Data"), "wrong-parameter prohibition must be kept")
+    // The exact corrective wording must survive gating for a Bayernportal request.
+    assertTrue(
+        gated.contains("HTML.Text.INJECTOR carries its single string in data-cb-replacement"),
+        "Injector parameter-name lesson must be kept")
+    assertTrue(
+        gated.contains("EVERY HTML.Text.Mapper/Injector element MUST carry data-cb-property"),
+        "data-cb-property requirement must be kept")
+    // The known never-write precondition is present too.
+    assertTrue(
+        gated.contains(
+            "NEVER write the EP into \"data-cb-Data\", which belongs ONLY to Sys.Log.Console"),
+        "Sys.Log.Console-only attribution must be kept")
+    assertTrue(
+        gated.contains("No text functionality ever uses data-cb-Data for its EP"),
+        "data-cb-Data forbidden on text functionalities must be kept")
+    // Regression for the live bug report "the ai generated a text without any placeholders in it
+    // so the functionality cannot write anything": the element's OWN content property (rtevalue on
+    // an XSpan / value on a text field) must carry the [(property)] placeholder TEMPLATE, or the
+    // HTML.Text.Mapper/Injector has nothing to expand and renders empty. This requirement and the
+    // worked example (which shows the placeholders living INSIDE rtevalue alongside the wiring)
+    // must survive gating for a Bayernportal request.
+    assertTrue(
+        gated.contains(
+            "HARD REQUIREMENT — THE CONTENT CARRIES THE [(property)] PLACEHOLDER TEMPLATE"),
+        "content placeholder-template requirement must be kept")
+    assertTrue(
+        gated.contains("An HTML.Text.Mapper element whose content property is BLANK or MISSING"),
+        "blank/missing content placeholder must be a FAIL in the block")
+    assertTrue(
+        gated.contains("[(vorname)]/[(nachname)]/[(email)] placeholders live INSIDE the rtevalue"),
+        "worked example placeholder-in-content lesson must be kept")
+    assertTrue(
+        gated.contains("MUST carry a non-empty placeholder template in its own content property"),
+        "non-empty placeholder template requirement must be kept in the param-name rule")
+    // Regression for the bug "the AI builds the text functionality in pass-1" where it skipped the
+    // details request and invented the BayVIS placeholder property names from memory. The gated
+    // ep_wiring block must (a) hard-require building a BayVIS-backed text functionality ONLY in
+    // pass-2 via need_codbi_details, and (b) embed the authoritative per-EP property lists so a
+    // pass-1/edge emit still names real properties. Both must survive gating for a Bayernportal
+    // request.
+    assertTrue(
+        gated.contains("A TEXT FUNCTIONALITY AGAINST A BayVIS EP IS BUILT IN PASS-2, NEVER PASS-1"),
+        "BayVIS text functionality must be pass-2-only in the block")
+    assertTrue(
+        gated.contains("AUTHORITATIVE BayVIS per-EP PROPERTY LISTS"),
+        "authoritative property lists must be kept in the block")
+    assertTrue(
+        gated.contains(
+            "apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, apEmail"),
+        "Ansprechpartner.Details property list must be kept")
+    assertTrue(
+        gated.contains("There is NO \"phone\"/\"telefon\"/\"telephone\" property"),
+        "no-phone property rule must be kept")
+    // Regression for "the ai used [(apTelefonOrtsvorwahl)] [(apTelefonDurchwahl)] which is missing
+    // the main number in the middle": the gated block's own phone-composition example previously
+    // dropped apTelefonAnlage (and apTelefonLandvorwahl), so the model copied it verbatim and
+    // emitted an incomplete phone. The block must now require ALL FOUR apTelefon* parts together
+    // and
+    // explicitly forbid omitting apTelefonAnlage. Both clauses must survive gating for
+    // Bayernportal.
+    assertTrue(
+        gated.contains(
+            "[(apTelefonLandvorwahl)] [(apTelefonOrtsvorwahl)] [(apTelefonAnlage)] [(apTelefonDurchwahl)]"),
+        "full four-part phone composition must be kept in the block")
+    assertTrue(
+        gated.contains(
+            "Omitting [(apTelefonAnlage)] (or any part) produces an incomplete phone number — a FAIL"),
+        "omitting apTelefonAnlage must be explicitly forbidden in the block")
+    assertTrue(
+        gated.contains(
+            "hausanschriftPLZ, hausanschriftOrt, hausanschriftStrasse, postanschriftPLZ, postanschriftOrt, postanschriftStrasse, logo"),
+        "building property list must be kept")
+    assertTrue(
+        gated.contains("There is NO hausanschriftHausnummer"), "no-house-number rule must be kept")
+    assertTrue(
+        gated.contains(
+            "a person/employee (name, e-mail, phone, contact) ALWAYS comes from BayVIS.Ansprechpartner.Details"),
+        "subject-to-EP remapping rule must be kept")
+    // Regression for the +60k input-token report: the model PARTIALLY followed the pass-2-only rule
+    // (requested the BayVIS EP but omitted HTML.Text.Mapper in pass-1), then re-requested the same
+    // set in later passes, degrading the run into pass-1 + pass-2 + pass-3 + a forced final
+    // complete-form pass — each re-sending the whole ~70-80KB system prompt. The ep_wiring block
+    // must now hard-require ONE complete request (Mapper/Injector AND the BayVIS EP together) and a
+    // NEVER re-request the same set. Both clauses must survive gating for a Bayernportal request.
+    assertTrue(
+        gated.contains("ONE COMPLETE REQUEST — NEVER SPLIT OR RE-REQUEST"),
+        "one-complete-request rule must be kept in the block")
+    assertTrue(
+        gated.contains(
+            "\"elements\" MUST contain BOTH the \"HTML.Text.Mapper\" (or \"HTML.Text.Injector\") id AND the exact BayVIS EP id(s)"),
+        "request-BOTH-together rule must be kept in the block")
+    assertTrue(
+        gated.contains(
+            "NEVER emit a second \"need_codbi_details\" for ANY id, widget or EP you already requested"),
+        "never-re-request-the-same-set rule must be kept in the block")
+    assertTrue(
+        gated.contains("A single re-request of the exact same set is a degenerate loop"),
+        "degenerate-loop cost warning must be kept in the block")
+  }
+
+  @Test
   fun `the server_vars catalog is demand-gated but the EConditionType codes stay on`() {
     // Regression for the demand-gated Server-Variables catalog lever: the ~3KB placeholder catalog
     // (`[%\$NAME%]` system placeholders) is only needed when the request/form actually references a

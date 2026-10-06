@@ -332,6 +332,27 @@ class AICodBiAssistant : IPluginServletAction {
   private var maxFormReruns: Int = MAX_FORM_RERUNS
 
   /**
+   * Character cap for the `EXISTING WORKFLOW STRUCTURE` block that is appended to the workflow
+   * system prompt when the workflow is being modified. Configurable via
+   * `AI_Workflow_ExistingStructureCap`; a large default so existing deployments see no change. In
+   * Stage 1 this is a pure measurement instrument: every run classifies the block as `full` (at or
+   * under the cap) or `bounded` (over the cap) in the "Workflow system prompt" log line, so the
+   * share of runs that would profit from a two-tier split (Stage 2) becomes visible without any
+   * behavioural change.
+   */
+  private var workflowExistingStructureCap: Int = MAX_WORKFLOW_EXISTING_STRUCTURE_CAP
+
+  /**
+   * Per-node preview cap (in chars) for the Stage-2 two-tier split of the `EXISTING WORKFLOW
+   * STRUCTURE` block. Configurable via `AI_Workflow_ExistingStructurePreview`. Engages only when
+   * the whole block exceeds [workflowExistingStructureCap]: each node/trigger body is then
+   * truncated to this many chars (description dropped) unless the node is one the run
+   * references/demands, in which case its full body is sent. Below the cap this value is unused
+   * (fail-open byte-identical).
+   */
+  private var workflowExistingStructurePreview: Int = MAX_WORKFLOW_EXISTING_STRUCTURE_PREVIEW
+
+  /**
    * Per-specialist overrides of [maxFormReruns], keyed by lowercase specialist name. Configurable
    * via `AI_FormAssistant_MaxFormReruns_<name>`.
    */
@@ -602,6 +623,23 @@ class AICodBiAssistant : IPluginServletAction {
         ?.toIntOrNull()
         ?.takeIf { it >= 0 }
         ?.let { maxFormReruns = it }
+    // Character cap for the `EXISTING WORKFLOW STRUCTURE` block appended to the workflow system
+    // prompt. Re-read on every plugin re-initialization so a configuration change takes effect on
+    // the next request. An absent value keeps the safe large default.
+    configData.properties
+        .getProperty("AI_Workflow_ExistingStructureCap")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it >= 0 }
+        ?.let { workflowExistingStructureCap = it }
+    // Per-node preview cap for the Stage-2 two-tier split. Re-read on every plugin
+    // re-initialization. An absent value keeps the default.
+    configData.properties
+        .getProperty("AI_Workflow_ExistingStructurePreview")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it >= 0 }
+        ?.let { workflowExistingStructurePreview = it }
     // Prompt-caching mode for the form-assistant build prompts (see [PromptCachingMode]). Re-read
     // on
     // every plugin re-initialization so a configuration change takes effect on the next request; an
@@ -4509,6 +4547,16 @@ class AICodBiAssistant : IPluginServletAction {
                 (if (candidateClause.isNotBlank())
                     "Apply these CodBi functionalities: $candidateClause\n"
                 else "") +
+                // The model triggered this rerun by answering pass-1 with a need_codbi_details
+                // request. The apply system prompt above ALREADY contains the full specification it
+                // asked for (buildFullSectionFor(requested) + buildWidgetDetailsSection(widgets)).
+                // The model nevertheless keeps re-emitting the identical need_codbi_details request
+                // (same-set) because the delivered details are presented as a passive reference
+                // catalog with no explicit connection to its own request, and because the
+                // "request details FIRST, never invent placeholders" rules now make it reluctant to
+                // build without an unmistakable confirmation. State that confirmation here, naming
+                // the exact ids/widgets, so it builds instead of re-requesting.
+                detailsDeliveredBuildNowNote(requested, widgets) +
                 "Create/add any requested formcycle widgets using the EXACT JSON structures in the system prompt " +
                 "(property names like \"name\", \"id\", \"label\", \"datatype\", \"fullwidth\" â€” never invent properties " +
                 "such as \"displayText\" or \"technicalId\"), " +
@@ -4725,8 +4773,19 @@ class AICodBiAssistant : IPluginServletAction {
             "Original user request: $prompt\n\n" +
                 "Complete current form (IPersistJson):\n$finalFormDump\n\n" +
                 finalSlicingNote +
+                // The previous rerun requested details and then re-requested the SAME set (a
+                // degenerate loop). The forced-final system prompt above ALREADY carries every
+                // specification it asked for; make the delivery unmistakable so it builds instead
+                // of
+                // emitting a third identical need_codbi_details request (which would leave the form
+                // empty). `requested`/`widgets` are the ids for which this rerun's details were
+                // delivered. Reuses the shared note (it forbids re-requesting the delivered set)
+                // and
+                // adds the stricter discard guarantee on top.
+                detailsDeliveredBuildNowNote(requested, widgets) +
+                "A need_codbi_details response is NOT a valid answer here and will be DISCARDED, leaving the form unchanged.\n\n" +
                 "Return the COMPLETE modified form JSON with ALL items now. Do NOT ask the user any " +
-                "question and do NOT return any prose — answer ONLY with the form JSON. " +
+                "question and do NOT return any prose — answer ONLY with the form JSON. Do NOT return a need_codbi_details request — every detail you asked for is in the system prompt above; re-requesting it is a degenerate loop that yields no form. " +
                 "CRITICAL — PRESERVE EVERY EXISTING ELEMENT: every element that exists in the form " +
                 "above must still be in the RESULTING form, unchanged and in its original container, plus only " +
                 "the additions/modifications the user requested. Never drop, empty or alter an existing " +
@@ -5152,7 +5211,16 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  private data class WorkflowDetailsSignal(val nodes: List<String>, val triggers: List<String>)
+  private data class WorkflowDetailsSignal(
+      val nodes: List<String>,
+      val triggers: List<String>,
+      // STAGE 2 (two-tier split): numeric node ids whose FULL current bodies (description +
+      // untruncated customParameters) the model demands directly (e.g. a replace/modify operation
+      // targeting a pre-existing node it has only seen as a truncated preview). Supplied via
+      // `need_workflow_node_details` + `instanceIds`. When present, pass-2 re-renders the existing
+      // structure with exactly these ids full and everyone else as a bounded preview.
+      val instanceIds: List<String> = emptyList()
+  )
 
   /**
    * Reads a node/trigger NAME list from a details request. The model emits the arrays in BOTH
@@ -5186,6 +5254,35 @@ class AICodBiAssistant : IPluginServletAction {
    * needs the exact triggerParams/nodeParams of specific triggers/nodes it intends to use:
    * `{"status":"need_workflow_node_details","nodes":["FC_EMAIL",...],"triggers":["FC_FORM_SUBMIT_BUTTON",...]}`.
    */
+  /**
+   * Reads a numeric node-id list from a details request (`instanceIds`). The ids arrive as a plain
+   * array of numbers/strings (`[123, 456]`) or as strings always parsable to Long. Non-numeric
+   * entries are dropped — the demand path only serves real existing node ids.
+   */
+  private fun detailsInstanceIds(arr: List<*>?): List<String> =
+      arr?.mapNotNull { el ->
+            when (el) {
+              is Number -> el.toLong().toString()
+              is String -> el.trim().toLongOrNull()?.toString()
+              is Map<*, *> -> {
+                @Suppress("UNCHECKED_CAST") val m = el as Map<String, Any?>
+                ((m["id"] ?: m["instanceId"])?.toString()?.trim()?.toLongOrNull()?.toString())
+              }
+              else -> null
+            }
+          }
+          ?.distinct() ?: emptyList()
+
+  /**
+   * Parses a workflow-node details request from the AI's cleaned JSON response. The AI returns this
+   * signal in the FIRST pass (which only contains the condensed workflow-nodes reference) when it
+   * needs the exact triggerParams/nodeParams of specific triggers/nodes it intends to use:
+   * `{"status":"need_workflow_node_details","nodes":["FC_EMAIL",...],"triggers":["FC_FORM_SUBMIT_BUTTON",...]}`.
+   * STAGE 2: the model may additionally demand the FULL current bodies of specific EXISTING nodes
+   * by numeric id via `instanceIds`
+   * (`{"status":"need_workflow_node_details","instanceIds":[123,...]}`) — pass-2 then shipp exactly
+   * those bodies in the existing-structure block.
+   */
   private fun extractWorkflowDetailsRequest(cleanedJson: String): WorkflowDetailsSignal? {
     return try {
       @Suppress("UNCHECKED_CAST")
@@ -5195,7 +5292,8 @@ class AICodBiAssistant : IPluginServletAction {
       if ((obj["status"] as? String) == "need_workflow_node_details") {
         return WorkflowDetailsSignal(
             nodes = detailsNameList(obj["nodes"] as? List<*>),
-            triggers = detailsNameList(obj["triggers"] as? List<*>))
+            triggers = detailsNameList(obj["triggers"] as? List<*>),
+            instanceIds = detailsInstanceIds(obj["instanceIds"] as? List<*>))
       }
       // Nested-wrapper form — many models emit the signal NAME as a KEY whose value is the request
       // object:
@@ -5208,8 +5306,10 @@ class AICodBiAssistant : IPluginServletAction {
         @Suppress("UNCHECKED_CAST") val nestedMap = nested as Map<String, Any?>
         val nodes = detailsNameList(nestedMap["nodes"] as? List<*>)
         val triggers = detailsNameList(nestedMap["triggers"] as? List<*>)
-        if (nodes.isNotEmpty() || triggers.isNotEmpty()) {
-          return WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
+        val instanceIds = detailsInstanceIds(nestedMap["instanceIds"] as? List<*>)
+        if (nodes.isNotEmpty() || triggers.isNotEmpty() || instanceIds.isNotEmpty()) {
+          return WorkflowDetailsSignal(
+              nodes = nodes, triggers = triggers, instanceIds = instanceIds)
         }
       }
       // Tolerant form — many models omit the "status" field and return only
@@ -5237,8 +5337,9 @@ class AICodBiAssistant : IPluginServletAction {
       if (looksLikeTask) return null
       val nodes = detailsNameList(obj["nodes"] as? List<*>)
       val triggers = detailsNameList(obj["triggers"] as? List<*>)
-      if (nodes.isEmpty() && triggers.isEmpty()) return null
-      WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
+      val instanceIds = detailsInstanceIds(obj["instanceIds"] as? List<*>)
+      if (nodes.isEmpty() && triggers.isEmpty() && instanceIds.isEmpty()) return null
+      WorkflowDetailsSignal(nodes = nodes, triggers = triggers, instanceIds = instanceIds)
     } catch (_: Exception) {
       null
     }
@@ -12242,6 +12343,34 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: existingWorkflowStructure={} chars",
         existingWorkflowStructure?.length ?: 0)
+    // STAGE 2 (two-tier split): when the full existing-structure block exceeds the
+    // AI_Workflow_ExistingStructureCap, the job-passes below do NOT ship the whole block every
+    // time.
+    // Pass-1 carries a lean preview (per-node id/type/name + truncated customParameters); pass-2
+    // ships full bodies only for the nodes this run touches (referenced target ids / demanded
+    // instanceIds) with the rest as preview. Fail-open: at or under the cap (or cap <= 0) the full
+    // block is used unchanged — byte-identical behaviour. The cap comparison happens on the FULL
+    // structure so the decision is stable across the passes.
+    val structureBounded =
+        workflowExistingStructureCap > 0 &&
+            existingWorkflowStructure != null &&
+            existingWorkflowStructure.length > workflowExistingStructureCap
+    // The lean pass-1 preview is computed lazily and reused as the fallback for pass-2 when the
+    // model did NOT demand node ids (see below).
+    var pass1PreviewStructure: String? = null
+    if (structureBounded) {
+      pass1PreviewStructure =
+          buildWorkflowStructureContext(workflowVersionId, userContext, preview = true)
+      logger.info(
+          "[AICodBiAssistant] runWorkflowCreation: existing structure bounded — pass-1 uses preview ({} chars, cap={})",
+          pass1PreviewStructure?.length ?: 0,
+          workflowExistingStructureCap)
+    }
+    // The structure string + its bounded flag actually injected on the CURRENT pass. Kept mutable
+    // so
+    // the pass-2 re-render (referenced/demanded ids) can swap it in.
+    var currentExistingStructure = existingWorkflowStructure
+    var currentStructureBounded = false
     // Two-pass workflow flow:
     //   Pass-1 — the AI receives only the condensed workflow-nodes reference. If it needs the exact
     //            triggerParams/nodeParams of specific triggers/nodes it intends to use, it responds
@@ -12250,6 +12379,9 @@ class AICodBiAssistant : IPluginServletAction {
     //            AI produces the final task JSON.
     var requestedNodes = emptyList<String>()
     var requestedTriggers = emptyList<String>()
+    // STAGE 2: numeric ids of EXISTING nodes whose FULL current bodies the model demanded directly
+    // (via `need_workflow_node_details` + `instanceIds`). Pass-2 ships exactly those full.
+    var requestedInstanceIds = emptyList<String>()
     // The repeatable (dynamic) containers context must come from the CURRENT form. In the "both" /
     // form-modify flow the form AI has JUST created the dynamic container (e.g. an opening-hours
     // repeatable group), while the request's original `persist` is stale and does not contain it —
@@ -12267,6 +12399,11 @@ class AICodBiAssistant : IPluginServletAction {
     val formVariables =
         extractFormVariablesFromJson(params.requestParameters["persist"]?.firstOrNull())
     logger.info("[AICodBiAssistant] runWorkflowCreation: formVariables={}", formVariables)
+    // Pass-1 injection: fail-open full structure when under the cap, otherwise the lean preview.
+    currentExistingStructure =
+        if (structureBounded) pass1PreviewStructure ?: existingWorkflowStructure
+        else existingWorkflowStructure
+    currentStructureBounded = structureBounded
     var systemPrompt =
         buildWorkflowSystemPrompt(
             formElements,
@@ -12284,7 +12421,8 @@ class AICodBiAssistant : IPluginServletAction {
             chatContext,
             changeHistoryContext,
             formVariables,
-            existingWorkflowStructure)
+            currentExistingStructure,
+            existingStructureBounded = currentStructureBounded)
 
     var messagesJson = buildString {
       append("[")
@@ -12305,10 +12443,36 @@ class AICodBiAssistant : IPluginServletAction {
     if (workflowDetails != null) {
       requestedNodes = workflowDetails.nodes
       requestedTriggers = workflowDetails.triggers
+      requestedInstanceIds = workflowDetails.instanceIds
       logger.info(
-          "[AICodBiAssistant] AI requested workflow node details — nodes: {}, triggers: {} — rerunning pass-2",
+          "[AICodBiAssistant] AI requested workflow node details — nodes: {}, triggers: {}, instanceIds: {} — rerunning pass-2",
           requestedNodes.joinToString(", ").ifEmpty { "<none>" },
-          requestedTriggers.joinToString(", ").ifEmpty { "<none>" })
+          requestedTriggers.joinToString(", ").ifEmpty { "<none>" },
+          requestedInstanceIds.joinToString(", ").ifEmpty { "<none>" })
+      // STAGE 2 pass-2 structure selection:
+      //   - When the model demanded specific node ids, ship exactly those FULL (rest as preview).
+      //   - Else when the block is bounded, keep the lean preview (the model already saw it in
+      //     pass-1; it gained no ids from this details request to unfurl more bodies).
+      //   - Else (unbounded) the full structure unchanged.
+      if (structureBounded) {
+        currentStructureBounded = true
+        val demanded = requestedInstanceIds.toSet()
+        currentExistingStructure =
+            if (demanded.isNotEmpty()) {
+              buildWorkflowStructureContext(
+                  workflowVersionId, userContext, preview = true, includeIds = demanded)
+            } else {
+              pass1PreviewStructure ?: existingWorkflowStructure
+            }
+        logger.info(
+            "[AICodBiAssistant] runWorkflowCreation: pass-2 structure bounded — {} ({} chars)",
+            if (demanded.isNotEmpty()) "filtered-full for ${demanded.size} demanded node id(s)"
+            else "lean preview (no instanceIds demanded)",
+            currentExistingStructure?.length ?: 0)
+      } else {
+        currentExistingStructure = existingWorkflowStructure
+        currentStructureBounded = false
+      }
       systemPrompt =
           buildWorkflowSystemPrompt(
               formElements,
@@ -12326,7 +12490,9 @@ class AICodBiAssistant : IPluginServletAction {
               chatContext,
               changeHistoryContext,
               formVariables,
-              existingWorkflowStructure)
+              currentExistingStructure,
+              existingStructureBounded = currentStructureBounded,
+              existingStructureDemandedIds = requestedInstanceIds.toSet())
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -12381,8 +12547,16 @@ class AICodBiAssistant : IPluginServletAction {
         append("]")
       }
       val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
-      tokensIn += estimateTokens(retryMessagesJson)
-      tokensOut += estimateTokens(retryRaw)
+      // Record the retry as its own inference trip so its promptChars/completionChars are visible
+      // in
+      // the run report (mirror of the form path's form-pass-*-retry trips). The convenience
+      // overload
+      // populates promptChars/completionChars from the message/response strings; just like pass-1/2
+      // above, assistUsage supplies the authoritative token counts when available.
+      val retryUsage = instance.takeLastAssistUsage()
+      tokensIn += retryUsage?.promptTokens ?: estimateTokens(retryMessagesJson)
+      tokensOut += retryUsage?.completionTokens ?: estimateTokens(retryRaw)
+      reportTrip("workflow-pass-1-retry", modelId, retryUsage, retryMessagesJson, retryRaw)
       val retryCleaned = extractJson(stripThinkTags(retryRaw))
       logger.info(
           "[AICodBiAssistant] Workflow AI retry raw response: {}",
@@ -12396,10 +12570,26 @@ class AICodBiAssistant : IPluginServletAction {
       if (retryDetails != null) {
         requestedNodes = retryDetails.nodes
         requestedTriggers = retryDetails.triggers
+        requestedInstanceIds = retryDetails.instanceIds
         logger.info(
-            "[AICodBiAssistant] Retry requested workflow node details — nodes: {}, triggers: {} — rerunning pass-2",
+            "[AICodBiAssistant] Retry requested workflow node details — nodes: {}, triggers: {}, instanceIds: {} — rerunning pass-2",
             requestedNodes.joinToString(", ").ifEmpty { "<none>" },
-            requestedTriggers.joinToString(", ").ifEmpty { "<none>" })
+            requestedTriggers.joinToString(", ").ifEmpty { "<none>" },
+            requestedInstanceIds.joinToString(", ").ifEmpty { "<none>" })
+        if (structureBounded) {
+          currentStructureBounded = true
+          val demanded = requestedInstanceIds.toSet()
+          currentExistingStructure =
+              if (demanded.isNotEmpty()) {
+                buildWorkflowStructureContext(
+                    workflowVersionId, userContext, preview = true, includeIds = demanded)
+              } else {
+                pass1PreviewStructure ?: existingWorkflowStructure
+              }
+        } else {
+          currentExistingStructure = existingWorkflowStructure
+          currentStructureBounded = false
+        }
         systemPrompt =
             buildWorkflowSystemPrompt(
                 formElements,
@@ -12417,7 +12607,9 @@ class AICodBiAssistant : IPluginServletAction {
                 chatContext,
                 changeHistoryContext,
                 formVariables,
-                existingWorkflowStructure)
+                currentExistingStructure,
+                existingStructureBounded = currentStructureBounded,
+                existingStructureDemandedIds = requestedInstanceIds.toSet())
         messagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -15214,7 +15406,14 @@ class AICodBiAssistant : IPluginServletAction {
       chatContext: String? = null,
       changeHistoryContext: String? = null,
       formVariables: String? = null,
-      existingWorkflowStructure: String? = null
+      existingWorkflowStructure: String? = null,
+      // STAGE 2 (two-tier split): true when the structure block being injected is the trimmed
+      // preview/filtered variant (not the full current bodies). The preamble then tells the model
+      // the full bodies for the nodes this run touches arrive on the apply pass, and the rest are
+      // demand-loadable by numeric id via `need_workflow_node_details` + `instanceIds`. The default
+      // keeps the original full-body READ-ONLY preamble byte-identical.
+      existingStructureBounded: Boolean = false,
+      existingStructureDemandedIds: Set<String> = emptySet()
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -15284,8 +15483,17 @@ class AICodBiAssistant : IPluginServletAction {
       // was invisible. Prints the total AND the biggest dynamic contributors, so a 143 k-token run
       // can be attributed to a specific block instead of guessed at — mirror of the form's
       // "Pass-1 system prompt: … chars (… static block: …)" line.
+      // Stage-2 classification of the EXISTING WORKFLOW STRUCTURE block that is actually being
+      // injected:
+      //   `full`     — the whole block with every node's full body is sent (<= cap, or explicitly
+      //                demanded via instanceIds).
+      //   `preview`  — the two-tier split is engaged: this pass carries a trimmed preview (or a
+      //                filtered-full set for the demanded nodes on pass-2), with the remaining full
+      //                bodies demand-loadable by numeric id.
+      val existingStructureLen = existingWorkflowStructure?.length ?: 0
+      val existingStructureKind = if (existingStructureBounded) "preview" else "full"
       logger.info(
-          "[AICodBiAssistant] Workflow system prompt ({}): {} chars (template={}, general={}, workflowReference={}, formContext={}, repeatableContainers={}, completionPages={}, htmlTemplates={}, existingWorkflowNodes={}, existingStructure={}, clarification={}, chatContext={}, changeHistory={}, formVariables={})",
+          "[AICodBiAssistant] Workflow system prompt ({}): {} chars (template={}, general={}, workflowReference={}, formContext={}, repeatableContainers={}, completionPages={}, htmlTemplates={}, existingWorkflowNodes={}, existingStructure={}({}), clarification={}, chatContext={}, changeHistory={}, formVariables={}, existingStructureCap={})",
           if (pass2) "pass-2" else "pass-1",
           rendered.length,
           workflowTemplate.length,
@@ -15296,11 +15504,13 @@ class AICodBiAssistant : IPluginServletAction {
           "${workflowCompletionPages?.length ?: 0}/${completionPages?.length ?: 0}",
           "${workflowHtmlTemplates?.length ?: 0}/${htmlTemplates?.length ?: 0}",
           existingWorkflowNodes?.length ?: 0,
-          existingWorkflowStructure?.length ?: 0,
+          existingStructureKind,
+          existingStructureLen,
           clarificationContext?.length ?: 0,
           chatContext?.length ?: 0,
           changeHistoryContext?.length ?: 0,
-          formVariables?.length ?: 0)
+          formVariables?.length ?: 0,
+          workflowExistingStructureCap)
       // When the workflow is being MODIFIED (nodes already exist), give the AI the FULL current
       // content of those nodes (customParameters — incl. an existing
       // FC_WRITE_FORM_RECORD_ATTRIBUTES
@@ -15313,14 +15523,50 @@ class AICodBiAssistant : IPluginServletAction {
       // first-row placeholders (or invent hidden helper fields) when asked to extend the mail.
       val structureBlock =
           if (!existingWorkflowStructure.isNullOrBlank()) {
-            "\n\nEXISTING WORKFLOW STRUCTURE (full current content of the nodes listed above — READ-ONLY reference for modify/replace). It shows exactly what each existing node does TODAY (customParameters): e.g. an FC_WRITE_FORM_RECORD_ATTRIBUTES that accumulates the repeatable-container rows (inside an FC_FOR_EACH_LOOP) into a server attribute [%\$RECORD_ATTR.<key>%], and an FC_EMAIL whose body references that attribute.\n" +
-                "RULES WHEN MODIFYING (replace) AN EMAIL THAT SENDS REPEATABLE-CONTAINER ROWS:\n" +
-                "- The rows MUST stay in the server attribute: also UPDATE the matching FC_WRITE_FORM_RECORD_ATTRIBUTES node (by its numeric id) so its per-row accumulated value includes every field that must appear per row (e.g. add the Von/Bis fields [%tfOpeningStart%] - [%tfOpeningEnd%] to the accumulated line).\n" +
-                "- Keep the FC_EMAIL body referencing the server attribute ([%\$RECORD_ATTR.<key>%]) for the rows — do NOT replace it with plain [%fieldName%] placeholders of repeatable-container fields (those resolve to the FIRST row only).\n" +
-                "- NEVER create hidden form fields / helper fields (e.g. a hidden per-row \"… für Mail\" field) to collect repeatable content — the server attribute is the mechanism.\n" +
-                "EXISTING WORKFLOW STRUCTURE JSON (numeric 'id' values match the node list above):\n" +
-                existingWorkflowStructure +
-                "\n"
+            val preamble =
+                if (existingStructureBounded) {
+                  // STAGE 2 (two-tier split): this pass carries a bounded existing-structure block.
+                  // For pass-1 that is a lean preview (per-node id/type/name + a truncated
+                  // customParameters preview); for a pass-2 with demanded instanceIds it is
+                  // filtered-full for exactly those nodes and a preview for the rest. The model is
+                  // told the full current bodies it needs because of a replace/modify are either
+                  // already present (for the demanded/this-run nodes) or demand-loadable by numeric
+                  // id, and that a rewritten node is always echoed back fully in the final JSON.
+                  val demandedNote =
+                      if (existingStructureDemandedIds.isNotEmpty())
+                          " Nodes whose FULL bodies are present below are marked with their full customParameters." +
+                              " For every other node only a TRUNCATED preview is shown; demand its full body by numeric id."
+                      else
+                          " Only a TRUNCATED per-node preview is shown here." +
+                              " Demand a node's full current body by numeric id."
+                  "\n\nEXISTING WORKFLOW STRUCTURE (CURRENT NODES — bounded preview; demand-loadable by numeric id)." +
+                      " It shows the existing nodes' id/type/name and a preview of their customParameters" +
+                      " (e.g. an FC_WRITE_FORM_RECORD_ATTRIBUTES that accumulates repeatable rows into a server attribute" +
+                      " [%\$RECORD_ATTR.<key>%], an FC_EMAIL body referencing it).$demandedNote\n" +
+                      "RULES WHEN MODIFYING (replace) AN EMAIL THAT SENDS REPEATABLE-CONTAINER ROWS:\n" +
+                      "- The rows MUST stay in the server attribute: reference the matching FC_WRITE_FORM_RECORD_ATTRIBUTES node" +
+                      " by its numeric id and UPDATE its accumulation so every field that must appear per row is included" +
+                      " (e.g. add the Von/Bis fields [%tfOpeningStart%] - [%tfOpeningEnd%] to the accumulated line).\n" +
+                      "- Keep the FC_EMAIL body referencing the server attribute ([%\$RECORD_ATTR.<key>%]) for the rows" +
+                      " — do NOT replace it with plain [%fieldName%] placeholders of repeatable-container fields" +
+                      " (those resolve to the FIRST row only).\n" +
+                      "- NEVER create hidden form fields / helper fields to collect repeatable content — the server attribute is the mechanism.\n" +
+                      "- To see the FULL body of any node shown only as a preview, return" +
+                      " {\"status\":\"need_workflow_node_details\",\"instanceIds\":[<numeric id>]} and you will receive it before applying.\n" +
+                      "EXISTING WORKFLOW STRUCTURE JSON (numeric 'id' values match the node list above):\n" +
+                      existingWorkflowStructure +
+                      "\n"
+                } else {
+                  "\n\nEXISTING WORKFLOW STRUCTURE (full current content of the nodes listed above — READ-ONLY reference for modify/replace). It shows exactly what each existing node does TODAY (customParameters): e.g. an FC_WRITE_FORM_RECORD_ATTRIBUTES that accumulates the repeatable-container rows (inside an FC_FOR_EACH_LOOP) into a server attribute [%\$RECORD_ATTR.<key>%], and an FC_EMAIL whose body references that attribute.\n" +
+                      "RULES WHEN MODIFYING (replace) AN EMAIL THAT SENDS REPEATABLE-CONTAINER ROWS:\n" +
+                      "- The rows MUST stay in the server attribute: also UPDATE the matching FC_WRITE_FORM_RECORD_ATTRIBUTES node (by its numeric id) so its per-row accumulated value includes every field that must appear per row (e.g. add the Von/Bis fields [%tfOpeningStart%] - [%tfOpeningEnd%] to the accumulated line).\n" +
+                      "- Keep the FC_EMAIL body referencing the server attribute ([%\$RECORD_ATTR.<key>%]) for the rows — do NOT replace it with plain [%fieldName%] placeholders of repeatable-container fields (those resolve to the FIRST row only).\n" +
+                      "- NEVER create hidden form fields / helper fields (e.g. a hidden per-row \"… für Mail\" field) to collect repeatable content — the server attribute is the mechanism.\n" +
+                      "EXISTING WORKFLOW STRUCTURE JSON (numeric 'id' values match the node list above):\n" +
+                      existingWorkflowStructure +
+                      "\n"
+                }
+            preamble
           } else ""
       return rendered + structureBlock
     } catch (e: Exception) {
@@ -15444,10 +15690,39 @@ class AICodBiAssistant : IPluginServletAction {
    * submit button to node X"), so the build/validate detail is irrelevant; this mirrors the
    * condensed form-structure core the clarify round already gets.
    */
+  /** Adds a node/trigger's FULL `customParameters` (parsed to a JSON value) when present. */
+  private fun addCustomParameters(node: JsonObject, custom: String?) {
+    if (custom.isNullOrBlank()) return
+    try {
+      node.add("customParameters", JsonParser.parseString(custom))
+    } catch (_: Exception) {
+      node.addProperty("customParameters", custom)
+    }
+  }
+
+  /**
+   * Adds a node/trigger's `customParameters` bounded to the per-node preview cap
+   * ([workflowExistingStructurePreview]). Emitted as a JSON string (always parse-safe) carrying the
+   * truncated raw body plus a marker, so the model sees the node's headline content but not the
+   * full body — the full body is demand-loadable by node id via `need_workflow_node_details` +
+   * `instanceIds`. A zero/negative cap emits only the "omitted" marker (id/type/name still
+   * present).
+   */
+  private fun addCustomParametersPreview(node: JsonObject, custom: String?) {
+    if (custom.isNullOrBlank()) return
+    val previewLen = workflowExistingStructurePreview
+    node.addProperty(
+        "customParameters",
+        if (previewLen <= 0) "...[body omitted - demand-load full by node id]..."
+        else custom.take(previewLen) + "...[truncated - demand-load full by node id]...")
+  }
+
   private fun buildWorkflowStructureContext(
       workflowVersionId: Long,
       userContext: Any,
-      condensed: Boolean = false
+      condensed: Boolean = false,
+      preview: Boolean = false,
+      includeIds: Set<String>? = null
   ): String? {
     val em = formcycleEntityManager(userContext) ?: return null
     return try {
@@ -15470,24 +15745,32 @@ class AICodBiAssistant : IPluginServletAction {
               workflowVersionId)
       val nodesById = LinkedHashMap<String, JsonObject>()
       val childrenByParent = HashMap<String, MutableList<String>>()
+      // STAGE 2 (two-tier split): when [includeIds] is non-null, exactly those node ids are emitted
+      // with their FULL bodies (description + untruncated customParameters), every other node with
+      // a
+      // bounded preview (customParameters truncated to [workflowExistingStructurePreview],
+      // description
+      // dropped). When [preview] is true and [includeIds] is null, all bodies are bounded. When
+      // neither
+      // is set (the common fail-open case) every node keeps its FULL body — byte-identical to the
+      // pre-Stage-2 output. [condensed] (the lean id/type/name list) remains the most reduced,
+      // orthogonal form and is never combined with bodies.
+      val truncateAll = preview && includeIds == null
       for (row in nodeRows) {
         val cols = row as? Array<*> ?: continue
         if (cols.size < 6) continue
         val id = cols[0]?.toString() ?: continue
+        val fullBodyForId = includeIds?.contains(id) == true
+        val bounded = truncateAll || (includeIds != null && !fullBodyForId)
         val node = JsonObject()
         if (!condensed) node.addProperty("id", id)
         node.addProperty("type", cols[1]?.toString() ?: "")
         node.addProperty("name", cols[2]?.toString() ?: "")
-        if (!condensed) {
+        if (fullBodyForId || (!condensed && !bounded)) {
           node.addProperty("description", cols[3]?.toString() ?: "")
-          val custom = cols[4]?.toString()
-          if (!custom.isNullOrBlank()) {
-            try {
-              node.add("customParameters", JsonParser.parseString(custom))
-            } catch (_: Exception) {
-              node.addProperty("customParameters", custom)
-            }
-          }
+          addCustomParameters(node, cols[4]?.toString())
+        } else if (!condensed) {
+          addCustomParametersPreview(node, cols[4]?.toString())
         }
         val parentId = cols[5]?.toString()
         if (parentId != null && parentId.isNotBlank()) {
@@ -15503,25 +15786,47 @@ class AICodBiAssistant : IPluginServletAction {
         }
         parent.add("children", arr)
       }
+      // Per task (by root-node id), the ids of every node in its subtree — used so a task's trigger
+      // is
+      // emitted full exactly when one of that task's nodes is a full (referenced/demanded) node.
+      val taskNodeIds = HashMap<String, MutableSet<String>>()
+      fun collectSubtree(root: String, acc: MutableSet<String>) {
+        if (!acc.add(root)) return
+        for (child in childrenByParent[root] ?: emptyList()) collectSubtree(child, acc)
+      }
+      for (row in taskRows) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 6) continue
+        val rootNodeId = cols[5]?.toString()
+        if (rootNodeId.isNullOrBlank()) continue
+        val acc = HashSet<String>()
+        collectSubtree(rootNodeId, acc)
+        taskNodeIds[rootNodeId] = acc
+      }
       val list = JsonArray()
       for (row in taskRows) {
         val cols = row as? Array<*> ?: continue
         if (cols.size < 6) continue
         val t = JsonObject()
+        val rootNodeId = cols[5]?.toString()
         t.addProperty("name", cols[1]?.toString() ?: "")
-        if (!condensed) t.addProperty("description", cols[2]?.toString() ?: "")
+        val triggerFull =
+            if (includeIds == null) {
+              // Nothing bounded → trigger FULL (byte-identical to pre-Stage-2 output).
+              !truncateAll
+            } else {
+              // Full only when one of this task's nodes is referenced/demanded.
+              rootNodeId != null && taskNodeIds[rootNodeId]?.any { includeIds.contains(it) } == true
+            }
+        if (!condensed && triggerFull) t.addProperty("description", cols[2]?.toString() ?: "")
         val tr = JsonObject()
         tr.addProperty("type", cols[3]?.toString() ?: "")
-        val triggerCustom = cols[4]?.toString()
-        if (!condensed && !triggerCustom.isNullOrBlank()) {
-          try {
-            tr.add("customParameters", JsonParser.parseString(triggerCustom))
-          } catch (_: Exception) {
-            tr.addProperty("customParameters", triggerCustom)
-          }
+        if (!condensed && triggerFull) {
+          addCustomParameters(tr, cols[4]?.toString())
+        } else if (!condensed) {
+          addCustomParametersPreview(tr, cols[4]?.toString())
         }
         t.add("trigger", tr)
-        val rootNodeId = cols[5]?.toString()
         if (!rootNodeId.isNullOrBlank()) {
           nodesById[rootNodeId]?.let { t.add("rootNode", it) }
         }
@@ -22888,6 +23193,29 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Builds the "your requested details are above — build now, do NOT re-request" instruction that
+   * is prepended to the pass-2 and forced-final user content whenever this rerun actually delivered
+   * specific CodBi functionality / widget details (i.e. [requested] is non-empty — the ids for
+   * which `loadCodbiApplyPrompt` appended `buildFullSectionFor`/`buildWidgetDetailsSection`
+   * sections).
+   *
+   * WITHOUT this note the delivered details are presented as a passive reference catalog with no
+   * explicit link to the model's own `need_codbi_details` request, so the model — primed by the
+   * "request details FIRST, never invent placeholders" rules — keeps re-emitting the identical
+   * same-set details request even though it already has everything. The degenerate-loop guard then
+   * fires and the forced-final pass re-sends the same details, and if the model re-requests yet
+   * again the run ends with NO form generated. This note names the exact delivered ids/widgets so
+   * the model recognises its request was answered and builds instead of re-requesting.
+   */
+  private fun detailsDeliveredBuildNowNote(requested: List<String>, widgets: List<String>): String {
+    if (requested.isEmpty()) return ""
+    return ("\nYOUR REQUESTED DETAILS ARE ABOVE — DO NOT REQUEST THEM AGAIN: the system prompt holds the COMPLETE specification you asked for in your need_codbi_details request — CodBi functionality detail(s): " +
+        requested.joinToString(", ") +
+        (if (widgets.isNotEmpty()) "; widget template(s): " + widgets.joinToString(", ") else "") +
+        ". These are exactly what you requested; you now have EVERYTHING needed. BUILD the complete form JSON in THIS response. NEVER emit another need_codbi_details for any id, widget or EP in this already-delivered set — re-requesting the same set adds nothing (the server would send the identical sections) and is a degenerate loop that wastes a full inference and yields no form; if you are unsure, reason from the sections above and build.\n")
+  }
+
+  /**
    * Loads the CodBi apply (pass-2) prompt from the database. When [requestedIds] is non-empty, only
    * the details (parameters/TSDoc) of those specific elements are appended instead of the whole
    * full API reference. When [requestedIds] is empty but [widgetIds] is non-empty (the AI asked
@@ -25035,6 +25363,27 @@ class AICodBiAssistant : IPluginServletAction {
      * the newly requested elements/widgets before giving up and splicing the last result.
      */
     private const val MAX_FORM_RERUNS = 2
+
+    /**
+     * Default character cap (overridable via the plugin property
+     * `AI_Workflow_ExistingStructureCap`) for the `EXISTING WORKFLOW STRUCTURE` block in the
+     * workflow system prompt. Deliberately large (≈ the size of a mid-size workflow's full node
+     * dump), so the default behaviour is unchanged; the value only matters as the threshold for the
+     * `full|bounded` classification the Stage-1 instrument reports. Stage 2 (the actual slicing)
+     * will engage only above this threshold.
+     */
+    private const val MAX_WORKFLOW_EXISTING_STRUCTURE_CAP = 4096
+
+    /**
+     * Default per-node preview cap (overridable via the plugin property
+     * `AI_Workflow_ExistingStructurePreview`) for the Stage-2 two-tier split: when the whole
+     * `EXISTING WORKFLOW STRUCTURE` block exceeds [MAX_WORKFLOW_EXISTING_STRUCTURE_CAP]
+     * (overridable via the cap property), each node/trigger body is emitted truncated to this many
+     * chars unless the node is referenced/demanded by the run (then its full body is sent). Large
+     * enough to let the model read a node's type and headline params, small enough to cut the bulk
+     * of a body-heavy workflow.
+     */
+    private const val MAX_WORKFLOW_EXISTING_STRUCTURE_PREVIEW = 128
 
     /**
      * Maximum number of fields that may share ONE Formcycle row (all carrying the same `rowid`).

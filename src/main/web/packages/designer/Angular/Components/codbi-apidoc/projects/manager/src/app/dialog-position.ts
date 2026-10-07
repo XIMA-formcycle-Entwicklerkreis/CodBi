@@ -87,8 +87,18 @@ export function applyDialogPosition(styleClass: string, position: DialogPosition
   } else {
     el.classList.remove("cb-docked");
     const clamped = clampFloatingPosition(position);
-    if (typeof clamped.width === "number") el.style.width = `${clamped.width}px`;
-    if (typeof clamped.height === "number") el.style.height = `${clamped.height}px`;
+    // Apply the saved size and drop the inline `max-width`/`max-height` caps from the dialog's
+    // `[style]` input (e.g. the prompt manager's `maxWidth: "1200px"`), otherwise a width/height
+    // larger than the cap would be restored clamped. The `[style]` binding is a stable object, so
+    // Angular's style differ never re-writes these keys and the cleared values stick.
+    if (typeof clamped.width === "number") {
+      el.style.width = `${clamped.width}px`;
+      el.style.maxWidth = "none";
+    }
+    if (typeof clamped.height === "number") {
+      el.style.height = `${clamped.height}px`;
+      el.style.maxHeight = "none";
+    }
     // Cap a CSS-driven size that still exceeds the usable viewport. The inline max-* overrides the
     // stylesheet's max-width/max-height (e.g. a JS-expanded assistant dialog on a small window).
     const rect = el.getBoundingClientRect();
@@ -260,8 +270,13 @@ interface DragSession {
 /** Registered dialogs: `styleClass` → where to store the position. */
 const dialogDragRegistry = new Map<string, DialogDragRegistration>();
 
-/** Distance from the viewport edge (px) that triggers docking to the left/right half. */
-const SNAP_THRESHOLD = 40;
+/**
+ * Distance from the viewport edge (px) that triggers docking to the left/right half. Docking must
+ * happen only when the dialog actually reaches the edge (the drag clamps `left` to `VIEWPORT_MARGIN`),
+ * NOT 40px early — see [onGlobalMouseMove]. Tied to the viewport margin so the dialog snaps exactly
+ * when its edge touches the left/right side.
+ */
+const SNAP_THRESHOLD = VIEWPORT_MARGIN;
 
 /** Last floating size of each dialog, so dragging a docked dialog un-docks it at its prior size. */
 const lastFloatingSizes = new Map<string, { width: number; height: number }>();
@@ -274,6 +289,29 @@ function minFloatingWidth(dialog: HTMLElement): number {
 
 /** The in-flight drag session, or `null`. */
 let dragSession: DragSession | null = null;
+
+/**
+ * The in-flight bottom-right resize session, or `null`. PrimeNG renders the `.p-resizable-handle`
+ * (because `[resizable]="true"`), but its own resize implementation binds its document
+ * mousemove/mouseup listeners ONLY from the `onAnimationStart` callback — which does not fire in
+ * this host (Angular Elements embedded in the Formcycle designer; the same reason PrimeNG's drag is
+ * disabled). The drag coordinator therefore performs the resize itself, mirroring how it already
+ * implements dragging.
+ */
+interface ResizeSession {
+  dialog: HTMLElement;
+  styleClass: string;
+  startX: number;
+  startY: number;
+  originWidth: number;
+  originHeight: number;
+  /** Fixed viewport position of the dialog at resize start (the handle only changes the size; the
+   *  top-left corner stays put). */
+  originLeft: number;
+  originTop: number;
+}
+
+let resizeSession: ResizeSession | null = null;
 
 let dragCoordinatorInstalled = false;
 
@@ -308,6 +346,26 @@ function resolveDraggable(target: EventTarget | null): { dialog: HTMLElement; st
   return null;
 }
 
+/**
+ * Resolves the dialog + storage key when the event target is a PrimeNG resize handle
+ * (`.p-resizable-handle`, rendered by `[resizable]="true"`), or `null`. Only dialogs registered with
+ * the drag coordinator are resizable this way.
+ */
+function resolveResizable(target: EventTarget | null): { dialog: HTMLElement; styleClass: string } | null {
+  const el = target as HTMLElement | null;
+  if (!el) return null;
+  const handle = el.closest(".p-resizable-handle") as HTMLElement | null;
+  if (!handle) return null;
+  const dialog = handle.closest(".p-dialog") as HTMLElement | null;
+  if (!dialog) return null;
+  for (const styleClass of dialogDragRegistry.keys()) {
+    if (dialog.classList.contains(styleClass)) {
+      return { dialog, styleClass };
+    }
+  }
+  return null;
+}
+
 function onGlobalMouseDown(e: MouseEvent): void {
   const target = e.target as HTMLElement | null;
   // Never start a drag (or an un-dock of a snapped dialog) from the header action buttons. PrimeNG
@@ -326,6 +384,27 @@ function onGlobalMouseDown(e: MouseEvent): void {
         ".cb-ai-clarification-copy",
     )
   ) {
+    return;
+  }
+  // Bottom-right resize handle: start a resize session. `stopPropagation()` prevents PrimeNG's own
+  // `initResize` (the handle's Angular `(mousedown)`) from running, so the two never double-handle.
+  const resizeHit = resolveResizable(target);
+  if (resizeHit && !resizeHit.dialog.classList.contains("p-dialog-maximized")) {
+    const rect = resizeHit.dialog.getBoundingClientRect();
+    resizeHit.dialog.style.transition = "none";
+    resizeSession = {
+      dialog: resizeHit.dialog,
+      styleClass: resizeHit.styleClass,
+      startX: e.clientX,
+      startY: e.clientY,
+      originWidth: rect.width,
+      originHeight: rect.height,
+      originLeft: rect.left,
+      originTop: rect.top,
+    };
+    document.body.classList.add("p-unselectable-text");
+    e.preventDefault();
+    e.stopPropagation();
     return;
   }
   const hit = resolveDraggable(target);
@@ -370,6 +449,30 @@ function onGlobalMouseDown(e: MouseEvent): void {
 }
 
 function onGlobalMouseMove(e: MouseEvent): void {
+  const rs = resizeSession;
+  if (rs) {
+    // Bottom-right resize: only the size changes; the top-left corner stays where it was. Clamp to a
+    // sensible minimum and to the remaining viewport space to the right/bottom of the origin.
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const maxW = Math.max(0, viewportWidth - rs.originLeft - VIEWPORT_MARGIN);
+    const maxH = Math.max(0, viewportHeight - rs.originTop - VIEWPORT_MARGIN);
+    const minW = Math.min(minFloatingWidth(rs.dialog), maxW);
+    let width = rs.originWidth + (e.clientX - rs.startX);
+    let height = rs.originHeight + (e.clientY - rs.startY);
+    width = Math.max(minW, Math.min(width, maxW));
+    height = Math.max(Math.min(160, maxH), Math.min(height, maxH));
+    rs.dialog.style.position = "fixed";
+    rs.dialog.style.transform = "none";
+    // Clear the inline cap from the dialog's `[style]` input (e.g. the prompt manager's
+    // `maxWidth: "1200px"` / `maxHeight: "85vh"`). Without this the stylesheet cap wins over the
+    // width/height set below, so the dialog could only shrink — never grow.
+    rs.dialog.style.maxWidth = "none";
+    rs.dialog.style.maxHeight = "none";
+    rs.dialog.style.width = `${Math.round(width)}px`;
+    rs.dialog.style.height = `${Math.round(height)}px`;
+    return;
+  }
   const s = dragSession;
   if (!s) return;
   const viewportWidth = window.innerWidth;
@@ -419,6 +522,27 @@ function onGlobalMouseMove(e: MouseEvent): void {
 }
 
 function onGlobalMouseUp(): void {
+  const rs = resizeSession;
+  if (rs) {
+    resizeSession = null;
+    // PrimeNG's own resize would remove this class in its (non-firing) resizeEnd; clean it up here.
+    document.body.classList.remove("p-unselectable-text");
+    rs.dialog.style.transition = "";
+    const rect = rs.dialog.getBoundingClientRect();
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    lastFloatingSizes.set(rs.styleClass, { width, height });
+    const position: DialogPosition = {
+      left: Math.round(rect.left),
+      top: Math.round(rect.top),
+      width,
+      height,
+    };
+    const reg = dialogDragRegistry.get(rs.styleClass);
+    saveDialogPosition(reg?.storageKey ?? rs.styleClass, position);
+    reg?.onMoved?.(position);
+    return;
+  }
   const s = dragSession;
   if (!s) return;
   dragSession = null;
@@ -478,7 +602,7 @@ function installViewportGuard(): void {
   if (viewportGuardInstalled) return;
   viewportGuardInstalled = true;
   const guard = (): void => {
-    if (dragSession) return; // never fight an active drag
+    if (dragSession || resizeSession) return; // never fight an active drag/resize
     for (const styleClass of dialogDragRegistry.keys()) {
       const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
       if (!el) continue;
@@ -499,7 +623,7 @@ function installViewportGuard(): void {
 
 /** Applies the saved position to every registered dialog that just became visible (once per open). */
 function restoreVisibleDialogPositions(): void {
-  if (dragSession) return; // never fight an active drag
+  if (dragSession || resizeSession) return; // never fight an active drag/resize
   for (const styleClass of dialogDragRegistry.keys()) {
     const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
     if (!el) {

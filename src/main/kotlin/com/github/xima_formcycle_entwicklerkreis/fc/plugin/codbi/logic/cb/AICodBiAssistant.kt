@@ -12325,6 +12325,10 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: triggers={}",
         triggersJson ?: "null (no triggers found or query failed)")
+    val userGroupsJson = fetchUserGroups(userContext, workflowVersionId)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: userGroups={}",
+        userGroupsJson ?: "null (no groups found or query failed)")
     // Existing workflow nodes — lets the AI reference concrete nodes (by numeric id) for
     // remove/replace operations instead of only creating new ones.
     val existingWorkflowNodes = fetchExistingWorkflowNodes(userContext, workflowVersionId)
@@ -12422,7 +12426,8 @@ class AICodBiAssistant : IPluginServletAction {
             changeHistoryContext,
             formVariables,
             currentExistingStructure,
-            existingStructureBounded = currentStructureBounded)
+            existingStructureBounded = currentStructureBounded,
+            userGroups = userGroupsJson)
 
     var messagesJson = buildString {
       append("[")
@@ -12492,7 +12497,8 @@ class AICodBiAssistant : IPluginServletAction {
               formVariables,
               currentExistingStructure,
               existingStructureBounded = currentStructureBounded,
-              existingStructureDemandedIds = requestedInstanceIds.toSet())
+              existingStructureDemandedIds = requestedInstanceIds.toSet(),
+              userGroups = userGroupsJson)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -12609,7 +12615,8 @@ class AICodBiAssistant : IPluginServletAction {
                 formVariables,
                 currentExistingStructure,
                 existingStructureBounded = currentStructureBounded,
-                existingStructureDemandedIds = requestedInstanceIds.toSet())
+                existingStructureDemandedIds = requestedInstanceIds.toSet(),
+                userGroups = userGroupsJson)
         messagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -12649,7 +12656,16 @@ class AICodBiAssistant : IPluginServletAction {
             }
             .getOrNull()
     if (!aiWorkflowError.isNullOrBlank()) {
-      throw Exception("AI could not create the workflow: $aiWorkflowError")
+      // A password supplied in the request is a SECURITY stop. The model tends to shorten the
+      // notice,
+      // so surface the FULL canonical notice (never the model's paraphrase) — it must tell the user
+      // that the password has already reached the assistant and should be changed.
+      val looksLikePassword =
+          aiWorkflowError.contains("passwort", ignoreCase = true) ||
+              aiWorkflowError.contains("password", ignoreCase = true) ||
+              containsPasswordValue(prompt)
+      val message = if (looksLikePassword) passwordSecurityNotice(prompt) else aiWorkflowError
+      throw Exception("AI could not create the workflow: $message")
     }
 
     // Parse the AI response into workflow task specs. The AI may return:
@@ -15413,7 +15429,10 @@ class AICodBiAssistant : IPluginServletAction {
       // demand-loadable by numeric id via `need_workflow_node_details` + `instanceIds`. The default
       // keeps the original full-body READ-ONLY preamble byte-identical.
       existingStructureBounded: Boolean = false,
-      existingStructureDemandedIds: Set<String> = emptySet()
+      existingStructureDemandedIds: Set<String> = emptySet(),
+      // AVAILABLE USER GROUPS — lets the AI restrict a status to specific groups via
+      // "accessUserGroups" (resolved to BenutzerGruppe entities at apply time).
+      userGroups: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -15478,7 +15497,8 @@ class AICodBiAssistant : IPluginServletAction {
               chatContext = chatContext,
               changeHistoryContext = changeHistoryContext,
               changeLogSchema = loadChangeLogSchema(),
-              formVariables = formVariables)
+              formVariables = formVariables,
+              userGroups = userGroups)
       // Token instrument: the workflow step has no size log (only the FORM passes do), so its cost
       // was invisible. Prints the total AND the biggest dynamic contributors, so a 143 k-token run
       // can be attributed to a specific block instead of guessed at — mirror of the form's
@@ -16799,6 +16819,20 @@ class AICodBiAssistant : IPluginServletAction {
     val trigger = workflowTriggerClass.getDeclaredConstructor().newInstance()
     workflowTriggerClass.getMethod("setName", String::class.java).invoke(trigger, spec.triggerType)
     workflowTriggerClass.getMethod("setType", String::class.java).invoke(trigger, spec.triggerType)
+    // Give the trigger the same AI-generated description as the lane's action node and task, so
+    // EVERY element of the lane (trigger, action node, endpoint) carries a description.
+    val triggerDescription = spec.taskDescription ?: ""
+    if (triggerDescription.isNotBlank()) {
+      try {
+        workflowTriggerClass
+            .getMethod("setDescription", String::class.java)
+            .invoke(trigger, triggerDescription)
+      } catch (_: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] WorkflowTrigger has no setDescription method: {}",
+            triggerDescription)
+      }
+    }
     workflowTriggerClass.getMethod("setActive", Boolean::class.java).invoke(trigger, true)
     workflowTriggerClass
         .getMethod("setUUIDObject", UUID::class.java)
@@ -17692,12 +17726,49 @@ class AICodBiAssistant : IPluginServletAction {
             // with EAuthClientType.FORM (FormCycle's internal user authentication).
             // This is NOT a simple boolean on the entity; it requires an authenticator config
             // entry.
-            if (spec.stateProperties["allowAuthenticatedUser"] == true) {
+            // Authenticator-config-backed state options (NOT scalars on the state):
+            //   - "allowAuthenticatedUser" -> FORM     ("Authenticated" checkbox)
+            //   - "allowFormPassword"      -> PASSWORD ("Form password" checkbox; no password
+            // VALUE)
+            val authenticatorConfigOptions =
+                listOf(
+                    Triple("allowAuthenticatedUser", "FORM", "Authenticated"),
+                    Triple("allowFormPassword", "PASSWORD", "Form password"))
+            // Only the FORM "Authenticated" config is created (works). The PASSWORD "Form password"
+            // config is not: it aborts the transaction (HV000090 getClientDescriptor NPE). See the
+            // note in ensureWorkflowStateUuid.
+            val requestedAuthConfigs =
+                listOf(
+                        Triple("allowAuthenticatedUser", "FORM", "Authenticated"),
+                        Triple("allowFormPassword", "PASSWORD", "Form password"),
+                        Triple(
+                            "allowFormProcessPassword",
+                            "PASSWORD_GENERATOR_ACTION",
+                            "Form process password"))
+                    .filter {
+                      spec.stateProperties[it.first]
+                          ?.toString()
+                          ?.equals("true", ignoreCase = true) == true
+                    }
+            val genericApi = apiProviderClass.getField("GENERIC").get(null)
+            // The configs are NOT attached to the state entity here: attaching them before create /
+            // update makes Formcycle reject the state save. They are created AFTER the state is
+            // saved
+            // (see the loop below). This header therefore iterates an empty list on purpose.
+            for ((propKey, typeConstName, optionLabel) in
+                emptyList<Triple<String, String, String>>()) {
+              if (spec.stateProperties[propKey]?.toString()?.equals("true", ignoreCase = true) !=
+                  true)
+                  continue
+              // For an EXISTING state the config must be created AFTER the state update (creating
+              // it
+              // before perturbs the session and makes the update fail) — see the post-update loop.
+              if (endpointStateUuid != null) continue
               try {
                 val authConfigClass =
                     Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
                 val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
-                val formType = eAuthClientTypeClass.getField("FORM").get(null)
+                val authType = eAuthClientTypeClass.getField(typeConstName).get(null)
 
                 val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
                 authConfigClass
@@ -17705,7 +17776,7 @@ class AICodBiAssistant : IPluginServletAction {
                     .invoke(authConfig, stateObject)
                 authConfigClass
                     .getMethod("setAuthenticatorType", eAuthClientTypeClass)
-                    .invoke(authConfig, formType)
+                    .invoke(authConfig, authType)
 
                 // For a newly created state (plain POJO), addAuthenticatorConfig works directly.
                 // For an existing state (Hibernate proxy), the lazy authenticatorConfigs
@@ -17718,7 +17789,6 @@ class AICodBiAssistant : IPluginServletAction {
                       .invoke(stateObject, authConfig)
                 } else {
                   // Existing state (Hibernate proxy) â€” persist config directly via GenericAPI
-                  val genericApi = apiProviderClass.getField("GENERIC").get(null)
                   genericApi.javaClass
                       .getMethod(
                           "create",
@@ -17729,7 +17799,9 @@ class AICodBiAssistant : IPluginServletAction {
                 }
 
                 logger.info(
-                    "[AICodBiAssistant] Created FORM authenticator config for allowAuthenticatedUser")
+                    "[AICodBiAssistant] Created {} ({}) authenticator config",
+                    optionLabel,
+                    typeConstName)
               } catch (e: Exception) {
                 val causeMsg =
                     if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
@@ -17738,30 +17810,101 @@ class AICodBiAssistant : IPluginServletAction {
                       "${e::class.simpleName}: ${e.message}"
                     }
                 logger.warn(
-                    "[AICodBiAssistant] Failed to create authenticator config for allowAuthenticatedUser: {}",
+                    "[AICodBiAssistant] Failed to create {} authenticator config: {}",
+                    typeConstName,
                     causeMsg)
               }
             }
 
-            if (endpointStateUuid == null) {
-              // Save the newly created state
-              val savedState =
+            val savedStateObject: Any =
+                if (endpointStateUuid == null) {
+                  val savedState =
+                      stateApi.javaClass
+                          .getMethod("create", userContextClass, iTransferableEntityClass)
+                          .invoke(stateApi, userContext, stateObject)
+                  endpointStateUuid =
+                      savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
+                  logger.info(
+                      "[AICodBiAssistant] Created new workflow state '{}' with UUID {}",
+                      stateName,
+                      endpointStateUuid)
+                  savedState
+                } else {
                   stateApi.javaClass
-                      .getMethod("create", userContextClass, iTransferableEntityClass)
+                      .getMethod("update", userContextClass, iTransferableEntityClass)
                       .invoke(stateApi, userContext, stateObject)
-              endpointStateUuid =
-                  savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
-              logger.info(
-                  "[AICodBiAssistant] Created new workflow state '{}' with UUID {}",
-                  stateName,
-                  endpointStateUuid)
-            } else {
-              // Update the existing state
-              stateApi.javaClass
-                  .getMethod("update", userContextClass, iTransferableEntityClass)
-                  .invoke(stateApi, userContext, stateObject)
-              logger.info(
-                  "[AICodBiAssistant] Updated existing workflow state '{}' properties", stateName)
+                  logger.info(
+                      "[AICodBiAssistant] Updated existing workflow state '{}' properties",
+                      stateName)
+                  stateObject
+                }
+
+            // An EXISTING state: create the requested authenticator configs on their own AFTER the
+            // state update (the state's lazy authenticatorConfigs collection cannot be modified
+            // outside a session; creating the config before the update would make the update fail).
+            if (requestedAuthConfigs.isNotEmpty()) {
+              // Re-load the state by id so the config references a state the GenericAPI session
+              // knows
+              // (a detached object leaves the `wf_state_id` FK unset -> the commit rolls back).
+              val stateForConfig: Any =
+                  runCatching {
+                        val stateId =
+                            savedStateObject.javaClass.getMethod("getId").invoke(savedStateObject)
+                                as? Long
+                        if (stateId != null)
+                            genericApi.javaClass
+                                .getMethod(
+                                    "getById",
+                                    Class::class.java,
+                                    userContextClass,
+                                    java.lang.Long::class.java)
+                                .invoke(genericApi, workflowStateClass, userContext, stateId)
+                        else null
+                      }
+                      .getOrNull() ?: savedStateObject
+              for ((propKey, typeConstName, optionLabel) in authenticatorConfigOptions) {
+                if (spec.stateProperties[propKey]?.toString()?.equals("true", ignoreCase = true) !=
+                    true)
+                    continue
+                try {
+                  val authConfigClass =
+                      Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
+                  val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
+                  val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
+                  authConfigClass
+                      .getMethod("setWorkflowState", workflowStateClass)
+                      .invoke(authConfig, stateForConfig)
+                  authConfigClass
+                      .getMethod("setAuthenticatorType", eAuthClientTypeClass)
+                      .invoke(authConfig, eAuthClientTypeClass.getField(typeConstName).get(null))
+                  if (typeConstName == "PASSWORD" || typeConstName == "PASSWORD_GENERATOR_ACTION") {
+                    // getClientDescriptor() reads these attributes; empty map -> NPE (HV000090).
+                    val attrs = java.util.HashMap<String, String>()
+                    attrs["password"] = ""
+                    attrs["hashed"] = "false"
+                    authConfigClass
+                        .getMethod("setAttributes", java.util.Map::class.java)
+                        .invoke(authConfig, attrs)
+                  }
+                  val genericApi = apiProviderClass.getField("GENERIC").get(null)
+                  genericApi.javaClass
+                      .getMethod(
+                          "create",
+                          Class::class.java,
+                          userContextClass,
+                          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
+                      .invoke(genericApi, authConfigClass, userContext, authConfig)
+                  logger.info(
+                      "[AICodBiAssistant] Created {} ({}) authenticator config (existing state)",
+                      optionLabel,
+                      typeConstName)
+                } catch (e: Exception) {
+                  logger.warn(
+                      "[AICodBiAssistant] Failed to create {} authenticator config: {}",
+                      typeConstName,
+                      e.message)
+                }
+              }
             }
           } catch (e: Exception) {
             logger.warn(
@@ -18066,14 +18209,17 @@ class AICodBiAssistant : IPluginServletAction {
       // orphaned button is published but never rendered by Formcycle).
       for (el in items) {
         if (!el.isJsonObject) continue
-        if (el.asJsonObject.get("className")?.asString != "XButtonList") continue
-        val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+        if (el.asJsonObject.get("className")?.takeIf { it.isJsonPrimitive }?.asString !=
+            "XButtonList")
+            continue
+        val props =
+            el.asJsonObject.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
         if (firstListProps == null) firstListProps = props
-        val buttons = props.getAsJsonArray("buttons") ?: continue
+        val buttons = props.get("buttons")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
         for (btn in buttons) {
           if (!btn.isJsonObject) continue
           val btnObj = btn.asJsonObject
-          val action = btnObj.getAsJsonObject("action")
+          val action = btnObj.get("action")?.takeIf { it.isJsonObject }?.asJsonObject
           val page = action?.get("page")?.takeIf { it.isJsonPrimitive }?.asString
           val name = btnObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString
           val isSubmit = page.equals("submit", ignoreCase = true)
@@ -18107,6 +18253,47 @@ class AICodBiAssistant : IPluginServletAction {
         }
       }
 
+      // Pass 1b: no submit button found. If the form already contains exactly ONE button (typically
+      // one the FORM pass added for this request, e.g. with a customAction), PROMOTE it to the
+      // submit button instead of appending a SECOND one — the request asked for a single button,
+      // and
+      // the workflow path (not client-side JS) performs the action, so any customAction is cleared.
+      val soleButtons = mutableListOf<Pair<JsonObject, JsonObject?>>()
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        if (el.asJsonObject.get("className")?.takeIf { it.isJsonPrimitive }?.asString !=
+            "XButtonList")
+            continue
+        val props =
+            el.asJsonObject.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        val buttons = props.get("buttons")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
+        for (btn in buttons) {
+          if (!btn.isJsonObject) continue
+          val btnObj = btn.asJsonObject
+          soleButtons.add(btnObj to btnObj.get("action")?.takeIf { it.isJsonObject }?.asJsonObject)
+        }
+      }
+      if (soleButtons.size == 1) {
+        val (btnObj, existingAction) = soleButtons.first()
+        val btnAction = existingAction ?: JsonObject().also { btnObj.add("action", it) }
+        btnAction.addProperty("page", "submit")
+        btnAction.addProperty("customAction", "")
+        if (!btnAction.has("check")) btnAction.addProperty("check", false)
+        // Standardize the technical name to the submit-button name the workflow trigger binds to
+        // (requestedName when given, else "btnSenden") so the trigger and the button agree.
+        btnObj.addProperty("name", requestedName.ifBlank { "btnSenden" })
+        val hasValue =
+            (btnObj.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: "").isNotBlank()
+        if (!hasValue) {
+          btnObj.addProperty("value", "Senden")
+          btnAction.addProperty("value", "Senden")
+        }
+        logger.info(
+            "[AICodBiAssistant] Promoted the form's only button '{}' to the submit button instead of adding a second one",
+            btnObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "<unnamed>")
+        return gson.toJson(root)
+      }
+
       // Pass 2: no matching submit button — build one and add it.
       val buttonName = requestedName.ifBlank { "btnSenden" }
       val btn = JsonObject()
@@ -18127,7 +18314,7 @@ class AICodBiAssistant : IPluginServletAction {
       if (targetProps != null) {
         // Append to an existing XButtonList (keeps the correct parentid / page structure).
         val buttons =
-            targetProps.getAsJsonArray("buttons")
+            targetProps.get("buttons")?.takeIf { it.isJsonArray }?.asJsonArray
                 ?: JsonArray().also { targetProps.add("buttons", it) }
         if (buttons.none {
           it.isJsonObject && it.asJsonObject.get("name")?.asString == buttonName
@@ -19097,6 +19284,35 @@ class AICodBiAssistant : IPluginServletAction {
         ?: throw IllegalStateException("UserContextFactory.forBenutzer returned null")
   }
 
+  /**
+   * Extracts upload-field technical IDs from an attachment/file list. Accepts a list of plain
+   * strings (`["upl1"]`) as well as the object form the model sometimes emits
+   * (`[{"field":"upl1"}]`, `[{"identifier":"upl1"}]`, `[{"name":"upl1"}]`, `[{"value":"upl1"}]`).
+   */
+  private fun extractAttachmentIdentifiers(raw: Any?): List<String> {
+    val list = raw as? List<*> ?: return emptyList()
+    val out = mutableListOf<String>()
+    for (el in list) {
+      when (el) {
+        is String -> if (el.isNotBlank()) out.add(el)
+        is Map<*, *> -> {
+          val id =
+              (el["field"] ?: el["identifier"] ?: el["name"] ?: el["value"] ?: el["technicalId"])
+                  ?.toString()
+          if (!id.isNullOrBlank()) out.add(id)
+        }
+        is JsonObject -> {
+          val id =
+              (el.get("field") ?: el.get("identifier") ?: el.get("name") ?: el.get("value"))
+                  ?.takeIf { it.isJsonPrimitive }
+                  ?.asString
+          if (!id.isNullOrBlank()) out.add(id)
+        }
+      }
+    }
+    return out
+  }
+
   private fun buildTriggerParamsJson(
       spec: WorkflowTaskSpec,
       workflowVersion: Any? = null,
@@ -19342,6 +19558,19 @@ class AICodBiAssistant : IPluginServletAction {
       val obj = gson.fromJson(base, JsonObject::class.java)
       // Same params-schema version stamp as the nodes (see buildNodeParamsJsonWithIcon).
       obj.addProperty("\$version", "8.5.3")
+      // The workflow designer renders an element's label and description from its customParameters
+      // JSON: WorkflowCustomParametersHelper.findName/findDescription read
+      // extractName/extractDescription
+      // of the deserialized props bean and FALL BACK to customParameters["name"]/["description"].
+      // The
+      // WorkflowTrigger ENTITY columns are merely RE-DERIVED from these on load, so a description
+      // set
+      // only on the entity is never displayed. Emit name + description here so the trigger element
+      // shows them (like every node).
+      val triggerDescription = spec.taskDescription ?: ""
+      if (triggerDescription.isNotBlank()) obj.addProperty("description", triggerDescription)
+      val triggerName = spec.taskName.trim()
+      if (triggerName.isNotBlank()) obj.addProperty("name", triggerName)
       resolveTriggerIconJson(spec.triggerType)?.let { obj.add("icon", JsonParser.parseString(it)) }
       obj.toString()
     } catch (_: Exception) {
@@ -19423,8 +19652,41 @@ class AICodBiAssistant : IPluginServletAction {
         val buttons = props.get("buttons")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
         for (btn in buttons) {
           if (!btn.isJsonObject) continue
-          val action =
-              btn.asJsonObject.get("action")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+          val btnObj = btn.asJsonObject
+          // Ensure the button's "action" is a JSON OBJECT. The model occasionally emits it as a
+          // plain STRING (e.g. "mailto:x@y") or omits it; Formcycle's XButtonDescriptor JSON-parses
+          // the action and throws, which breaks the ENTIRE form render. Coerce it into a valid
+          // default action object so the form always renders.
+          val existingAction = btnObj.get("action")
+          if (existingAction == null || !existingAction.isJsonObject) {
+            val a = JsonObject()
+            a.addProperty("customAction", "")
+            a.addProperty("customClassNames", "")
+            a.addProperty("displayName", "")
+            a.addProperty("optionId", "")
+            a.addProperty("check", false)
+            a.addProperty("page", "")
+            a.addProperty("value", "")
+            btnObj.add("action", a)
+            changed = true
+            logger.warn(
+                "[AICodBiAssistant] Coerced malformed button action ({}) into a valid action object",
+                if (existingAction == null) "missing" else existingAction.toString().take(60))
+          }
+          // Ensure a usable technical "name" and a non-empty "value" so the button is valid.
+          if ((btnObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "").isBlank()) {
+            val fallback =
+                btnObj.get("value")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: btnObj.get("text")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: "btnSenden"
+            btnObj.addProperty("name", sanitizeWorkflowName(fallback).ifBlank { "btnSenden" })
+            changed = true
+          }
+          if ((btnObj.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: "").isBlank()) {
+            btnObj.addProperty("value", "Senden")
+            changed = true
+          }
+          val action = btnObj.get("action")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
           val customAction =
               action.get("customAction")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
           if (customAction.isBlank()) continue
@@ -20240,9 +20502,7 @@ class AICodBiAssistant : IPluginServletAction {
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
-        @Suppress("UNCHECKED_CAST")
-        val attachments =
-            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val attachments = extractAttachmentIdentifiers(spec.nodeParams["attachments"])
         val bodyFormatType = "HTML"
         val toJson = if (to.isNotBlank()) "[${gson.toJson(to)}]" else "[]"
         val multiFileJson =
@@ -20319,9 +20579,16 @@ class AICodBiAssistant : IPluginServletAction {
       }
       "FC_CHANGE_STATE" -> {
         val stateName = spec.nodeParams["stateName"] as? String ?: ""
+        // Resolve OR create the target state. The user may ask for a status the workflow does not
+        // have yet ("set the status to GOGO") and the AI expresses a status change as an explicit
+        // FC_CHANGE_STATE node (e.g. when REPLACING an existing lane's FC_CHANGE_STATE endpoint) —
+        // unlike the lane-endpoint path, resolveStateUuid() alone would leave targetState null for
+        // a
+        // brand-new name, so create the state on demand.
         val stateUuid =
             if (workflowVersion != null && userContext != null)
-                resolveStateUuid(userContext, workflowVersion, stateName)
+                ensureWorkflowStateUuid(
+                    userContext, workflowVersion, stateName, spec.stateProperties)
             else null
         if (stateUuid != null) {
           """{"name":${gson.toJson(nodeName)},"targetState":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
@@ -20460,8 +20727,7 @@ class AICodBiAssistant : IPluginServletAction {
         val recipientInboxId = spec.nodeParams["recipientInboxId"] as? String ?: ""
         val recipientMessageService = spec.nodeParams["recipientMessageService"] as? String ?: ""
         @Suppress("UNCHECKED_CAST")
-        val attachmentIds =
-            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val attachmentIds = extractAttachmentIdentifiers(spec.nodeParams["attachments"])
         val receiverJson =
             when (recipientType.uppercase()) {
               "LATEST_SUBMITTER" -> ""","receiver":{"type":"LATEST_SUBMITTER"}"""
@@ -20898,9 +21164,7 @@ class AICodBiAssistant : IPluginServletAction {
         pluginResult
       }
       "FC_DELETE_ATTACHMENT" -> {
-        @Suppress("UNCHECKED_CAST")
-        val attachments =
-            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val attachments = extractAttachmentIdentifiers(spec.nodeParams["attachments"])
         val resultJson =
             if (attachments.isNotEmpty()) {
               // Use attachmentsToDelete with MultiAttachment structure (decompiled from
@@ -21553,6 +21817,108 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Fetches the user groups available for the workflow version's project and returns them as a JSON
+   * string array of names (e.g. ["Administratoren", "Sachbearbeiter"]). The AI uses these to
+   * restrict a workflow status to specific groups via "accessUserGroups". Returns null when none
+   * can be loaded.
+   */
+  private fun fetchUserGroups(userContext: Any, workflowVersionId: Long): String? {
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val userContextClass = Class.forName("de.xima.fc.user.UserContext")
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", userContextClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return null
+      val names = userGroupNames(loadUserGroups(userContext, workflowVersion))
+      if (names.isEmpty()) null else gson.toJson(names)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not fetch user groups: {}", e.message)
+      null
+    }
+  }
+
+  /** The non-blank names of the given BenutzerGruppe entities. */
+  private fun userGroupNames(groups: List<Any>): List<String> =
+      groups.mapNotNull { g ->
+        try {
+          (g.javaClass.getMethod("getName").invoke(g) as? String)?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+          null
+        }
+      }
+
+  /**
+   * Loads the user groups (BenutzerGruppe) of the workflow version's project — falling back to ALL
+   * groups when the project cannot be resolved — so a status's "accessUserGroups" can be set.
+   */
+  private fun loadUserGroups(userContext: Any, workflowVersion: Any): List<Any> {
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val groupApi = apiProviderClass.getField("BENUTZERGRUPPEN").get(null)
+      val userContextClass = Class.forName("de.xima.fc.user.UserContext")
+      val projekt =
+          try {
+            workflowVersion.javaClass.getMethod("getProjekt").invoke(workflowVersion)
+          } catch (_: Exception) {
+            null
+          }
+      @Suppress("UNCHECKED_CAST")
+      val byProject =
+          if (projekt != null) {
+            try {
+              groupApi.javaClass
+                  .getMethod(
+                      "getByProjekt",
+                      userContextClass,
+                      Class.forName("de.xima.fc.entities.Projekt"))
+                  .invoke(groupApi, userContext, projekt) as? List<Any>
+            } catch (_: Exception) {
+              null
+            }
+          } else null
+      @Suppress("UNCHECKED_CAST")
+      val allGroups =
+          try {
+            groupApi.javaClass.getMethod("getAll", userContextClass).invoke(groupApi, userContext)
+                as? List<Any>
+          } catch (_: Exception) {
+            null
+          }
+      // Prefer the project's groups; fall back to ALL groups when the project has NONE linked — a
+      // client-level group (e.g. "Administratoren"/"Admin") may exist without being attached to the
+      // project, in which case getByProjekt returns an empty list and the prompt would lose the
+      // whole
+      // AVAILABLE USER GROUPS block (and the AI would ask for the exact group name).
+      (byProject?.takeIf { it.isNotEmpty() } ?: allGroups) ?: emptyList()
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load user groups: {}", e.message)
+      emptyList()
+    }
+  }
+
+  /** Resolves user-group NAMES (case-insensitive) to the BenutzerGruppe entities of the project. */
+  private fun resolveUserGroups(
+      userContext: Any,
+      workflowVersion: Any,
+      names: List<String>
+  ): List<Any> {
+    if (names.isEmpty()) return emptyList()
+    val wanted = names.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+    if (wanted.isEmpty()) return emptyList()
+    return loadUserGroups(userContext, workflowVersion).filter { g ->
+      val name =
+          try {
+            g.javaClass.getMethod("getName").invoke(g) as? String
+          } catch (_: Exception) {
+            null
+          }
+      name != null && name.trim().lowercase() in wanted
+    }
+  }
+
   private fun loadWorkflowStates(userContext: Any, workflowVersion: Any): List<Any> {
     return try {
       val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
@@ -21585,6 +21951,354 @@ class AICodBiAssistant : IPluginServletAction {
       logger.warn(
           "[AICodBiAssistant] Could not resolve state UUID for '{}': {}", stateName, e.message)
       null
+    }
+  }
+
+  /**
+   * Resolves the UUID of the workflow state named [stateName] of [workflowVersion], creating a new
+   * (minimal) state with that name when no state of that name exists yet, and applies the optional
+   * [stateProperties] (e.g. "externalAccessPermitted" for a status that can be invoked from
+   * outside) to the resolved/created state. The user may request a status the workflow does not
+   * have yet ("set the status to X"); both the lane endpoint and an explicit FC_CHANGE_STATE node
+   * (e.g. when REPLACING an existing lane's endpoint) must target a REAL state entity, so the state
+   * is created on demand and its properties are configured through the generic `set<PropertyName>`
+   * convention (identical to the endpoint-creation path). Returns the resolved/created UUID, or
+   * `null` when resolution AND creation both fail.
+   */
+  private fun ensureWorkflowStateUuid(
+      userContext: Any,
+      workflowVersion: Any,
+      stateName: String,
+      stateProperties: Map<String, Any> = emptyMap()
+  ): UUID? {
+    if (stateName.isBlank()) return null
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowStateClass = Class.forName("de.xima.fc.entities.WorkflowState")
+      val userContextClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
+
+      val existingUuid = resolveStateUuid(userContext, workflowVersion, stateName)
+      val entity: Any
+      val isNew: Boolean
+      if (existingUuid == null) {
+        val newState = workflowStateClass.getDeclaredConstructor().newInstance()
+        workflowStateClass.getMethod("setName", String::class.java).invoke(newState, stateName)
+        workflowStateClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(newState, UUID.randomUUID())
+        workflowStateClass
+            .getMethod("setVersion", Class.forName("de.xima.fc.entities.WorkflowVersion"))
+            .invoke(newState, workflowVersion)
+        var maxOrder = -1
+        for (st in loadWorkflowStates(userContext, workflowVersion)) {
+          try {
+            val idx = st.javaClass.getMethod("getOrderIndex").invoke(st) as? Int
+            if (idx != null && idx > maxOrder) maxOrder = idx
+          } catch (_: Exception) {}
+        }
+        workflowStateClass
+            .getMethod("setOrderIndex", Int::class.java)
+            .invoke(newState, maxOrder + 1)
+        entity = newState
+        isNew = true
+      } else {
+        val state =
+            loadWorkflowStates(userContext, workflowVersion).firstOrNull { st ->
+              try {
+                st.javaClass.getMethod("getUUIDObject").invoke(st) == existingUuid
+              } catch (_: Exception) {
+                false
+              }
+            } ?: return existingUuid
+        val stateId =
+            try {
+              state.javaClass.getMethod("getId").invoke(state) as? Long
+            } catch (_: Exception) {
+              null
+            }
+        entity =
+            if (stateId != null) {
+              try {
+                stateApi.javaClass
+                    .getMethod("getById", userContextClass, java.lang.Long::class.java)
+                    .invoke(stateApi, userContext, stateId) ?: state
+              } catch (_: Exception) {
+                state
+              }
+            } else state
+        isNew = false
+      }
+
+      // Apply the requested state-level properties (external access, access for
+      // applicant/participants
+      // /anonymous, system authentication, record deletable, ...) via the generic set<PropertyName>
+      // reflection (the SAME convention the lane-endpoint path uses).
+      var changed = false
+      // "accessUserGroups" is a LIST of BenutzerGruppe entities, not a scalar — resolve the group
+      // NAMES the AI wrote to the project's groups and set them directly (the generic scalar setter
+      // path below cannot convert a list of names).
+      val groupNames =
+          (stateProperties["accessUserGroups"] as? List<*>)?.mapNotNull {
+            it?.toString()?.takeIf { n -> n.isNotBlank() }
+          } ?: emptyList()
+      if (groupNames.isNotEmpty()) {
+        val groups = resolveUserGroups(userContext, workflowVersion, groupNames)
+        if (groups.isNotEmpty()) {
+          workflowStateClass
+              .getMethod("setAccessUserGroups", java.util.List::class.java)
+              .invoke(entity, groups)
+          changed = true
+          logger.info(
+              "[AICodBiAssistant] Set accessUserGroups {} on workflow state '{}'",
+              userGroupNames(groups),
+              stateName)
+        } else {
+          logger.warn(
+              "[AICodBiAssistant] No matching user group for {} — skipping accessUserGroups",
+              groupNames)
+        }
+      }
+      for ((rawName, rawValue) in stateProperties) {
+        if (rawName.equals("accessUserGroups", ignoreCase = true)) continue
+        // Handled separately below (they are not scalars on the state but authenticator configs).
+        if (rawName.equals("allowAuthenticatedUser", ignoreCase = true)) continue
+        if (rawName.equals("allowFormPassword", ignoreCase = true)) continue
+        val setterName = "set${rawName.replaceFirstChar { it.uppercase() }}"
+        val setter =
+            workflowStateClass.methods.firstOrNull { m ->
+              m.name.equals(setterName, true) && m.parameterCount == 1
+            }
+        if (setter == null) {
+          logger.warn("[AICodBiAssistant] WorkflowState has no property '{}' — skipping", rawName)
+          continue
+        }
+        val converted: Any =
+            when (setter.parameterTypes[0]) {
+              Boolean::class.java,
+              java.lang.Boolean::class.java ->
+                  when (rawValue) {
+                    is Boolean -> rawValue
+                    is String -> rawValue.toBoolean()
+                    else -> rawValue.toString().toBoolean()
+                  }
+              Int::class.java,
+              java.lang.Integer::class.java ->
+                  (rawValue as? Number)?.toInt() ?: rawValue.toString().toIntOrNull() ?: 0
+              Long::class.java,
+              java.lang.Long::class.java ->
+                  (rawValue as? Number)?.toLong() ?: rawValue.toString().toLongOrNull() ?: 0L
+              String::class.java -> rawValue.toString()
+              else -> rawValue
+            }
+        try {
+          setter.invoke(entity, converted)
+          changed = true
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Failed to set WorkflowState property '{}'={}: {}",
+              rawName,
+              rawValue,
+              e.message)
+        }
+      }
+
+      // Authenticator-config-backed state options (they are NOT scalars on the state): each maps to
+      // a
+      // WorkflowStateAuthenticatorConfig of a specific EAuthClientType, exactly as the
+      // lane-endpoint
+      // path creates them. On a NEW state the config is added before `create`; on an EXISTING one
+      // it
+      // is persisted via GenericAPI (the state's lazy authenticatorConfigs collection cannot be
+      // modified outside a session).
+      //   - "allowAuthenticatedUser" -> FORM     (the state editor's "Authenticated" checkbox)
+      //   - "allowFormPassword"      -> PASSWORD (the state editor's "Form password" checkbox; the
+      // AI
+      //                                            never sends a password VALUE — the user sets the
+      //                                            actual password later in the state editor)
+      // "allowAuthenticatedUser" (the state editor's "Authenticated" checkbox) is created as a
+      // WorkflowStateAuthenticatorConfig of type FORM — this WORKS (verified). "allowFormPassword"
+      // (the "Form password" checkbox, type PASSWORD) is deliberately NOT created here: flushing a
+      // PASSWORD config fails Hibernate validation with `HV000090: Unable to access
+      // getClientDescriptor` (NullPointerException), which aborts the whole transaction and leaves
+      // the workflow version invalid (breaking the designer). The scalar state properties below
+      // (externalAccessPermitted, allowAccessToApplicant, ...) still apply, and "Form password"
+      // must
+      // be enabled by the user in the workflow state editor.
+      val requestedAuthConfigs =
+          listOf(
+                  Triple("allowAuthenticatedUser", "FORM", "Authenticated"),
+                  Triple("allowFormPassword", "PASSWORD", "Form password"),
+                  Triple(
+                      "allowFormProcessPassword",
+                      "PASSWORD_GENERATOR_ACTION",
+                      "Form process password"))
+              .filter {
+                stateProperties[it.first]?.toString()?.equals("true", ignoreCase = true) == true
+              }
+      // The state row MUST be saved FIRST, WITHOUT the authenticator configs attached: attaching
+      // them
+      // to the state entity before `create`/`update` makes Formcycle reject the whole state save
+      // (the
+      // failure surfaces as an `InvocationTargetException` with a NULL message and silently drops
+      // EVERY property — observed: "Failed to resolve/create workflow state 'GOGO': null"). Only
+      // the
+      // scalar properties are persisted with the state here; each authenticator config is then
+      // created
+      // as a STANDALONE entity that references the saved state (the state's lazy
+      // authenticatorConfigs collection cannot be modified outside a session).
+      val saved =
+          if (isNew) {
+            stateApi.javaClass
+                .getMethod("create", userContextClass, iTransferableEntityClass)
+                .invoke(stateApi, userContext, entity)
+          } else {
+            if (!changed && requestedAuthConfigs.isEmpty()) return existingUuid
+            if (changed) {
+              stateApi.javaClass
+                  .getMethod("update", userContextClass, iTransferableEntityClass)
+                  .invoke(stateApi, userContext, entity)
+            } else {
+              entity
+            }
+          }
+      val uuid = saved.javaClass.getMethod("getUUIDObject").invoke(saved) as? UUID
+
+      // The object returned by `create`/`update` may be DETACHED from the GenericAPI session; using
+      // it directly as the config's `workflowState` leaves the FK (`wf_state_id`, NOT NULL) unset
+      // and
+      // the commit rolls back. Re-load the state by id so the config references a state the
+      // GenericAPI
+      // session knows (exactly like the working existing-state path).
+      val genericApi = apiProviderClass.getField("GENERIC").get(null)
+      val stateForConfig: Any =
+          runCatching {
+                val stateId = saved.javaClass.getMethod("getId").invoke(saved) as? Long
+                if (stateId != null)
+                    genericApi.javaClass
+                        .getMethod(
+                            "getById",
+                            Class::class.java,
+                            userContextClass,
+                            java.lang.Long::class.java)
+                        .invoke(genericApi, workflowStateClass, userContext, stateId)
+                else null
+              }
+              .getOrNull() ?: saved
+
+      for ((_, typeConstName, optionLabel) in requestedAuthConfigs) {
+        try {
+          val authConfigClass =
+              Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
+          val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
+          val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
+          authConfigClass
+              .getMethod("setWorkflowState", workflowStateClass)
+              .invoke(authConfig, stateForConfig)
+          authConfigClass
+              .getMethod("setAuthenticatorType", eAuthClientTypeClass)
+              .invoke(authConfig, eAuthClientTypeClass.getField(typeConstName).get(null))
+          if (typeConstName == "PASSWORD" || typeConstName == "PASSWORD_GENERATOR_ACTION") {
+            // A PASSWORD config's getClientDescriptor() reads this attributes map; with an empty
+            // map
+            // it dereferences a null password and NPEs during Hibernate validation (HV000090).
+            // Provide
+            // empty placeholders (the user sets the real password later in the state editor).
+            val attrs = java.util.HashMap<String, String>()
+            attrs["password"] = ""
+            attrs["hashed"] = "false"
+            authConfigClass
+                .getMethod("setAttributes", java.util.Map::class.java)
+                .invoke(authConfig, attrs)
+          }
+          genericApi.javaClass
+              .getMethod(
+                  "create",
+                  Class::class.java,
+                  userContextClass,
+                  Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
+              .invoke(genericApi, authConfigClass, userContext, authConfig)
+          logger.info(
+              "[AICodBiAssistant] Added '{}' ({}) authenticator config to workflow state '{}'",
+              optionLabel,
+              typeConstName,
+              stateName)
+        } catch (e: Exception) {
+          val cause = (e as? java.lang.reflect.InvocationTargetException)?.cause ?: e
+          logger.warn(
+              "[AICodBiAssistant] Failed to add {} authenticator config to state '{}': {}",
+              typeConstName,
+              stateName,
+              causeChain(cause))
+        }
+      }
+
+      logger.info(
+          "[AICodBiAssistant] {} workflow state '{}' with UUID {}{}",
+          if (isNew) "Created new" else "Updated existing",
+          stateName,
+          uuid,
+          if (stateProperties.isEmpty()) "" else " (properties: $stateProperties)")
+      uuid
+    } catch (e: Exception) {
+      val cause = (e as? java.lang.reflect.InvocationTargetException)?.cause ?: e
+      logger.warn(
+          "[AICodBiAssistant] Failed to resolve/create workflow state '{}': {}",
+          stateName,
+          causeChain(cause))
+      null
+    }
+  }
+
+  /** Walks the WHOLE cause chain so a wrapped Hibernate/JPA error is fully visible in the log. */
+  private fun causeChain(t: Throwable): String {
+    val sb = StringBuilder()
+    var c: Throwable? = t
+    var depth = 0
+    while (c != null && depth < 8) {
+      if (depth > 0) sb.append("  <-  ")
+      sb.append(c::class.simpleName).append(": ").append(c.message)
+      c = c.cause
+      depth++
+    }
+    return sb.toString()
+  }
+
+  /**
+   * True when [text] contains an ACTUAL password VALUE (not merely a password-protection intent).
+   * Deliberately conservative: it requires a quoted value or an explicit `:`/`=`/`ist`/`lautet`
+   * assignment after a password keyword, so "passwortgeschützt" / "password protection" do NOT
+   * match. Multilingual keyword list.
+   */
+  private fun containsPasswordValue(text: String): Boolean {
+    if (text.isBlank()) return false
+    val kw = "(?:passwort|password|kennwort|pwd|mot de passe|wachtwoord|contrase\\p{L}*|pasahitza)"
+    val quoted = Regex("(?i)\\b$kw\\b[^\\n\"'„“«»]{0,40}[\"'„“«»][^\"'„“«»\\n]{1,80}[\"'„“«»]")
+    val assigned = Regex("(?i)\\b$kw\\b\\s*[:=]\\s*\\S+")
+    val verb = Regex("(?i)\\b$kw\\b\\s+(?:ist|lautet|is|equals)\\s+\\S+")
+    return quoted.containsMatchIn(text) ||
+        assigned.containsMatchIn(text) ||
+        verb.containsMatchIn(text)
+  }
+
+  /** The canonical, FULL password-security notice; the language follows [prompt]. */
+  private fun passwordSecurityNotice(prompt: String): String {
+    val english =
+        prompt.contains("password", ignoreCase = true) &&
+            !prompt.contains("passwort", ignoreCase = true)
+    return if (english) {
+      "A password was provided in your request. For security reasons I cannot process it until you " +
+          "remove the password from the prompt and send the request again. Please note: the password " +
+          "has already been transmitted to the AI, and that transmission cannot be prevented — if " +
+          "you also use this password elsewhere, you should change it."
+    } else {
+      "Ein Passwort wurde im Prompt angegeben. Aus Sicherheitsgründen kann ich die Anfrage erst " +
+          "verarbeiten, wenn Sie das Passwort aus dem Prompt entfernen und die Anfrage erneut senden. " +
+          "Beachten Sie: Das Passwort wurde bereits an die KI übertragen; das lässt sich technisch " +
+          "nicht verhindern. Falls Sie dasselbe Passwort auch an anderer Stelle verwenden, sollten " +
+          "Sie es ändern."
     }
   }
 
@@ -24250,7 +24964,8 @@ class AICodBiAssistant : IPluginServletAction {
       chatContext: String?,
       changeHistoryContext: String?,
       changeLogSchema: String,
-      formVariables: String? = null
+      formVariables: String? = null,
+      userGroups: String? = null
   ): String {
     // SINGLE-PASS substitution with sentinels: the inserted VALUES must never be re-scanned.
     // The general block itself carries two {{WORKFLOW_REFERENCE}} markers, so the previous
@@ -24306,6 +25021,7 @@ class AICodBiAssistant : IPluginServletAction {
     out = applyWorkflowSection(out, "MESSAGE_SERVICES", messageServices)
     out = applyWorkflowSection(out, "TRIGGERS", triggers)
     out = applyWorkflowSection(out, "WORKFLOW_STATES", workflowStates)
+    out = applyWorkflowSection(out, "USER_GROUPS", userGroups)
     out = applyWorkflowSection(out, "EXISTING_WORKFLOW_NODES", existingWorkflowNodes)
     out = applyWorkflowSection(out, "USER_CLARIFICATION", clarificationContext)
     out = applyWorkflowSection(out, "CHAT_HISTORY", chatContext)

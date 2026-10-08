@@ -4,6 +4,8 @@ Condensed reference: the FORMCYCLE workflow triggers and node types and what eac
 
 Output format: Output EITHER a single JSON object (for ONE workflow lane) OR an array of JSON objects (for MULTIPLE independent lanes). Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState, endpointType.
 
+DESCRIPTIONS — "taskDescription" is MANDATORY and MUST be a meaningful, human-readable sentence describing WHAT the node does (it becomes the node's description in the workflow designer). It is NOT the node name ("taskName" is the name). Emit one for EVERY task object (each lane) AND for EVERY entry in "chainedNodes", in the SAME language as the user's request — NEVER leave it empty ("" is invalid).
+
 LANGUAGE — write taskName, ALL node names/labels, and the endpointState label in the SAME language as the user's request (a German prompt → German labels, e.g. "Zeilen als JSON in Hulu schreiben", and the endpoint "Empfangen" instead of "Received"; an English prompt → English). Never fall back to a default language.
 
 CRITICAL — output rules for form element identifiers (technicalId vs displayText):
@@ -88,7 +90,7 @@ FC_MANUAL — Manual invocation (user triggered).
 ### FC_STATE_TIMER
 FC_STATE_TIMER — Fires AFTER A TIME DELAY once a record enters a specific state (time-based trigger).
 ### FC_TIME_POINT
-FC_TIME_POINT — Fires at a specific date/time (fixed date or computed from a form field value).
+FC_TIME_POINT — Fires at a specific date/time (fixed date or computed from a form field value). TRIGGER ONLY — never a nodeType/chainedNodes entry. For "X days after the date in field Y" create a SECOND lane with triggerType FC_TIME_POINT + triggerParams {"timePointType":"EXPRESSION_WITH_FORMAT","dateTimeTemplate":"[%fieldTechId%]","dateTimeFormat":"dd.MM.yyyy","operation":"PLUS","offsetDuration":"3","durationUnit":"DAYS","fireWhenInPast":false}, and COPY the existing action (e.g. the mail node incl. its attachments) as that lane's node.
 ### FC_FORM_RECORD_MESSAGE_POSTED
 FC_FORM_RECORD_MESSAGE_POSTED — Fires when an internal message is posted to the record.
 ### FC_FORM_RECORD_MESSAGE_UPLOAD_REQUEST_FULFILLED
@@ -109,6 +111,7 @@ FC_USER_INVOCATION — Fires when a logged-in user manually triggers it from the
 ### FC_EMAIL
 FC_EMAIL — Sends an email.
 REQUIRED: sender address, subject, recipient (message service or direct address), message text. Ask for the sender and subject when the user only gives the recipient.
+ATTACHMENTS: to attach files from an upload field, add `"attachments":["<upload field technical ID>"]` to FC_EMAIL nodeParams — an array of STRINGS (e.g. `"attachments":["fdImageUpload"]`), NEVER objects like `{"field":"..."}`. Omit "attachments"/"files" entirely when no files were requested.
 RECIPIENT: NEVER invent a recipient address (e.g. NEVER "recipient@example.com"). "to" must be a real address the user provided/clarified (write it LITERALLY, do NOT create a form field for it) or a [%…%] placeholder of an EXISTING email field on the form (e.g. the payer's email in a payment form). If no recipient is known, ask via clarification BEFORE emitting the FC_EMAIL.
 SENDER: if the user provided or clarified a sender address, put that EXACT literal address in "from". NEVER replace a user-provided sender with [%\$DEFAULT_MAIL_SENDER%] / [%\$CLIENT_MAIL_SENDER%] — those defaults are only for when no sender was ever named.
 VALUES & ONE-TO-ONE RULE (applies to EVERY node parameter, not just email): a clarified value (subject, sender, recipient, address, URL, amount, status, ...) is written LITERALLY into the corresponding node parameter. NEVER create a form field to hold a clarified/literal value and NEVER reference such a literal via a [%…%] placeholder — a [%…%] placeholder is valid ONLY for a REAL form field the end user fills in at runtime. A "create a field" answer (e.g. "Erstelle ein E-Mail-Feld", "lege ein Feld für die Adresse an") applies ONLY to the ONE value it names; the OTHER literal values in the same answer are STILL written directly into the node — do NOT also turn them into fields. NEVER emit a field whose placeholder is a literal value you already know.

@@ -753,11 +753,42 @@ class AIWorkflowAssistant : IPluginServletAction {
     val trigger = workflowTriggerClass.getDeclaredConstructor().newInstance()
     workflowTriggerClass.getMethod("setName", String::class.java).invoke(trigger, spec.triggerType)
     workflowTriggerClass.getMethod("setType", String::class.java).invoke(trigger, spec.triggerType)
+    // Give the trigger the same AI-generated description as the lane's action node and task, so
+    // EVERY element of the lane (trigger, action node, endpoint) carries a description.
+    val triggerDescription = spec.taskDescription ?: ""
+    if (triggerDescription.isNotBlank()) {
+      try {
+        workflowTriggerClass
+            .getMethod("setDescription", String::class.java)
+            .invoke(trigger, triggerDescription)
+      } catch (_: Exception) {
+        logger.warn(
+            "[AIWorkflowAssistant] WorkflowTrigger has no setDescription method: {}",
+            triggerDescription)
+      }
+    }
     workflowTriggerClass.getMethod("setActive", Boolean::class.java).invoke(trigger, true)
     workflowTriggerClass
         .getMethod("setUUIDObject", UUID::class.java)
         .invoke(trigger, UUID.randomUUID())
-    val triggerParamsJson = buildTriggerParamsJson(spec, workflowVersion, userContext)
+    // The workflow designer renders an element's label and description from its customParameters
+    // JSON ("name"/"description") — see WorkflowCustomParametersHelper.findName/findDescription.
+    // The
+    // WorkflowTrigger ENTITY columns are only RE-DERIVED from these on load, so a description set
+    // only on the entity is never displayed. Emit name + description into the trigger params here.
+    val triggerParamsJson =
+        buildTriggerParamsJson(spec, workflowVersion, userContext)?.let { base ->
+          try {
+            val obj = gson.fromJson(base, com.google.gson.JsonObject::class.java)
+            val desc = spec.taskDescription ?: ""
+            if (desc.isNotBlank()) obj.addProperty("description", desc)
+            val name = spec.taskName.trim()
+            if (name.isNotBlank()) obj.addProperty("name", name)
+            obj.toString()
+          } catch (_: Exception) {
+            base
+          }
+        }
     if (triggerParamsJson != null) {
       workflowTriggerClass
           .getMethod("setCustomParameters", String::class.java)
@@ -1455,12 +1486,49 @@ class AIWorkflowAssistant : IPluginServletAction {
 
             // Handle allowAuthenticatedUser — requires creating a WorkflowStateAuthenticatorConfig
             // with EAuthClientType.FORM (FormCycle's internal user authentication).
-            if (spec.stateProperties["allowAuthenticatedUser"] == true) {
+            // Authenticator-config-backed state options (they are NOT scalars on the state):
+            //   - "allowAuthenticatedUser" -> FORM     (the state editor's "Authenticated"
+            // checkbox)
+            //   - "allowFormPassword"      -> PASSWORD (the state editor's "Form password"
+            // checkbox;
+            //                                            the AI never sends a password VALUE — the
+            //                                            user sets the actual password in the
+            // editor)
+            val authenticatorConfigOptions =
+                listOf(
+                    Triple("allowAuthenticatedUser", "FORM", "Authenticated"),
+                    Triple("allowFormPassword", "PASSWORD", "Form password"))
+            // Only the FORM "Authenticated" config is created (works). The PASSWORD "Form password"
+            // config is not: it aborts the transaction (HV000090 getClientDescriptor NPE).
+            val requestedAuthConfigs =
+                listOf(
+                        Triple("allowAuthenticatedUser", "FORM", "Authenticated"),
+                        Triple("allowFormPassword", "PASSWORD", "Form password"),
+                        Triple(
+                            "allowFormProcessPassword",
+                            "PASSWORD_GENERATOR_ACTION",
+                            "Form process password"))
+                    .filter {
+                      spec.stateProperties[it.first]
+                          ?.toString()
+                          ?.equals("true", ignoreCase = true) == true
+                    }
+            // The configs are created AFTER the state is saved (see the loop below); this header
+            // therefore iterates an empty list on purpose.
+            for ((propKey, typeConstName, optionLabel) in
+                emptyList<Triple<String, String, String>>()) {
+              if (spec.stateProperties[propKey]?.toString()?.equals("true", ignoreCase = true) !=
+                  true)
+                  continue
+              // For an EXISTING state the config must be created AFTER the state update (creating
+              // it
+              // before perturbs the session and makes the update fail) — see the post-update loop.
+              if (endpointStateUuid != null) continue
               try {
                 val authConfigClass =
                     Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
                 val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
-                val formType = eAuthClientTypeClass.getField("FORM").get(null)
+                val authType = eAuthClientTypeClass.getField(typeConstName).get(null)
 
                 val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
                 authConfigClass
@@ -1468,7 +1536,7 @@ class AIWorkflowAssistant : IPluginServletAction {
                     .invoke(authConfig, stateObject)
                 authConfigClass
                     .getMethod("setAuthenticatorType", eAuthClientTypeClass)
-                    .invoke(authConfig, formType)
+                    .invoke(authConfig, authType)
 
                 // For a newly created state (plain POJO), addAuthenticatorConfig works directly.
                 // For an existing state (Hibernate proxy), the lazy authenticatorConfigs
@@ -1490,7 +1558,9 @@ class AIWorkflowAssistant : IPluginServletAction {
                 }
 
                 logger.info(
-                    "[AIWorkflowAssistant] Created FORM authenticator config for allowAuthenticatedUser")
+                    "[AIWorkflowAssistant] Created {} ({}) authenticator config",
+                    optionLabel,
+                    typeConstName)
               } catch (e: Exception) {
                 val causeMsg =
                     if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
@@ -1499,29 +1569,101 @@ class AIWorkflowAssistant : IPluginServletAction {
                       "${e::class.simpleName}: ${e.message}"
                     }
                 logger.warn(
-                    "[AIWorkflowAssistant] Failed to create authenticator config for allowAuthenticatedUser: {}",
+                    "[AIWorkflowAssistant] Failed to create {} authenticator config: {}",
+                    typeConstName,
                     causeMsg)
               }
             }
 
-            if (endpointStateUuid == null) {
-              val savedState =
+            val savedStateObject: Any =
+                if (endpointStateUuid == null) {
+                  val savedState =
+                      stateApi.javaClass
+                          .getMethod("create", userContextClass, iTransferableEntityClass)
+                          .invoke(stateApi, userContext, stateObject)
+                  endpointStateUuid =
+                      savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
+                  logger.info(
+                      "[AIWorkflowAssistant] Created new workflow state '{}' with UUID {}",
+                      stateName,
+                      endpointStateUuid)
+                  savedState
+                } else {
                   stateApi.javaClass
-                      .getMethod("create", userContextClass, iTransferableEntityClass)
+                      .getMethod("update", userContextClass, iTransferableEntityClass)
                       .invoke(stateApi, userContext, stateObject)
-              endpointStateUuid =
-                  savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
-              logger.info(
-                  "[AIWorkflowAssistant] Created new workflow state '{}' with UUID {}",
-                  stateName,
-                  endpointStateUuid)
-            } else {
-              stateApi.javaClass
-                  .getMethod("update", userContextClass, iTransferableEntityClass)
-                  .invoke(stateApi, userContext, stateObject)
-              logger.info(
-                  "[AIWorkflowAssistant] Updated existing workflow state '{}' properties",
-                  stateName)
+                  logger.info(
+                      "[AIWorkflowAssistant] Updated existing workflow state '{}' properties",
+                      stateName)
+                  stateObject
+                }
+
+            // An EXISTING state: create the requested authenticator configs on their own AFTER the
+            // state update (creating the config before the update would make the update fail).
+            if (requestedAuthConfigs.isNotEmpty()) {
+              // Re-load the state by id so the config references a state the GenericAPI session
+              // knows
+              // (a detached object leaves the `wf_state_id` FK unset -> the commit rolls back).
+              val genericApi = apiProviderClass.getField("GENERIC").get(null)
+              val stateForConfig: Any =
+                  runCatching {
+                        val stateId =
+                            savedStateObject.javaClass.getMethod("getId").invoke(savedStateObject)
+                                as? Long
+                        if (stateId != null)
+                            genericApi.javaClass
+                                .getMethod(
+                                    "getById",
+                                    Class::class.java,
+                                    userContextClass,
+                                    java.lang.Long::class.java)
+                                .invoke(genericApi, workflowStateClass, userContext, stateId)
+                        else null
+                      }
+                      .getOrNull() ?: savedStateObject
+              for ((propKey, typeConstName, optionLabel) in authenticatorConfigOptions) {
+                if (spec.stateProperties[propKey]?.toString()?.equals("true", ignoreCase = true) !=
+                    true)
+                    continue
+                try {
+                  val authConfigClass =
+                      Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
+                  val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
+                  val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
+                  authConfigClass
+                      .getMethod("setWorkflowState", workflowStateClass)
+                      .invoke(authConfig, stateForConfig)
+                  authConfigClass
+                      .getMethod("setAuthenticatorType", eAuthClientTypeClass)
+                      .invoke(authConfig, eAuthClientTypeClass.getField(typeConstName).get(null))
+                  if (typeConstName == "PASSWORD" || typeConstName == "PASSWORD_GENERATOR_ACTION") {
+                    // getClientDescriptor() reads these attributes; empty map -> NPE (HV000090).
+                    val attrs = java.util.HashMap<String, String>()
+                    attrs["password"] = ""
+                    attrs["hashed"] = "false"
+                    authConfigClass
+                        .getMethod("setAttributes", java.util.Map::class.java)
+                        .invoke(authConfig, attrs)
+                  }
+                  val genericApi = apiProviderClass.getField("GENERIC").get(null)
+                  genericApi.javaClass
+                      .getMethod(
+                          "create",
+                          Class::class.java,
+                          userContextClass,
+                          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
+                      .invoke(genericApi, authConfigClass, userContext, authConfig)
+                  logger.info(
+                      "[AIWorkflowAssistant] Created {} ({}) authenticator config (existing state)",
+                      optionLabel,
+                      typeConstName)
+                } catch (e: Exception) {
+                  logger.warn(
+                      "[AIWorkflowAssistant] Failed to create {} authenticator config: {}",
+                      typeConstName,
+                      e.message)
+                }
+              }
             }
           } catch (e: Exception) {
             logger.warn(

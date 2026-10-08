@@ -1,3 +1,343 @@
 /* CSS that will be added to the form designer */
 
-/* nothing for now */
+/*
+ * CodBi Mirror widget — property editors.
+ * Styling matches the CodBi form-assistant look and leans on the CodBi brand colour (darkorange).
+ * The CodBi logo is used as a centred watermark on the settings panel; the dropdowns are
+ * translucent so the watermark shows through. The logo URL is provided by the plugin as the
+ * `--codbi-logo-url` CSS variable.
+ */
+
+/* ── Dropdown ─────────────────────────────────────────────────────────────── */
+
+.codbi-mirror-dd {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: #374151;
+}
+
+.codbi-mirror-dd__button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  /* Translucent so the panel watermark shows through. */
+  background: rgba(255, 255, 255, 0.32);
+  backdrop-filter: blur(1px);
+  border: 1px solid #cbd5e1;
+  border-left: 3px solid darkorange;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.codbi-mirror-dd__button:hover:not(:disabled) {
+  border-color: darkorange;
+  background: rgba(255, 243, 230, 0.55);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
+}
+
+.codbi-mirror-dd__button:focus-visible {
+  outline: none;
+  border-color: darkorange;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.32), 0 3px 10px rgba(15, 23, 42, 0.18);
+}
+
+.codbi-mirror-dd__button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Caret */
+.codbi-mirror-dd__button::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid darkorange;
+}
+
+.codbi-mirror-dd__button-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codbi-mirror-dd__list {
+  position: absolute;
+  z-index: 2000;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid darkorange;
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2);
+}
+
+/*
+ * The list is laid out with `display: flex` for the filter box, which would otherwise override the
+ * `hidden` attribute (author styles beat the UA `display: none`). Force the closed state to win.
+ */
+.codbi-mirror-dd__list[hidden] {
+  display: none;
+}
+
+/* Filter box (element dropdown): narrows the visible options while typing. */
+.codbi-mirror-dd__filter {
+  flex: 0 0 auto;
+  margin: 6px;
+  padding: 5px 8px;
+  border: 1px solid #cbd5e1;
+  border-left: 3px solid darkorange;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.9);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.codbi-mirror-dd__filter:focus {
+  border-color: darkorange;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25);
+}
+
+/* Scrollable option area inside the (flex) list. */
+.codbi-mirror-dd__items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Tree expand/collapse twisty. */
+.codbi-mirror-dd__twisty {
+  flex: 0 0 auto;
+  width: 14px;
+  text-align: center;
+  color: darkorange;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.codbi-mirror-dd__twisty--leaf {
+  cursor: default;
+  color: transparent;
+}
+
+.codbi-mirror-dd__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+
+.codbi-mirror-dd__item:hover {
+  background: #fff3e6;
+  border-left-color: darkorange;
+}
+
+.codbi-mirror-dd__item[aria-selected="true"] {
+  background: #fff1e0;
+  border-left-color: darkorange;
+  box-shadow: inset 0 0 0 1px rgba(255, 140, 0, 0.35);
+}
+
+.codbi-mirror-dd__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Element-type badge — a darkorange rounded box, matching the form-assistant change log. */
+.codbi-mirror-dd__type {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #c96a00;
+  white-space: nowrap;
+  border: 1px solid darkorange;
+  border-radius: 4px;
+  padding: 0 5px;
+  background: rgba(255, 140, 0, 0.1);
+}
+
+.codbi-mirror-dd__empty {
+  padding: 6px 8px;
+  color: #94a3b8;
+}
+
+/* ── Hover preview: the element rendered like in the designer (white) ─────── */
+
+/*
+ * Interactive floating card (a body-level portal, positioned from JS). Pointer events stay enabled
+ * so the user can hover into it (it stays open), scroll it, enlarge it and operate the element.
+ */
+.codbi-mirror-dd__preview {
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: 84vh;
+  overflow: hidden;
+  background: #fff;
+  color: #374151;
+  border: 1px solid darkorange;
+  border-radius: 6px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.3);
+  pointer-events: auto;
+}
+
+/* `display: flex` above would otherwise override the `hidden` attribute. */
+.codbi-mirror-dd__preview[hidden] {
+  display: none;
+}
+
+/* Enlarged state (toggled by the caption's maximize button). */
+.codbi-mirror-dd__preview--max {
+  width: 680px;
+}
+
+/* Caption: element NAME (black) + type badge + enlarge button. */
+.codbi-mirror-dd__preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fde3c6;
+}
+
+.codbi-mirror-preview__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  /* The element name is black. */
+  color: #111827;
+}
+
+/* The element type in the caption — same darkorange box as in the dropdown. */
+.codbi-mirror-preview__type {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #c96a00;
+  white-space: nowrap;
+  border: 1px solid darkorange;
+  border-radius: 4px;
+  padding: 0 5px;
+  background: rgba(255, 140, 0, 0.1);
+}
+
+.codbi-mirror-preview__type[hidden] {
+  display: none;
+}
+
+.codbi-mirror-preview__max {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid darkorange;
+  border-radius: 4px;
+  background: rgba(255, 140, 0, 0.1);
+  color: #c96a00;
+  cursor: pointer;
+}
+
+.codbi-mirror-preview__max[hidden] {
+  display: none;
+}
+
+.codbi-mirror-preview__max:hover {
+  background: darkorange;
+  color: #fff;
+}
+
+/* Scrollable area that holds the rendered element (the iframe scrolls internally). */
+.codbi-mirror-dd__preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+}
+
+/* The preview renders inside an isolated iframe so the element's CSS applies untouched. */
+.codbi-mirror-preview__frame {
+  display: block;
+  width: 100%;
+  height: 340px;
+  border: 0;
+  background: #fff;
+}
+
+.codbi-mirror-dd__preview--max .codbi-mirror-preview__frame {
+  height: 72vh;
+}
+
+/* ── CodBi watermark, centred on the widget settings panel ────────────────── */
+
+.xm-panel-box:has(.codbi-mirror-dd) {
+  position: relative;
+}
+
+/* Keep the real content above the watermark. */
+.xm-panel-box:has(.codbi-mirror-dd) > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Let the watermark show through the property rows that hold our dropdowns. */
+.xm-panel-box:has(.codbi-mirror-dd) .xm-pe-row {
+  background-color: transparent !important;
+}
+
+.xm-panel-box:has(.codbi-mirror-dd)::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 110px;
+  height: 110px;
+  background: var(--codbi-logo-url, none) no-repeat center / contain;
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: 0;
+}

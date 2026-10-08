@@ -15,6 +15,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorFormAccess
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
@@ -2002,6 +2003,12 @@ class AICodBiAssistant : IPluginServletAction {
     var changeHistoryContext: String? = null
     var formListContext: String? = null
     var formListAttempted = false
+    // Elements of OTHER forms the AI explicitly asked for (need_form_elements). Loaded on demand
+    // and
+    // appended to the clarification prompt so the model can resolve "element X from form Y"
+    // references and decide between copying and mirroring the element.
+    var formElementsContext: String? = null
+    val formElementsLoadedFormKeys = mutableSetOf<String>()
     val historyLoadedFormKeys = mutableSetOf<String>()
     var clarification: ClarificationRequest? = null
     // Inject the workflow version's AVAILABLE ABSCHLUSSSEITEN (completion pages) into the
@@ -2144,6 +2151,7 @@ class AICodBiAssistant : IPluginServletAction {
                 chatContext,
                 changeHistoryContext,
                 formListContext,
+                formElementsContext,
                 formKey,
                 currentFormTitle,
                 useCodbi,
@@ -2182,6 +2190,22 @@ class AICodBiAssistant : IPluginServletAction {
           logger.info("[AICodBiAssistant] AI could not match a form; asking the user to choose")
         }
         break
+      }
+      if (check.needsFormElements) {
+        val targetKey = check.formElementsFormKey?.trim()?.takeIf { it.isNotEmpty() }
+        if (targetKey.isNullOrBlank()) {
+          logger.warn("[AICodBiAssistant] AI requested form elements but named no valid form key")
+        } else if (formElementsLoadedFormKeys.add(targetKey)) {
+          val loaded = loadFormElementsContext(getUserContext(params), targetKey)
+          logger.info(
+              "[AICodBiAssistant] AI requested the elements of form {}; loaded {} chars",
+              targetKey,
+              loaded?.length ?: 0)
+          formElementsContext =
+              if (formElementsContext.isNullOrBlank()) loaded
+              else formElementsContext + "\n" + (loaded ?: "")
+          continue
+        }
       }
       if (check.needsHistory) {
         val targetKey = check.historyFormKey?.trim()?.takeIf { it.isNotEmpty() } ?: formKey
@@ -24485,7 +24509,11 @@ class AICodBiAssistant : IPluginServletAction {
       val needsHistory: Boolean = false,
       val needsFormList: Boolean = false,
       /** Form key the AI asked to load the change history for (null/blank = the current form). */
-      val historyFormKey: String? = null
+      val historyFormKey: String? = null,
+      /** The AI asked for the form ELEMENTS of a (usually other) form via need_form_elements. */
+      val needsFormElements: Boolean = false,
+      /** Form key the AI asked to load the elements for. */
+      val formElementsFormKey: String? = null
   )
 
   /** Builds the system prompt for the dedicated clarification/history check. */
@@ -24500,6 +24528,7 @@ class AICodBiAssistant : IPluginServletAction {
       chatContext: String,
       changeHistoryContext: String?,
       formListContext: String?,
+      formElementsContext: String?,
       currentFormKey: String?,
       currentFormTitle: String?,
       useCodbi: Boolean,
@@ -24612,6 +24641,19 @@ class AICodBiAssistant : IPluginServletAction {
                 "matches and respond ONLY with {\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} — or, if none reasonably matches, " +
                 "ask the user which form via need_clarification.\n"
           } else ""
+      val formElementsListBlock =
+          if (!formElementsContext.isNullOrBlank()) {
+            "\nFORM ELEMENTS OF ANOTHER FORM (loaded on your request via need_form_elements). \"id\" = the " +
+                "technical element identifier to use in codbi_mirror_element; \"className\" = the Formcycle " +
+                "widget class; \"parent\" = the owning container. You now HAVE these elements — never " +
+                "respond {\"status\":\"need_form_elements\"} for this form again. When the user wants an " +
+                "element from another form added here, ASK which of the two ways they want it: (a) COPY " +
+                "it (generate a normal, independent copy) or (b) MIRROR it (generate the CodBi \"XMirror\" " +
+                "widget referencing the source element so it stays linked to the other form). Only build " +
+                "after the user chose.\n" +
+                formElementsContext +
+                "\n"
+          } else ""
       val changeHistoryStatus =
           if (changeHistoryContext.isNullOrBlank()) {
             "\nChange history is NOT shown by default. If the request refers to earlier AI runs / prior work on THIS form " +
@@ -24668,6 +24710,7 @@ class AICodBiAssistant : IPluginServletAction {
               .replace("{{CHAT_HISTORY}}", chatHistoryBlock)
               .replace("{{CHANGE_HISTORY_BLOCK}}", changeHistoryBlock)
               .replace("{{FORM_LIST_BLOCK}}", formListBlock)
+              .replace("{{FORM_ELEMENTS_LIST_BLOCK}}", formElementsListBlock)
               .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) +
               workflowStructureBlock +
               completionPagesBlock +
@@ -25179,6 +25222,34 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Parses a `need_form_elements` response into the form key whose elements the AI wants, or `null`
+   * when the response is not such a request (or names no form key).
+   */
+  private fun parseFormElementsRequest(cleaned: String): String? {
+    return try {
+      val obj = JsonParser.parseString(cleaned).asJsonObject
+      if (obj.get("status")?.asString != "need_form_elements") return null
+      obj.get("formKey")
+          ?.takeIf { it.isJsonPrimitive }
+          ?.asString
+          ?.trim()
+          ?.takeIf { it.isNotEmpty() }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /**
+   * Loads the ELEMENTS of the foreign form referenced by [formKey] as a compact JSON digest for AI
+   * context injection. Delegates to [MirrorFormAccess] — the SAME access layer the Mirror widget
+   * uses — so the assistant and the widget always agree on the foreign form's content.
+   */
+  private fun loadFormElementsContext(userContext: Any, formKey: String?): String? {
+    if (formKey.isNullOrBlank()) return null
+    return MirrorFormAccess.elementsAsJson(MirrorFormAccess.listElements(userContext, formKey))
+  }
+
   /** Loads the prior change history for the given form for AI context injection. */
   private fun loadChangeHistoryContext(formKey: String?): String? {
     if (formKey.isNullOrBlank()) return null
@@ -25383,6 +25454,7 @@ class AICodBiAssistant : IPluginServletAction {
       chatContext: String,
       changeHistoryContext: String?,
       formListContext: String?,
+      formElementsContext: String?,
       formKey: String?,
       currentFormTitle: String?,
       useCodbi: Boolean,
@@ -25407,6 +25479,7 @@ class AICodBiAssistant : IPluginServletAction {
             chatContext,
             changeHistoryContext,
             formListContext,
+            formElementsContext,
             formKey,
             currentFormTitle,
             useCodbi,
@@ -25436,6 +25509,10 @@ class AICodBiAssistant : IPluginServletAction {
     // "NO_CLARIFICATIONAVAILABLE"), which otherwise fell through and silently skipped the round.
     if (cleaned.isBlank() || cleaned.uppercase().startsWith("NO_CLARIFICATION")) return null
     if (isNeedFormListRequest(cleaned)) return ClarificationCheck(needsFormList = true)
+    val formElementsKey = parseFormElementsRequest(cleaned)
+    if (formElementsKey != null) {
+      return ClarificationCheck(needsFormElements = true, formElementsFormKey = formElementsKey)
+    }
     val (wantsHistory, historyFormKey) = parseHistoryRequest(cleaned)
     if (wantsHistory) {
       return ClarificationCheck(needsHistory = true, historyFormKey = historyFormKey)

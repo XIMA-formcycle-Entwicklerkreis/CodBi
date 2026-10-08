@@ -762,6 +762,30 @@
         </configuration>
       </plugin>
       <plugin>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+        <executions>
+          <execution>
+            <id>unpack-form-theme-css</id>
+            <phase>process-resources</phase>
+            <goals>
+              <goal>unpack</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>de.xima.fc</groupId>
+                  <artifactId>fc-form-renderer</artifactId>
+                  <version>${xfc.version}</version>
+                  <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                  <includes>de/xima/fc/form/renderer/themes/**/*.css</includes>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <artifactId>maven-assembly-plugin</artifactId>
         <executions>
           <execution>

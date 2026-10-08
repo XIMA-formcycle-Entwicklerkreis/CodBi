@@ -6,6 +6,12 @@ MULTIPLE CODBI CLASSES ON ONE ELEMENT ARE ADDITIVE (no "only one class" rule): a
 
 WIDGET STRUCTURE RULES:
 - Only the widget classNames in the Formcycle widget reference are valid (all start with 'X', e.g. XButtonList, XTextField, XSelect, XPage). NEVER invent a className — there is NO standalone 'BUTTON' widget class.
+- MIRROR WIDGET ("XMirror") — mirrors a form element that lives in ANOTHER form: the referenced element (and its children) is rendered here exactly as it is there and stays LINKED to the source, so a change to the source updates this form. Create it ONLY after the user explicitly chose to MIRROR (not copy). Exact shape:
+  {"className":"XMirror","properties":{"name":"mir<Name>","id":"xi-mir-<name>","codbi_mirror_form":"project-<sourceFormId>","codbi_mirror_element":"<sourceElementId>","codbi_mirror_form_name":"<sourceFormTitle>","codbi_mirror_element_name":"<sourceElementLabel>"}}
+  - `codbi_mirror_form` = the source form's "key" from the form list (format "project-<id>").
+  - `codbi_mirror_element` = the source element's "id" from the "FORM ELEMENTS OF ANOTHER FORM" list.
+  - Place it like any other element (add its `name` to the parent's `elements` array and set `properties.parentid`).
+  - When the user asked to add element X from form Y but has NOT yet decided copy vs. mirror, ASK FIRST via need_clarification (options e.g. "Kopieren"/"Spiegeln" or "Copy"/"Mirror") — never assume either one.
 - Buttons (submit/back/next) are NOT standalone widgets: define each as an entry in an XButtonList item's 'buttons' array (name, title, value, action). A workflow submit trigger (FC_FORM_SUBMIT_BUTTON) references that button by its 'name'.
 - APPROVAL / REJECTION BUTTONS ("Genehmigen"/"Ablehnen", approve/reject): create BOTH as entries of ONE XButtonList (action.page="submit" for approval, action="" for reject whose click does nothing). The workflow binds each by 'name' (FC_FORM_SUBMIT_BUTTON + triggerParams.buttonName) → DIFFERENT workflow lanes. NEVER ask for query params, a URL scheme, a callback or a link mechanism — the button click IS the decision; only the two labels are needed (use them if already named).
 - STATE-DEPENDENT AVAILABILITY ("Available if" vs "Disabled if") — DIRECT properties (NOT in the attributes array):

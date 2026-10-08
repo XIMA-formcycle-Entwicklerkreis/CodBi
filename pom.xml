@@ -1242,6 +1242,35 @@
 				</dependencies>
 			</plugin>
 
+			<!-- Bundle the FORMCYCLE frontend FORM THEME CSS (from fc-form-renderer) into the plugin
+			     JAR, so the Mirror element preview can be styled like a published form without relying
+			     on the FORMCYCLE server classloader being visible to the plugin. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>3.8.1</version>
+				<executions>
+					<execution>
+						<id>unpack-form-theme-css</id>
+						<goals>
+							<goal>unpack</goal>
+						</goals>
+						<phase>process-resources</phase>
+						<configuration>
+							<artifactItems>
+								<artifactItem>
+									<groupId>de.xima.fc</groupId>
+									<artifactId>fc-form-renderer</artifactId>
+									<version>${xfc.version}</version>
+									<outputDirectory>${project.build.outputDirectory}</outputDirectory>
+									<includes>de/xima/fc/form/renderer/themes/**/*.css</includes>
+								</artifactItem>
+							</artifactItems>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
 			<!-- Create a fat JAR with all dependencies -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

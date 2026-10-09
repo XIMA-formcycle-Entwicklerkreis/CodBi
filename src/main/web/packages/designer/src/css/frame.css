@@ -122,10 +122,13 @@
   box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25);
 }
 
-/* Scrollable option area inside the (flex) list. */
+/* Scrollable option area inside the (flex) list. Scrolls vertically only: an `overflow-y: auto`
+   with the other axis left `visible` computes to `auto`, which produced a horizontal scrollbar
+   whenever a row's content was wider than the list. Force the horizontal axis to stay hidden. */
 .codbi-mirror-dd__items {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -205,6 +208,8 @@
   display: flex;
   flex-direction: column;
   width: 320px;
+  /* Safety net: never let the (JS-fitted) floating width overflow the viewport. */
+  max-width: calc(100vw - 16px);
   max-height: 84vh;
   overflow: hidden;
   background: #fff;
@@ -222,9 +227,13 @@
   display: none;
 }
 
-/* Enlarged state (toggled by the caption's maximize button). */
+/* Enlarged state (toggled by the caption's maximize button). The exact width/height/top/left are
+   applied from JS (see MirrorDropdown.positionMaximized) to fill the designer canvas without
+   covering the element-properties panel — these rules are only a safe starting fallback. */
 .codbi-mirror-dd__preview--max {
-  width: 680px;
+  width: min(1200px, calc(100vw - 16px));
+  /* Let the JS-set height take full effect (near-full canvas height). */
+  max-height: none;
 }
 
 /* Caption: element NAME (black) + type badge + enlarge button. */
@@ -307,8 +316,16 @@
   background: #fff;
 }
 
+/*
+ * The preview-body is a `flex:1; min-height:0; overflow:auto` column, so it is the vertical scroll
+ * container. The iframe inside is sized from JS (MirrorDropdown.fitFrameHeight) to the FULL height
+ * of its content; the body then scrolls the whole element in both the floating and enlarged state.
+ * These frame rules are only a start-fallback — the inline height set on load takes precedence.
+ */
 .codbi-mirror-dd__preview--max .codbi-mirror-preview__frame {
-  height: 72vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
 }
 
 /* ── CodBi watermark, centred on the widget settings panel ────────────────── */

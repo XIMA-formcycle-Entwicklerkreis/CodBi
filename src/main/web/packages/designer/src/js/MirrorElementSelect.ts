@@ -1,5 +1,12 @@
 // #region Imports
-import { $, Callbacks, Editors, type IPropertyDescriptor, type TEditorCfg } from "@de-xima/fc-form-designer";
+import {
+  $,
+  getDesignerConfig,
+  Callbacks,
+  Editors,
+  type IPropertyDescriptor,
+  type TEditorCfg,
+} from "@de-xima/fc-form-designer";
 import { MirrorDropdown } from "./MirrorDropdown.js";
 import { i18n } from "./i18n.js";
 import {
@@ -78,106 +85,49 @@ export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElement
   }
 
   /**
-   * Collects a document's stylesheets (external links — ABSOLUTISED so they resolve inside the
-   * preview's `srcdoc` iframe — plus inline `<style>` blocks and constructable stylesheets).
+   * The mirror form key of the form currently being edited. Formcycle's mirror forms are addressed
+   * by a `project-<id>` technical key (see `MirrorFormAccess.formKey`).
+   *
+   * The id is resolved in the SAME order the assistant uses (see the designer's
+   * `ai-assistant/form-key.ts`): first Formcycle's global `XFC_METADATA.currentProject.id`, which is
+   * present for every real form, then the designer configuration's `formId`. (The configuration is
+   * not a reliable source on its own — hence the metadata fallback.)
+   *
+   * @returns e.g. `project-123`, or `""` when the current form id is unknown.
    */
-  private static stylesFrom(doc: Document): string {
-    const parts: string[] = [];
-    for (const link of Array.from(doc.querySelectorAll('link[rel="stylesheet"]'))) {
-      const href = link.getAttribute("href");
-      if (href) {
-        let absolute = href;
-        try {
-          absolute = new URL(href, doc.baseURI).href;
-        } catch {
-          /* keep as-is */
+  private static currentFormKey(): string {
+    try {
+      const meta = (
+        window as unknown as {
+          XFC_METADATA?: {
+            currentProject?: { id?: number | string; currentForm?: { id?: number | string } };
+            currentForm?: { id?: number | string };
+          };
         }
-        parts.push(`<link rel="stylesheet" href="${absolute}">`);
+      ).XFC_METADATA;
+      const projectId = meta?.currentProject?.id ?? meta?.currentProject?.currentForm?.id ?? meta?.currentForm?.id;
+      if (projectId !== undefined && projectId !== null && String(projectId).trim() !== "") {
+        return `project-${String(projectId).trim()}`;
       }
-    }
-    for (const style of Array.from(doc.querySelectorAll("style"))) {
-      parts.push(`<style>${style.textContent ?? ""}</style>`);
-    }
-    // Serialise every stylesheet's rules (covers CSSOM-injected sheets and constructable sheets);
-    // cross-origin sheets throw on cssRules and are already covered by the absolutised <link> above.
-    const serialise = (sheet: CSSStyleSheet): void => {
-      try {
-        const rules = Array.from(sheet.cssRules)
-          .map((rule) => rule.cssText)
-          .join("\n");
-        if (rules) {
-          parts.push(`<style>${rules}</style>`);
-        }
-      } catch {
-        /* ignore inaccessible sheet */
+      const formId = getDesignerConfig().formId;
+      if (!formId) {
+        return "";
       }
-    };
-    for (const sheet of Array.from(doc.styleSheets)) {
-      serialise(sheet);
+      return `project-${formId}`;
+    } catch {
+      return "";
     }
-    const adopted = (doc as Document & { adoptedStyleSheets?: CSSStyleSheet[] }).adoptedStyleSheets;
-    for (const sheet of Array.from(adopted ?? [])) {
-      serialise(sheet);
-    }
-    return parts.join("");
   }
 
   /**
-   * Classes of the FORMCYCLE form root element (`form.xm-form …`) as rendered by the designer. The
-   * theme CSS scopes element/input styling under this wrapper (e.g.
-   * `.xm-form.modern input.XItem.XTextField`), so the preview must carry the same wrapper classes or
-   * the mirrored markup renders unstyled. Falls back to the plain `xm-form` class.
-   */
-  private static formWrapperClass(): string {
-    const find = (doc: Document): string => {
-      const root = doc.querySelector("form.xm-form, .xm-form");
-      return root ? String(root.className).replace(/["<>]/g, "").trim() : "";
-    };
-    const own = find(document);
-    if (own) {
-      return own;
-    }
-    for (const iframe of Array.from(document.querySelectorAll("iframe"))) {
-      try {
-        const doc = (iframe as HTMLIFrameElement).contentDocument;
-        if (doc) {
-          const cls = find(doc);
-          if (cls) {
-            return cls;
-          }
-        }
-      } catch {
-        /* cross-origin iframe — skip */
-      }
-    }
-    return "xm-form";
-  }
-
-  /**
-   * Collects the stylesheets that style form elements: the designer shell's own stylesheets PLUS
-   * those of every same-origin iframe (the form canvas lives in an iframe, and its form/element CSS
-   * is inside it). This is what makes the preview look like the designer.
-   */
-  private static designerStyles(): string {
-    let css = MirrorElementSelect.stylesFrom(document);
-    for (const iframe of Array.from(document.querySelectorAll("iframe"))) {
-      try {
-        const doc = (iframe as HTMLIFrameElement).contentDocument;
-        if (doc) {
-          css += MirrorElementSelect.stylesFrom(doc);
-        }
-      } catch {
-        /* cross-origin iframe — skip */
-      }
-    }
-    return css;
-  }
-
-  /**
-   * Builds the hover-preview BODY for one element option: the element rendered the way the designer
-   * renders it, in an ISOLATED iframe together with the designer's own stylesheets so the element's
-   * CSS (classes, layout, theme) applies exactly as in the designer. `<script>` blocks are stripped
-   * for safety. The caption (element name + type badge + enlarge button) is owned by the dropdown.
+   * Builds the hover-preview BODY for one element option: the source element's markup rendered inside
+   * an ISOLATED iframe, styled with the CURRENT form's look (the form being edited). The styling is
+   * fetched server-side via the SAME path the backend uses to style a published form — the FORMCYCLE
+   * frontend theme CSS plus the current form's own user CSS, wrapped in the current form's root
+   * classes (`xm-form modern …`). Scraping the live design-canvas DOM would not work, because the
+   * canvas runs in a cross-origin sandboxed iframe whose stylesheets are unreadable from here.
+   * `<script>` blocks are stripped for safety. The caption (element name + type badge + enlarge
+   * button) is owned by the dropdown.
    */
   private previewBody(option: IMirrorOption): Node | null {
     const frame = document.createElement("iframe");
@@ -195,30 +145,44 @@ export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElement
 
     const form = getCurrentMirrorForm();
     if (form && option.value) {
-      void Promise.all([mirrorElementPreview(form, option.value), mirrorFormCss(form), mirrorFormWrapper(form)]).then(
-        ([html, formCss, sourceWrapper]) => {
+      // Style the preview with the CURRENT form's look (the form being edited), not the source
+      // form's. Both the CSS and the root wrapper come from the backend keyed by the current form.
+      const currentKey = MirrorElementSelect.currentFormKey();
+      void Promise.all([mirrorFormCss(currentKey), mirrorFormWrapper(currentKey)]).then(([styles, wrapper]) => {
+        void mirrorElementPreview(form, option.value).then((html) => {
           if (!html) {
             writeFallback(option.className ?? option.text);
             return;
           }
           const safe = html.replace(/<script[\s\S]*?<\/script>/gi, "");
-          const styles = MirrorElementSelect.designerStyles();
-          // Prefer the SOURCE form's own root classes (the theme CSS and the form's user defined CSS
-          // are scoped under them); fall back to the designer canvas' classes when unavailable.
-          const wrapper = sourceWrapper || MirrorElementSelect.formWrapperClass();
+          const wrapperClass = wrapper || "xm-form";
+          // FORMCYCLE's theme CSS is STRUCTURE dependent, so the preview markup must reproduce the
+          // REAL rendered form page (otherwise the fetched CSS is loaded but never matches):
+          //  - the classic theme (030-default.css) uses element selectors `FORM.xm-form` and
+          //    `BODY.xm-body`, plus `.body`,
+          //  - the modern theme (031-extended.css) uses `.xm-form.modern`, `.body.modern` and
+          //    `.body .xm-form.modern`,
+          //  - the CodBi standards (Holistic.CSS.Standard) additionally target `body.modern.xm-body`.
+          // The old markup was `<body>` (no classes) around `<div class="xm-form …">`, so NONE of
+          // those matched and the current form's CSS never applied. We now emit a <body> carrying
+          // `body xm-body` (+ `modern` when the form is modern) and wrap the element in a real
+          // <form> element, giving exactly the hierarchy a published form has.
+          const modern = /(?:^|\s)modern(?:\s|$)/.test(wrapperClass);
+          const bodyClass = `body xm-body${modern ? " modern" : ""}`;
           console.log("[CodBi] Mirror preview", {
+            currentFormKey: currentKey,
             stylesChars: styles.length,
-            formCssChars: formCss.length,
             htmlChars: safe.length,
-            wrapper,
+            wrapper: wrapperClass,
+            bodyClass,
           });
-          frame.srcdoc =
-            `<!doctype html><html><head><meta charset="utf-8"><base href="${baseHref}">` +
-            `${styles}<style>${formCss}</style>` +
-            `<style>html,body{margin:0;padding:10px;background:#fff}</style></head>` +
-            `<body><div class="${wrapper}">${safe}</div></body></html>`;
-        },
-      );
+          // The backend CSS is wrapped in its own <style> element; otherwise the browser would
+          // treat the embedded base64 @font-face/data-URI rules as renderable body text and print
+          // them at the top of the preview. `onsubmit="return false"` keeps a mirrored submit
+          // button from navigating the preview iframe when the user operates it.
+          frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${baseHref}"><style>${styles}</style><style>html,body{margin:0;padding:10px;background:#fff}</style></head><body class="${bodyClass}"><form class="${wrapperClass}" action="#" onsubmit="return false">${safe}</form></body></html>`;
+        });
+      });
     } else {
       writeFallback(option.className ?? option.text);
     }

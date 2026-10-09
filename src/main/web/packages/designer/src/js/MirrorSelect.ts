@@ -254,8 +254,10 @@ export async function mirrorElementOptions(form: string): Promise<IMirrorOption[
     const className = String(entry.className ?? "");
     return {
       value: String(entry.id ?? ""),
-      // The option label is the element NAME (the raw label is rich text and not shown here).
-      text: className ? `${name} (${className})` : name,
+      // The option label is the element NAME only. The element TYPE is rendered separately as the
+      // darkorange badge on the right (see MirrorDropdown), so it must not be duplicated in the name.
+      // The raw label is rich text and is not shown here either.
+      text: name,
       name,
       className,
       label: entry.label == null ? undefined : stripTags(String(entry.label)),

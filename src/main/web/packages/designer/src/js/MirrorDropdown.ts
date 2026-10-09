@@ -8,6 +8,8 @@ const VIEWPORT_MARGIN = 8;
 const TREE_INDENT = 16;
 /** Delay before the preview closes after the pointer leaves the item/preview (ms). */
 const HIDE_DELAY = 260;
+/** localStorage key remembering whether the Mirror preview should be shown large (maximized). */
+const PREVIEW_MAX_KEY = "codbi-mirror-preview-maximized";
 
 /** Expand icon (corner brackets pointing outward). */
 const MAX_ICON =
@@ -155,6 +157,11 @@ export class MirrorDropdown {
     this.preview.addEventListener("mouseleave", () => this.scheduleHide());
     document.body.appendChild(this.preview);
 
+    // Only the element selector (which has a preview) remembers whether the user wants it large.
+    if (this.previewFor) {
+      this.restoreSavedMaximized();
+    }
+
     this.button.addEventListener("click", (event) => {
       event.stopPropagation();
       this.toggle();
@@ -175,7 +182,9 @@ export class MirrorDropdown {
   /** Replaces the whole option list. */
   setOptions(options: readonly IMirrorOption[]): void {
     this.options = [...options];
-    this.collapsed.clear();
+    // Start with the tree fully folded (every container collapsed) so a large form hierarchy is
+    // not overwhelming. The user can expand nodes as needed.
+    this.collapseAll();
     this.renderItems();
     this.renderButton();
   }
@@ -260,6 +269,23 @@ export class MirrorDropdown {
       return this.options[index].hasChildren === true;
     }
     return childCount[index] > 0;
+  }
+
+  /** Folds the tree: adds every container option's value to the `collapsed` set. */
+  private collapseAll(): void {
+    this.collapsed.clear();
+    const parents = this.parentIndexes();
+    const childCount = new Array<number>(this.options.length).fill(0);
+    for (const parent of parents) {
+      if (parent >= 0) {
+        childCount[parent]++;
+      }
+    }
+    for (let i = 0; i < this.options.length; i++) {
+      if (this.hasChildren(i, childCount)) {
+        this.collapsed.add(this.options[i].value);
+      }
+    }
   }
 
   /** Rebuilds the option list items (applying tree indentation/collapse and the active filter). */
@@ -447,8 +473,38 @@ export class MirrorDropdown {
       ? (this.config.restoreLabel ?? "Restore")
       : (this.config.maximizeLabel ?? "Enlarge");
     this.previewMax.setAttribute("aria-label", this.previewMax.title);
-    // Re-clamp after the size change so the enlarged card stays on screen.
+    // Remember the user's choice so the preview reopens the same size after reload/form edits.
+    if (this.previewFor) {
+      try {
+        localStorage.setItem(PREVIEW_MAX_KEY, String(this.maximized));
+      } catch {
+        // Storage can be unavailable (private mode, quota) — the choice simply won't persist.
+      }
+    }
+    // Re-size/reposition after the size change: maximized fills the canvas, floating re-clamps.
     this.positionPreview();
+  }
+
+  /**
+   * Applies the persisted "show preview large" choice. Called for element selectors only, so the
+   * choice is remembered per-browser across reloads instead of every preview reopening small.
+   */
+  private restoreSavedMaximized(): void {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(PREVIEW_MAX_KEY);
+    } catch {
+      // Storage unavailable — fall back to the default (small).
+    }
+    if (saved !== "true") {
+      return;
+    }
+    this.maximized = true;
+    this.preview.classList.add("codbi-mirror-dd__preview--max");
+    this.previewMax.setAttribute("aria-pressed", "true");
+    this.previewMax.innerHTML = RESTORE_ICON;
+    this.previewMax.title = this.config.restoreLabel ?? "Restore";
+    this.previewMax.setAttribute("aria-label", this.previewMax.title);
   }
 
   /** Shows the preview for `option` anchored to the hovered `anchor` item. */
@@ -471,8 +527,62 @@ export class MirrorDropdown {
       this.previewType.hidden = true;
     }
     this.previewBody.replaceChildren(body);
+    // The rendered element lives in a (possibly async) iframe; re-fit/position once it finishes
+    // loading so a wider element widens the floating preview instead of being cut off, and a taller
+    // element grows the iframe so the preview-body can scroll it.
+    for (const frame of Array.from(this.previewBody.querySelectorAll("iframe"))) {
+      frame.addEventListener("load", () => {
+        this.fitFrameHeight();
+        this.positionPreview();
+      });
+    }
     this.preview.hidden = false;
     this.positionPreview();
+  }
+
+  /**
+   * Width that fits the preview's (non-maximized) content without overflowing the window. Reads the
+   * widest of the preview body and any same-origin preview iframe's document, then clamps it between
+   * a sensible minimum and the available viewport width so it is never clipped.
+   */
+  private fitFloatingWidth(): number {
+    const min = 320;
+    const max = Math.max(min, window.innerWidth - 2 * VIEWPORT_MARGIN);
+    let contentWidth = this.previewBody.scrollWidth;
+    for (const frame of Array.from(this.previewBody.querySelectorAll("iframe"))) {
+      try {
+        const doc = frame.contentDocument;
+        if (doc) {
+          contentWidth = Math.max(contentWidth, doc.body.scrollWidth);
+        }
+      } catch {
+        /* cross-origin or not yet loaded — ignore */
+      }
+    }
+    return Math.max(min, Math.min(contentWidth, max));
+  }
+
+  /**
+   * Sizes each preview iframe to the full height of its (same-origin) content, so the preview-body
+   * (`overflow: auto`) is the scroll container. A fixed-height iframe (340px, or 100% when enlarged)
+   * would clip a taller element and show no usable scrollbar — especially when the mirrored element's
+   * own CSS suppresses scrolling inside its document. Growing the frame to its content lets the body
+   * scroll the whole element instead, which works in both the floating and the enlarged state.
+   */
+  private fitFrameHeight(): void {
+    const bodyClient = this.previewBody.clientHeight;
+    for (const frame of Array.from(this.previewBody.querySelectorAll("iframe"))) {
+      try {
+        const doc = frame.contentDocument;
+        if (doc?.body) {
+          const contentHeight = doc.body.scrollHeight;
+          // Never shrink below the visible body (nothing to scroll), but grow to reveal all content.
+          frame.style.height = `${Math.max(bodyClient, contentHeight)}px`;
+        }
+      } catch {
+        /* cross-origin, not yet loaded, or detached — keep the current height */
+      }
+    }
   }
 
   /** Positions the floating preview next to the last anchor, preferring the left side, clamped. */
@@ -481,6 +591,17 @@ export class MirrorDropdown {
     if (!anchor || this.preview.hidden) {
       return;
     }
+    // Grow each iframe to the full height of its content so the preview-body (overflow:auto) is the
+    // thing that scrolls. A fixed-height iframe would otherwise clip the element with no scrollbar.
+    this.fitFrameHeight();
+    if (this.maximized) {
+      this.positionMaximized();
+      return;
+    }
+    // Floating (non-maximized): drop the maximized height and size the width to fit the content
+    // (clamped to the window so it is never cut off). The exact height is left to the stylesheet.
+    this.preview.style.height = "";
+    this.preview.style.width = `${this.fitFloatingWidth()}px`;
     const rect = anchor.getBoundingClientRect();
     const width = this.preview.offsetWidth;
     const height = this.preview.offsetHeight;
@@ -494,5 +615,42 @@ export class MirrorDropdown {
 
     this.preview.style.left = `${left}px`;
     this.preview.style.top = `${top}px`;
+  }
+
+  /** The fixed right-hand "element properties" panel that hosts the Mirror dropdowns. */
+  private propertiesPanel(): HTMLElement | null {
+    const candidates = ["#tabsRight", '[id$=":tabsRight"]', '[id*=":tabsRight"]'];
+    for (const selector of candidates) {
+      const el = document.querySelector<HTMLElement>(selector);
+      // `fixed`-positioned elements always report `offsetParent === null`, so test visibility via size.
+      if (el && (el.getBoundingClientRect().width > 0 || el.getBoundingClientRect().height > 0)) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * When maximized the preview fills the designer canvas: it spans from the left edge of the
+   * viewport to the LEFT edge of the element-properties panel (so it never overlaps the Mirror
+   * widget's config) and uses nearly the full available height. The content scrolls vertically
+   * inside the {@link #previewBody} scroll area.
+   */
+  private positionMaximized(): void {
+    const margin = VIEWPORT_MARGIN;
+    const panel = this.propertiesPanel();
+    const rect = panel ? panel.getBoundingClientRect() : null;
+
+    const left = margin;
+    const top = rect ? Math.max(margin, rect.top + margin) : margin;
+    const right = rect ? Math.max(left + 2 * margin, rect.left - margin) : window.innerWidth - margin;
+    const bottom = rect
+      ? Math.min(window.innerHeight - margin, Math.max(top + 2 * margin, rect.bottom - margin))
+      : window.innerHeight - margin;
+
+    this.preview.style.left = `${left}px`;
+    this.preview.style.top = `${top}px`;
+    this.preview.style.width = `${Math.max(0, right - left)}px`;
+    this.preview.style.height = `${Math.max(0, bottom - top)}px`;
   }
 }

@@ -271,9 +271,18 @@ object MirrorFormAccess {
     val json = loadFormJson(userContext, formKey) ?: return ""
     return try {
       val form = XForm(json)
+      // IMPORTANT: NEVER use IXForm.isUseModernTheme()/XForm.isUseModernTheme() — that method is a
+      // legacy stub whose body is literally `return false` (both the interface default and XForm's
+      // override), so it can never report a modern form. Relying on it silently dropped the
+      // `modern`
+      // class from the wrapper, which is why the modern theme AND the CodBi standard CSS (both
+      // scoped under `.xm-form.modern` / `body.modern.xm-body`) never matched in the preview. The
+      // real flag lives on the parsed form properties (`isModernTheme()`), the exact same source
+      // `isResponsive()` already reads (`pageResponsive`).
+      val modern = form.formProperties?.isModernTheme == true
       buildString {
         append("xm-form")
-        if (form.isUseModernTheme()) append(" modern")
+        if (modern) append(" modern")
         if (form.isResponsive()) append(" responsive")
       }
     } catch (x: Exception) {

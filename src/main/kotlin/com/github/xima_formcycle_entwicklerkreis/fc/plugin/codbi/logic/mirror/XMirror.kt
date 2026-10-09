@@ -70,6 +70,31 @@ class XMirror : IXItemWidget {
   }
 
   /**
+   * Renders the widget in the FORMCYCLE Designer canvas.
+   *
+   * This override is REQUIRED: [IXItemWidget]'s default [renderItemPreview] does NOT call
+   * [renderItem] — it emits a generic placeholder (a `XWidgetIcon` puzzle icon plus the widget
+   * label), which is why the Mirror previously never showed the mirrored content in the designer.
+   * We instead render the referenced element exactly like in the live form. Only when the widget is
+   * still unconfigured (no source form/element) do we fall back to the default placeholder, so a
+   * freshly dropped Mirror still shows a hint of what it is.
+   */
+  override fun renderItemPreview(
+      container: Div,
+      renderData: XItemRenderData,
+      renderCtx: XItemRenderCtx,
+      formRenderCtx: IXFormRenderContext
+  ) {
+    val formRef = renderData.get(Constants.MIRROR_PROPERTY_FORM)?.getString()
+    val elementRef = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT)?.getString()
+    if (formRef.isNullOrBlank() || elementRef.isNullOrBlank()) {
+      super.renderItemPreview(container, renderData, renderCtx, formRenderCtx)
+    } else {
+      renderItem(container, renderData, renderCtx, formRenderCtx)
+    }
+  }
+
+  /**
    * The configurable properties exposed in the form designer:
    * - the source form / source element (edited via the CodBi Mirror dropdowns), and
    * - the standard CSS/attribute properties shared by every widget.

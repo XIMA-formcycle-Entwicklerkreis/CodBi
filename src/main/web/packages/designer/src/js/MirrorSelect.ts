@@ -240,6 +240,114 @@ function orderAsTree(nodes: ElementNode[]): IMirrorOption[] {
   return ordered;
 }
 
+/** One value-able sub-field of a source element (see the Mirror servlet action `fields`). */
+export interface IMirrorField {
+  /** The source field's id (or its name when it has none). */
+  id: string;
+  /** The source field's NATIVE name — this is what the child item must submit under. */
+  name: string;
+  /** Human-readable label (rich text stripped), best-effort. */
+  label: string;
+  /** The FORMCYCLE widget class name, e.g. `XTextField`. */
+  className: string;
+  /**
+   * The source field's persisted `properties` (label, options, placeholder, required, …), copied
+   * onto the generated child item so it looks/behaves like the source field.
+   */
+  properties?: Record<string, unknown>;
+}
+
+/**
+ * Fetches the value-able sub-fields of ONE element of a foreign form. The designer uses these to
+ * materialize the source element as real child items of the Mirror widget (each carrying the source
+ * field's native name), which is what makes their values usable as `[%fieldName%]` placeholders.
+ */
+export async function mirrorElementFields(form: string, element: string): Promise<IMirrorField[]> {
+  if (!form || !element) {
+    return [];
+  }
+  const entries = (
+    await fetchOptions(
+      `${mirrorActionUrl()}&action=fields&form=${encodeURIComponent(form)}&element=${encodeURIComponent(element)}`,
+    )
+  ).filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null);
+  return entries.map((entry) => ({
+    id: String(entry.id ?? ""),
+    name: String(entry.name ?? ""),
+    label: entry.label == null ? "" : stripTags(String(entry.label)),
+    className: String(entry.className ?? ""),
+    properties:
+      entry.properties != null && typeof entry.properties === "object"
+        ? (entry.properties as Record<string, unknown>)
+        : undefined,
+  }));
+}
+
+/** Property on the Mirror item holding the source form version it was last synchronized from. */
+export const MIRROR_SOURCE_VERSION_PROPERTY = "codbi_mirror_source_version";
+
+/** Property on the Mirror item holding the source form content REVISION it was synchronized from. */
+export const MIRROR_SOURCE_REVISION_PROPERTY = "codbi_mirror_source_revision";
+
+/** One node of a source element's subtree (see the Mirror servlet action `tree`). */
+export interface IMirrorNode {
+  /** Stable reference of the source item (its id, or its name when it has no id). */
+  ref: string;
+  /** The `ref` of this node's parent within the subtree, or null for a top-level node. */
+  parentRef: string | null;
+  name: string;
+  className: string;
+  properties?: Record<string, unknown>;
+}
+
+/** A source element's subtree plus the source form version/revision it was read from. */
+export interface IMirrorTree {
+  version: number;
+  /** Content hash of the source form's items — detects a change even when the version id stays. */
+  revision: number;
+  items: IMirrorNode[];
+}
+
+/** Fetches the FULL subtree of one element (containers + fields, in document order). */
+export async function mirrorElementTree(form: string, element: string): Promise<IMirrorTree> {
+  if (!form || !element) {
+    return { version: 0, revision: 0, items: [] };
+  }
+  const url = `${mirrorActionUrl()}&action=tree&form=${encodeURIComponent(form)}&element=${encodeURIComponent(element)}`;
+  return new Promise((resolve) => {
+    $.ajax({ url, type: "GET", dataType: "json" })
+      .done((data: unknown) => {
+        const obj = (data ?? {}) as { version?: unknown; revision?: unknown; items?: unknown };
+        const items = Array.isArray(obj.items) ? (obj.items as IMirrorNode[]) : [];
+        console.log("[CodBi] Mirror tree", items.length, "version", obj.version, "revision", obj.revision);
+        resolve({ version: Number(obj.version ?? 0), revision: Number(obj.revision ?? 0), items });
+      })
+      .fail(() => resolve({ version: 0, revision: 0, items: [] }));
+  });
+}
+
+/** The source form's version id and content revision (for the Mirror staleness check). */
+export interface IMirrorStamp {
+  version: number;
+  revision: number;
+}
+
+/** Fetches the source form's version id and content revision. */
+export async function mirrorFormStamp(form: string): Promise<IMirrorStamp> {
+  if (!form) {
+    return { version: 0, revision: 0 };
+  }
+  const url = `${mirrorActionUrl()}&action=version&form=${encodeURIComponent(form)}`;
+  return new Promise((resolve) => {
+    $.ajax({ url, type: "GET", dataType: "json" })
+      .done((data: unknown) => {
+        const obj = (data ?? {}) as { version?: unknown; revision?: unknown };
+        resolve({ version: Number(obj.version ?? 0), revision: Number(obj.revision ?? 0) });
+      })
+      .fail(() => resolve({ version: 0, revision: 0 }));
+  });
+}
+
 /** Options for the dependent “source element” dropdown: the elements of the selected source form. */
 export async function mirrorElementOptions(form: string): Promise<IMirrorOption[]> {
   if (!form) {

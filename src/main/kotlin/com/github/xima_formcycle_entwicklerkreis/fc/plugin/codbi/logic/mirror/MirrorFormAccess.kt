@@ -2,6 +2,8 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
+import com.hp.gagawa.java.FertileNode
+import com.hp.gagawa.java.Node
 import com.hp.gagawa.java.elements.Div
 import de.xima.fc.form.common.items.XItem
 import de.xima.fc.form.common.models.IXFormRenderConfig
@@ -221,6 +223,165 @@ object MirrorFormAccess {
     return result
   }
 
+  /** Class names of the FORMCYCLE widgets that submit a value (mirrors the designer's own list). */
+  private val VALUE_ABLE_CLASSES =
+      setOf("XTextField", "XTextArea", "XCheckbox", "XSelect", "XUpload", "XAppointment")
+
+  /**
+   * One value-able sub-field of a mirrored source element, as needed to materialize it as a real
+   * child item in the target form.
+   */
+  data class MirrorField(
+      val id: String,
+      val name: String,
+      val label: String,
+      val className: String,
+      /**
+       * The source field's persisted `properties` (label, options, placeholder, required, …). The
+       * child item is created from these so it looks and behaves like the source field — only the
+       * `name` is kept native and the `id`/`parentid`/`rowid` are (re)assigned by the designer.
+       */
+      val properties: JSONObject
+  )
+
+  /**
+   * Collects the value-able descendants of the element referenced by [elementRef] in the foreign
+   * form (the element itself when it is value-able). These are exactly the fields a Mirror of that
+   * element contributes to the target form: each is materialized as a real child item carrying its
+   * NATIVE [MirrorField.name], so it renders, submits under that name and — being a normal item —
+   * appears in the placeholder dialog automatically.
+   *
+   * @return the value-able fields in document order (depth-first), or an empty list when the form /
+   *   element cannot be resolved.
+   */
+  fun valueAbleFields(userContext: Any?, formKey: String?, elementRef: String?): List<MirrorField> {
+    val json = loadFormJson(userContext, formKey) ?: return emptyList()
+    val root = itemJsonByRef(json, elementRef) ?: return emptyList()
+    val index = childrenIndex(json)
+    val out = ArrayList<MirrorField>()
+    val seen = HashSet<String>()
+    val queue = ArrayDeque<JSONObject>()
+    queue.add(root)
+    while (queue.isNotEmpty()) {
+      val item = queue.removeFirst()
+      val props = item.getJSONObject("properties") ?: continue
+      val id = props.getString("id").orEmpty()
+      val name = props.getString("name").orEmpty()
+      val ref = id.ifBlank { name }
+      if (ref.isNotEmpty() && !seen.add(ref)) continue
+      val className = item.getString("className").orEmpty()
+      if (className in VALUE_ABLE_CLASSES) {
+        val label =
+            props.getString("label").orEmpty().ifBlank {
+              props.getString("header").orEmpty().ifBlank { name }
+            }
+        out.add(
+            MirrorField(
+                id = ref, name = name, label = label, className = className, properties = props))
+      }
+      // Enqueue the (already indexed) children so nested value-able fields are found as well.
+      for (key in listOf(id, name)) {
+        if (key.isNotEmpty()) queue.addAll(index[key].orEmpty())
+      }
+    }
+    return out
+  }
+
+  /** One node of a mirrored subtree, ready to be materialized as a real item. */
+  data class MirrorNode(
+      /** Stable reference of the source item (its id, or its name when it has no id). */
+      val ref: String,
+      /**
+       * The [ref] of this node's parent WITHIN the subtree, or `null` for a direct child of the
+       * mirrored element (those attach to the Mirror container itself).
+       */
+      val parentRef: String?,
+      val name: String,
+      val className: String,
+      /** The source item's raw `properties` (label, options, layout, …). */
+      val properties: JSONObject
+  )
+
+  /** A source element's full subtree plus the source form version/revision it was read from. */
+  data class MirrorSubtree(val version: Long, val revision: Int, val nodes: List<MirrorNode>)
+
+  /**
+   * A cheap content hash of the form's items. Used to detect that the SOURCE changed: a normal
+   * FORMCYCLE "save" often keeps the same version id, so the version id alone cannot be compared.
+   */
+  fun formRevision(userContext: Any?, formKey: String?): Int {
+    val json = loadFormJson(userContext, formKey) ?: return 0
+    val items = json.getJSONArray("items")
+    return (items?.toJSONString() ?: json.toJSONString()).hashCode()
+  }
+
+  /** The latest (highest-id) form version id of the referenced form, or `0` when unknown. */
+  fun latestVersionId(userContext: Any?, formKey: String?): Long {
+    val projectId = projectIdOf(formKey) ?: return 0L
+    return try {
+      val projekt = apiCall("PROJEKT", "getInitializedById", userContext, projectId) ?: return 0L
+      val versions = apiCall("FORMVERSION", "getByProjekt", userContext, projekt) as? List<*>
+      val latest =
+          versions.orEmpty().filterNotNull().maxByOrNull { (invoke(it, "getId") as? Long) ?: 0L }
+      (latest?.let { invoke(it, "getId") as? Long }) ?: 0L
+    } catch (x: Exception) {
+      logger.warn("[MirrorFormAccess] latestVersionId failed for '{}': {}", formKey, x.message)
+      0L
+    }
+  }
+
+  /**
+   * The FULL subtree (containers, fieldsets, value-able fields, texts, …) of the element referenced
+   * by [elementRef], in document order (parents before children), together with the source form
+   * version. Each node carries its raw `properties`, so a real item can be created with the
+   * source's label/options/layout and the structure (`parentid`) preserved.
+   *
+   * The referenced element itself is NOT included — it is represented by the Mirror container; its
+   * direct children become root-level nodes of the subtree.
+   */
+  fun mirrorSubtree(userContext: Any?, formKey: String?, elementRef: String?): MirrorSubtree? {
+    val json = loadFormJson(userContext, formKey) ?: return null
+    val root = itemJsonByRef(json, elementRef) ?: return null
+    val index = childrenIndex(json)
+    val rootProps = root.getJSONObject("properties") ?: return null
+    val nodes = ArrayList<MirrorNode>()
+    val seen = HashSet<String>()
+    val queue = ArrayDeque<Pair<JSONObject, String?>>()
+    // Include the referenced element ITSELF (its own title/legend, layout and attributes), then its
+    // whole subtree — the Mirror must reproduce the element, not merely its children.
+    queue.add(root to null)
+    while (queue.isNotEmpty()) {
+      val (item, parentRef) = queue.removeFirst()
+      val props = item.getJSONObject("properties") ?: continue
+      val id = props.getString("id").orEmpty()
+      val name = props.getString("name").orEmpty()
+      val ref = id.ifBlank { name }
+      if (ref.isEmpty() || !seen.add(ref)) continue
+      nodes.add(
+          MirrorNode(
+              ref = ref,
+              parentRef = parentRef,
+              name = name,
+              className = item.getString("className").orEmpty(),
+              properties = props))
+      for (child in childrenOf(index, props)) queue.add(child to ref)
+    }
+    return MirrorSubtree(
+        latestVersionId(userContext, formKey), formRevision(userContext, formKey), nodes)
+  }
+
+  /** Direct children of [props] within [index] (the index is keyed by both id and name). */
+  private fun childrenOf(
+      index: Map<String, List<JSONObject>>,
+      props: JSONObject
+  ): List<JSONObject> {
+    val out = LinkedHashSet<JSONObject>()
+    for (key in listOf(props.getString("id").orEmpty(), props.getString("name").orEmpty())) {
+      if (key.isNotEmpty()) out.addAll(index[key].orEmpty())
+    }
+    return out.toList()
+  }
+
   // endregion Elements
 
   // region Form JSON
@@ -375,15 +536,23 @@ object MirrorFormAccess {
 
   /**
    * Maps a parent key (element id or name) to its child element JSONs. Children are declared either
-   * via the child's `parentid` or via the container's `properties.elements` name list.
+   * via the child's `parentid` or via the container's `properties.elements` list.
+   *
+   * The `elements` list is resolved by BOTH id and name (FORMCYCLE stores ids in some versions and
+   * names in others), and every child is registered under BOTH the parent's id and name, so a
+   * lookup by either key always finds it. Missing the id case was why nested fields inside a
+   * container were dropped (only the container's direct, `parentid`-based children were found).
    */
   private fun childrenIndex(json: JSONObject): Map<String, List<JSONObject>> {
     val items = json.getJSONArray("items") ?: return emptyMap()
-    val byName = HashMap<String, JSONObject>()
+    val byRef = HashMap<String, JSONObject>()
     for (i in 0 until items.size) {
       val item = items.getJSONObject(i) ?: continue
-      val name = item.getJSONObject("properties")?.getString("name").orEmpty()
-      if (name.isNotEmpty()) byName[name] = item
+      val props = item.getJSONObject("properties") ?: continue
+      val id = props.getString("id").orEmpty()
+      val name = props.getString("name").orEmpty()
+      if (id.isNotEmpty()) byRef[id] = item
+      if (name.isNotEmpty()) byRef.putIfAbsent(name, item)
     }
     val out = HashMap<String, MutableList<JSONObject>>()
     fun add(parent: String, child: JSONObject) {
@@ -397,10 +566,14 @@ object MirrorFormAccess {
       if (parentId.isNotEmpty()) add(parentId, item)
       val elements = props.getJSONArray("elements")
       if (elements != null) {
-        val parentName = props.getString("name").orEmpty()
+        val selfId = props.getString("id").orEmpty()
+        val selfName = props.getString("name").orEmpty()
         for (j in 0 until elements.size) {
-          val childName = elements.getString(j) ?: continue
-          byName[childName]?.let { child -> add(parentName, child) }
+          val childRef = elements.getString(j) ?: continue
+          byRef[childRef]?.let { child ->
+            add(selfId, child)
+            add(selfName, child)
+          }
         }
       }
     }
@@ -421,15 +594,22 @@ object MirrorFormAccess {
   }
 
   /**
-   * Renders the direct children of [parentJson] into [parentNode] and recurses, so a mirrored
-   * container includes its child elements exactly once (guarding against cycles and depth
-   * blow-ups).
+   * Renders the direct children of [parentJson] into the container's CONTENT element and recurses,
+   * so a mirrored container includes its child elements exactly once (guarding against cycles and
+   * depth blow-ups).
+   *
+   * Rendering a single item via [XItem.render] produces the item's OWN markup, whose outer wrapper
+   * already contains the item (e.g. `<div class="xm-item-div"><div class="XFieldSetWrapper">`
+   * `<fieldset>…</fieldset></div>…</div>`). Appending children to the OUTER wrapper put them BESIDE
+   * the fieldset instead of inside it (the frontend rendered them as siblings). The correct insert
+   * point is the element FORMCYCLE marks with `data-xm-appendable="<ref>"` (the `<fieldset>` / the
+   * container's `.XItem` div) — the same marker the designer uses.
    */
   private fun appendDescendants(
       index: Map<String, List<JSONObject>>,
       itemsByRef: Map<String, XItem>,
       parentJson: JSONObject,
-      parentNode: Div,
+      parentNode: FertileNode,
       renderConfig: IXFormRenderConfig,
       renderContext: IXFormRenderContext,
       depth: Int,
@@ -437,8 +617,12 @@ object MirrorFormAccess {
   ) {
     if (depth > 64) return
     val props = parentJson.getJSONObject("properties") ?: return
+    val parentId = props.getString("id").orEmpty()
+    val parentName = props.getString("name").orEmpty()
+    val parentRef = parentId.ifBlank { parentName }
+    val target = findAppendTarget(parentNode, parentRef) ?: parentNode
     val children = LinkedHashSet<JSONObject>()
-    for (key in listOf(props.getString("id").orEmpty(), props.getString("name").orEmpty())) {
+    for (key in listOf(parentId, parentName)) {
       if (key.isNotEmpty()) children.addAll(index[key].orEmpty())
     }
     for (childJson in children) {
@@ -452,10 +636,29 @@ object MirrorFormAccess {
           childItem.render(
               renderConfig, HashMap(), emptyMap(), false, renderContext, JSONObject(), false, false)
               ?: continue
-      parentNode.appendChild(childNode)
+      target.children.add(childNode)
+      childNode.setParent(target)
       appendDescendants(
           index, itemsByRef, childJson, childNode, renderConfig, renderContext, depth + 1, seen)
     }
+  }
+
+  /**
+   * Finds, within a rendered item's markup, the element its children must be appended to: the node
+   * carrying `data-xm-appendable="<ref>"`. Returns `null` when the item has no such marker (a
+   * leaf).
+   */
+  private fun findAppendTarget(node: Node, ref: String): FertileNode? {
+    if (ref.isEmpty()) return null
+    if (node is FertileNode) {
+      if (node.getAttribute("data-xm-appendable") == ref) return node
+      for (child in node.children) {
+        findAppendTarget(child, ref)?.let {
+          return it
+        }
+      }
+    }
+    return null
   }
 
   // endregion Rendering

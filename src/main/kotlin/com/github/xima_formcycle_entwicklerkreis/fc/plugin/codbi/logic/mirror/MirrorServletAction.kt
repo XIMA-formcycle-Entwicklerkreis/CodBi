@@ -62,6 +62,21 @@ class MirrorServletAction : IPluginServletAction {
           logger.info("[MirrorServletAction] action='elements' -> {} chars", json.length)
           jsonResponse(json)
         }
+        "fields" -> {
+          val json = fieldsJson(userContext, params)
+          logger.info("[MirrorServletAction] action='fields' -> {} chars", json.length)
+          jsonResponse(json)
+        }
+        "tree" -> {
+          val json = treeJson(userContext, params)
+          logger.info("[MirrorServletAction] action='tree' -> {} chars", json.length)
+          jsonResponse(json)
+        }
+        "version" -> {
+          val json = versionJson(userContext, params)
+          logger.info("[MirrorServletAction] action='version' -> {}", json)
+          jsonResponse(json)
+        }
         "preview" -> htmlResponse(previewHtml(userContext, params))
         "css" -> htmlResponse(formCss(userContext, params))
         "wrapper" ->
@@ -78,6 +93,19 @@ class MirrorServletAction : IPluginServletAction {
       logger.warn("[MirrorServletAction] action '{}' failed: {}", action, x.message, x)
       jsonResponse("[]")
     }
+  }
+
+  /**
+   * Returns just the latest form version id of a form (`form` request param) as `{"version":
+   * <id>}`. Used by the designer to detect that a Mirror's source form changed since the Mirror was
+   * last synchronized, and to refresh it.
+   */
+  private fun versionJson(userContext: Any?, params: IPluginServletActionParams): String {
+    val formKey = params.requestParameters["form"]?.firstOrNull()
+    return JSONObject()
+        .fluentPut("version", MirrorFormAccess.latestVersionId(userContext, formKey))
+        .fluentPut("revision", MirrorFormAccess.formRevision(userContext, formKey))
+        .toJSONString()
   }
 
   /**
@@ -119,6 +147,65 @@ class MirrorServletAction : IPluginServletAction {
   private fun elementsJson(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull()
     return MirrorFormAccess.elementsTreeAsJson(MirrorFormAccess.listElements(userContext, formKey))
+  }
+
+  /**
+   * Lists the VALUE-ABLE sub-fields of a single source element (`form`, `element` request params).
+   * The designer uses this to materialize the source element as real child items of the Mirror with
+   * their native field names, so the values they submit become usable as `[%fieldName%]`
+   * placeholders and the fields appear in the placeholder dialog.
+   *
+   * Each entry also carries the source field's `properties`, so the child item is created with the
+   * source field's label, options, placeholder, required flag, etc. — i.e. it looks and behaves
+   * like the source field instead of falling back to the widget defaults.
+   */
+  private fun fieldsJson(userContext: Any?, params: IPluginServletActionParams): String {
+    val formKey = params.requestParameters["form"]?.firstOrNull()
+    val elementRef = params.requestParameters["element"]?.firstOrNull()
+    val array = JSONArray()
+    for (field in MirrorFormAccess.valueAbleFields(userContext, formKey, elementRef)) {
+      array.add(
+          JSONObject()
+              .fluentPut("id", field.id)
+              .fluentPut("name", field.name)
+              .fluentPut("label", field.label)
+              .fluentPut("className", field.className)
+              .fluentPut("properties", field.properties))
+    }
+    return array.toJSONString()
+  }
+
+  /**
+   * Returns the FULL subtree of a single source element (`form`, `element` request params) as `{
+   * "version": <source form version>, "items": [ { ref, parentRef, name, className, properties } ]
+   * }`.
+   *
+   * The designer materializes every node as a real item, preserving the `parentRef` nesting, so the
+   * Mirror reproduces the source element's structure (containers/fieldsets included). `version`
+   * lets the designer detect that the source changed and refresh a stale Mirror.
+   */
+  private fun treeJson(userContext: Any?, params: IPluginServletActionParams): String {
+    val formKey = params.requestParameters["form"]?.firstOrNull()
+    val elementRef = params.requestParameters["element"]?.firstOrNull()
+    val subtree = MirrorFormAccess.mirrorSubtree(userContext, formKey, elementRef)
+    if (subtree == null) {
+      return "{\"version\":0,\"items\":[]}"
+    }
+    val items = JSONArray()
+    for (node in subtree.nodes) {
+      items.add(
+          JSONObject()
+              .fluentPut("ref", node.ref)
+              .fluentPut("parentRef", node.parentRef)
+              .fluentPut("name", node.name)
+              .fluentPut("className", node.className)
+              .fluentPut("properties", node.properties))
+    }
+    return JSONObject()
+        .fluentPut("version", subtree.version)
+        .fluentPut("revision", subtree.revision)
+        .fluentPut("items", items)
+        .toJSONString()
   }
 
   /**

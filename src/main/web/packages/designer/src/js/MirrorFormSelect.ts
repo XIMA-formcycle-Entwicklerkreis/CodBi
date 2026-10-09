@@ -1,5 +1,6 @@
 // #region Imports
 import { $, Callbacks, Editors, type IPropertyDescriptor, type TEditorCfg } from "@de-xima/fc-form-designer";
+import { syncMirrorChildren } from "./MirrorChildItems.js";
 import { MirrorDropdown } from "./MirrorDropdown.js";
 import { i18n } from "./i18n.js";
 import { formFromDesigner, mirrorFormOptions, setCurrentMirrorForm } from "./MirrorSelect.js";
@@ -39,6 +40,10 @@ export class MirrorFormSelect extends Editors.BaseEditor<typeof MirrorFormSelect
         this._value = value;
         setCurrentMirrorForm(value);
         Callbacks["set-property"].fire(this.config.property, value, this);
+        // The source element is cleared when the source form changes, so drop the Mirror's generated
+        // child items (the dependent element dropdown re-materializes them once a new element is
+        // picked).
+        void syncMirrorChildren(this.config.designer, value, "");
       },
       undefined,
       {

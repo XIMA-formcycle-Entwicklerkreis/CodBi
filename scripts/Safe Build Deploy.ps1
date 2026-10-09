@@ -21,7 +21,10 @@ $success = $false
 while (-not $success -and $attempt -lt $maxRetries) {
     $attempt++
     Write-Host "[Safe Build Deploy] Deploy attempt $attempt..."
-    & .\mvnw.cmd -Pdev -DskipTests=true "-DfcDeployUrl=$fcDeployUrl" fc-deploy:deploy
+    # NOTE: `package` MUST run before `fc-deploy:deploy`. Invoking only `fc-deploy:deploy` does not
+    # execute the lifecycle, so it would upload whatever stale JAR is already in `target/` (and skip
+    # the frontend bundle rebuild entirely).
+    & .\mvnw.cmd -Pdev -DskipTests=true "-DfcDeployUrl=$fcDeployUrl" package fc-deploy:deploy
     if ($LASTEXITCODE -eq 0) {
         Write-Host "[Safe Build Deploy] Deploy succeeded."
         $success = $true

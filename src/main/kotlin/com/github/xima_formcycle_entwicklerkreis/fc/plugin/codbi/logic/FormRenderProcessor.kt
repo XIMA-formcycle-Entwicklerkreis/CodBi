@@ -87,6 +87,25 @@ internal class FormRenderProcessor {
     appendChild(form, script)
   }
 
+  /**
+   * Inserts an inline script that hides the Mirror widget's persisted "registration" copies on the
+   * published form.
+   *
+   * The Mirror renders the referenced source element LIVE, so those persisted copies must not be
+   * visible (and, being `isdisabled`, they never submit). Hiding them with an inline script is more
+   * reliable than widget CSS, which is not guaranteed to be included on the published form.
+   */
+  fun insertHideMirrorCopiesScript(id: String = "codbi-mirror-hide-copies") {
+    val code =
+        "(function(){var f=function(){var n=document.querySelectorAll('.codbi-mirror-copy');" +
+            "for(var i=0;i<n.length;i++){n[i].style.display='none';}};" +
+            "if(document.readyState!=='loading'){f();}" +
+            "else{document.addEventListener('DOMContentLoaded',f);}" +
+            "try{new MutationObserver(f).observe(document.documentElement," +
+            "{childList:true,subtree:true});}catch(e){}})();"
+    appendChild(form, createScriptInline(id, code))
+  }
+
   /** Inserts a child node before all existing children of the given parent. */
   private fun prependChild(parent: Node, child: Node) {
     (parent as FertileNode).children.add(0, child)

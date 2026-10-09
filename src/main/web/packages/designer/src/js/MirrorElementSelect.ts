@@ -8,6 +8,7 @@ import {
   type TEditorCfg,
 } from "@de-xima/fc-form-designer";
 import { MirrorDropdown } from "./MirrorDropdown.js";
+import { syncMirrorChildren } from "./MirrorChildItems.js";
 import { i18n } from "./i18n.js";
 import {
   formFromDesigner,
@@ -55,6 +56,10 @@ export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElement
       (value) => {
         this._value = value;
         Callbacks["set-property"].fire(this.config.property, value, this);
+        // Reconcile the Mirror's generated child items with the newly chosen source element
+        // (removes the previous children, then materializes the new element's value-able fields as
+        // real child items carrying their native names).
+        void syncMirrorChildren(this.config.designer, getCurrentMirrorForm(), value);
       },
       (option) => this.previewBody(option),
       {

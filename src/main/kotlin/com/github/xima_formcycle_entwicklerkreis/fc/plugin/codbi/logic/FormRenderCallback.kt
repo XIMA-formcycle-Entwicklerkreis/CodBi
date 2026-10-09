@@ -91,6 +91,11 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
     val properties = params?.xForm?.formProperties?.let { CodbiFormProperties(it) }
     val renderProcessor = params?.let { FormRenderProcessor(it) }
 
+    // Hide the Mirror widget's persisted "registration" copies on the published form: the Mirror
+    // renders the referenced source element LIVE instead. This must run for EVERY form (a form may
+    // use the Mirror without the CodBi code library being enabled).
+    renderProcessor?.insertHideMirrorCopiesScript()
+
     if (renderProcessor != null && properties?.enabled == true) {
       val usedFunctionalities = mutableSetOf<String>()
       val usedEPs = mutableSetOf<String>()

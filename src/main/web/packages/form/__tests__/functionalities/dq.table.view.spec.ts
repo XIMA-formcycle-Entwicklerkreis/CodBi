@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 
 import { DQ_Table_View } from "../../src/js/Functionalities/dq.table.view.js";
 
@@ -12,6 +12,7 @@ interface JsonHelpers {
   summarizeObject(value: unknown): string;
   parseExcludedColumns(value: unknown): Set<string>;
   isColumnExcluded(column: { label: string; dataColumn: string }, excluded: Set<string>): boolean;
+  renderTextCell(td: HTMLTableCellElement, raw: string): void;
 }
 
 const helpers = DQ_Table_View as unknown as JsonHelpers;
@@ -208,6 +209,133 @@ describe("DQ_Table_View JSON-column handling", () => {
 
     it("returns false for columns not excluded", () => {
       expect(helpers.isColumnExcluded({ label: "Name", dataColumn: "Name" }, excluded)).toBe(false);
+    });
+  });
+
+  describe("renderTextCell", () => {
+    it("renders a plain value without a URL as plain text", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "Max Mustermann");
+      expect(td.textContent).toBe("Max Mustermann");
+      expect(td.querySelector("a")).toBeNull();
+    });
+
+    it("renders an https URL as a clickable link", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "https://acme.example/x");
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.href).toBe("https://acme.example/x");
+      expect(anchor.textContent).toBe("https://acme.example/x");
+      expect(anchor.target).toBe("_blank");
+      expect(anchor.rel).toContain("noopener");
+    });
+
+    it("keeps surrounding text when a URL is embedded in it", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "See https://acme.example/x for details.");
+      expect(td.textContent).toBe("See https://acme.example/x for details.");
+
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.href).toBe("https://acme.example/x");
+    });
+
+    it("turns multiple URLs in one cell into links", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "https://a.example https://b.example");
+      const anchors = td.querySelectorAll("a");
+
+      expect(anchors.length).toBe(2);
+      expect(anchors[0].href).toBe("https://a.example");
+      expect(anchors[1].href).toBe("https://b.example");
+    });
+
+    it("prefixes bare www. links with http://", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "www.acme.example");
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.href).toBe("http://www.acme.example");
+    });
+
+    it("treats a non-string value as text and renders it", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "30" as unknown as string);
+      expect(td.textContent).toBe("30");
+      expect(td.querySelector("a")).toBeNull();
+    });
+
+    it("does not match a protocol-less domain as a link", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "acme.example");
+      expect(td.querySelector("a")).toBeNull();
+      expect(td.textContent).toBe("acme.example");
+    });
+
+    it("keeps trailing punctuation outside the link", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "Visit https://a.example, please.");
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.href).toBe("https://a.example");
+      expect(anchor.textContent).toBe("https://a.example");
+      expect(td.textContent).toBe("Visit https://a.example, please.");
+    });
+
+    it("matches a plain http:// link including a query string", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "http://xxxx/xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7");
+      const anchor = td.querySelector("a")!;
+
+      // This is a Formcycle form-provide link: the raw URL is kept out of `href` (to avoid Formcycle recursing on
+      // page load) and is stored in `data-url` instead.
+      expect(anchor.getAttribute("data-url")).toBe(
+        "http://xxxx/xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7",
+      );
+      expect(anchor.textContent).toBe(
+        "http://xxxx/xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7",
+      );
+      expect(anchor.href).not.toContain("form/provide");
+    });
+
+    it("opens a form-provide link via its data-url when clicked (avoids Formcycle recursion)", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "http://xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7");
+      const anchor = td.querySelector("a")!;
+      const openSpy = jest.spyOn(window, "open").mockImplementation(() => null);
+
+      anchor.dispatchEvent(new MouseEvent("click", { cancelable: true, bubbles: true }));
+
+      expect(openSpy).toHaveBeenCalledWith(
+        "http://xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7",
+        "_blank",
+        "noopener,noreferrer",
+      );
+      openSpy.mockRestore();
+    });
+
+    it("intercepts the click and opens a normal link in a new window", () => {
+      const td = document.createElement("td");
+
+      helpers.renderTextCell(td, "https://acme.example/x");
+      const anchor = td.querySelector("a")!;
+      const openSpy = jest.spyOn(window, "open").mockImplementation(() => null);
+
+      anchor.dispatchEvent(new MouseEvent("click", { cancelable: true, bubbles: true }));
+
+      expect(openSpy).toHaveBeenCalledWith("https://acme.example/x", "_blank", "noopener,noreferrer");
+      openSpy.mockRestore();
     });
   });
 });

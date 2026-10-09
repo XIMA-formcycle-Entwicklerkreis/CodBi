@@ -340,6 +340,100 @@ export class DQ_Table_View {
     return list;
   }
   /**
+   * The regular expression that detects a URL inside a plain cell value. It matches a (sub-)string that starts
+   * with a known scheme (`http://`, `https://`, `ftp://`, `mailto:`, `tel:`) or a `www.`-prefix, stopping at
+   * whitespace or `<>"` — this way a URL embedded in a longer text (e.g. `"see https://acme.example/x"`) is picked
+   * out without capturing trailing punctuation or adjacent text. Query strings (e.g. a Formcycle `?fcpuid=…` link)
+   * including hyphens, slashes and `=` are kept as part of the URL.
+   *
+   * The text is not validated against a TLD: a `www.`-prefix alone (e.g. `www.ima` vs `www.imap`) would otherwise
+   * be ambiguous, so any `www.`-sequence followed by a dot-separated label is treated as a link. */
+  protected static get urlPattern(): RegExp {
+    return /(?:https?:\/\/|ftp:\/\/|mailto:|tel:|www\.)[^\s<>&"')\]]+/gi;
+  }
+  /**
+   * Whether the given URL is a Formcycle **form-provide** link (its path contains `form/provide` or its query
+   * contains `fcpuid`). Such a link points back at a Formcycle form — often the very form the table lives in.
+   *
+   * Formcycle's client-side form processing scans the rendered DOM for these links during **page load** and tries to
+   * re-instantiate the referenced form fragment. If the raw URL is placed in the anchor's `href`, a self-referencing
+   * link makes Formcycle recurse, so the form (and the table) never finishes loading. To keep the cell clickable
+   * without triggering that recursion, such links are rendered with the URL held in a `data-url` attribute (not in
+   * `href`) and opened on click via `window.open`.
+   *
+   * @param href The resolved link URL.
+   *
+   * @returns `true` when the URL is a Formcycle form-provide link. */
+  protected static isFormcycleLink(href: string): boolean {
+    return /\/form\/provide\/|(\?|&)fcpuid=/i.test(href);
+  }
+  /**
+   * Renders a plain (non-JSON) cell. Any URL found in the value is turned into a clickable {@link HTMLAnchorElement }
+   * that opens in a **new tab/window**, while the surrounding text is kept as-is. Multiple URLs per cell are
+   * supported. Trailing sentence punctuation (`.`, `,`, `;`, `:`, `!`, `?` and closing brackets/quote characters) is
+   * left outside the link.
+   *
+   * Regular (external) URLs use a standard `href` + `target="_blank"` + `rel="noopener noreferrer"` anchor.
+   * **Formcycle form-provide links** (see {@link isFormcycleLink }) instead keep the raw URL out of the `href` at
+   * injection time to avoid Formcycle re-instantiating (recursively) the surrounding form on page load — the URL is
+   * stored in a `data-url` attribute and opened via `window.open` when the link is clicked.
+   *
+   * @param td  The {@link HTMLTableCellElement } to fill.
+   * @param raw The raw cell value. */
+  protected static renderTextCell(td: HTMLTableCellElement, raw: string): void {
+    const text = typeof raw === "string" ? raw : String(raw ?? "");
+
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+    // IMPORTANT: capture the pattern ONCE. The `urlPattern` getter returns a *new* RegExp on every access, so the
+    // global flag's `lastIndex` (which `RegExp.exec` relies on to advance through the string) would reset to 0 on
+    // each iteration — leading to an infinite loop that would block the browser's main thread (the reported
+    // "form does not load" hang). Reusing a single instance lets `lastIndex` advance and the loop terminate.
+    const urlPattern = DQ_Table_View.urlPattern;
+
+    // biome-ignore lint/suspicious/noAssignInExpressions: Iterating the pattern's matches.
+    while ((match = urlPattern.exec(text)) !== null) {
+      // Copy the text before the URL verbatim.
+      if (match.index > cursor) {
+        td.append(text.substring(cursor, match.index));
+      }
+
+      // Trim trailing sentence punctuation/closing characters so they are not absorbed into the link (e.g.
+      // "See https://a.example." should link only "https://a.example", keeping the final "." as plain text).
+      const trimmed = match[0].replace(/[.,;:!?)\]}>"']+$/, "");
+
+      if (trimmed.length > 0) {
+        const href = trimmed.toLowerCase().startsWith("www.") ? `http://${trimmed}` : trimmed;
+        const anchor = document.createElement("a");
+        const formcycleLink = DQ_Table_View.isFormcycleLink(href);
+
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = trimmed;
+        // For a Formcycle form-provide link the URL is NOT written into `href` during load (Formcycle scans the DOM
+        // for such links and re-instantiating the surrounding form would recurse and prevent the page from loading).
+        // Instead the URL is kept in `data-url` and opened when the link is clicked.
+        anchor.setAttribute("data-url", href);
+        anchor.href = formcycleLink ? "#" : href;
+        anchor.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          window.open(href, "_blank", "noopener,noreferrer");
+        });
+        td.appendChild(anchor);
+      }
+
+      cursor = match.index + match[0].length;
+    }
+
+    // Append any remaining text after the last URL. When no URL matched (or the value was empty) this copies
+    // the whole text verbatim, so non-link cells are rendered exactly as before.
+    if (cursor < text.length) {
+      td.append(text.substring(cursor));
+    }
+  }
+  /**
    * Renders a single JSON-cell: a compact pretty-printed preview with a maximize button that opens the
    * modal {@link openJsonModal }. JSON arrays render a foldable viewer (each element collapsed by default,
    * showing only its first property). Non-JSON (or unparseable) values are shown as plain text.
@@ -779,7 +873,7 @@ export class DQ_Table_View {
               if (column.isJson) {
                 DQ_Table_View.renderJsonCell(td, raw, column.label);
               } else {
-                td.textContent = raw;
+                DQ_Table_View.renderTextCell(td, raw);
               }
 
               tr.appendChild(td);

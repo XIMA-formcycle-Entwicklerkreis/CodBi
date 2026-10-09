@@ -1,4 +1,6 @@
 import {
+  Callbacks,
+  instance,
   registerCustomCategory,
   registerCustomEditor,
   registerCustomProperty,
@@ -11,6 +13,7 @@ import {
   type IMirrorElementSelectDescriptor,
 } from "./MirrorElementSelect.js";
 import { MirrorFormSelect, MirrorFormSelectType, type IMirrorFormSelectDescriptor } from "./MirrorFormSelect.js";
+import { refreshAllMirrors } from "./MirrorChildItems.js";
 import { ensureCodbiBranding } from "./MirrorSelect.js";
 import { i18n } from "./i18n.js";
 
@@ -30,6 +33,16 @@ export function registerCustomMirrorProperties(): void {
   try {
     // Publishes the CodBi logo URL for the settings-panel watermark (CSS `--codbi-logo-url`).
     ensureCodbiBranding();
+
+    // Re-sync every Mirror's generated child items whenever a form is loaded into the designer, so
+    // the mirrored content reflects the current source form.
+    try {
+      Callbacks["designer-form-loaded"].add(() => {
+        setTimeout(() => void refreshAllMirrors(instance()), 200);
+      });
+    } catch (x) {
+      console.error("[CodBi] Failed to register the Mirror form-loaded refresh", x);
+    }
     registerCustomCategory(
       { id: MIRROR_CATEGORY_ID, label: i18n("designer.category.communication") },
       (items) => items.length,

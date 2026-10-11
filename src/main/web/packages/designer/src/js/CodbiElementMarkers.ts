@@ -438,6 +438,34 @@ function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): b
 }
 
 /**
+ * Updates one attribute's value on the currently SELECTED item and syncs the designer's attribute
+ * grid and persist differ — the same path the functionality-badge parameter table uses. Called by
+ * the EP builder's attribute-table launcher so an applied value lands in the element config's
+ * attribute table (and the persisted model), not just in the transient grid-editor input.
+ *
+ * @param name  The attribute name (e.g. `data-cb-func`).
+ * @param value The new attribute value.
+ *
+ * @returns **True** when a selected item was found and updated. */
+export function setSelectedItemAttributeValue(name: string, value: string): boolean {
+  try {
+    const item = designerInstance()?.getSelectedMasterItem?.() as IMarkerItemLike | undefined;
+
+    if (!item || name.trim() === "") {
+      console.warn("[CodBi] EP-builder launcher: no selected item for attribute", name);
+
+      return false;
+    }
+
+    return setFuncAttribute(item, name.trim(), value);
+  } catch (x) {
+    console.warn("[CodBi] Element markers: could not update the selected item's attribute", x);
+
+    return false;
+  }
+}
+
+/**
  * Removes one `data-cb-*` attribute (name and value) from the item's property bags and nudges the
  * persist differ.
  */

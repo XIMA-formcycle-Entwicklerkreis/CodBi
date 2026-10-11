@@ -532,6 +532,7 @@ const BUILDER_CSS = `
 .codbi-epb__resultpanel{margin-top:4px}
 .codbi-epb__result{max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:11px;background:#fffdf9;border:1px solid darkorange;border-radius:4px;padding:4px 6px;color:#3a2200}
 .codbi-epb--max{width:96vw;max-width:96vw;height:96vh;max-height:96vh}
+.codbi-epb--docked{border-radius:0;max-width:none;max-height:100vh}
 .codbi-epb__docsbtn{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:#a85a00;padding:2px;font-style:normal;line-height:1;cursor:pointer;vertical-align:middle;border-radius:50%}
 .codbi-epb__docsbtn:hover{color:#fff;background:darkorange}
 .codbi-epb__docsbtn:focus-visible{outline:2px solid darkorange;outline-offset:1px}
@@ -906,13 +907,21 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   panel.className = "codbi-epb";
   overlay.appendChild(panel);
 
-  // #region Geometry (move / resize / snap)
+  // #region Geometry (move / resize / snap / dock)
   const GEOM_KEY = "codbi-epb-geometry";
-  const SNAP = 24;
+  /** Distance from a viewport edge (px) that triggers docking to that side — mirrors the assistant. */
+  const DOCK_MARGIN = 8;
   const MIN_W = 340;
   const MIN_H = 220;
 
-  type Geometry = { left: number; top: number; width: number; height: number };
+  /** The viewport half a panel may dock to. */
+  type DockSide = "left" | "right";
+  type Geometry = { left: number; top: number; width: number; height: number; docked?: DockSide | null };
+
+  /** The half the panel is currently docked to, or **null** while floating. */
+  let docked: DockSide | null = null;
+  /** The last floating geometry, restored when a docked panel is dragged away from the edge. */
+  let floatingGeometry = { left: 0, top: 0, width: 0, height: 0 };
 
   const clampGeometry = (geom: Geometry): Geometry => {
     const width = Math.max(MIN_W, Math.min(geom.width, window.innerWidth));
@@ -926,13 +935,40 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     };
   };
 
-  const applyGeometry = (geom: Geometry): void => {
+  /** Docks the panel to a viewport half: full height, half width, flush against that edge. */
+  const applyDock = (side: DockSide): void => {
+    docked = side;
+    panel.classList.add("codbi-epb--docked");
+    panel.style.maxHeight = "100vh";
+    panel.style.left = side === "left" ? "0px" : "50vw";
+    panel.style.top = "0px";
+    panel.style.width = "50vw";
+    panel.style.height = "100vh";
+  };
+
+  /** Positions the panel as a floating window at **geom** (clamped to the viewport). */
+  const applyFloating = (geom: Geometry): void => {
+    docked = null;
+    panel.classList.remove("codbi-epb--docked");
+    panel.style.maxHeight = "";
     const clamped = clampGeometry(geom);
 
+    floatingGeometry = clamped;
     panel.style.left = `${clamped.left}px`;
     panel.style.top = `${clamped.top}px`;
     panel.style.width = `${clamped.width}px`;
     panel.style.height = `${clamped.height}px`;
+  };
+
+  const applyGeometry = (geom: Geometry): void => {
+    if (geom.docked === "left" || geom.docked === "right") {
+      floatingGeometry = clampGeometry(geom);
+      applyDock(geom.docked);
+
+      return;
+    }
+
+    applyFloating(geom);
   };
 
   const readGeometry = (): Geometry | undefined => {
@@ -951,12 +987,12 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     }
 
     const rect = panel.getBoundingClientRect();
+    const geom: Geometry = docked
+      ? { ...floatingGeometry, docked }
+      : { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
 
     try {
-      localStorage.setItem(
-        GEOM_KEY,
-        JSON.stringify({ left: rect.left, top: rect.top, width: rect.width, height: rect.height }),
-      );
+      localStorage.setItem(GEOM_KEY, JSON.stringify(geom));
     } catch {
       /* ignore persistence errors */
     }
@@ -970,7 +1006,7 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   };
 
   applyGeometry(readGeometry() ?? defaultGeometry());
-  // #endregion Geometry (move / resize / snap)
+  // #endregion Geometry (move / resize / snap / dock)
 
   // Isolate the popup from the designer's drag/drop and hotkey handling.
   for (const eventName of ["mousedown", "pointerdown", "click", "keydown", "keyup"]) {
@@ -1027,7 +1063,7 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   });
   applyMaximize();
 
-  // #region Move (drag the header) + edge snapping
+  // #region Move (drag the header) + edge docking
   let dragging = false;
   let dragDX = 0;
   let dragDY = 0;
@@ -1050,23 +1086,44 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     }
 
     const rect = panel.getBoundingClientRect();
-    let left = event.clientX - dragDX;
-    let top = event.clientY - dragDY;
+    const left = Math.max(0, Math.min(event.clientX - dragDX, window.innerWidth - rect.width));
+    const top = Math.max(0, Math.min(event.clientY - dragDY, window.innerHeight - rect.height));
 
-    if (left <= SNAP) {
-      left = 0;
-    } else if (window.innerWidth - (left + rect.width) <= SNAP) {
-      left = window.innerWidth - rect.width;
+    // Dock to the left/right viewport half once the header is dragged onto that edge — exactly like
+    // the Form Assistant dialog. Dragging a docked panel away from the edge un-docks it again at its
+    // remembered floating size.
+    let nextSide: DockSide | null = null;
+
+    if (left <= DOCK_MARGIN) {
+      nextSide = "left";
+    } else if (left + rect.width >= window.innerWidth - DOCK_MARGIN) {
+      nextSide = "right";
     }
 
-    if (top <= SNAP) {
-      top = 0;
-    } else if (window.innerHeight - (top + rect.height) <= SNAP) {
-      top = window.innerHeight - rect.height;
+    if (nextSide) {
+      if (!docked) {
+        floatingGeometry = { left, top, width: rect.width, height: rect.height };
+      }
+
+      applyDock(nextSide);
+
+      return;
     }
 
-    panel.style.left = `${Math.max(0, Math.min(left, window.innerWidth - rect.width))}px`;
-    panel.style.top = `${Math.max(0, Math.min(top, window.innerHeight - rect.height))}px`;
+    if (docked) {
+      docked = null;
+      panel.classList.remove("codbi-epb--docked");
+      panel.style.maxHeight = "";
+      panel.style.width = `${floatingGeometry.width}px`;
+      panel.style.height = `${floatingGeometry.height}px`;
+    }
+
+    const width = panel.getBoundingClientRect().width;
+    const height = panel.getBoundingClientRect().height;
+
+    floatingGeometry = { left, top, width, height };
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
   });
   const endMove = (event: PointerEvent): void => {
     if (!dragging) {
@@ -1085,7 +1142,7 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   };
   head.addEventListener("pointerup", endMove);
   head.addEventListener("pointercancel", endMove);
-  // #endregion Move (drag the header) + edge snapping
+  // #endregion Move (drag the header) + edge docking
 
   // #region Resize (bottom-right grip)
   const grip = doc.createElement("div");
@@ -1100,6 +1157,11 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   grip.addEventListener("pointerdown", (event) => {
     if (maximized) {
       return;
+    }
+
+    // Resizing a docked panel un-docks it first so it resizes as a floating window.
+    if (docked) {
+      applyFloating(floatingGeometry);
     }
 
     const rect = panel.getBoundingClientRect();

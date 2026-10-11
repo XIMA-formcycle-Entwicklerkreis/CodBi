@@ -9,6 +9,8 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
+import { openEPBuilder } from "./EPBuilder.js";
+import { setSelectedItemAttributeValue } from "./CodbiElementMarkers.js";
 import { i18n } from "./i18n.js";
 // #endregion Imports
 // #region Helper
@@ -38,6 +40,109 @@ function insertText(into: HTMLTextAreaElement, toInsert: string) {
   into.value = value.substring(0, start) + toInsert + value.substring(end);
 
   into.dispatchEvent(new Event("input", { bubbles: true }));
+}
+/** `part` marker of the EP-builder launcher button appended to the `<XC-EPManager>` flat listing. */
+const EP_BUILDER_LAUNCHER_PART = "CodBiEPBuilderButton";
+/**
+ * Ensures the EP-builder launcher button exists in the `epManager`'s (open) shadow root, pinned to
+ * the top-right corner of the flat listing. The button opens the {@link openEPBuilder } popup and,
+ * on apply, writes the composed value straight into the currently {@link EPManager.target }ed input
+ * (the attribute-grid cell) — the same way the functionality-badge parameter table writes into its
+ * value input.
+ *
+ * @param epManager The `<XC-EPManager>` listing.
+ *
+ * @returns The launcher button, or **undefined** when the shadow root is unavailable. */
+function ensureEPBuilderLauncher(epManager: EPManager, attributeName: string): HTMLButtonElement | undefined {
+  const shadow = epManager.shadowRoot;
+
+  if (!shadow) {
+    return undefined;
+  }
+
+  let button = shadow.querySelector<HTMLButtonElement>(`[part="${EP_BUILDER_LAUNCHER_PART}"]`);
+
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("part", EP_BUILDER_LAUNCHER_PART);
+    button.textContent = "Builder";
+    button.title = "EP-Builder (ALT+E)";
+    Object.assign(button.style, {
+      position: "absolute",
+      top: "2px",
+      right: "2px",
+      zIndex: "101",
+      font: "inherit",
+      fontSize: "11px",
+      lineHeight: "1",
+      padding: "2px 6px",
+      border: "1px solid darkorange",
+      borderRadius: "4px",
+      background: "#fff",
+      color: "#a85a00",
+      cursor: "pointer",
+      boxShadow: "0 0 .25em black",
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      // Never open a second popup while one is already open.
+      if (document.querySelector(".codbi-epb-overlay")) {
+        return;
+      }
+
+      const input = epManager.target;
+
+      if (!input) {
+        return;
+      }
+
+      // The attribute name is refreshed on every Alt+E (see below), so read it at click time.
+      const name = (button.dataset.codbiAttributeName ?? attributeName).trim();
+
+      // Hide the flat listing so it does not obscure the popup, but keep the target bound.
+      epManager.enabled = false;
+      epManager.enteringEP = false;
+
+      openEPBuilder({
+        document: window.document,
+        anchor: input,
+        value: input.value,
+        listEPs: () => (epManager.epOptions ?? []).map((option) => option.replace(/\.js$/, "")),
+        onApply: (value) => {
+          // Update the item's attribute model — the SAME path the functionality-badge parameter table
+          // uses — so the element config's attribute table (and the persisted model) actually changes,
+          // independent of any slickgrid editor input that may have been re-rendered meanwhile.
+          const applied = name !== "" && setSelectedItemAttributeValue(name, value);
+
+          if (!applied) {
+            // Fall back to the live grid-editor input when the model update was not possible.
+            const live = epManager.target ?? input;
+
+            if (live?.isConnected) {
+              live.value = value;
+              live.dispatchEvent(new Event("input", { bubbles: true }));
+              live.dispatchEvent(new Event("change", { bubbles: true }));
+              live.focus();
+              live.blur();
+            }
+          }
+        },
+      });
+    });
+    shadow.appendChild(button);
+  }
+
+  // The button is available right away; remember the attribute name for the next click.
+  button.dataset.codbiAttributeName = attributeName;
+  button.disabled = false;
+  button.style.opacity = "1";
+  button.style.cursor = "pointer";
+  button.style.display = epManager.mode === "EP" ? "block" : "none";
+
+  return button;
 }
 /** Builds a comma-separated list from a JSON-encoded array of file names.
  *
@@ -1887,6 +1992,9 @@ export function enableLocalDocInterface(): void {
                             keyboardEvent.stopImmediatePropagation();
                             keyboardEvent.stopPropagation();
                             // #endregion Prevent default actions & bubbling.
+                            // A SECOND Alt+E on the already-open listing arms the EP-builder launcher.
+                            const wasAlreadyOpen = epManager.enabled;
+
                             epManager.mode = "SV";
                             epManager.mode = "EP";
                             // #region Rebuild listing.
@@ -1918,6 +2026,18 @@ export function enableLocalDocInterface(): void {
                               epManager.target = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
                             }
                             // #endregion Bind epManager's target to this <input> evading unnecessary multiple binding.
+                            // #region EP-builder launcher (top-right corner of the flat listing).
+                            const rowHeaderCell = queryGridCell(addedRow, "r1");
+                            const headerInput = rowHeaderCell?.querySelector<HTMLInputElement>("input");
+                            const attributeName = (headerInput?.value ?? rowHeaderCell?.textContent ?? "").trim();
+                            const launcher = ensureEPBuilderLauncher(epManager, attributeName);
+
+                            // A second Alt+E on the still-open listing opens the EP builder directly —
+                            // no button click needed.
+                            if (wasAlreadyOpen && launcher) {
+                              launcher.click();
+                            }
+                            // #endregion EP-builder launcher (top-right corner of the flat listing).
                           }
                           // #endregion If ALT + E...
                         },

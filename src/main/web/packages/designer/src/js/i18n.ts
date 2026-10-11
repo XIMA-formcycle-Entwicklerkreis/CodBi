@@ -12,3 +12,11 @@ import { type TMessageKey, pluginMessage } from "codbi-common";
 export function i18n(key: TMessageKey): string {
   return pluginMessage(getLanguage(), key);
 }
+
+/**
+ * Returns the language code currently active in the form designer (e.g. `"de"`, `"en"`).
+ *
+ * @returns The current designer language code. */
+export function getDesignerLanguage(): string {
+  return String(getLanguage());
+}

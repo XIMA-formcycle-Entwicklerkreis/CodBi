@@ -28,6 +28,8 @@
   "Input.Parameter.Index": "Index",
   "Input.Parameter.Description": "Kurzbeschreibung",
   "Input.Parameter.Prompt": "Prompt",
+  "Input.Parameter.Type": "Typ",
+  "Input.Parameter.phType": "Datentyp",
   "Input.Parameter.phName": "Name",
   "Input.Parameter.phIndex": "z.B. 0 oder 0,1,2 oder 1-5",
   "Input.Parameter.phDescription": "Beschreibung",

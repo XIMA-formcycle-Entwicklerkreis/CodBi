@@ -1,3 +1,93 @@
 {
-  "Description": "/classes/EPs_ai.llama.std.qa.AI_LLAMA_STD_QA.html"
+  "Description": "/classes/EPs_ai.llama.std.qa.AI_LLAMA_STD_QA.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The question to ask the AI.",
+          "de": "Die an die KI zu stellende Frage."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "UseInternet — `\"true\"` to enable Brave Search internet access. Default: `\"false\"`.",
+          "de": "UseInternet - \"true\" aktiviert den Brave-Search-Internetzugriff. Standard: \"false\"."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "Location — `\"true\"` to enable geolocation access. Default: `\"false\"`.",
+          "de": "Location - \"true\" aktiviert den Standortzugriff. Standard: \"false\"."
+        }
+      },
+      {
+        "index": 4,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "Language — Language for the AI response (e.g. `\"German\"`, `\"English\"`). Appends",
+          "de": "Language - Sprache der KI-Antwort (z. B. \"Deutsch\", \"Englisch\")."
+        }
+      },
+      {
+        "index": 5,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "ResponseLanguage — Two-letter ISO 639-1 code (e.g. `\"de\"`, `\"fr\"`). Forces the AI",
+          "de": "ResponseLanguage - Zwei-Buchstaben-ISO-639-1-Code (z. B. \"de\", \"fr\")."
+        }
+      },
+      {
+        "index": 6,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "Specialist — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`",
+          "de": "Specialist - Name eines Spezialmodells, registriert über AI_LLAMA_STD_SPECIALIST_XXX."
+        }
+      },
+      {
+        "index": 7,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "FilterResults — `\"true\"` to enable PII filtering on Brave Search queries.",
+          "de": "FilterResults - \"true\" aktiviert die PII-Filterung bei Brave-Search-Anfragen."
+        }
+      },
+      {
+        "index": 8,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "JsonParse — `\"true\"` to parse the AI response as JSON. Default: `\"false\"`.",
+          "de": "JsonParse - \"true\" parst die KI-Antwort als JSON. Standard: \"false\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder acquires the AI response to a question.",
+    "de": "Dieser Element-Placeholder holt die KI-Antwort auf eine Frage."
+  }
 }

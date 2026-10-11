@@ -1,3 +1,43 @@
 {
-  "Description": "/classes/EPs_bayvis.behoerden.details.gebaeude.BayVIS_Behoerden_Details_Gebaeude.html"
+  "Description": "/classes/EPs_bayvis.behoerden.details.gebaeude.BayVIS_Behoerden_Details_Gebaeude.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The ID of the authority to retrieve.",
+          "de": "Die ID der abzurufenden Behörde."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The building\u0027s ID.",
+          "de": "Die ID des Gebäudes."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "A property of the directory, like e.g. \"bezeichnung\".",
+          "de": "Eine Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the details of an authority\u0027s building specified by the provided ID from the corresponding CodBi-Plugin servlet.",
+    "de": "Dieser Element-Placeholder holt die Details eines Behördengebäudes anhand der angegebenen ID."
+  }
 }

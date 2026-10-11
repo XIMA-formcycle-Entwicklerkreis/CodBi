@@ -358,3 +358,134 @@
   pointer-events: none;
   z-index: 0;
 }
+
+/* ── Mirror widget icon ───────────────────────────────────────────────────────
+   Custom icon (a blue mirrored window pierced by a two-headed arrow, framed by
+   the two CodBi brackets). `XMirror.getIcon()` returns `ico-fc-XMirror`; the SVG
+   is served by the plugin's `Resource` servlet and referenced via
+   `--codbi-mirror-icon-url`, which `ensureCodbiBranding()` publishes.
+
+   Why here and not via `getCssData()`: the widget CSS is applied to the designer
+   CANVAS only, never to the widget PALETTE. `frame.css` is part of the designer
+   sheet and therefore reaches the palette, so we paint the palette entry here.
+
+   FORMCYCLE may render the icon element with the `ui-icon ui-c <class>` classes
+   (or a bare `<i class="ico-fc-XMirror">`), so we clear any glyph and paint the
+   SVG as a background. Both selectors are kept: `.ico-fc-XMirror` is the current
+   contract, `.codbi-ico-mirror` the legacy one. */
+.ico-fc-XMirror,
+.codbi-ico-mirror {
+  /* `!important` beats FORMCYCLE's base `ui-icon`/`[class^="ico-fc-"]` icon-font rules, which are
+     loaded after this sheet and would otherwise win by source order at equal specificity. */
+  background-image: var(--codbi-mirror-icon-url, none) !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 1.15em 1.15em !important;
+  display: inline-block !important;
+  width: 1.15em !important;
+  height: 1.15em !important;
+  vertical-align: middle !important;
+}
+
+/* Neutralise the icon-font glyph (the `ui-icon` base class renders via ::before). */
+.ico-fc-XMirror::before,
+.codbi-ico-mirror::before {
+  content: "" !important;
+  background: none !important;
+}
+
+/* Cool glow on the Mirror icon in the widget PALETTE (the canvas placeholder gets the same glow
+   from `XMirror.getCssData`, since this stylesheet does not reach the canvas iframe). Layered
+   drop-shadows read as a soft, out-of-focus halo around the technical arrow. */
+.ico-fc-XMirror,
+.codbi-ico-mirror {
+  filter: drop-shadow(0 0 1.5px rgba(56, 189, 248, 0.85)) drop-shadow(0 0 3px rgba(37, 99, 235, 0.45));
+}
+
+/* ── CodBi slider switches (custom property editor) ────────────────────────────
+   Rendered by `CodbiSwitchEditor.ts`: the primary "mark CodBi elements" switch plus
+   its companion "always show the reference" switch directly to its right. A
+   self-contained, slim toggle: the native checkbox is hidden and a track/thumb is
+   drawn in its place. This stylesheet reaches the property panel (designer frame). */
+
+.codbi-switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Rounded dark-orange box around the companion switch and its caption (see `CodbiSwitchEditor`). */
+.codbi-switch-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  border: 1px solid darkorange;
+  border-radius: 6px;
+}
+
+/* Caption rendered to the right of the companion switch (see `CodbiSwitchEditor`). */
+.codbi-switch__caption {
+  font-size: 11px;
+  line-height: 1;
+  color: #374151;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.codbi-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 34px;
+  height: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.codbi-switch__input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.codbi-switch__track {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 16px;
+  box-sizing: border-box;
+  background: #cbd5e1;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.codbi-switch__thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+  transition: transform 0.18s ease;
+}
+
+.codbi-switch__input:checked + .codbi-switch__track {
+  background: darkorange;
+  border-color: #c96a00;
+}
+
+.codbi-switch__input:checked + .codbi-switch__track .codbi-switch__thumb {
+  transform: translateX(18px);
+}
+
+.codbi-switch__input:focus-visible + .codbi-switch__track {
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.4);
+}

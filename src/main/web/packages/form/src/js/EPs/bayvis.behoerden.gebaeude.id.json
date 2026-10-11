@@ -1,3 +1,23 @@
 {
-  "Description": "/classes/EPs_bayvis.behoerden.gebaeude.id.BayVIS_Behoerden_Gebaeude_ID.html"
+  "Description": "/classes/EPs_bayvis.behoerden.gebaeude.id.BayVIS_Behoerden_Gebaeude_ID.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The ID of the authority to retrieve.",
+          "de": "Die ID der abzurufenden Behörde."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the IDs of authoritie\u0027s buildings by the \"bezeichnung\" of the authority (case insensitive).",
+    "de": "Dieser Element-Placeholder ermittelt die IDs der Gebäude einer Behörde."
+  }
 }

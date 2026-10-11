@@ -1,3 +1,20 @@
 {
-  "Description": "/classes/EPs_dom.query.DOM_Query.html"
+  "Description": "/classes/EPs_dom.query.DOM_Query.html",
+  "Summary": {
+    "en": "This Element-Placeholder queries an Element .",
+    "de": "Dieser Element-Placeholder fragt ein Element per CSS-Selektor ab."
+  },
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": "The CSS-Selector targeting the desired Element ."
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  }
 }

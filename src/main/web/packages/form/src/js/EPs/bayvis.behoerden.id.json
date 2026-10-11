@@ -1,3 +1,23 @@
 {
-  "Description": "/classes/EPs_bayvis.behoerden.id.BayVIS_Behoerden_ID.html"
+  "Description": "/classes/EPs_bayvis.behoerden.id.BayVIS_Behoerden_ID.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The Name of the authority to retrieve.",
+          "de": "Der Name der abzurufenden Behörde."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the IDs of authorities by their \"bezeichnung\" (case insensitive).",
+    "de": "Dieser Element-Placeholder ermittelt die IDs von Behörden anhand ihrer \"bezeichnung\" (groß-/kleinschreibungsunabhängig)."
+  }
 }

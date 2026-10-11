@@ -5,6 +5,10 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_ENABLE_CODBI
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_ELEMENTS
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_ELEMENTS_DEFAULT
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_LABELS
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_LABELS_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS_DEFAULT
 import de.xima.fc.form.common.models.XFormProperties
@@ -21,6 +25,21 @@ internal class CodbiFormProperties(private val properties: XFormProperties) {
   val enabled
     get(): Boolean =
         booleanProperty(DESIGNER_PROPERTY_ENABLE_CODBI, DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT)
+
+  /**
+   * Whether the designer should paint CodBi overlays onto the design canvas ("mark CodBi elements"
+   * mode). This only affects the designer UI; the published form is unaffected.
+   */
+  val markElements
+    get(): Boolean =
+        booleanProperty(DESIGNER_PROPERTY_MARK_ELEMENTS, DESIGNER_PROPERTY_MARK_ELEMENTS_DEFAULT)
+
+  /**
+   * Whether markers should show their entire text without hovering. Only affects the designer UI.
+   */
+  val markLabels
+    get(): Boolean =
+        booleanProperty(DESIGNER_PROPERTY_MARK_LABELS, DESIGNER_PROPERTY_MARK_LABELS_DEFAULT)
 
   /** The configuration template for the code library, if any. */
   val configTemplate

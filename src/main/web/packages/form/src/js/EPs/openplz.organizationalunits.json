@@ -1,3 +1,63 @@
 {
-  "Description": "/classes/EPs_openplz.organizationalunits.OpenPLZ_OrganizationalUnits.html"
+  "Description": "/classes/EPs_openplz.organizationalunits.OpenPLZ_OrganizationalUnits.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional country to retrieve the data of (if not provided either the country specified in",
+          "de": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\")."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The orgaUnit to retrieve (e.g. FederalStates, FederalProvinces or Cantons).",
+          "de": "Die abzurufende Organisationseinheit (z. B. FederalStates, FederalProvinces oder Cantons)."
+        }
+      },
+      {
+        "index": 3,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional key of the state, province or canton to get details of. This OpenPLZ has the ability",
+          "de": "Der optionale Schlüssel des Bundeslandes, der Provinz oder des Kantons."
+        }
+      },
+      {
+        "index": 4,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional detail to fetch about a certain state, province or canton identified by the",
+          "de": "Das optionale Detail zu einem Bundesland, einer Provinz oder einem Kanton."
+        }
+      },
+      {
+        "index": 5,
+        "type": "number",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An Optional number of pages to load.",
+          "de": "Eine optionale Anzahl zu ladender Seiten."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "An OpenPLZ -Request specialized into retrieving organizational units.",
+    "de": "Eine auf das Abrufen von Organisationseinheiten spezialisierte OpenPLZ-Anfrage."
+  }
 }

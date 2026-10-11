@@ -1,3 +1,63 @@
 {
-  "Description": "/classes/EPs_openplz.streets.OpenPLZ_Streets.html"
+  "Description": "/classes/EPs_openplz.streets.OpenPLZ_Streets.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional country to retrieve the data of (if not provided either the country specified in",
+          "de": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\")."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name.",
+          "de": "Der POSIX-RegEx für den Namen der Straße."
+        }
+      },
+      {
+        "index": 3,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code. If this is empty the",
+          "de": "Der POSIX-RegEx für die Postleitzahl der Straße."
+        }
+      },
+      {
+        "index": 4,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the 3rd",
+          "de": "Der POSIX-RegEx für den Ortsnamen, falls der 3. Parameter leer ist."
+        }
+      },
+      {
+        "index": 5,
+        "type": "number",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An Optional number of pages to load.",
+          "de": "Eine optionale Anzahl zu ladender Seiten."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "An OpenPLZ -Request specialized into searching for streets.",
+    "de": "Eine auf die Suche nach Straßen spezialisierte OpenPLZ-Anfrage."
+  }
 }

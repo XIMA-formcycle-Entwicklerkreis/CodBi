@@ -25,6 +25,36 @@ class CodbiFormPropertiesTest {
   }
 
   @Test
+  fun getMarkElements() {
+    // Defaults to disabled.
+    assertFalse(props.markElements)
+
+    xFormProperties.setProperty("codbi-prop-mark-elements", "")
+    assertFalse(props.markElements)
+
+    xFormProperties.setProperty("codbi-prop-mark-elements", "0")
+    assertFalse(props.markElements)
+
+    xFormProperties.setProperty("codbi-prop-mark-elements", "1")
+    assertTrue(props.markElements)
+  }
+
+  @Test
+  fun getMarkLabels() {
+    // Defaults to disabled.
+    assertFalse(props.markLabels)
+
+    xFormProperties.setProperty("codbi-prop-mark-labels", "")
+    assertFalse(props.markLabels)
+
+    xFormProperties.setProperty("codbi-prop-mark-labels", "0")
+    assertFalse(props.markLabels)
+
+    xFormProperties.setProperty("codbi-prop-mark-labels", "1")
+    assertTrue(props.markLabels)
+  }
+
+  @Test
   fun getConfigTemplate() {
     assertEquals(CodbiConfigTemplate.DEFAULT, props.configTemplate)
 

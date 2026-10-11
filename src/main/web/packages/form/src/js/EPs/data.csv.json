@@ -1,3 +1,23 @@
 {
-  "Description": "/classes/EPs_data.csv.Data_CSV.html"
+  "Description": "/classes/EPs_data.csv.Data_CSV.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The CSV-String to convert.",
+          "de": "Die umzuwandelnde CSV-Zeichenkette."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element Placeholder turns a CSV-String into an Array \u003c string \u003e.",
+    "de": "Dieser Element-Placeholder wandelt eine CSV-Zeichenkette in ein Array\u003cstring\u003e um."
+  }
 }

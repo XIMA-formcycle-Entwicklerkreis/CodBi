@@ -1,6 +1,7 @@
 import { firstIndex } from "@de-xima/xima-common-js-lang";
 import { registerCustomFormCategory } from "@de-xima/fc-form-designer";
 import { Constants } from "codbi-common";
+import { codbiDocsUrl } from "./CodbiDocs.js";
 import { i18n } from "./i18n.js";
 /**
  * Registers all form properties for the code library.
@@ -12,7 +13,8 @@ export function registerCustomFormCategories(): void {
     {
       id: Constants["designer.category.codbi_panel"],
       label: i18n("designer.category.codbi_panel"),
-      help: { type: "url", url: Constants["designer.category.codbi_panel.help"] },
+      // Help icon in the current designer language (honours the `Docs_Frontend_<lang>` redirects).
+      help: { type: "url", url: codbiDocsUrl() },
     },
     (cats) => firstIndex(cats, (cat) => cat.id === "formSeo") ?? 2,
   );

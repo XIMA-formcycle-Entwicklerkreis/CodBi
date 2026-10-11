@@ -1,3 +1,43 @@
 {
-  "Description": "/classes/EPs_date.today.DATE_Today.html"
+  "Description": "/classes/EPs_date.today.DATE_Today.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "\"NOW\" to retrieve the current date, or an arithmetic operation like \"+1d\" (add days), \"-1m\" (subtract months), \"+1y\" (add years).",
+          "de": "\"NOW\" für das aktuelle Datum oder eine arithmetische Operation wie \"+1d\" (Tage addieren), \"-1m\" (Monate subtrahieren), \"+1y\" (Jahre addieren)."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "Additional arithmetic operation (optional), e.g. \"-1d ; +2m ; -10y\".",
+          "de": "Weitere arithmetische Operation (optional), z. B. \"-1d ; +2m ; -10y\"."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": true,
+        "variadic": true,
+        "description": {
+          "en": "and beyond: More arithmetic operations (optional).",
+          "de": "Und weitere: zusätzliche arithmetische Operationen (optional)."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "Provides the current Date along with arithmetic appliances.",
+    "de": "Liefert das aktuelle Datum, optional mit arithmetischen Operationen."
+  }
 }

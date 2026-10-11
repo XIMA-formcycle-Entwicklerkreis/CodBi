@@ -1,0 +1,227 @@
+{
+  "ai.llama.std.qa": {
+    "summary": "Dieser Element-Placeholder holt die KI-Antwort auf eine Frage.",
+    "params": {
+      "1": "Die an die KI zu stellende Frage.",
+      "2": "UseInternet - \"true\" aktiviert den Brave-Search-Internetzugriff. Standard: \"false\".",
+      "3": "Location - \"true\" aktiviert den Standortzugriff. Standard: \"false\".",
+      "4": "Language - Sprache der KI-Antwort (z. B. \"Deutsch\", \"Englisch\").",
+      "5": "ResponseLanguage - Zwei-Buchstaben-ISO-639-1-Code (z. B. \"de\", \"fr\").",
+      "6": "Specialist - Name eines Spezialmodells, registriert über AI_LLAMA_STD_SPECIALIST_XXX.",
+      "7": "FilterResults - \"true\" aktiviert die PII-Filterung bei Brave-Search-Anfragen.",
+      "8": "JsonParse - \"true\" parst die KI-Antwort als JSON. Standard: \"false\"."
+    }
+  },
+  "bayvis.ansprechpartner.details": {
+    "summary": "Dieser Element-Placeholder holt die Details eines bestimmten Ansprechpartners vom zugehörigen CodBi-Plugin-Servlet.",
+    "params": {
+      "1": "Die ID des Ansprechpartners, dessen Details geholt werden sollen.",
+      "2": "Eine optionale Eigenschaft des Ansprechpartners, z. B. \"nachname\"."
+    }
+  },
+  "bayvis.ansprechpartner.id": {
+    "summary": "Dieser Element-Placeholder ermittelt die ID eines Ansprechpartners anhand von Vor- und Nachname (reihenfolgeunabhängig).",
+    "params": {
+      "1": "Vor- und Nachname, durch ein Leerzeichen getrennt (reihenfolge- und groß-/kleinschreibungsunabhängig)."
+    }
+  },
+  "bayvis.ansprechpartner": {
+    "summary": "Dieser Element-Placeholder holt das gesamte BayVIS-Ansprechpartnerverzeichnis oder einen bestimmten Detailwert daraus.",
+    "params": {
+      "1": "Eine Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+    }
+  },
+  "bayvis.behoerden.details": {
+    "summary": "Dieser Element-Placeholder holt die Details einer Behörde anhand der angegebenen ID.",
+    "params": {
+      "1": "Die ID der abzurufenden Behörde.",
+      "2": "Eine optionale Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+    }
+  },
+  "bayvis.behoerden.details.gebaeude": {
+    "summary": "Dieser Element-Placeholder holt die Details eines Behördengebäudes anhand der angegebenen ID.",
+    "params": {
+      "1": "Die ID der abzurufenden Behörde.",
+      "2": "Die ID des Gebäudes.",
+      "3": "Eine Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+    }
+  },
+  "bayvis.behoerden.gebaeude.id": {
+    "summary": "Dieser Element-Placeholder ermittelt die IDs der Gebäude einer Behörde.",
+    "params": {
+      "1": "Die ID der abzurufenden Behörde."
+    }
+  },
+  "bayvis.behoerden.id": {
+    "summary": "Dieser Element-Placeholder ermittelt die IDs von Behörden anhand ihrer \"bezeichnung\" (groß-/kleinschreibungsunabhängig).",
+    "params": {
+      "1": "Der Name der abzurufenden Behörde."
+    }
+  },
+  "bayvis.behoerden": {
+    "summary": "Dieser Element-Placeholder holt das gesamte BayVIS-Behördenverzeichnis oder einen bestimmten Detailwert daraus.",
+    "params": {
+      "1": "Eine Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+    }
+  },
+  "data.csv": {
+    "summary": "Dieser Element-Placeholder wandelt eine CSV-Zeichenkette in ein Array<string> um.",
+    "params": {
+      "1": "Die umzuwandelnde CSV-Zeichenkette."
+    }
+  },
+  "data.join": {
+    "summary": "Fasst die Eigenschaften mehrerer Objekte zu einem einzigen zusammen.",
+    "params": {
+      "1": "Das erste zu verbindende Objekt.",
+      "2": "Das zweite zu verbindende Objekt (optional).",
+      "3": "Das dritte zu verbindende Objekt (optional)."
+    }
+  },
+  "date.arithmetic": {
+    "summary": "Dieser Element-Placeholder wandelt eine Zeichenkette in ein Datum um und wendet arithmetische Operationen darauf an.",
+    "params": {
+      "1": "Die in ein Datum umzuwandelnde Zeichenkette.",
+      "2": "Das optionale Format der \"dateString\" (z. B. DD/MM/YYYY).",
+      "3": "Die auf das angegebene Datum anzuwendenden Operationen."
+    }
+  },
+  "date.fromstring": {
+    "summary": "Dieser Element-Placeholder wandelt eine Zeichenkette in ein Datum um.",
+    "params": {
+      "1": "Die in ein Datum umzuwandelnde Zeichenkette.",
+      "2": "Eine optionale Datumsformat-Zeichenkette, z. B. YYYY/MM/DD."
+    }
+  },
+  "date.holidays": {
+    "summary": "Dieser Element-Placeholder liefert die gesetzlichen Feiertage für ein Bundesland und Jahr."
+  },
+  "date.today": {
+    "summary": "Liefert das aktuelle Datum, optional mit arithmetischen Operationen.",
+    "params": {
+      "1": "\"NOW\" für das aktuelle Datum oder eine arithmetische Operation wie \"+1d\" (Tage addieren), \"-1m\" (Monate subtrahieren), \"+1y\" (Jahre addieren).",
+      "2": "Weitere arithmetische Operation (optional), z. B. \"-1d ; +2m ; -10y\".",
+      "3": "Und weitere: zusätzliche arithmetische Operationen (optional)."
+    }
+  },
+  "date.weekends": {
+    "summary": "Dieser Element-Placeholder registriert den \"Date.Weekend\"-EP samt notwendiger CSS-Injektion in den Document.head."
+  },
+  "dom.query": {
+    "summary": "Dieser Element-Placeholder fragt ein Element per CSS-Selektor ab."
+  },
+  "f": {
+    "summary": "Findet die Objekte in einem Array, die eine bestimmte Eigenschaft mit einem bestimmten Wert haben.",
+    "params": {
+      "1": "Der Name der gesuchten Eigenschaft.",
+      "2": "Der Wert, den die gesuchte Eigenschaft haben muss.",
+      "3": "Das Array der zu durchsuchenden Objekte."
+    }
+  },
+  "i": {
+    "summary": "Dieser Element-Placeholder holt ein bestimmtes Element aus einem Array."
+  },
+  "json.path": {
+    "summary": "Dieser Element-Placeholder holt ein Objekt an einem bestimmten Pfad aus dem übergebenen Objekt.",
+    "params": {
+      "1": "Das Objekt, aus dem der gesuchte Wert geholt wird.",
+      "2": "Der punktierte Pfad zum gesuchten Wert."
+    }
+  },
+  "ldap.find": {
+    "summary": "Dieser Element-Placeholder verbindet sich über eine Standard-URL (LDAP_URL in den CodBi-Einstellungen) oder eine angegebene URL mit einer LDAP-Abfrage.",
+    "params": {
+      "1": "Der Modus für den Filter: AND oder OR (groß-/kleinschreibungsunabhängig). Alles andere gilt als AND.",
+      "2": "Die LDAP-Bedingungen (z. B. sn = Doe), getrennt durch | (z. B. sn = Doe | givenName = John).",
+      "3": "Die optionale URL zu einer Formcycle-LDAP-Abfrage."
+    }
+  },
+  "net.url": {
+    "summary": "Dieser Element-Placeholder ruft den Inhalt einer URL ab."
+  },
+  "openplz": {
+    "summary": "Ruft Daten vom CodBi_OpenPLZ_Verwaltungseinheiten-Servlet gemäß den angegebenen Parametern ab.",
+    "params": {
+      "1": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\").",
+      "2": "Die abzurufende Organisationseinheit (z. B. FederalStates, FederalProvinces oder Cantons).",
+      "3": "Der optionale Schlüssel des Bundeslandes, der Provinz oder des Kantons.",
+      "4": "Das optionale Detail zu einem Bundesland, einer Provinz oder einem Kanton.",
+      "5": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm).",
+      "6": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm).",
+      "7": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm).",
+      "8": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm).",
+      "9": "Eine optionale Anzahl zu ladender Seiten."
+    }
+  },
+  "openplz.localities": {
+    "summary": "Eine auf die Suche nach Ortschaften spezialisierte OpenPLZ-Anfrage.",
+    "params": {
+      "1": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\").",
+      "2": "Der POSIX-RegEx für den Namen der Ortschaft.",
+      "3": "Der POSIX-RegEx für die Postleitzahl der Ortschaft.",
+      "4": "Eine optionale Anzahl zu ladender Seiten."
+    }
+  },
+  "openplz.organizationalunits": {
+    "summary": "Eine auf das Abrufen von Organisationseinheiten spezialisierte OpenPLZ-Anfrage.",
+    "params": {
+      "1": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\").",
+      "2": "Die abzurufende Organisationseinheit (z. B. FederalStates, FederalProvinces oder Cantons).",
+      "3": "Der optionale Schlüssel des Bundeslandes, der Provinz oder des Kantons.",
+      "4": "Das optionale Detail zu einem Bundesland, einer Provinz oder einem Kanton.",
+      "5": "Eine optionale Anzahl zu ladender Seiten."
+    }
+  },
+  "openplz.streets": {
+    "summary": "Eine auf die Suche nach Straßen spezialisierte OpenPLZ-Anfrage.",
+    "params": {
+      "1": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\").",
+      "2": "Der POSIX-RegEx für den Namen der Straße.",
+      "3": "Der POSIX-RegEx für die Postleitzahl der Straße.",
+      "4": "Der POSIX-RegEx für den Ortsnamen, falls der 3. Parameter leer ist.",
+      "5": "Eine optionale Anzahl zu ladender Seiten."
+    }
+  },
+  "openplz.textsearch": {
+    "summary": "Eine eine Volltextsuche durchführende OpenPLZ-Anfrage.",
+    "params": {
+      "1": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\").",
+      "2": "Der POSIX-RegEx-Suchbegriff (z. B. 91522 Nürnbergerstraße).",
+      "3": "Eine optionale Anzahl zu ladender Seiten."
+    }
+  },
+  "sorted": {
+    "summary": "Ein Element-Placeholder, der das als 1. Parameter übergebene Array (lexikografisch) sortiert.",
+    "params": {
+      "1": "Das zu sortierende Array.",
+      "2": "Der optionale Name einer Eigenschaft zum Sortieren der Elemente des Arrays."
+    }
+  },
+  "unique": {
+    "summary": "Ein Element-Placeholder, der das als 1. Parameter übergebene Array von Duplikaten befreit.",
+    "params": {
+      "1": "Das zu filternde Array.",
+      "2": "Der optionale Name einer Eigenschaft zum Herausfiltern von Elementen des Arrays."
+    }
+  },
+  "urlparameter": {
+    "summary": "Dieser Element-Placeholder liefert den Wert des URL-Parameters mit dem angegebenen Namen.",
+    "params": {
+      "1": "Der Name des zu lesenden URL-Parameters."
+    }
+  },
+  "v": {
+    "summary": "Dieser Element-Placeholder liefert den Wert einer globalen Variablen.",
+    "params": {
+      "1": "Der Name der globalen Variablen.",
+      "2": "REPORT, wenn ein CodBiError geworfen werden soll, falls die globale Variable nicht existiert."
+    }
+  },
+  "vp": {
+    "summary": "Dieser Element-Placeholder liefert einen Wert aus window.codbiSettings.gv.",
+    "params": {
+      "1": "Der Schlüssel (der Teil nach dem Präfix GV_ im Plugin-Eigenschaftsnamen).",
+      "2": "REPORT, wenn ein CodBiError geworfen werden soll, falls der Schlüssel fehlt."
+    }
+  }
+}

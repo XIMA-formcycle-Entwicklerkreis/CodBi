@@ -1,3 +1,23 @@
 {
-  "Description": "/classes/EPs_bayvis.behoerden.BayVIS_Behoerden.html"
+  "Description": "/classes/EPs_bayvis.behoerden.BayVIS_Behoerden.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "An property of the directory, for example \"bezeichnung\".",
+          "de": "Eine Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from the corresponding CodBi-Plugin servlet.",
+    "de": "Dieser Element-Placeholder holt das gesamte BayVIS-Behördenverzeichnis oder einen bestimmten Detailwert daraus."
+  }
 }

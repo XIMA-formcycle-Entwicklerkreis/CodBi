@@ -1,3 +1,34 @@
 {
-  "Description": "/classes/EPs_date.holidays.Date_Holidays.html"
+  "Description": "/classes/EPs_date.holidays.Date_Holidays.html",
+  "Summary": {
+    "en": "This Element Placeholder registers the \"Date.Holidays\"-EP that makes requests to \"API-Feiertage.de\" in order to retrieve german holidays of all states.",
+    "de": "Dieser Element-Placeholder liefert die gesetzlichen Feiertage für ein Bundesland und Jahr."
+  },
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": "A state abbreviation (bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th) or \"THIS_YEAR\" for the current year."
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": "A state abbreviation, a year, \"THIS_YEAR\" (optionally with +/- arithmetic like \"THIS_YEAR + 1\"), \"Friedensfest\" or \"KATHOLISCH\"."
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": false,
+        "variadic": true,
+        "description": "and beyond: More states, years, \"THIS_YEAR\", \"Friedensfest\" or \"KATHOLISCH\" in any order."
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  }
 }

@@ -1,3 +1,33 @@
 {
-  "Description": "/classes/EPs_unique.Unique.html"
+  "Description": "/classes/EPs_unique.Unique.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "array",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The Array to filter.",
+          "de": "Das zu filternde Array."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional name of a property to use to filter out elements of the given Array .",
+          "de": "Der optionale Name einer Eigenschaft zum Herausfiltern von Elementen des Arrays."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "An Elementplaceholder filters the Array passed as the 1st parameter from duplicates.",
+    "de": "Ein Element-Placeholder, der das als 1. Parameter übergebene Array von Duplikaten befreit."
+  }
 }

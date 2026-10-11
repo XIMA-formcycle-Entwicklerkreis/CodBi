@@ -1,3 +1,33 @@
 {
-  "Description": "/classes/EPs_bayvis.behoerden.details.BayVIS_Behoerden_Details.html"
+  "Description": "/classes/EPs_bayvis.behoerden.details.BayVIS_Behoerden_Details.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The ID of the authority to retrieve.",
+          "de": "Die ID der abzurufenden Behörde."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An optional property of the directory, like e.g. \"bezeichnung\".",
+          "de": "Eine optionale Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding CodBi-Plugin servlet.",
+    "de": "Dieser Element-Placeholder holt die Details einer Behörde anhand der angegebenen ID."
+  }
 }

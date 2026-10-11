@@ -30,6 +30,8 @@
   "Input.Parameter.phName": "Nome",
   "Input.Parameter.phIndex": "es. 0 oppure 0,1,2 oppure 1-5",
   "Input.Parameter.phDescription": "Descrizione",
+  "Input.Parameter.Type": "Tipo",
+  "Input.Parameter.phType": "Tipo di dato",
   "Input.Parameter.Name.Name": "Nome parametro",
   "Input.Parameter.Name.Description": "Descrizione parametro",
   "Add.Panel.Button": "Aggiungi",

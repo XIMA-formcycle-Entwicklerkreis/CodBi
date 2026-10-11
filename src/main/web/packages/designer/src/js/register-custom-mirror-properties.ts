@@ -15,6 +15,7 @@ import {
 import { MirrorFormSelect, MirrorFormSelectType, type IMirrorFormSelectDescriptor } from "./MirrorFormSelect.js";
 import { refreshAllMirrors } from "./MirrorChildItems.js";
 import { ensureCodbiBranding } from "./MirrorSelect.js";
+import { codbiDocsUrl } from "./CodbiDocs.js";
 import { i18n } from "./i18n.js";
 
 /** Category id grouping the Mirror widget's properties in the element properties panel. */
@@ -44,7 +45,13 @@ export function registerCustomMirrorProperties(): void {
       console.error("[CodBi] Failed to register the Mirror form-loaded refresh", x);
     }
     registerCustomCategory(
-      { id: MIRROR_CATEGORY_ID, label: i18n("designer.category.communication") },
+      {
+        id: MIRROR_CATEGORY_ID,
+        label: i18n("designer.category.communication"),
+        // Help icon (top right of the category) in the current designer language (honours the
+        // `Docs_Frontend_<lang>` redirects).
+        help: { type: "url", url: codbiDocsUrl() },
+      },
       (items) => items.length,
     );
 

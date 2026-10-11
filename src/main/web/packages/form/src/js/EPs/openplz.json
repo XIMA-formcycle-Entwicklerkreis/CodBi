@@ -1,3 +1,103 @@
 {
-  "Description": "/classes/EPs_openplz.OpenPLZ.html"
+  "Description": "/classes/EPs_openplz.OpenPLZ.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional country to retrieve the data of (if not provided either the country specified in",
+          "de": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\")."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The orgaUnit to retrieve (e.g. FederalStates, FederalProvinces or Cantons).",
+          "de": "Die abzurufende Organisationseinheit (z. B. FederalStates, FederalProvinces oder Cantons)."
+        }
+      },
+      {
+        "index": 3,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional key of the state, province or canton to get details of.",
+          "de": "Der optionale Schlüssel des Bundeslandes, der Provinz oder des Kantons."
+        }
+      },
+      {
+        "index": 4,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional detail to fetch about a certain state, province or canton identified by the",
+          "de": "Das optionale Detail zu einem Bundesland, einer Provinz oder einem Kanton."
+        }
+      },
+      {
+        "index": 5,
+        "type": "string",
+        "optional": false,
+        "variadic": true,
+        "description": {
+          "en": "There may be up to four parameter passed along the request (e.g. postalCode, name,",
+          "de": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm)."
+        }
+      },
+      {
+        "index": 6,
+        "type": "string",
+        "optional": false,
+        "variadic": true,
+        "description": {
+          "en": "There may be up to four parameter passed along the request (e.g. postalCode, name,",
+          "de": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm)."
+        }
+      },
+      {
+        "index": 7,
+        "type": "string",
+        "optional": false,
+        "variadic": true,
+        "description": {
+          "en": "There may be up to four parameter passed along the request (e.g. postalCode, name,",
+          "de": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm)."
+        }
+      },
+      {
+        "index": 8,
+        "type": "string",
+        "optional": false,
+        "variadic": true,
+        "description": {
+          "en": "There may be up to four parameter passed along the request (e.g. postalCode, name,",
+          "de": "Bis zu vier Parameter für die Anfrage (z. B. postalCode, name, locality, searchTerm)."
+        }
+      },
+      {
+        "index": 9,
+        "type": "number",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An Optional number of pages to load.",
+          "de": "Eine optionale Anzahl zu ladender Seiten."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.",
+    "de": "Ruft Daten vom CodBi_OpenPLZ_Verwaltungseinheiten-Servlet gemäß den angegebenen Parametern ab."
+  }
 }

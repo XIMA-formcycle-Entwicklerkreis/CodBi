@@ -65,6 +65,36 @@ interface ApiParameter {
   id: number;
   /** An optional detailed prompt describing how the AI should implement this parameter/global/class. */
   Prompt?: string;
+  /** For **E**lement-**P**laceholder parameters: the datatype hint (e.g. "array", "string", "any"). */
+  Type?: string;
+  /** For **E**lement-**P**laceholder parameters: whether the parameter may be omitted. */
+  Optional?: boolean;
+  /** For **E**lement-**P**laceholder parameters: whether further trailing parameters may follow. */
+  Variadic?: boolean;
+}
+/** One persisted **E**lement-**P**laceholder parameter signature entry. */
+interface ApiSignatureParam {
+  /** The 1-based parameter index. */
+  index?: number;
+  /** An optional human readable name. */
+  name?: string;
+  /** The datatype hint. */
+  type?: string;
+  /** Whether the parameter may be omitted. */
+  optional?: boolean;
+  /** Whether further trailing parameters may follow. */
+  variadic?: boolean;
+  /** A short description. */
+  description?: string;
+}
+/** A persisted **E**lement-**P**laceholder signature stored alongside an EP's local documentation. */
+interface ApiSignature {
+  /** The ordered parameters. */
+  params?: Array<ApiSignatureParam>;
+  /** The result datatype hint. */
+  returnType?: string;
+  /** The origin of the signature (e.g. "manager", "tsdoc"). */
+  source?: string;
 }
 /** Defines a contract for an imported, or from the CodBi-Resourceservlet loaded, local API-Documentation. */
 interface ImportedApiDoc {
@@ -143,6 +173,8 @@ interface InputDataItem {
   GlobalPrompts?: { [key: string]: string };
   /** The detailed prompts of the element's CSS classes (name → prompt). */
   ClassPrompts?: { [key: string]: string };
+  /** The typed signature of an **E**lement-**P**laceholder's parameters (index → datatype). */
+  Signature?: ApiSignature;
 }
 /** Defines a contract for {@link object }s that represent local API Documentation to be merged to already existing one. */
 interface APIDocJSON {
@@ -230,6 +262,12 @@ class CommonApiParameter implements ApiParameter {
   id: number;
   /** See {@link ApiParameter.Prompt }. */
   Prompt: string = "";
+  /** See {@link ApiParameter.Type }. */
+  Type: string = "";
+  /** See {@link ApiParameter.Optional }. */
+  Optional: boolean = false;
+  /** See {@link ApiParameter.Variadic }. */
+  Variadic: boolean = false;
   /**
    * Creates this {@link ApiParameter } by setting it's {@link ApiParameter.Name },
    * {@link ApiParameter.Description } and a {@link Math.random } id.
@@ -238,12 +276,26 @@ class CommonApiParameter implements ApiParameter {
    * @param description The {@link ApiParameter.Description }.
    * @param prompt      The optional {@link ApiParameter.Prompt }.
    * @param id          The optional {@link ApiParameter.id } that will be generate {@link Math.random }ly,
-   *                    if omitted. */
-  constructor(name: string, description: string, prompt: string = "", id: number = Math.random()) {
+   *                    if omitted.
+   * @param type        The optional {@link ApiParameter.Type } (Element-Placeholder datatype hint).
+   * @param optional    The optional {@link ApiParameter.Optional } flag.
+   * @param variadic    The optional {@link ApiParameter.Variadic } flag. */
+  constructor(
+    name: string,
+    description: string,
+    prompt: string = "",
+    id: number = Math.random(),
+    type: string = "",
+    optional: boolean = false,
+    variadic: boolean = false,
+  ) {
     this.Name = name;
     this.Description = description;
     this.Prompt = prompt;
     this.id = id;
+    this.Type = type;
+    this.Optional = optional;
+    this.Variadic = variadic;
   }
 }
 // #endregion Helper
@@ -1297,6 +1349,11 @@ export class Manager implements AfterViewInit {
       result.globals = nodeData.globals && nodeData.globals.length !== 0 ? this.arrayToObject(nodeData.globals) : [];
       result.ParameterPrompts = this.arrayToPromptObject(nodeData.Parameter);
       result.GlobalPrompts = this.arrayToPromptObject(nodeData.globals);
+      // #region Persist the (typed) Element-Placeholder parameter signature for the EP builder.
+      if (type === "Elementplaceholder") {
+        result.Signature = this.parametersToSignature(nodeData.Parameter);
+      }
+      // #endregion Persist the (typed) Element-Placeholder parameter signature for the EP builder.
     }
 
     result.CondensedPrompt = nodeData.CondensedPrompt ?? "";
@@ -1685,6 +1742,67 @@ export class Manager implements AfterViewInit {
 
     return result;
   }
+  /**
+   * Builds the typed **E**lement-**P**laceholder signature persisted alongside an EP's parameters. The
+   * index is taken from the parameter's **Name** (which holds the numeric index for EPs).
+   *
+   * @param toConvert The {@link ApiParameter } array of the EP.
+   *
+   * @returns The {@link ApiSignature } to persist. */
+  parametersToSignature(toConvert: ApiParameter[] | undefined): ApiSignature {
+    const params: Array<ApiSignatureParam> = [];
+
+    for (const element of toConvert ?? []) {
+      const parsedIndex = Number.parseInt(element.Name, 10);
+
+      params.push({
+        index: Number.isNaN(parsedIndex) ? params.length + 1 : parsedIndex,
+        name: Number.isNaN(parsedIndex) ? element.Name : undefined,
+        type: element.Type && element.Type !== "" ? element.Type : "any",
+        optional: element.Optional ?? false,
+        variadic: element.Variadic ?? false,
+        description: element.Description,
+      });
+    }
+
+    params.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+    return { params, returnType: "any", source: "manager" };
+  }
+  /**
+   * Folds a persisted **E**lement-**P**laceholder {@link ApiSignature } back onto the parameter rows so
+   * the manager shows the stored datatypes.
+   *
+   * @param params    The parameter rows to enrich (index held in **Name**).
+   * @param signature The persisted signature, if any. */
+  applySignatureToParameters(params: ApiParameter[], signature: ApiSignature | undefined): void {
+    if (!signature?.params) {
+      return;
+    }
+
+    const byIndex = new Map<number, ApiSignatureParam>();
+
+    for (const spec of signature.params) {
+      byIndex.set(spec.index ?? byIndex.size + 1, spec);
+    }
+
+    for (const param of params) {
+      const parsedIndex = Number.parseInt(param.Name, 10);
+      const spec = Number.isNaN(parsedIndex) ? undefined : byIndex.get(parsedIndex);
+
+      if (spec) {
+        param.Type = spec.type ?? "any";
+        param.Optional = spec.optional ?? false;
+        param.Variadic = spec.variadic ?? false;
+
+        if ((param.Description === undefined || param.Description === "") && spec.description) {
+          param.Description = spec.description;
+        }
+      }
+    }
+  }
+  /** The datatypes selectable for **E**lement-**P**laceholder parameters. */
+  parameterTypes: Array<string> = ["any", "string", "number", "boolean", "array", "object", "date"];
   /**
    * Convert a tree node reflecting a CodBi Standard Configuration into an {@link object } reflecting one.
    *
@@ -3111,6 +3229,9 @@ export class Manager implements AfterViewInit {
       toEdit.Description,
       toEdit.Prompt ?? "",
       toEdit.id,
+      toEdit.Type ?? "",
+      toEdit.Optional ?? false,
+      toEdit.Variadic ?? false,
     );
   }
   /** States whether the parameter/class/global variable - name, that is currently being edited, is a valid one or not.*/
@@ -3322,6 +3443,7 @@ export class Manager implements AfterViewInit {
       ParameterPrompts?: { [key: string]: string };
       GlobalPrompts?: { [key: string]: string };
       ClassPrompts?: { [key: string]: string };
+      Signature?: ApiSignature;
     };
   }): TreeNode[] {
     const root: TreeNode[] = [];
@@ -3361,6 +3483,11 @@ export class Manager implements AfterViewInit {
                 Description: toConvert[key].Parameter[pKey],
               });
             }
+
+            this.applySignatureToParameters(
+              existingNode.data.Parameter as unknown as ApiParameter[],
+              toConvert[key].Signature,
+            );
             for (const gKey in toConvert[key].globals) {
               DEFINED.tsCheck<Array<unknown>>(existingNode.data.globals).push({
                 Name: gKey,
@@ -3421,6 +3548,11 @@ export class Manager implements AfterViewInit {
                 Description: toConvert[key].Parameter[pKey],
               });
             }
+
+            this.applySignatureToParameters(
+              newNode.data.Parameter as unknown as ApiParameter[],
+              toConvert[key].Signature,
+            );
             for (const gKey in toConvert[key].globals) {
               DEFINED.tsCheck<Array<unknown>>(newNode.data.globals).push({
                 Name: gKey,

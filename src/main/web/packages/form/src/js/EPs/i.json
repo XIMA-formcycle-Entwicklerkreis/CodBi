@@ -1,3 +1,27 @@
 {
-  "Description": "/classes/EPs_i.I.html"
+  "Description": "/classes/EPs_i.I.html",
+  "Summary": {
+    "en": "This Element-Placeholder acquires a specific element within an Array .",
+    "de": "Dieser Element-Placeholder holt ein bestimmtes Element aus einem Array."
+  },
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "number",
+        "optional": false,
+        "variadic": false,
+        "description": "The index to retrieve."
+      },
+      {
+        "index": 2,
+        "type": "array",
+        "optional": false,
+        "variadic": false,
+        "description": "The Array from which to retrieve the value from."
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  }
 }

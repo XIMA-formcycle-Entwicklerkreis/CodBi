@@ -1,3 +1,33 @@
 {
-  "Description": "/classes/EPs_v.V.html"
+  "Description": "/classes/EPs_v.V.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The name of the global variable.",
+          "de": "Der Name der globalen Variablen."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "REPORT if a CodBiError shall be thrown when the global variable isn\u0027t",
+          "de": "REPORT, wenn ein CodBiError geworfen werden soll, falls die globale Variable nicht existiert."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder acquires a global variable\u0027s value.",
+    "de": "Dieser Element-Placeholder liefert den Wert einer globalen Variablen."
+  }
 }

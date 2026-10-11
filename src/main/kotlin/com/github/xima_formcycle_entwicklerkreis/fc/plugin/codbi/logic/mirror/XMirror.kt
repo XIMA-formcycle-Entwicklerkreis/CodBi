@@ -13,6 +13,8 @@ import de.xima.fc.form.common.models.IXItemWidget
 import de.xima.fc.form.common.models.XItemPropertyDesc
 import de.xima.fc.form.common.models.XItemRenderCtx
 import de.xima.fc.form.common.models.XItemRenderData
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 /**
@@ -107,9 +109,26 @@ class XMirror : IXItemWidget, IXItemAppendable {
     val elementRef = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT)?.getString()
     if (formRef.isNullOrBlank() || elementRef.isNullOrBlank()) {
       removePreviousRender(container)
-      // `XMirror` implements two interfaces that both inherit `renderItemPreview` from
-      // `IXItemBasic`, so the intended supertype must be named explicitly.
-      super<IXItemWidget>.renderItemPreview(container, renderData, renderCtx, formRenderCtx)
+      // The default `IXItemWidget.renderItemPreview` renders FORMCYCLE's generic `XWidgetIcon`
+      // placeholder (a puzzle piece) — which ignores `getIcon()`. We render our OWN icon instead,
+      // so
+      // a freshly dropped Mirror already shows the custom CodBi mirror icon plus the widget label.
+      val locale = Locale.forLanguageTag(renderData.getXFormRenderConfig().getLang() ?: "en")
+      val placeholder = Div()
+      placeholder.setCSSClass("codbi-mirror-placeholder")
+      placeholder.setStyle("padding:8px;text-align:center;color:#6b7280;")
+      val icon = Div()
+      icon.setCSSClass("codbi-mirror-icon")
+      icon.setStyle("display:block;margin:0 auto 6px;width:28px;height:28px;")
+      // Embed the icon as INLINE SVG markup, NOT as a CSS background: the designer canvas neither
+      // loads this widget's CSS nor reliably honours inline `style`/data-URI backgrounds, whereas
+      // inline markup is emitted verbatim and always renders.
+      icon.appendChild(RawMarkup(ICON_SVG))
+      placeholder.appendChild(icon)
+      placeholder.appendText(
+          org.owasp.encoder.Encode.forHtml(
+              localize(EMessageKey.DESIGNER_WIDGET_MIRROR_LABEL, locale)))
+      container.appendChild(placeholder)
       return
     }
     val wrapper = Div()
@@ -225,6 +244,88 @@ class XMirror : IXItemWidget, IXItemAppendable {
 
   /** Short, globally unique element-name prefix. */
   override fun getPrefix(): String = Constants.MIRROR_PREFIX
+
+  /**
+   * Custom icon shown for this widget in the designer's element list/palette: a mirrored software
+   * component with a CodBi dark-orange accent.
+   *
+   * IMPORTANT: for any icon that does NOT start with `ico-fc-` or `fa-`, the designer treats the
+   * value as a URL to an SVG: it fetches it and inlines the `<svg>` into the palette element (and
+   * falls back to `<img src>`). Returning a CSS class therefore produced a broken image. We return
+   * the (relative) URL of the icon served by the plugin's `Resource` servlet instead.
+   */
+  override fun getIcon(): String = "ico-fc-XMirror"
+
+  /**
+   * CSS painted with the designer (and the published form): paints [ICON_SVG] for the
+   * `.ico-fc-XMirror` class returned by [getIcon].
+   *
+   * FORMCYCLE renders an icon returned as `ico-fc-*` as `<i class="ico-fc-*">` (a CSS class, never
+   * a URL) — so we must paint it here. A data URI is used because a resource URL cannot be built
+   * server-side (the servlet context path is not known to the widget), and a relative URL resolves
+   * against the designer's deep page path and 404s.
+   *
+   * The layered `drop-shadow`s add the "cool blur" glow around the technical arrow (the arrow also
+   * carries an out-of-focus beam stroke, see [ICON_SVG]).
+   */
+  override fun getCssData(): String =
+      ".ico-fc-XMirror{background-image:url(\"${iconDataUri()}\");" +
+          "background-repeat:no-repeat;background-position:center;background-size:1.15em 1.15em;" +
+          "filter:drop-shadow(0 0 1.5px rgba(56,189,248,0.85)) " +
+          "drop-shadow(0 0 3px rgba(37,99,235,0.45));" +
+          "display:inline-block;width:1.15em;height:1.15em;vertical-align:middle}" +
+          ".ico-fc-XMirror::before{content:\"\" !important}" +
+          // The placeholder icon (a freshly dropped, unconfigured Mirror) is rendered inline in the
+          // canvas; give its SVG the same glow. This stylesheet is what reaches the canvas iframe
+          // (the designer's own frame.css does not).
+          ".codbi-mirror-icon svg{display:block;" +
+          "filter:drop-shadow(0 0 1.5px rgba(56,189,248,0.85)) " +
+          "drop-shadow(0 0 3px rgba(37,99,235,0.45))}"
+
+  /** [ICON_SVG] as a self-contained data URI (UTF-8, percent-encoded). */
+  private fun iconDataUri(): String =
+      "data:image/svg+xml;charset=utf-8," +
+          URLEncoder.encode(ICON_SVG, StandardCharsets.UTF_8).replace("+", "%20")
+
+  /**
+   * A gagawa node whose [write] emits [markup] verbatim. Used to embed the icon's SVG inline so the
+   * designer canvas shows it without depending on any external stylesheet or data-URI background.
+   */
+  private class RawMarkup(private val markup: String) : Node("span") {
+    override fun write(): String = markup
+  }
+
+  private companion object {
+    /**
+     * The Mirror widget icon: a perspective mirror frame (its left side nearer to the observer)
+     * pierced by a technical, two-headed beam arrow, flanked by two CodBi brackets.
+     *
+     * The arrow is drawn as a soft, out-of-focus “beam” stroke (light blue, lower opacity) with the
+     * crisp two-rail arrow and stealth chevrons on top — so it reads as a glowing, blurred beam
+     * rather than a plain line. Additional glow comes from the `drop-shadow`s in [getCssData] and,
+     * for the badge/preview, from `frame.css`.
+     *
+     * Kept in sync with `src/main/resources/.../codbi/mirror-icon.svg` and the badge icon in
+     * `packages/designer/src/js/CodbiElementMarkers.ts`.
+     */
+    const val ICON_SVG =
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' width='28' height='28'>" +
+            "<g fill='none' stroke='#ff8c00' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'>" +
+            "<path d='M11 9 L4 9 L4 39 L11 39'/><path d='M37 9 L44 9 L44 39 L37 39'/></g>" +
+            "<path d='M17 11 L32 16 L32 32 L17 37 Z' fill='#2563eb' fill-opacity='0.12' " +
+            "stroke='#2563eb' stroke-width='2.6' stroke-linejoin='round'/>" +
+            // Blurred "beam" behind the arrow — reads as a glowing, out-of-focus shaft.
+            "<path d='M8 24 H40' fill='none' stroke='#38bdf8' stroke-opacity='0.55' stroke-width='6' " +
+            "stroke-linecap='round'/>" +
+            // Crisp, technical two-rail arrow with stealth chevrons on both ends.
+            "<g fill='none' stroke='#0f172a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>" +
+            "<path d='M13 24 H35'/><path d='M13.5 22 H34.5'/>" +
+            "<path d='M18 20 L13 24 L18 28'/><path d='M16 21.2 L13 24 L16 26.8'/>" +
+            "<path d='M30 20 L35 24 L30 28'/><path d='M32 21.2 L35 24 L32 26.8'/></g>" +
+            // Near (left) frame edge drawn LAST so it sits ON TOP of the arrow.
+            "<path d='M17 11 L17 37' fill='none' stroke='#2563eb' stroke-width='2.6' " +
+            "stroke-linecap='round' stroke-linejoin='round'/></svg>"
+  }
 
   /** Human-readable label shown for this widget in the designer's element list. */
   override fun getLabel(locale: Locale): String =

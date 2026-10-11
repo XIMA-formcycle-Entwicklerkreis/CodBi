@@ -1,3 +1,43 @@
 {
-  "Description": "/classes/EPs_data.join.Data_Join.html"
+  "Description": "/classes/EPs_data.join.Data_Join.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "object",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The first object to join.",
+          "de": "Das erste zu verbindende Objekt."
+        }
+      },
+      {
+        "index": 2,
+        "type": "object",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The second object to join (optional).",
+          "de": "Das zweite zu verbindende Objekt (optional)."
+        }
+      },
+      {
+        "index": 3,
+        "type": "object",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The third object to join (optional).",
+          "de": "Das dritte zu verbindende Objekt (optional)."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "Joins the properties of multiple object s into one.",
+    "de": "Fasst die Eigenschaften mehrerer Objekte zu einem einzigen zusammen."
+  }
 }

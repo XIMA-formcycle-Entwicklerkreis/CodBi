@@ -1,3 +1,27 @@
+/** One positional parameter of an **E**lement **P**laceholder (mirrors the form package's EPParamSpec). */
+interface CodbiEPParamSpec {
+  /** The 1-based position of this parameter. */
+  index: number;
+  /** An optional human readable label. */
+  name?: string;
+  /** The datatype hint (defaults to "any"). */
+  type: string;
+  /** Whether the parameter may be omitted. */
+  optional?: boolean;
+  /** Whether further trailing parameters may follow. */
+  variadic?: boolean;
+  /** A short human readable description (a plain string or a per-language map). */
+  description?: string | { [lang: string]: string };
+}
+/** A resolved **E**lement **P**laceholder signature (mirrors the form package's EPSignature). */
+interface CodbiEPSignature {
+  /** The ordered parameter specifications. */
+  params: Array<CodbiEPParamSpec>;
+  /** The datatype hint for the EP's result. */
+  returnType?: string;
+  /** Where the signature originated from. */
+  source: string;
+}
 /**
  * Augments the {@link window } in order to provide globally available
  * CodBi-Related information. */
@@ -37,8 +61,16 @@ interface Window {
         Description: string;
         /** Stores the parameter that this **Element-Placeholder** provides. */
         Parameter?: { [key: string]: string };
+        /** Stores the typed signature resolved by the build-time generator (Tier A) or the manager (Tier B). */
+        Signature?: CodbiEPSignature;
+        /** A very short (one-sentence) description of the **E**lement **P**laceholder (string or per-language map). */
+        Summary?: string | { [lang: string]: string };
+        /** Whether this entry is a **locally** defined EP (registered via the Local API-doc manager). */
+        local?: boolean;
       };
     };
+    /** Stores the resolved **E**lement **P**laceholder signatures keyed by (lowercase) EP id. */
+    epSignatures?: { [key: string]: CodbiEPSignature };
     /** Stores the URLs pointing to the root of localized API-Documentations. */
     docsAPI: {
       [key: string]: string;

@@ -13,7 +13,13 @@ import $ from "jquery";
 
 type Module = typeof import("@de-xima/fc-form-designer");
 
+export { $ };
+
 export const getLanguage: Module["getLanguage"] = () => TestState.language;
+
+export const registerCustomEditor: Module["registerCustomEditor"] = () => {};
+
+export const Callbacks: Partial<Module["Callbacks"]> = {};
 
 export const registerCustomFormProperty: Module["registerCustomFormProperty"] = (propertyDescriptor, location) =>
   TestState.customFormProperties.push([propertyDescriptor, location]);

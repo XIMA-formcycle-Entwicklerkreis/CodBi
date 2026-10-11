@@ -1,3 +1,33 @@
 {
-  "Description": "/classes/EPs_bayvis.ansprechpartner.details.BayVIS_Ansprechpartner_Details.html"
+  "Description": "/classes/EPs_bayvis.ansprechpartner.details.BayVIS_Ansprechpartner_Details.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The ID of the contact who\u0027s details are to be retrieved.",
+          "de": "Die ID des Ansprechpartners, dessen Details geholt werden sollen."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An optional property of the contact, like e.g. \"nachname\".",
+          "de": "Eine optionale Eigenschaft des Ansprechpartners, z. B. \"nachname\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.",
+    "de": "Dieser Element-Placeholder holt die Details eines bestimmten Ansprechpartners vom zugehörigen CodBi-Plugin-Servlet."
+  }
 }

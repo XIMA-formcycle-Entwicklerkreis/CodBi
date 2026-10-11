@@ -5,6 +5,41 @@ import { DBC } from "xdbc/src/DBC";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 
+/** The datatypes an **E**lement **P**laceholder parameter or result may assume. "any" is the
+ *  deliberate fallback — a parameter value may itself be produced by another EP and is therefore
+ *  often not statically known. */
+export type EPValueType = "string" | "number" | "boolean" | "array" | "object" | "date" | "any";
+/** Describes one positional parameter of an **E**lement **P**laceholder. */
+export interface EPParamSpec {
+  /** The 1-based position of this parameter within the EP's parameter array. */
+  index: number;
+  /** An optional human readable label (e.g. "array" or "path"). */
+  name?: string;
+  /** The datatype hint of the parameter (defaults to "any"). */
+  type: EPValueType;
+  /** Whether the parameter may be omitted. */
+  optional?: boolean;
+  /** Whether further trailing parameters may follow (e.g. OpenPLZ's "up to four more params"). */
+  variadic?: boolean;
+  /** A short human readable description. */
+  description?: string;
+}
+/** The signature of an **E**lement **P**laceholder as accepted by {@link CodbiGlobal.describeEP }. */
+export interface EPSignatureInput {
+  /** The ordered parameter specifications. */
+  params: Array<EPParamSpec>;
+  /** An optional datatype hint for the EP's result. */
+  returnType?: EPValueType;
+}
+/** A fully resolved **E**lement **P**laceholder signature. */
+export interface EPSignature {
+  /** The ordered parameter specifications. */
+  params: Array<EPParamSpec>;
+  /** The datatype hint for the EP's result (defaults to "any"). */
+  returnType?: EPValueType;
+  /** Where the signature originated from. */
+  source: "tsdoc" | "manager" | "runtime" | "heuristic";
+}
 /**
  * The global codbi object, available via `window.codbi`. Should only be used
  * when it is absolutely necessary to expose symbols externally. Use ESM imports
@@ -29,6 +64,7 @@ export interface CodbiGlobal {
   registerEP(
     id: string,
     generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+    signature?: EPSignatureInput,
   ): boolean;
   /** See {@link CodBi.extendEP }. */
   extendEP(
@@ -37,7 +73,14 @@ export interface CodbiGlobal {
       params: Array<string>,
       original: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
     ) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+    signature?: EPSignatureInput,
   ): boolean;
+  /** See {@link CodBi.describeEP }. */
+  describeEP(id: string, signature: EPSignatureInput): void;
+  /** See {@link CodBi.resolveEPSignature }. */
+  resolveEPSignature(id: string): EPSignature | undefined;
+  /** Stores the **E**lement **P**laceholder signatures resolved so far (id → signature). */
+  availableEPSignatures: { [k: string]: EPSignature };
   /** See {@link CodBi.reportError }. */
   reportError(message: string): undefined;
   /** See {@link CodBi.loadConfig }. */
@@ -260,6 +303,15 @@ export class CodBi implements CodbiGlobal {
   protected availableEPs: {
     [k: string]: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>;
   } = {};
+  /** Stores the **E**lement **P**laceholder signatures resolved so far (id → signature). Public so
+   *  that the designer's EP builder can read them. */
+  public availableEPSignatures: { [k: string]: EPSignature } = {};
+  /** Stores the arity (declared parameter count) captured at registration time (id → arity). This is
+   *  stored explicitly because {@link CodBi.extendEP } replaces the generator with a 1-arg wrapper
+   *  whose `length` no longer reflects the original arity. */
+  protected epArities: { [k: string]: number } = {};
+  /** Stores signatures provided via {@link CodBi.describeEP } before the EP itself was registered. */
+  protected pendingEPSignatures: { [k: string]: EPSignature } = {};
   /** Stores all active CSS-Classes that're references to CodBi Standard-Configurations. */
   protected configs: Array<string> = new Array<string>();
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
@@ -292,6 +344,7 @@ export class CodBi implements CodbiGlobal {
   public registerEP(
     id: string,
     generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+    signature?: EPSignatureInput,
   ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
@@ -303,6 +356,16 @@ export class CodBi implements CodbiGlobal {
     }
 
     this.availableEPs[id] = generator;
+    this.epArities[id] = generator.length;
+    // #region Capture the EP's signature (explicit or previously described) without affecting behaviour.
+    const provided = signature ?? this.pendingEPSignatures[id];
+
+    if (provided) {
+      this.availableEPSignatures[id] = CodBi.normalizeEPSignature(provided, "runtime");
+
+      delete this.pendingEPSignatures[id];
+    }
+    // #endregion Capture the EP's signature (explicit or previously described) without affecting behaviour.
 
     return true;
   }
@@ -323,6 +386,7 @@ export class CodBi implements CodbiGlobal {
       params: Array<string>,
       original: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
     ) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+    signature?: EPSignatureInput,
   ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
@@ -340,8 +404,179 @@ export class CodBi implements CodbiGlobal {
     ): Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown> => {
       return generator(params, formerEP);
     };
+    // #region Keep the original arity & only replace the signature when the extension provides one.
+    if (this.epArities[id] === undefined) {
+      this.epArities[id] = formerEP.length;
+    }
+
+    if (signature) {
+      this.availableEPSignatures[id] = CodBi.normalizeEPSignature(signature, "runtime");
+    }
+    // #endregion Keep the original arity & only replace the signature when the extension provides one.
 
     return true;
+  }
+  /**
+   * Records the parameter signature of an **E**lement **P**laceholder without touching its
+   * implementation. This is the primary way to describe EPs authored in FormCycle's JavaScript
+   * editor (which never pass through the LocalAPIDoc manager) and signatures created by the EP
+   * builder's **"Describe this EP…"** action.
+   *
+   * If the EP is not registered yet the signature is buffered and merged on {@link CodBi.registerEP }.
+   *
+   * @param id        The **E**lement **P**laceholder's id (case insensitive).
+   * @param signature The signature to record. */
+  public describeEP(id: string, signature: EPSignatureInput): void {
+    // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
+    id = id.toLowerCase().trim();
+
+    const normalized = CodBi.normalizeEPSignature(signature, "runtime");
+
+    if (this.availableEPs[id] === undefined) {
+      this.pendingEPSignatures[id] = normalized;
+    } else {
+      this.availableEPSignatures[id] = normalized;
+    }
+  }
+  /**
+   * Resolves the parameter signature of the **E**lement **P**laceholder **id** lazily and never
+   * throws. Resolution order (first hit wins):
+   *
+   * 1. signatures recorded via {@link CodBi.registerEP } / {@link CodBi.extendEP } /
+   *    {@link CodBi.describeEP };
+   * 2. `@epParam` / `@epReturn` tags found in the live generator's source
+   *    (`Function.prototype.toString()` — only comments **inside** the function body are visible);
+   * 3. the arity declared at registration (`generator.length`).
+   *
+   * Returns **undefined** when nothing is known — callers must treat that as "untyped" rather than as
+   * an error.
+   *
+   * @param id The **E**lement **P**laceholder's id (case insensitive).
+   *
+   * @returns The resolved {@link EPSignature } or **undefined**. */
+  public resolveEPSignature(id: string): EPSignature | undefined {
+    const key = id.toLowerCase().trim();
+    const known = this.availableEPSignatures[key];
+
+    if (known) {
+      return known;
+    }
+
+    const generator = this.availableEPs[key];
+
+    if (generator === undefined) {
+      return undefined;
+    }
+
+    const scanned = CodBi.scanEPSignatureFromSource(generator);
+
+    if (scanned) {
+      this.availableEPSignatures[key] = scanned;
+
+      return scanned;
+    }
+
+    const arity = this.epArities[key] ?? generator.length;
+
+    if (arity > 0) {
+      const heuristic = CodBi.arityEPSignature(arity);
+
+      this.availableEPSignatures[key] = heuristic;
+
+      return heuristic;
+    }
+
+    return undefined;
+  }
+  /**
+   * Normalizes a (possibly partial) signature input into a well-formed {@link EPSignature }, filling
+   * in datatype defaults and sequential indices.
+   *
+   * @param input  The signature input to normalize.
+   * @param source The source to tag the resulting signature with.
+   *
+   * @returns The normalized {@link EPSignature }. */
+  protected static normalizeEPSignature(input: EPSignatureInput, source: EPSignature["source"]): EPSignature {
+    const params = (input.params ?? []).map((param, index) => ({
+      index: param.index ?? index + 1,
+      name: param.name,
+      type: param.type ?? "any",
+      optional: param.optional ?? false,
+      variadic: param.variadic ?? false,
+      description: param.description,
+    }));
+
+    params.sort((a, b) => a.index - b.index);
+
+    return { params, returnType: input.returnType ?? "any", source };
+  }
+  /**
+   * Builds a best-effort signature from **count** declared parameters, all typed "any" and optional.
+   *
+   * @param count The amount of declared parameters.
+   *
+   * @returns The heuristic {@link EPSignature }. */
+  protected static arityEPSignature(count: number): EPSignature {
+    const params = new Array<EPParamSpec>();
+
+    for (let index = 1; index <= count; index++) {
+      params.push({ index, type: "any", optional: true });
+    }
+
+    return { params, returnType: "any", source: "heuristic" };
+  }
+  /**
+   * Scans the source of the live **generator** for `@epParam` / `@epReturn` tags so EPs authored
+   * without an explicit descriptor can still be described. Only comments inside the function body are
+   * visible to `Function.prototype.toString()`.
+   *
+   * @param generator The live EP generator.
+   *
+   * @returns The scanned {@link EPSignature } or **undefined** when no tags were found. */
+  protected static scanEPSignatureFromSource(
+    generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+  ): EPSignature | undefined {
+    let source = "";
+
+    try {
+      source = Function.prototype.toString.call(generator);
+    } catch {
+      return undefined;
+    }
+
+    const params = new Array<EPParamSpec>();
+    const paramPattern = /@epParam\s+(\d+)\s*(?:\{\s*([A-Za-z]+)\s*\})?\s*(?:(optional|variadic)\b)?\s*([^\r\n*]*)/g;
+
+    for (const match of source.matchAll(paramPattern)) {
+      params.push({
+        index: Number.parseInt(match[1], 10),
+        type: CodBi.normalizeEPValueType(match[2]),
+        optional: match[3] === "optional",
+        variadic: match[3] === "variadic",
+        description: match[4]?.trim() || undefined,
+      });
+    }
+
+    if (params.length === 0) {
+      return undefined;
+    }
+
+    const returnMatch = /@epReturn\s*(?:\{\s*([A-Za-z]+)\s*\})?/.exec(source);
+
+    return CodBi.normalizeEPSignature({ params, returnType: CodBi.normalizeEPValueType(returnMatch?.[1]) }, "runtime");
+  }
+  /**
+   * Coerces an arbitrary datatype token into a known {@link EPValueType } (defaults to "any").
+   *
+   * @param token The raw datatype token (e.g. "Array").
+   *
+   * @returns The matching {@link EPValueType }. */
+  protected static normalizeEPValueType(token: string | undefined): EPValueType {
+    const normalized = token?.toLowerCase().trim() as EPValueType | undefined;
+
+    return normalized && ["string", "number", "boolean", "array", "object", "date", "any"].includes(normalized)
+      ? normalized
+      : "any";
   }
   /**
    * Checks the DB for an override of the given EP (once per EP id).
@@ -604,6 +839,14 @@ export class CodBi implements CodbiGlobal {
               },
               success: async (response) => {
                 if (response.result === "NONE") {
+                  // The EP could not be loaded — pass the raw parameter through and keep resolving
+                  // instead of leaving the promise pending (which surfaced as a retrieval timeout).
+                  result.splice(i, 0, candidate);
+
+                  if (--cntPromises === 0) {
+                    resolve(result);
+                  }
+
                   return;
                 }
 
@@ -647,6 +890,14 @@ export class CodBi implements CodbiGlobal {
                   .catch((X: unknown) => {
                     reject(X);
                   });
+              },
+              error: () => {
+                // The DB lookup failed — pass the raw parameter through so resolution still settles.
+                result.splice(i, 0, candidate);
+
+                if (--cntPromises === 0) {
+                  resolve(result);
+                }
               },
             });
           }
@@ -742,6 +993,11 @@ export class CodBi implements CodbiGlobal {
                           },
                           success: async (response) => {
                             if (response.result === "NONE") {
+                              // Unknown EP — keep the original value and settle instead of hanging.
+                              if (--cntPromises === 0) {
+                                resolve(config);
+                              }
+
                               return;
                             }
 
@@ -779,6 +1035,12 @@ export class CodBi implements CodbiGlobal {
                               .catch((X: unknown) => {
                                 reject(X);
                               });
+                          },
+                          error: () => {
+                            // Lookup failed — keep the original value and settle instead of hanging.
+                            if (--cntPromises === 0) {
+                              resolve(config);
+                            }
                           },
                         });
                       }
@@ -852,35 +1114,48 @@ export class CodBi implements CodbiGlobal {
                       "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
                     },
                     success: async (response) => {
-                      if (response.result !== "NONE") {
-                        await this.importRemoteModule(response.result);
+                      if (response.result === "NONE") {
+                        // Unknown EP — keep the original value and settle instead of hanging.
+                        if (--cntPromises === 0) {
+                          resolve(config);
+                        }
 
-                        this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
-                          const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
-                            outermostEP.params === "" ? new Array<string>() : real,
-                          );
-                          // If parameter is a single element placeholder...
-                          if (epResult instanceof Promise) {
-                            epResult
-                              .then((real) => {
-                                config[key] = real;
+                        return;
+                      }
 
-                                if (--cntPromises === 0) {
-                                  resolve(config);
-                                }
-                              })
-                              .catch((X: unknown) => {
-                                reject(X);
-                              });
-                          } else {
-                            // If parameter is not an array and contains no element placeholder...
-                            config[key] = epResult;
+                      await this.importRemoteModule(response.result);
 
-                            if (--cntPromises === 0) {
-                              resolve(config);
-                            }
+                      this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
+                        const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
+                          outermostEP.params === "" ? new Array<string>() : real,
+                        );
+                        // If parameter is a single element placeholder...
+                        if (epResult instanceof Promise) {
+                          epResult
+                            .then((real) => {
+                              config[key] = real;
+
+                              if (--cntPromises === 0) {
+                                resolve(config);
+                              }
+                            })
+                            .catch((X: unknown) => {
+                              reject(X);
+                            });
+                        } else {
+                          // If parameter is not an array and contains no element placeholder...
+                          config[key] = epResult;
+
+                          if (--cntPromises === 0) {
+                            resolve(config);
                           }
-                        });
+                        }
+                      });
+                    },
+                    error: () => {
+                      // Lookup failed — keep the original value and settle instead of hanging.
+                      if (--cntPromises === 0) {
+                        resolve(config);
                       }
                     },
                   });

@@ -1,3 +1,43 @@
 {
-  "Description": "/classes/EPs_date.arithmetic.DATE_Arithmetic.html"
+  "Description": "/classes/EPs_date.arithmetic.DATE_Arithmetic.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The String to turn to a Date.",
+          "de": "Die in ein Datum umzuwandelnde Zeichenkette."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional format of the \"dateString\" (e.g. DD/MM/YYYY).",
+          "de": "Das optionale Format der \"dateString\" (z. B. DD/MM/YYYY)."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The operations to perform on the Date specified.",
+          "de": "Die auf das angegebene Datum anzuwendenden Operationen."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder turns a String into a Date .",
+    "de": "Dieser Element-Placeholder wandelt eine Zeichenkette in ein Datum um und wendet arithmetische Operationen darauf an."
+  }
 }

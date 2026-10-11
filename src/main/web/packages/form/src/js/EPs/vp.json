@@ -1,3 +1,33 @@
 {
-  "Description": "/classes/EPs_vp.VP.html"
+  "Description": "/classes/EPs_vp.VP.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The key (the part after the GV_ prefix in the plugin property name).",
+          "de": "Der Schlüssel (der Teil nach dem Präfix GV_ im Plugin-Eigenschaftsnamen)."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "REPORT if a CodBiError shall be thrown when the key isn\u0027t",
+          "de": "REPORT, wenn ein CodBiError geworfen werden soll, falls der Schlüssel fehlt."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder acquires a value from window.codbiSettings.gv that was injected via a plugin property prefixed with GV_.",
+    "de": "Dieser Element-Placeholder liefert einen Wert aus window.codbiSettings.gv."
+  }
 }

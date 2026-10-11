@@ -515,9 +515,10 @@
                 stripedRows >
         <ng-template #header >
             <tr>
-                <th style="width:28%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
-                <th style="width:28%">{{"Input.Parameter.Description" | transloco }}</th>
-                <th style="width:44%">{{"Input.Parameter.Prompt" | transloco }}</th></tr></ng-template>
+                <th style="width:22%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
+                <th style="width:26%">{{"Input.Parameter.Description" | transloco }}</th>
+                <th style="width:42%">{{"Input.Parameter.Prompt" | transloco }}</th>
+                <th *ngIf = "isEP" style="width:10%">{{"Input.Parameter.Type" | transloco }}</th></tr></ng-template>
 
                 <ng-template   #body
 
@@ -572,6 +573,15 @@
                                                             [(ngModel)]     = "parameter.Prompt"></textarea></ng-template>
 
                                 <ng-template #output >{{ parameter.Prompt }}</ng-template></p-cellEditor></td>
+                                    <td *ngIf = "isEP">
+                                        <p-cellEditor>
+                                            <ng-template #input >
+                                                <select [(ngModel)]       = "parameter.Type"
+                                                        [attr.placeholder] = "'Input.Parameter.phType' | transloco"
+                                                        style              = "width : 100% ; padding : 1px 4px ;">
+                                                    <option *ngFor = "let parameterType of parameterTypes" [value] = "parameterType">{{ parameterType }}</option></select></ng-template>
+
+                                            <ng-template #output >{{ parameter.Type }}</ng-template></p-cellEditor></td>
                                     <td>
                                         <div class="flex items-center justify-center gap-2">
                                             <button *ngIf = "!editing"

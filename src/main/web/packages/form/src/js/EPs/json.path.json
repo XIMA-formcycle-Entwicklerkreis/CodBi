@@ -1,3 +1,33 @@
 {
-  "Description": "/classes/EPs_json.path.JSON_Path.html"
+  "Description": "/classes/EPs_json.path.JSON_Path.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "object",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The Object to retrieve the requested one from.",
+          "de": "Das Objekt, aus dem der gesuchte Wert geholt wird."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The dotted path leading to the requested one.",
+          "de": "Der punktierte Pfad zum gesuchten Wert."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves an Object at a specific path out of the one given in the first parameter.",
+    "de": "Dieser Element-Placeholder holt ein Objekt an einem bestimmten Pfad aus dem übergebenen Objekt."
+  }
 }

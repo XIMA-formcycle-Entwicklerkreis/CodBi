@@ -1,3 +1,33 @@
 {
-  "Description": "/classes/EPs_date.fromstring.DATE_FromString.html"
+  "Description": "/classes/EPs_date.fromstring.DATE_FromString.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The String to turn to a Date.",
+          "de": "Die in ein Datum umzuwandelnde Zeichenkette."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An optional dateformat string like YYYY/MM/DD, for example.",
+          "de": "Eine optionale Datumsformat-Zeichenkette, z. B. YYYY/MM/DD."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder turns a String into a Date .",
+    "de": "Dieser Element-Placeholder wandelt eine Zeichenkette in ein Datum um."
+  }
 }

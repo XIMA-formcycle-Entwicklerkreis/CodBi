@@ -1,3 +1,27 @@
 {
-  "Description": "/classes/EPs_date.weekends.Date_Weekends.html"
+  "Description": "/classes/EPs_date.weekends.Date_Weekends.html",
+  "Summary": {
+    "en": "This Element-Placeholder Registers the \"Date.Weekend\"-EP along with a necessary CSS-Injection in the Document.head .",
+    "de": "Dieser Element-Placeholder registriert den \"Date.Weekend\"-EP samt notwendiger CSS-Injektion in den Document.head."
+  },
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": "Beginning of the range of dates to return unless it is the only parameter. In that case it specifies the end"
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": "The end of the range."
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  }
 }

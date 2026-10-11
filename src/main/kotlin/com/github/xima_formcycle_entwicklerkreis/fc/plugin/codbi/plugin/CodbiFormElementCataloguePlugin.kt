@@ -63,11 +63,14 @@ class CodbiFormElementCataloguePlugin : IPluginFormElementCatalogue {
       add(
           JSONObject()
               .fluentPut("className", XMirror::class.java.simpleName)
+              // FORMCYCLE always generates a unique id per dropped item from the widget prefix
+              // (e.g. `xi-mir-1`), so no fixed `id` is provided. `use_name_idx` makes it also
+              // uniquify the NAME, so several Mirrors never share the same field-name prefix.
+              .fluentPut("use_name_idx", true)
               .fluentPut(
                   "properties",
                   JSONObject()
                       .fluentPut("name", "mirFormElement")
-                      .fluentPut("id", "xi-mir-form-element")
                       .fluentPut(MIRROR_PROPERTY_FORM, "")
                       .fluentPut(MIRROR_PROPERTY_ELEMENT, "")))
     }

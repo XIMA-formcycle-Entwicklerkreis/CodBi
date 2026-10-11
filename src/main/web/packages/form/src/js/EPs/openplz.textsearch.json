@@ -1,3 +1,43 @@
 {
-  "Description": "/classes/EPs_openplz.textsearch.OpenPLZ_TextSearch.html"
+  "Description": "/classes/EPs_openplz.textsearch.OpenPLZ_TextSearch.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional country to retrieve the data of (if not provided either the country specified in",
+          "de": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\")."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g. 91522 Nürnbergerstrasse ).",
+          "de": "Der POSIX-RegEx-Suchbegriff (z. B. 91522 Nürnbergerstraße)."
+        }
+      },
+      {
+        "index": 3,
+        "type": "number",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An Optional number of pages to load.",
+          "de": "Eine optionale Anzahl zu ladender Seiten."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "An OpenPLZ -Request performing a full text-search.",
+    "de": "Eine eine Volltextsuche durchführende OpenPLZ-Anfrage."
+  }
 }

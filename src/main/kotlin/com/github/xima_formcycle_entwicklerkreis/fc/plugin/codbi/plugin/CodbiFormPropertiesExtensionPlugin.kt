@@ -5,6 +5,10 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_ENABLE_CODBI
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_ELEMENTS
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_ELEMENTS_DEFAULT
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_LABELS
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_LABELS_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_FORM_PROPERTIES_EXTENSION_ID
@@ -46,6 +50,9 @@ class CodbiFormPropertiesExtensionPlugin : IPluginFormPropertiesExtension, IFCRe
     return IPluginFormPropertiesExtensionRetVal {
       listOf(
           XItemPropertyDesc(DESIGNER_PROPERTY_ENABLE_CODBI, DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT),
+          XItemPropertyDesc(
+              DESIGNER_PROPERTY_MARK_ELEMENTS, DESIGNER_PROPERTY_MARK_ELEMENTS_DEFAULT),
+          XItemPropertyDesc(DESIGNER_PROPERTY_MARK_LABELS, DESIGNER_PROPERTY_MARK_LABELS_DEFAULT),
           XItemPropertyDesc(DESIGNER_PROPERTY_STANDARDS, DESIGNER_PROPERTY_STANDARDS_DEFAULT),
           XItemPropertyDesc(
               DESIGNER_PROPERTY_CONFIG_TEMPLATE, DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT),

@@ -186,6 +186,65 @@ function Get-EpParamHints {
   return $map
 }
 
+function Get-EpParamSpecs {
+  # Parses the EP's "Config Parameter" / "Placeholder Parameter" ordinal list into typed specs,
+  # honoring an optional inline `{Type}` prefix and optional/variadic hints. Also folds in explicit
+  # `@epParam` tags so DTs documented that way are captured too.
+  param([string]$Doc)
+  $specs = @()
+  $seen = @{}
+  foreach ($m in [regex]::Matches($Doc, "(?im)^\s*-\s*(\d+)(?:st|nd|rd|th)?\s*[\.\):]?\s*(?:\{\s*([A-Za-z]+)\s*\}\s*)?(.+)$")) {
+    $idx = [int]$m.Groups[1].Value
+    if ($seen.ContainsKey($idx)) { continue }
+    $seen[$idx] = $true
+    $type = if ($m.Groups[2].Success -and $m.Groups[2].Value) { $m.Groups[2].Value.ToLowerInvariant() } else { "any" }
+    $desc = To-OneSentence $m.Groups[3].Value
+    $optional = [bool]($desc -match "(?i)\boptional\b")
+    $variadic = [bool]($desc -match "(?i)\bup to\b|\bvariadic\b")
+    $specs += [ordered]@{
+      index       = $idx
+      type        = $type
+      optional    = $optional
+      variadic    = $variadic
+      description = $desc
+    }
+  }
+
+  foreach ($m in [regex]::Matches($Doc, "(?im)@epParam\s+(\d+)\s*(?:\{\s*([A-Za-z]+)\s*\})?\s*(?:(optional|variadic)\b)?\s*([^\r\n]*)?")) {
+    $idx = [int]$m.Groups[1].Value
+    if ($seen.ContainsKey($idx)) { continue }
+    $seen[$idx] = $true
+    $type = if ($m.Groups[2].Success -and $m.Groups[2].Value) { $m.Groups[2].Value.ToLowerInvariant() } else { "any" }
+    $specs += [ordered]@{
+      index       = $idx
+      type        = $type
+      optional    = ($m.Groups[3].Value -eq "optional")
+      variadic    = ($m.Groups[3].Value -eq "variadic")
+      description = ($m.Groups[4].Value).Trim()
+    }
+  }
+
+  return @($specs | Sort-Object { $_.index })
+}
+
+function Get-EpSignature {
+  # Builds the typed EP signature ({ params = [...]; returnType; source }) or $null when the EP's TSDoc
+  # carries no parameter documentation.
+  param([string]$Doc)
+  $params = Get-EpParamSpecs $Doc
+  if ($params.Count -eq 0) { return $null }
+  $returnType = "any"
+  $returnMatch = [regex]::Match($Doc, "(?im)@epReturn\s*(?:\{\s*([A-Za-z]+)\s*\})?")
+  if ($returnMatch.Success -and $returnMatch.Groups[1].Value) {
+    $returnType = $returnMatch.Groups[1].Value.ToLowerInvariant()
+  }
+  return [ordered]@{
+    params     = $params
+    returnType = $returnType
+    source     = "tsdoc"
+  }
+}
+
 function Get-ConfigClassHints {
   param(
     [string]$Doc,
@@ -490,6 +549,7 @@ Get-ChildItem $epDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   [void]$sb.AppendLine("- ${id}: $desc")
 
   $epHints = Get-EpParamHints $doc
+  $epSignature = Get-EpSignature $doc
   $entryParams = [ordered]@{}
   if ($epHints.Count -eq 0) {
     [void]$sb.AppendLine("  - Parameters: none.")
@@ -500,7 +560,7 @@ Get-ChildItem $epDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
     }
   }
 
-  $detailsEntries[$id] = [ordered]@{
+  $epEntry = [ordered]@{
     id = $id
     type = "ep"
     summary = $desc
@@ -508,6 +568,10 @@ Get-ChildItem $epDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
     parameters = $entryParams
     classDescriptions = [ordered]@{}
   }
+  if ($null -ne $epSignature) {
+    $epEntry.signature = $epSignature
+  }
+  $detailsEntries[$id] = $epEntry
   $detailsAliases[$id] = $id
   $detailsAliases[$id.ToLowerInvariant()] = $id
 }

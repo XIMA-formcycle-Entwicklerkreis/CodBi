@@ -69,13 +69,22 @@ export function formFromDesigner(designer: unknown): string {
  */
 export function ensureCodbiBranding(): void {
   const root = document.documentElement;
-  if (root.style.getPropertyValue("--codbi-logo-url")) {
-    return;
-  }
   const baseURL = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
-  const path = "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg";
-  const url = `${baseURL}plugin?name=Resource&Path=${encodeURIComponent(path)}`;
-  root.style.setProperty("--codbi-logo-url", `url("${url}")`);
+  const resourceUrl = (path: string): string => `${baseURL}plugin?name=Resource&Path=${encodeURIComponent(path)}`;
+
+  if (!root.style.getPropertyValue("--codbi-logo-url")) {
+    root.style.setProperty(
+      "--codbi-logo-url",
+      `url("${resourceUrl("/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg")}")`,
+    );
+  }
+  // Icon for the Mirror widget (see `XMirror.getIcon()` and the `.codbi-ico-mirror` CSS rule).
+  if (!root.style.getPropertyValue("--codbi-mirror-icon-url")) {
+    root.style.setProperty(
+      "--codbi-mirror-icon-url",
+      `url("${resourceUrl("/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/mirror-icon.svg")}")`,
+    );
+  }
 }
 
 /** Builds the plugin servlet URL used by the dropdowns. */

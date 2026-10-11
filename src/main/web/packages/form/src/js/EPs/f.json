@@ -1,3 +1,43 @@
 {
-  "Description": "/classes/EPs_f.F.html"
+  "Description": "/classes/EPs_f.F.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The name of the property to look for.",
+          "de": "Der Name der gesuchten Eigenschaft."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The value the property to look for has to have.",
+          "de": "Der Wert, den die gesuchte Eigenschaft haben muss."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The Array of objects to scan.",
+          "de": "Das Array der zu durchsuchenden Objekte."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "Finds the objects within an Array that have a specific property with a specific value.",
+    "de": "Findet die Objekte in einem Array, die eine bestimmte Eigenschaft mit einem bestimmten Wert haben."
+  }
 }

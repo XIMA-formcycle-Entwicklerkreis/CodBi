@@ -219,16 +219,6 @@ export class BayVIS_Ansprechpartner_Details {
               response = JSON.parse(xml);
             }
             // #endregion React if data is not of format XML but JSON.
-            // If contact properties are to be retrieved but a specific detail.
-            if (params.length >= 2) {
-              const detail = (result as unknown)[params[1] as string];
-
-              if (detail === undefined) {
-                reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));
-              }
-
-              (result as Array<string>).push(detail);
-            }
             // If only one contact shall be retrieved...
             if (ids.length === 1) {
               result = Array.isArray(response.ap)
@@ -275,6 +265,23 @@ export class BayVIS_Ansprechpartner_Details {
                 result as { telefonDurchwahl: string }
               ).telefonDurchwahl;
               (result as { apEmail: string }).apEmail = (result as { email: string }).email;
+
+              // If a specific contact property was requested via the 2nd parameter, resolve just that
+              // value. This MUST happen AFTER the contact object has been assigned to `result` above —
+              // reading it earlier always yielded `undefined` and rejected every request.
+              if (params.length >= 2) {
+                const detail = (result as unknown as Record<string, unknown>)[params[1] as string];
+
+                if (detail === undefined) {
+                  reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));
+
+                  return;
+                }
+
+                resolve(detail as string);
+
+                return;
+              }
 
               BayVIS_Ansprechpartner_Details.buffer[toAcquire] = [
                 result as {
@@ -365,32 +372,46 @@ export class BayVIS_Ansprechpartner_Details {
               resultElement.apTelefonDurchwahl = resultElement.telefonDurchwahl;
               resultElement.apEmail = resultElement.email;
 
-              (
-                result as Array<{
-                  anrede: string;
-                  vorname: string;
-                  nachname: string;
-                  funktion: string;
-                  stellenbezeichnung: string;
-                  email: string;
-                  website: string;
-                  zimmer: string;
-                  behoerdeId: number;
-                  behoerdeBezeichnung: string;
-                  gebaeudeId: number;
-                  gebaeudeBezeichnung: string;
-                  ansprechpartnerId: number;
-                  telefonLandvorwahl: string;
-                  telefonOrtsvorwahl: string;
-                  telefonAnlage: string;
-                  telefonDurchwahl: string;
-                  apTelefonLandvorwahl: string;
-                  apTelefonOrtsvorwahl: string;
-                  apTelefonAnlage: string;
-                  apTelefonDurchwahl: string;
-                  apEmail: string;
-                }>
-              ).push(resultElement);
+              // If a specific contact property was requested via the 2nd parameter, collect just that
+              // value instead of the whole contact object.
+              if (params.length >= 2) {
+                const detail = (resultElement as unknown as Record<string, unknown>)[params[1] as string];
+
+                if (detail === undefined) {
+                  reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));
+
+                  return;
+                }
+
+                (result as Array<string>).push(detail as string);
+              } else {
+                (
+                  result as Array<{
+                    anrede: string;
+                    vorname: string;
+                    nachname: string;
+                    funktion: string;
+                    stellenbezeichnung: string;
+                    email: string;
+                    website: string;
+                    zimmer: string;
+                    behoerdeId: number;
+                    behoerdeBezeichnung: string;
+                    gebaeudeId: number;
+                    gebaeudeBezeichnung: string;
+                    ansprechpartnerId: number;
+                    telefonLandvorwahl: string;
+                    telefonOrtsvorwahl: string;
+                    telefonAnlage: string;
+                    telefonDurchwahl: string;
+                    apTelefonLandvorwahl: string;
+                    apTelefonOrtsvorwahl: string;
+                    apTelefonAnlage: string;
+                    apTelefonDurchwahl: string;
+                    apEmail: string;
+                  }>
+                ).push(resultElement);
+              }
               // Resolve when last contact to retrieve was received.
               if (cntResolved === ids.length) {
                 // biome-ignore lint/suspicious/noAssignInExpressions: More concise.

@@ -30,22 +30,28 @@ class CodbiFormPropertiesExtensionPluginTest {
   @Test
   fun extendFormProperties() {
     val result = plugin.extendFormProperties(null)
-    assertEquals(5, result.additionalProperties.size)
+    assertEquals(7, result.additionalProperties.size)
 
     assertEquals("codbi-prop-enable", result.additionalProperties.get(0).name)
     assertEquals("0", result.additionalProperties.get(0).defaultValue)
 
-    assertEquals("codbi-prop-standards", result.additionalProperties.get(1).name)
-    assertEquals("Holistic.CSS.Standard", result.additionalProperties.get(1).defaultValue)
+    assertEquals("codbi-prop-mark-elements", result.additionalProperties.get(1).name)
+    assertEquals("0", result.additionalProperties.get(1).defaultValue)
 
-    assertEquals("codbi-prop-config-template", result.additionalProperties.get(2).name)
-    assertEquals("default", result.additionalProperties.get(2).defaultValue)
+    assertEquals("codbi-prop-mark-labels", result.additionalProperties.get(2).name)
+    assertEquals("0", result.additionalProperties.get(2).defaultValue)
 
-    assertEquals("LDAP_URL", result.additionalProperties.get(3).name)
-    assertEquals("", result.additionalProperties.get(3).defaultValue)
+    assertEquals("codbi-prop-standards", result.additionalProperties.get(3).name)
+    assertEquals("Holistic.CSS.Standard", result.additionalProperties.get(3).defaultValue)
 
-    assertEquals("LDAP_URL_BACKEND", result.additionalProperties.get(4).name)
-    assertEquals("", result.additionalProperties.get(4).defaultValue)
+    assertEquals("codbi-prop-config-template", result.additionalProperties.get(4).name)
+    assertEquals("default", result.additionalProperties.get(4).defaultValue)
+
+    assertEquals("LDAP_URL", result.additionalProperties.get(5).name)
+    assertEquals("", result.additionalProperties.get(5).defaultValue)
+
+    assertEquals("LDAP_URL_BACKEND", result.additionalProperties.get(6).name)
+    assertEquals("", result.additionalProperties.get(6).defaultValue)
   }
 
   @BeforeEach

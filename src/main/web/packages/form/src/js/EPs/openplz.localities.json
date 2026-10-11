@@ -1,3 +1,53 @@
 {
-  "Description": "/classes/EPs_openplz.localities.OpenPLZ_Localities.html"
+  "Description": "/classes/EPs_openplz.localities.OpenPLZ_Localities.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional country to retrieve the data of (if not provided either the country specified in",
+          "de": "Das optionale Land, dessen Daten abgerufen werden (sonst das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land oder \"de\")."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s name.",
+          "de": "Der POSIX-RegEx für den Namen der Ortschaft."
+        }
+      },
+      {
+        "index": 3,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s postal code.",
+          "de": "Der POSIX-RegEx für die Postleitzahl der Ortschaft."
+        }
+      },
+      {
+        "index": 4,
+        "type": "number",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An Optional number of pages to load.",
+          "de": "Eine optionale Anzahl zu ladender Seiten."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "An OpenPLZ -Request specialized into searching for localities.",
+    "de": "Eine auf die Suche nach Ortschaften spezialisierte OpenPLZ-Anfrage."
+  }
 }

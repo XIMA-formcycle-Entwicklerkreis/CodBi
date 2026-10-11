@@ -1,3 +1,43 @@
 {
-  "Description": "/classes/EPs_ldap.find.LDAP_Find.html"
+  "Description": "/classes/EPs_ldap.find.LDAP_Find.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The mode to use for the filter. Either AND or OR (case insensitive). Everything else will be interpreted as AND.",
+          "de": "Der Modus für den Filter: AND oder OR (groß-/kleinschreibungsunabhängig). Alles andere gilt als AND."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The LDAP conditions (like sn = Doe) separated by | (like sn = Doe | givenName = John).",
+          "de": "Die LDAP-Bedingungen (z. B. sn = Doe), getrennt durch | (z. B. sn = Doe | givenName = John)."
+        }
+      },
+      {
+        "index": 3,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional URL to a Formcycle-LDAP-Query (which\u0027s content is (?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))) to use.",
+          "de": "Die optionale URL zu einer Formcycle-LDAP-Abfrage."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified URL (optional 3rd parameter) to a predefined Formcycle LDAP-Query requesting data from it.",
+    "de": "Dieser Element-Placeholder verbindet sich über eine Standard-URL (LDAP_URL in den CodBi-Einstellungen) oder eine angegebene URL mit einer LDAP-Abfrage."
+  }
 }

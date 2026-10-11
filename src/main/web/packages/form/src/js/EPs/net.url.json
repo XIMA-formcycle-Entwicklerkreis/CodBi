@@ -1,3 +1,20 @@
 {
-  "Description": "/classes/EPs_net.url.NET_URL.html"
+  "Description": "/classes/EPs_net.url.NET_URL.html",
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the content of a URL.",
+    "de": "Dieser Element-Placeholder ruft den Inhalt einer URL ab."
+  },
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "string",
+        "optional": false,
+        "variadic": false,
+        "description": "The URL to retrieve from."
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  }
 }

@@ -1,3 +1,23 @@
 {
-  "Description": "/classes/EPs_bayvis.ansprechpartner.BayVIS_Ansprechpartner.html"
+  "Description": "/classes/EPs_bayvis.ansprechpartner.BayVIS_Ansprechpartner.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "A property of the directory, for example \"bezeichnung\".",
+          "de": "Eine Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from the corresponding CodBi-Plugin servlet.",
+    "de": "Dieser Element-Placeholder holt das gesamte BayVIS-Ansprechpartnerverzeichnis oder einen bestimmten Detailwert daraus."
+  }
 }

@@ -269,11 +269,16 @@ export class BayVIS_Ansprechpartner_Details {
               // If a specific contact property was requested via the 2nd parameter, resolve just that
               // value. This MUST happen AFTER the contact object has been assigned to `result` above —
               // reading it earlier always yielded `undefined` and rejected every request.
-              if (params.length >= 2) {
-                const detail = (result as unknown as Record<string, unknown>)[params[1] as string];
+              // A whitespace-only 2nd parameter (e.g. a trailing "; " left by the EP builder) means
+              // "no particular property requested" — treat it like a single-parameter call instead of
+              // rejecting with an empty property name.
+              const requestedProperty = params.length >= 2 ? String(params[1] ?? "").trim() : "";
+
+              if (requestedProperty !== "") {
+                const detail = (result as unknown as Record<string, unknown>)[requestedProperty];
 
                 if (detail === undefined) {
-                  reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));
+                  reject(new CodBiError(`Detail "${requestedProperty}" of authorities is not available.`));
 
                   return;
                 }
@@ -373,12 +378,15 @@ export class BayVIS_Ansprechpartner_Details {
               resultElement.apEmail = resultElement.email;
 
               // If a specific contact property was requested via the 2nd parameter, collect just that
-              // value instead of the whole contact object.
-              if (params.length >= 2) {
-                const detail = (resultElement as unknown as Record<string, unknown>)[params[1] as string];
+              // value instead of the whole contact object. A whitespace-only 2nd parameter (e.g. a
+              // trailing "; " from the EP builder) counts as "no property".
+              const requestedProperty = params.length >= 2 ? String(params[1] ?? "").trim() : "";
+
+              if (requestedProperty !== "") {
+                const detail = (resultElement as unknown as Record<string, unknown>)[requestedProperty];
 
                 if (detail === undefined) {
-                  reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));
+                  reject(new CodBiError(`Detail "${requestedProperty}" of authorities is not available.`));
 
                   return;
                 }

@@ -116,8 +116,22 @@ export class SV {
     sourceName: string,
     container: HTMLElement,
   ): void {
-    const selector = `[ data-name = "${variableName}"]`;
-    const target = container.querySelector(selector) ?? document.querySelector(selector);
+    // Keep the historical `data-name` lookup first (identical result as before) and only fall back to
+    // the `XVariable`/native `name` variants when Formcycle rendered the variable without `data-name`.
+    const selectors = [
+      `[data-name="${variableName}"]`,
+      `input.XVariable[name="${variableName}"]`,
+      `[name="${variableName}"]`,
+    ];
+    let target: Element | null = null;
+
+    for (const selector of selectors) {
+      target = container.querySelector(selector) ?? document.querySelector(selector);
+
+      if (target) {
+        break;
+      }
+    }
 
     if (!target) {
       window.codbi.log(

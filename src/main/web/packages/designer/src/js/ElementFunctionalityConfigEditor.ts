@@ -24,7 +24,6 @@ import {
   listFunctionalities,
   resolveFunctionalityEntry,
   functionalityParameters,
-  functionalityAppliesTo,
   parameterType,
   parameterLabel,
   currentAttributeValueForItem,
@@ -234,19 +233,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private renderFunctionalityList(): void {
     const query = this.funcQuery.trim().toLowerCase();
     const available = listFunctionalities();
-    // The element's widget class (e.g. `XFieldSet`) restricts which functionalities are offered.
-    const elementType = this.targetElement()?.className;
     const fragment = document.createDocumentFragment();
     let shown = 0;
     for (const id of available) {
       const isSelected = this.selected.includes(id.toLowerCase());
-      // Only render functionalities supported by THIS form element's type. Functionalities that
-      // declare no supported element types are always applicable; already-selected ones are never
-      // hidden (so their parameters stay editable even if they no longer match the type filter).
-      const applies = isSelected || functionalityAppliesTo(id, elementType);
-      if (!applies) {
-        continue;
-      }
       // When filtering, keep matches; without a query, always show selected entries plus everything
       // (so the user can browse). Selected entries are never hidden by a filter mismatch.
       const matches = query.length === 0 || id.toLowerCase().includes(query) || isSelected;

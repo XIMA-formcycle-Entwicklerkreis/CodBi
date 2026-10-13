@@ -647,24 +647,6 @@ function dropPreviewSwitch(id: string): void {
 }
 
 /**
- * Removes every per-element preview switch from the DOM, clearing the applied preview (iframe +
- * class) on each switch's host element and forgetting each switch. Used when the markers are turned
- * OFF, so the preview switches (and their previews) go away with them.
- */
-function removeAllPreviewSwitches(): void {
-  for (const id of Array.from(previewSwitches.keys())) {
-    const widget = previewSwitches.get(id);
-    const anchor = widget?.parentElement;
-    if (anchor) {
-      anchor.classList.remove(ELEM_PREVIEW_CLASS);
-      previewApplied.delete(anchor);
-      clearServerPreview(anchor);
-    }
-    dropPreviewSwitch(id);
-  }
-}
-
-/**
  * Whether the form-level "Preview mode" is ON (the `designer.property.preview_elements` form
  * property). When ON, a preview switch is added to every element — see
  * {@link ensureElementPreviewSwitch}.
@@ -1111,9 +1093,6 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     if (!el || !owner || !owner.body) {
       return false;
     }
-    // Hide the FORMCYCLE preview-page chrome (the `previewForm:previewToolsDial` button) across the
-    // frame's document and any nested same-origin iframes, so it never overlays the clipped element.
-    hidePreviewChrome(cdoc);
     let item: HTMLElement = resolveItemWrapper(el, owner) ?? el;
     // A page/container's designer id often sits on a SMALL inner node — for a page that is the
     // `.CXPage` header/title (~60px), for a container/fieldset the `.CXContainer`/`.CXFieldSet`
@@ -2102,12 +2081,11 @@ function refreshBadges(): void {
           }
         }
       }
-      // Per-element preview: only while the markers are ON (turning the markers off also drops the
-      // preview switches below) AND the form-level "Preview mode" is ON do the per-element preview
-      // switches get rendered for EVERY element (fields, fieldsets, containers, pages), not just
-      // those carrying `data-cb-func`. Widgets (Mirror) and the FORMCYCLE spacer (which has nothing
-      // to preview — it is pure layout) are excluded here.
-      if (enabled && elementPreview && !isMirror && !isSpacerItem(item) && anchor) {
+      // Per-element preview: when the form-level "Preview mode" is ON, EVERY element (fields,
+      // fieldsets, containers, pages) gets its own preview switch (see ensureElementPreviewSwitch),
+      // not just those carrying `data-cb-func`. Widgets (Mirror) and the FORMCYCLE spacer (which has
+      // nothing to preview — it is pure layout) are excluded here.
+      if (elementPreview && !isMirror && !isSpacerItem(item) && anchor) {
         if (id) {
           livePreview.add(id);
         }
@@ -2140,8 +2118,6 @@ function refreshBadges(): void {
       }
       pruneMarkedFuncWidgets();
     } else {
-      // Markers are OFF: the per-element preview switches (and their previews) turn off too.
-      removeAllPreviewSwitches();
       removeAllBadges();
       removeAllFuncBadges();
     }

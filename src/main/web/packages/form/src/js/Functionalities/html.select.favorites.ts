@@ -63,6 +63,7 @@ export class HTML_Select_Favorites {
     @INSTANCE.PRE(HTMLSelectElement, undefined, "Is it not a <select/> that is tagged with this functionality?")
     toProcess: Element,
   ): void {
+    /** @funcElement XSelect */
     const $ = getJQuery();
     let lastSelection: string =
       toLoad.initialelement && typeof toLoad.initialelement === "string"

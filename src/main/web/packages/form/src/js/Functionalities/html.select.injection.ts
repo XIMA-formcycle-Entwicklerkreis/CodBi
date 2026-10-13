@@ -47,6 +47,7 @@ export class HTML_Select_Injection {
     @INSTANCE.PRE(HTMLSelectElement, undefined, "Is it not a <select/> that is tagged with this functionality?")
     toProcess: Element,
   ): undefined {
+    /** @funcElement XSelect */
     // #region Delete the "HTMLSelectElement"'s "innerHTML" if "ReClean" is TRUE.
     if (toLoad.reclean) {
       if (

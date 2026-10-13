@@ -51,6 +51,7 @@ export class Date_Frame {
     @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     const maximumField = INSTANCE.tsCheck<HTMLInputElement>(
       toProcess.parentElement.parentElement.querySelector(toLoad.maxfield as string),
       HTMLInputElement,

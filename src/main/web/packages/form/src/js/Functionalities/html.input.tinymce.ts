@@ -133,6 +133,7 @@ export class HTML_Input_TinyMCE {
     @INSTANCE.PRE(HTMLTextAreaElement, undefined, "Is it not a <textarea> that is tagged with this functionality?")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextArea */
     const textarea = toProcess as HTMLTextAreaElement;
     // #region Generate a unique ID for the editor if not already present.
     if (!textarea.id) {

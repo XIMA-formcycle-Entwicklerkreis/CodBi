@@ -87,6 +87,7 @@ export class Media_Input_Speech_Whisper {
     )
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField, XTextArea */
     const field = toProcess as HTMLInputElement | HTMLTextAreaElement;
 
     Media_Input_Speech_Whisper.ensureStyles();

@@ -38,6 +38,7 @@ export class Media_MultipleUpload {
     @EQ.PRE("file", false, 'Is it not an <input type = "file"> that is tagged with this functionality?', "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XUpload */
     const maximum = toLoad.maximum ? Number.parseInt(toLoad.maximum) : 2;
 
     // Resolve the label text element: prefer a <span> inside the <label>. If no <span> exists,

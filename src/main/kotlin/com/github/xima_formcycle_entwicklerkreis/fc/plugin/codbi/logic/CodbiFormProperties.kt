@@ -9,6 +9,8 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_ELEMENTS_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_LABELS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_MARK_LABELS_DEFAULT
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_PREVIEW_ELEMENTS
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_PREVIEW_ELEMENTS_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS_DEFAULT
 import de.xima.fc.form.common.models.XFormProperties
@@ -40,6 +42,16 @@ internal class CodbiFormProperties(private val properties: XFormProperties) {
   val markLabels
     get(): Boolean =
         booleanProperty(DESIGNER_PROPERTY_MARK_LABELS, DESIGNER_PROPERTY_MARK_LABELS_DEFAULT)
+
+  /**
+   * Designer "Preview mode": when enabled, a preview switch appears on every form element in the
+   * design canvas so each element's CodBi functionalities can be previewed in isolation. Only
+   * affects the designer UI; the published form is unaffected.
+   */
+  val previewElements
+    get(): Boolean =
+        booleanProperty(
+            DESIGNER_PROPERTY_PREVIEW_ELEMENTS, DESIGNER_PROPERTY_PREVIEW_ELEMENTS_DEFAULT)
 
   /** The configuration template for the code library, if any. */
   val configTemplate

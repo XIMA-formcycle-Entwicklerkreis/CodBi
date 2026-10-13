@@ -50,6 +50,7 @@ export class Form_Navigator {
     @INSTANCE.PRE(HTMLDivElement, undefined, "Is it not a <div> that is tagged with this functionality?")
     toProcess: Element,
   ): void {
+    /** @funcElement XContainer, XContainerInvisible, XFieldSet */
     const $ = getJQuery();
     const pages: Array<Element> = $(".XPage").toArray();
     const pageNames: Array<string> = pages.map((page) => page.getAttribute("data-name")) as Array<string>;

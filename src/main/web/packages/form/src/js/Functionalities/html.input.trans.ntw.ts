@@ -61,6 +61,8 @@ export class HTML_Input_Trans_NTW extends HTML_Input_Transformer {
     @EQ.PRE("text", false, "@type", 'Isn\'t it an <input type = "text"> that is tagged by this functionality?')
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
+
     HTML_Input_Transformer.functionality(toLoad, toProcess, HTML_Input_Trans_NTW.transformer);
   }
 }

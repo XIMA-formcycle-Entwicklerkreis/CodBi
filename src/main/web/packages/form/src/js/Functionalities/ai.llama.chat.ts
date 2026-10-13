@@ -157,6 +157,7 @@ export class AI_LLAMA_CHAT {
     )
     toProcess: Element,
   ): void {
+    /** @funcElement XTextArea */
     // #region Config initialization
     const $ = getJQuery();
     const chatDisplay = toProcess as HTMLTextAreaElement;

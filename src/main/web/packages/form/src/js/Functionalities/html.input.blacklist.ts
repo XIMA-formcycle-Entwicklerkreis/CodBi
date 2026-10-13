@@ -46,6 +46,7 @@ export class HTML_Input_Blacklist {
     @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     // #region Normalize Parameter.
     toLoad.separator = toLoad.separator || ", ";
     toLoad.showblacklist = toLoad.showblacklist

@@ -46,6 +46,7 @@ export class HTML_Input_Cleave {
     @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     // #region Normalize Arrayed-Parameter.
     if (Array.isArray(toLoad.config)) {
       toLoad.config = (toLoad.config as Array<string>)[0];

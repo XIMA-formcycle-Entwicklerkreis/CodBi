@@ -22,6 +22,7 @@ export class LDAP_Autocomplete_Set {
    * values filled in automatically according to their LDAP-Property. */
   @DBC.ParamvalueProvider
   public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
+    /** @funcElement XContainer, XContainerInvisible, XFieldSet */
     // #region Define match-listener routine.
     const matchListener = (ldapResult, origin) => {
       let current = toProcess.querySelector(".CodBi_LDAP_AC_Mail");

@@ -85,13 +85,6 @@ export function ensureCodbiBranding(): void {
       `url("${resourceUrl("/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/mirror-icon.svg")}")`,
     );
   }
-  // Icon for the Functionality widget (see `XFunctionality.getIcon()` / `getCssData()`).
-  if (!root.style.getPropertyValue("--codbi-functionality-icon-url")) {
-    root.style.setProperty(
-      "--codbi-functionality-icon-url",
-      `url("${resourceUrl("/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/functionality-icon.svg")}")`,
-    );
-  }
 }
 
 /** Builds the plugin servlet URL used by the dropdowns. */

@@ -48,7 +48,7 @@ declare module "@de-xima/fc-form-designer" {
 export const FUNCTIONALITY_CATEGORY_ID = "codbi-cat-functionality";
 
 /** The `data-cb-*` attribute carrying the applied functionalities (mirrors the runtime's FUNC attribute). */
-const CB_FUNC_ATTRIBUTE = "data-cb-func";
+export const CB_FUNC_ATTRIBUTE = "data-cb-func";
 
 /** One form element of the current form, as offered by the target-element selector. */
 interface IFormElementOption {
@@ -61,7 +61,7 @@ interface IFormElementOption {
 }
 
 /** The minimal structural view of a designer item this editor needs. */
-interface IItemLike {
+export interface IItemLike {
   getId?: () => string;
   className?: string;
   getPersist?: () => { properties?: Record<string, unknown> } | undefined;
@@ -69,18 +69,18 @@ interface IItemLike {
 }
 
 /** The minimal structural view of the designer instance this editor needs. */
-interface IDesignerLike {
+export interface IDesignerLike {
   items?: Record<string, IItemLike>;
   getSelectedMasterItem?: () => IItemLike | undefined;
 }
 
 /** Platform-available `functionality.property.funcs` (the CSV of applied functionality ids). */
-const FUNCS_PROPERTY = String(Constants["functionality.property.funcs"]);
+export const FUNCS_PROPERTY = String(Constants["functionality.property.funcs"]);
 /** Platform-available `functionality.property.element` (the single contained element reference). */
-const ELEMENT_PROPERTY = String(Constants["functionality.property.element"]);
+export const ELEMENT_PROPERTY = String(Constants["functionality.property.element"]);
 
 /** Reads a property from the selected item's persisted property bag (or `""`). */
-function selectedProperty(name: string): string {
+export function selectedProperty(name: string): string {
   try {
     const designer = instance() as unknown as IDesignerLike;
     const props = designer?.getSelectedMasterItem?.()?.getPersist?.()?.properties;
@@ -91,7 +91,7 @@ function selectedProperty(name: string): string {
 }
 
 /** Parses a CSV of functionality ids into a trimmed, de-duplicated, lowercase array. */
-function parseCsv(value: string): string[] {
+export function parseCsv(value: string): string[] {
   return Array.from(
     new Set(
       String(value ?? "")
@@ -103,7 +103,7 @@ function parseCsv(value: string): string[] {
 }
 
 /** All available CodBi functionality ids (from the designer's `detFunctionalities`), lowercased. */
-function listFunctionalities(): string[] {
+export function listFunctionalities(): string[] {
   try {
     const entries = window.CodbiPluginData?.detFunctionalities ?? {};
     return Object.keys(entries).sort((a, b) => a.localeCompare(b));
@@ -116,7 +116,7 @@ function listFunctionalities(): string[] {
  * Resolves the `detFunctionalities` entry for a functionality id **case-insensitively**. The
  * registry keys use the original casing (e.g. `Date.Min`), while the selection is stored lowercased.
  */
-function resolveFunctionalityEntry(
+export function resolveFunctionalityEntry(
   id: string,
 ): { Parameter?: Record<string, string>; formElements?: string[] } | undefined {
   try {
@@ -168,7 +168,7 @@ function normalizeParameters(raw: unknown): Record<string, string> {
  * designer's object-map shape (`{ Name: "desc" }`) and the manager's array shape
  * (`[{ Name, Description }]`), under the `Parameter` or `parameters` key.
  */
-function functionalityParameters(id: string): Record<string, string> {
+export function functionalityParameters(id: string): Record<string, string> {
   const entry = resolveFunctionalityEntry(id) as { Parameter?: unknown; parameters?: unknown } | undefined;
   return normalizeParameters(entry?.Parameter ?? entry?.parameters);
 }
@@ -208,8 +208,33 @@ function allowedFormElements(id: string): string[] | undefined {
   return undefined;
 }
 
+/**
+ * Whether a functionality is intended for a form element of the given widget **class name** (e.g.
+ * `XFieldSet`, `XContainer`, `XTextField`). When the functionality declares no supported element
+ * types (or the requested type is unknown/empty) the check is **fail-open** — the functionality is
+ * considered applicable, exactly like the untyped EP-signature case.
+ */
+export function functionalityAppliesTo(id: string, elementType: string | undefined): boolean {
+  const allowed = allowedFormElements(id);
+  if (!allowed || allowed.length === 0) {
+    return true;
+  }
+  const type = String(elementType ?? "")
+    .trim()
+    .toLowerCase();
+  if (type === "") {
+    return true;
+  }
+  return allowed.some(
+    (entry) =>
+      String(entry ?? "")
+        .trim()
+        .toLowerCase() === type,
+  );
+}
+
 /** The union of allowed widget class names across the selected functionalities (empty = any). */
-function allowedFormElementsFor(ids: string[]): Set<string> {
+export function allowedFormElementsFor(ids: string[]): Set<string> {
   const allowed = new Set<string>();
   for (const id of ids) {
     for (const type of allowedFormElements(id) ?? []) {
@@ -302,16 +327,45 @@ function fetchInstalledWidgetTypes(): void {
  * Extracts a datatype hint (`{boolean}`, `{string}`, …) from a parameter's description, so boolean
  * parameters render as checkboxes and all others as text inputs. Missing hint ⇒ `"string"`.
  */
-function parameterType(description: string): "boolean" | "string" {
+export function parameterType(description: string): "boolean" | "string" {
   const match = /\{\s*([A-Za-z]+)\s*\}/.exec(String(description ?? ""));
   return match?.[1]?.toLowerCase() === "boolean" ? "boolean" : "string";
 }
 
 /** Removes the leading `{Type}` hint from a description for display. */
-function parameterLabel(description: string): string {
+export function parameterLabel(description: string): string {
   return String(description ?? "")
     .replace(/^\s*\{\s*[A-Za-z]+\s*\}\s*/, "")
     .trim();
+}
+
+/**
+ * Reads the current value of one `data-cb-*` attribute from an item's persisted property bag.
+ * Reused by both the Functionality widget editor (target = the contained child) and the per-element
+ * CodBi editor (target = the selected element itself).
+ */
+export function currentAttributeValueForItem(item: IItemLike | undefined, name: string): string {
+  try {
+    const props = item?.getPersist?.()?.properties as
+      | { attributes?: Array<{ text?: string; value?: string }> }
+      | undefined;
+    const attrs = props?.attributes;
+    if (Array.isArray(attrs)) {
+      const wanted = name.toLowerCase();
+      const found = attrs.find(
+        (entry) =>
+          String(entry?.text ?? "")
+            .trim()
+            .toLowerCase() === wanted,
+      );
+      if (found) {
+        return String(found.value ?? "");
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return "";
 }
 
 /**

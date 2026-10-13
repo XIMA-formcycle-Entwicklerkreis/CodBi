@@ -32,6 +32,8 @@ export class HTML_Input_NoAutocomplete {
     @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
+
     if (toProcess.tagName === "INPUT") {
       toProcess.setAttribute("autocomplete", "off");
     } else {

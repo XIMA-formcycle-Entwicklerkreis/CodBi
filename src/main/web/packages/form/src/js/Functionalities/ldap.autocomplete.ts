@@ -64,6 +64,7 @@ export class LDAP_Autocomplete {
     @EQ.PRE("text", false, "type", 'Isn\'t the tagged <input type = "text"/> ?')
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     const getLdapUrl = (): string | undefined => {
       if (toLoad.url) {
         return toLoad.url;

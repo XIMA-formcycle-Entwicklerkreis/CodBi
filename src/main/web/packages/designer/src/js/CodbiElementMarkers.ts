@@ -64,19 +64,24 @@ const MIRROR_ELEMENT_NAME_PROPERTY = String(Constants["mirror.property.element_n
 /** The widget class name of the CodBi Mirror (see `XMirror`). */
 const MIRROR_CLASS_NAME = "XMirror";
 
-/** The widget class name of the CodBi Functionality widget (see `XFunctionality`). */
-const FUNCTIONALITY_CLASS_NAME = "XFunctionality";
+/**
+ * Form property holding the designer "Preview mode" (`designer.property.preview_elements`). When ON,
+ * a preview switch appears on every form element carrying `data-cb-func` so each element's CodBi
+ * functionalities can be previewed in isolation (see `ensureElementPreviewSwitch`).
+ */
+const PREVIEW_ELEMENTS_PROPERTY = String(Constants["designer.property.preview_elements"]);
 
-/** Item property holding the Functionality widget's “preview with functionalities applied” toggle. */
-const FUNC_PREVIEW_PROPERTY = String(Constants["functionality.property.preview"]);
+/**
+ * Attribute written onto a form element (via `setItemAttributeValue`) holding the per-element
+ * "preview this element" toggle (`"1"`/`"0"`). Only the designer preview reads it; the published form
+ * and the CodBi runtime ignore it.
+ */
+const ELEMENT_PREVIEW_ATTRIBUTE = "data-cb-preview";
 
-/** Marker property stored on the element the Functionality widget contains (see FunctionalityChildItems). */
-const FUNC_CHILD_PROPERTY = "codbi_func_child";
+/** CSS class toggled on a general element while its preview is on. */
+const ELEM_PREVIEW_CLASS = "codbi-elem-preview";
 
-/** CSS class toggled on the Functionality widget while its frontend preview is on. */
-const FUNC_PREVIEW_CLASS = "codbi-func-preview";
-
-/** Live preview-switch widgets keyed by the Functionality widget's item id. */
+/** Live preview-switch widgets keyed by the element's item id. */
 const previewSwitches = new Map<string, HTMLElement>();
 
 /** Signature of the attributes last applied to a preview wrapper, so the runtime isn't re-run. */
@@ -157,7 +162,7 @@ const BADGE_CSS = `
 .codbi-func-item__params--max .codbi-func-table{width:100%}
 .codbi-func-item__params--max .codbi-func-value{width:100%}
 .codbi-func-item__params--max .codbi-func-input{flex:1 1 auto;width:auto;min-width:0}
-.codbi-func-preview-switch{position:absolute;top:4px;left:4px;z-index:30;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:999px;box-shadow:0 1px 3px rgba(15,23,42,.28);padding:3px 7px;cursor:pointer;pointer-events:auto;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;user-select:none}
+.codbi-func-preview-switch{position:absolute;top:4px;right:4px;z-index:30;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:999px;box-shadow:0 1px 3px rgba(15,23,42,.28);padding:3px 7px;cursor:pointer;pointer-events:auto;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;user-select:none}
 .codbi-func-preview-switch__icon{display:inline-flex;align-items:center;justify-content:center;color:currentColor}
 .codbi-func-preview-switch__input{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
 .codbi-func-preview-switch__track{position:relative;flex:0 0 auto;width:26px;height:14px;border-radius:999px;background:#cbd5e1;transition:background .15s}
@@ -165,12 +170,12 @@ const BADGE_CSS = `
 .codbi-func-preview-switch--on{border-color:#f97316}
 .codbi-func-preview-switch--on .codbi-func-preview-switch__track{background:#ff8c00}
 .codbi-func-preview-switch--on .codbi-func-preview-switch__knob{transform:translateX(12px)}
-.codbi-func-preview{outline:2px dashed rgba(255,140,0,.55);outline-offset:2px}
-.codbi-functionality.codbi-func-preview--rendered > *:not(.codbi-func-preview-frame):not(.codbi-func-preview-switch){display:none !important}
-/* Keep the embedded preview interactive: the designer canvas puts an item overlay/selection layer over
-   the item, so the iframe must opt back in to pointer events and sit ABOVE that layer. */
-.codbi-functionality.codbi-func-preview--rendered{pointer-events:auto !important}
 .codbi-func-preview-frame{display:block;width:100%;box-sizing:border-box;border:0;background:#fff;overflow:hidden;pointer-events:auto !important;position:relative;z-index:8}
+/* Per-element "Preview mode" (the form-level preview switch). The wrapper is the element's own canvas
+   cell, so it needs its own hide-children + pointer rules. */
+.codbi-elem-preview{outline:2px dashed rgba(255,140,0,.55);outline-offset:2px}
+.codbi-elem-preview.codbi-func-preview--rendered > *:not(.codbi-func-preview-frame):not(.codbi-func-preview-switch){display:none !important}
+.codbi-elem-preview.codbi-func-preview--rendered{pointer-events:auto !important}
 `;
 // NOTE: the Mirror badge never captures the pointer (not even its icon/text). A hover-capturing
 // overlay inside an item can become the drop target when a new element is dropped onto the widget,
@@ -593,6 +598,11 @@ function isMirrorItem(item: IMarkerItemLike): boolean {
   return props != null && MIRROR_FORM_PROPERTY in props;
 }
 
+/** @returns `true` when the item is a FORMCYCLE spacer element (`XSpacer`). */
+function isSpacerItem(item: IMarkerItemLike): boolean {
+  return String(item.className ?? "").toLowerCase() === "xspacer";
+}
+
 /** @returns the CodBi functionality definitions injected by the designer resource plugin. */
 function functionalityData(): Record<string, IFunctionalityDef> | undefined {
   try {
@@ -630,85 +640,96 @@ function isCbFuncItem(item: IMarkerItemLike): boolean {
   return attributeValue(attributeEntries(item), CB_FUNC_ATTRIBUTE) !== "";
 }
 
-/** @returns `true` when the item is a CodBi Functionality widget. */
-function isFunctionalityItem(item: IMarkerItemLike): boolean {
-  return String(item.className ?? "") === FUNCTIONALITY_CLASS_NAME;
-}
-
-/** Reads one persisted property of an item (as a string). */
-function itemProperty(item: IMarkerItemLike, name: string): string {
-  const props = item.getPersist?.()?.properties ?? item.properties;
-  return String((props as Record<string, unknown> | undefined)?.[name] ?? "");
-}
-
-/** Writes one property on the item's property bags and nudges the designer's persist differ. */
-function setItemPropertyValue(item: IMarkerItemLike, name: string, value: string): boolean {
-  const bags = writablePropertyBags(item);
-  if (bags.length === 0) {
-    return false;
-  }
-  for (const props of bags) {
-    (props as Record<string, unknown>)[name] = value;
-  }
-  notifyAttributeChange();
-  syncAttributesEditor(item);
-  return true;
-}
-
-/** @returns the element item the Functionality widget [widgetId] contains (or `undefined`). */
-function containedItemOf(widgetId: string): IMarkerItemLike | undefined {
-  const designer = designerInstance();
-  for (const item of Object.values(designer?.items ?? {})) {
-    const props = item.getPersist?.()?.properties ?? item.properties;
-    const record = props as Record<string, unknown> | undefined;
-    if (!record) {
-      continue;
-    }
-    // Primary: our own marker property. Fallback: the designer's own `parentid` (FORMCYCLE nests
-    // the contained element under the widget and always sets it).
-    if (String(record[FUNC_CHILD_PROPERTY] ?? "") === widgetId || String(record.parentid ?? "") === widgetId) {
-      return item;
-    }
-  }
-  return undefined;
+/** Removes a preview switch from the DOM and forgets it. */
+function dropPreviewSwitch(id: string): void {
+  previewSwitches.get(id)?.remove();
+  previewSwitches.delete(id);
 }
 
 /**
- * Applies/removes the **frontend preview** of a Functionality widget. When enabled, a REAL form
- * instance (a standalone document for the CURRENT form, built by the backend `form` servlet action)
- * is loaded into a hidden, same-origin iframe so the FORMCYCLE + CodBi runtime initialize every
- * element/functionality exactly like on a published form — see {@link renderServerPreview}.
+ * Removes every per-element preview switch from the DOM, clearing the applied preview (iframe +
+ * class) on each switch's host element and forgetting each switch. Used when the markers are turned
+ * OFF, so the preview switches (and their previews) go away with them.
  */
-function applyFunctionalityPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boolean): void {
-  try {
-    const wrapper = (anchor.querySelector<HTMLElement>(".codbi-functionality") ?? anchor) as HTMLElement;
-    wrapper.classList.toggle(FUNC_PREVIEW_CLASS, on);
-    if (!on) {
-      previewApplied.delete(wrapper);
-      clearServerPreview(wrapper);
-      return;
+function removeAllPreviewSwitches(): void {
+  for (const id of Array.from(previewSwitches.keys())) {
+    const widget = previewSwitches.get(id);
+    const anchor = widget?.parentElement;
+    if (anchor) {
+      anchor.classList.remove(ELEM_PREVIEW_CLASS);
+      previewApplied.delete(anchor);
+      clearServerPreview(anchor);
     }
-    const widgetId = item.getId?.() ?? "";
-    const child = containedItemOf(widgetId);
-    // Signature = the widget + the contained element; re-render only when either changed.
-    const signature = `${widgetId}\u0001${child?.getId?.() ?? ""}`;
-    if (previewApplied.get(wrapper) === signature) {
-      return;
-    }
-    void renderServerPreview(wrapper, child, signature);
-  } catch (x) {
-    console.error("[CodBi] Functionality: could not apply the preview", x);
+    dropPreviewSwitch(id);
   }
 }
 
-/** Creates or updates the preview switch (a slider toggle) for one Functionality widget (idempotent). */
-function ensurePreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement): void {
+/**
+ * Whether the form-level "Preview mode" is ON (the `designer.property.preview_elements` form
+ * property). When ON, a preview switch is added to every element — see
+ * {@link ensureElementPreviewSwitch}.
+ */
+function previewElementsEnabled(): boolean {
+  const designer = designerInstance();
+  if (designer?.getFormPropertyValueForCurrentLang) {
+    try {
+      const value = designer.getFormPropertyValueForCurrentLang(PREVIEW_ELEMENTS_PROPERTY);
+      if (value === "1" || value === 1 || value === true || value === "true") {
+        return true;
+      }
+      if (value === "0" || value === 0 || value === false || value === "false") {
+        return false;
+      }
+    } catch {
+      /* ignore and fall through */
+    }
+  }
+  return false;
+}
+
+/** Reads an element's persisted `data-cb-preview` toggle from its attribute bag. */
+function elementPreviewOn(item: IMarkerItemLike): boolean {
+  return attributeValue(attributeEntries(item), ELEMENT_PREVIEW_ATTRIBUTE) === "1";
+}
+
+/**
+ * Applies/removes the **per-element** frontend preview of an arbitrary element. It reuses
+ * {@link renderServerPreview} to load a genuine form instance into a hidden same-origin iframe,
+ * which is then clipped to THIS element via its item id.
+ */
+function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boolean): void {
+  try {
+    anchor.classList.toggle(ELEM_PREVIEW_CLASS, on);
+    if (!on) {
+      previewApplied.delete(anchor);
+      clearServerPreview(anchor);
+      return;
+    }
+    const id = item.getId?.() ?? "";
+    // Signature = the element's own identity; re-render only when it changed.
+    const signature = `elem\u0001${id}`;
+    if (previewApplied.get(anchor) === signature) {
+      return;
+    }
+    void renderServerPreview(anchor, item, signature);
+  } catch (x) {
+    console.error("[CodBi] Preview: could not apply the element preview", x);
+  }
+}
+
+/**
+ * Creates/updates the per-element preview switch (idempotent). It is keyed by the element's item id
+ * in the shared {@link previewSwitches} map and toggles the element's persisted `data-cb-preview`
+ * attribute (written onto the element itself via {@link setItemAttributeValue}), so the designer
+ * re-renders and `refreshBadges` re-applies the preview.
+ */
+function ensureElementPreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement): void {
   const id = item.getId?.() ?? "";
   if (!id) {
     return;
   }
   const doc = anchor.ownerDocument ?? document;
-  const on = itemProperty(item, FUNC_PREVIEW_PROPERTY) === "1";
+  const on = elementPreviewOn(item);
 
   let widget = previewSwitches.get(id);
   if (!widget || !widget.isConnected || widget.parentElement !== anchor) {
@@ -717,7 +738,7 @@ function ensurePreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement): void {
     }
     const button = doc.createElement("button");
     button.type = "button";
-    button.className = "codbi-func-preview-switch";
+    button.className = "codbi-func-preview-switch codbi-func-preview-switch--element";
     button.dataset.codbiPreview = id;
     const icon = doc.createElement("span");
     icon.className = "codbi-func-preview-switch__icon";
@@ -728,17 +749,16 @@ function ensurePreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement): void {
     knob.className = "codbi-func-preview-switch__knob";
     track.appendChild(knob);
     button.append(icon, track);
-    // Keep the designer from reacting to the switch interaction (it must not select/move the widget).
     for (const type of ["mousedown", "mouseup", "click", "dblclick", "keydown", "keyup"] as const) {
       button.addEventListener(type, (event) => event.stopPropagation());
     }
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      // Read the CURRENT state (the captured `on` may be stale if the widget was reused).
-      const current = itemProperty(item, FUNC_PREVIEW_PROPERTY) === "1";
-      // Toggling persists the property; the designer re-renders the widget and refreshBadges re-applies.
-      setItemPropertyValue(item, FUNC_PREVIEW_PROPERTY, current ? "0" : "1");
+      const current = elementPreviewOn(item);
+      // Write the toggle onto the element's own attribute bag; the designer re-renders and
+      // refreshBadges re-applies the preview (and the `after-set-property` callback refreshes).
+      setItemAttributeValue(item, ELEMENT_PREVIEW_ATTRIBUTE, current ? "0" : "1");
     });
     widget = button;
     previewSwitches.set(id, widget);
@@ -752,13 +772,7 @@ function ensurePreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement): void {
   if (getComputedStyle(anchor).position === "static") {
     anchor.style.position = "relative";
   }
-  applyFunctionalityPreview(item, anchor, on);
-}
-
-/** Removes a preview switch from the DOM and forgets it. */
-function dropPreviewSwitch(id: string): void {
-  previewSwitches.get(id)?.remove();
-  previewSwitches.delete(id);
+  applyElementPreview(item, anchor, on);
 }
 
 /**
@@ -781,7 +795,7 @@ async function renderServerPreview(
     const elementRef = child?.getId?.() ?? "";
     const url = designerPreviewUrl();
     if (!url) {
-      console.warn("[CodBi] Functionality: cannot determine the designer preview URL — skipping preview");
+      console.warn("[CodBi] Preview: cannot determine the designer preview URL — skipping preview");
       return;
     }
     const doc = wrapper.ownerDocument ?? document;
@@ -803,9 +817,9 @@ async function renderServerPreview(
     // Mark applied only once the iframe is pointed at the preview (a re-enable with the same target
     // skips the reload; changing the contained element changes the signature and reloads).
     previewApplied.set(wrapper, signature);
-    console.info("[CodBi] Functionality: form preview loading %s", url);
+    console.info("[CodBi] Preview: form preview loading %s", url);
   } catch (x) {
-    console.error("[CodBi] Functionality: form preview failed", x);
+    console.error("[CodBi] Preview: form preview failed", x);
   }
 }
 
@@ -836,6 +850,40 @@ function isFormControl(node: HTMLElement): boolean {
 function isPreviewPopup(node: Element): boolean {
   const cls = typeof (node as HTMLElement).className === "string" ? (node as HTMLElement).className : "";
   return /ui-datepicker|tox-tinymce-aux|tox-menu|tox-pop|ui-autocomplete|ui-selectmenu|xm-select-options/i.test(cls);
+}
+
+/**
+ * The FORMCYCLE preview page overlays its own chrome on top of the form: notably the "preview tools"
+ * trigger (`#previewForm:previewToolsDial`) that opens the preview-tools palette. It is not a sibling
+ * of the clipped element (so the sibling-hiding does not remove it) and would sit on top of / beside
+ * the preview. Hides every such chrome node (and, defensively, those inside nested same-origin
+ * iframes the preview may frame the form in).
+ */
+function hidePreviewChrome(doc: Document): void {
+  const selectors = [
+    '[id="previewForm:previewToolsDial"]',
+    '[id*="previewToolsDial"]',
+    '[id="previewForm:previewToolsButton"]',
+  ];
+  const hideIn = (d: Document): void => {
+    for (const selector of selectors) {
+      for (const node of Array.from(d.querySelectorAll<HTMLElement>(selector))) {
+        node.style.display = "none";
+        node.setAttribute("aria-hidden", "true");
+      }
+    }
+  };
+  hideIn(doc);
+  for (const frame of Array.from(doc.querySelectorAll("iframe"))) {
+    try {
+      const inner = (frame as HTMLIFrameElement).contentDocument;
+      if (inner) {
+        hideIn(inner);
+      }
+    } catch {
+      /* cross-origin — ignore */
+    }
+  }
 }
 
 /**
@@ -871,6 +919,51 @@ function resolveItemWrapper(el: HTMLElement, owner: Document): HTMLElement | nul
     }
   }
   return null;
+}
+
+/**
+ * Re-anchors a page/container element to its full CONTENT card, so the preview clips the whole
+ * element instead of a tiny inner node whose content lives among its siblings.
+ *
+ * FORMCYCLE renders pages and containers so the element's own id often sits on a SMALL inner node:
+ * - a page   → the `.CXPage` header/title (~60px), whose fields are its SIBLINGS inside the `.XPage`
+ *   content block; and
+ * - a container/fieldset → the `.CXContainer`/`.CXFieldSet` wrapper, whose fields are its
+ *   `.dynamic-row`/`.XFieldSetWrapper` DESCENDANTS.
+ *
+ * The sibling-hiding in {@link clipPreviewToElement} would hide that content (the page fields, or
+ * everything outside a container), leaving the grey rectangle with the whole form in the DOM but
+ * invisible. This resolves:
+ * - page → the `.XPage` content block (title + all page fields),
+ * - container/fieldset → its `.CXContainer`/`.CXFieldSet` wrapper (never the parent page).
+ *
+ * @returns the content card, or `item` unchanged when `el`/`item` is a plain field.
+ */
+function elementContentCard(el: HTMLElement, item: HTMLElement, owner: Document): HTMLElement {
+  const isPage = /(^|\s)(CXPage|XPage)(\s|$)/;
+  const isContainer = /(^|\s)(CXContainer|XContainer|CXFieldSet|XFieldSet)(\s|$)/;
+  const itemIsPage = isPage.test(String(item.className ?? ""));
+  const itemIsContainer = isContainer.test(String(item.className ?? ""));
+  // A plain field: nothing to re-anchor — keep the resolved wrapper.
+  if (!isPage.test(String(el.className ?? "")) && !itemIsPage && !itemIsContainer) {
+    return item;
+  }
+  let card: HTMLElement | null = itemIsPage || itemIsContainer ? item : null;
+  let n: HTMLElement | null = card ? card.parentElement : item;
+  while (n && n !== owner.body) {
+    const cls = String(n.className ?? "");
+    if (isContainer.test(cls)) {
+      card = n;
+    } else if (isPage.test(cls)) {
+      // A container/fieldset never absorbs its (page) ancestor — it is bounded by the page.
+      if (itemIsContainer) {
+        break;
+      }
+      card = n;
+    }
+    n = n.parentElement;
+  }
+  return card ?? item;
 }
 
 /** Pop-up/overlay selectors whose height must be included in the iframe (calendar, menus, …). */
@@ -963,6 +1056,16 @@ function observePreview(owner: Document): void {
 function fitPreviewHeight(entry: IPreviewFit): number {
   const { frame, owner, item } = entry;
   let bottom = item.getBoundingClientRect().bottom;
+  // A freshly-revealed region (inactive page / header / footer) may not have finished laying out when
+  // this first runs: the element rect is 0 while its OWN content (scrollHeight) is real. Use the
+  // larger of the viewport-anchored bottom and the element's own content height so the iframe does
+  // not collapse to the 60px minimum ("too thin" / blank preview) until the 500 ms re-fit corrects it.
+  if (bottom <= 0) {
+    const own = item.scrollHeight || item.offsetHeight;
+    if (own > 0) {
+      bottom = own;
+    }
+  }
   // Include the rendered editor (TinyMCE) height: the tagged field often collapses to 0 once the
   // editor takes over, so the item's own rect alone would be too small.
   const editor = owner.querySelector<HTMLElement>(".tox-tinymce, .mce-tinymce, .tox-editor-container");
@@ -1008,12 +1111,37 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     if (!el || !owner || !owner.body) {
       return false;
     }
-    const wrapper = resolveItemWrapper(el, owner);
-    const item: HTMLElement = wrapper ?? el;
+    // Hide the FORMCYCLE preview-page chrome (the `previewForm:previewToolsDial` button) across the
+    // frame's document and any nested same-origin iframes, so it never overlays the clipped element.
+    hidePreviewChrome(cdoc);
+    let item: HTMLElement = resolveItemWrapper(el, owner) ?? el;
+    // A page/container's designer id often sits on a SMALL inner node — for a page that is the
+    // `.CXPage` header/title (~60px), for a container/fieldset the `.CXContainer`/`.CXFieldSet`
+    // wrapper — while the ACTUAL content (the page's / container's fields) are that node's SIBLINGS
+    // or descendants. The sibling-hiding below would hide them, leaving a grey rectangle with the
+    // whole form in the DOM but invisible. Re-anchor such elements to their full content card:
+    // - page  → the `.XPage` content block (title + all page fields),
+    // - container/fieldset → the `.CXContainer`/`.CXFieldSet` wrapper (its `.dynamic-row` fields).
+    item = elementContentCard(el, item, owner);
     // The top-level block (body child) that contains the item.
     let top: HTMLElement = item;
     while (top.parentElement && top.parentElement !== owner.body) {
       top = top.parentElement;
+    }
+    // Reveal the element's own ancestor path (item → top). Formcycle renders the CURRENT page's
+    // content and hides every OTHER region (`display:none` on inactive pages, collapsed header/footer
+    // areas) until the user navigates to it. `findPreviewElement` still locates such an element, but
+    // its `getBoundingClientRect()` is 0 while a hidden ancestor keeps it out of layout — so the
+    // iframe collapsed to the 60px minimum (a blank / "too thin" preview). Forcing the element's own
+    // ancestors visible lets the element lay out, and the re-fits in `scheduleClip` then measure it
+    // correctly. The other (hidden) regions stay hidden via the sibling-hiding below.
+    for (let a: HTMLElement | null = item; a && a !== owner.body; a = a.parentElement) {
+      const cs = owner.defaultView?.getComputedStyle(a);
+      if (cs && cs.display === "none") {
+        // Pages/containers/regions are block-level; restoring `block` (or `table` for tables) brings
+        // the element back into layout without disturbing the siblings around it.
+        a.style.display = a.tagName === "TABLE" ? "table" : "block";
+      }
     }
     // Hide the element's SIBLINGS at every level up to the top-level block, and every other top-level
     // node — but NEVER a node that contains the functionality's editor (its UI is a sibling of the
@@ -1049,11 +1177,33 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     owner.body.style.margin = "0";
     owner.body.style.overflow = "hidden";
     owner.body.style.height = "auto";
+    // Keep the form page's own backdrop, but make the ELEMENT a distinct, self-contained white card so
+    // it stands out in the preview. A bare transparent wrapper on a pure-white backdrop would make the
+    // element's (white) controls invisible — a "white rectangle". Only shade the element wrapper, never
+    // the ancestor containers or the body, whose backdrop gives the card its contrast.
+    item.style.background = "#fff";
+    item.style.borderRadius = "3px";
+    item.style.boxShadow = "0 1px 3px rgba(15,23,42,.25)";
+    item.style.border = "1px solid rgba(15,23,42,.12)";
+    item.style.padding = "8px";
+    // Collapse the element's ancestor containers and scroll it to the top of the preview viewport.
+    // Without this the element can sit deep inside its (non-hidden) page/row containers, so the
+    // measured `bottom` would be hundreds of px and the iframe would show a large grey/empty page
+    // area around the element instead of a compact preview (seen as a "grey rectangle").
+    for (let n: HTMLElement | null = item.parentElement; n && n !== owner.body; n = n.parentElement) {
+      n.style.height = "auto";
+      n.style.minHeight = "0";
+    }
+    try {
+      item.scrollIntoView({ block: "start", inline: "nearest" });
+    } catch {
+      item.scrollIntoView();
+    }
     const fit = registerPreviewFit(frame, owner, item);
     observePreview(owner);
     const height = fitPreviewHeight(fit);
     console.info(
-      "[CodBi] Functionality: preview clipped to %s (item=%s, height=%d, wrapper=%o)",
+      "[CodBi] Preview: preview clipped to %s (item=%s, height=%d, wrapper=%o)",
       elementRef,
       `${item.tagName}.${item.className || ""}`,
       height,
@@ -1061,7 +1211,7 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     );
     return true;
   } catch (x) {
-    console.error("[CodBi] Functionality: could not clip the preview to the element", x);
+    console.error("[CodBi] Preview: could not clip the preview to the element", x);
     return false;
   }
 }
@@ -1072,12 +1222,26 @@ function findPreviewElement(doc: Document, id: string): HTMLElement | null {
   if (direct) {
     return direct as HTMLElement;
   }
+  // The rendered element may carry the designer item id only as `xi` / `data-xi` (on its wrapper,
+  // e.g. `id="xi-tf-datum-xc"`), not as the element's own `id`. Fall back to those attributes so a
+  // plain element is located even when its rendered `id` differs from the designer's `getId()`.
+  const attr = doc.querySelector<HTMLElement>(`[xi="${id}"], [data-xi="${id}"]`);
+  if (attr) {
+    return attr;
+  }
   for (const frame of Array.from(doc.querySelectorAll("iframe"))) {
     try {
       const inner = (frame as HTMLIFrameElement).contentDocument;
-      const found = inner?.getElementById(id);
+      if (!inner) {
+        continue;
+      }
+      const found = inner.getElementById(id);
       if (found) {
         return found as HTMLElement;
+      }
+      const attrInner = inner.querySelector<HTMLElement>(`[xi="${id}"], [data-xi="${id}"]`);
+      if (attrInner) {
+        return attrInner;
       }
     } catch {
       /* cross-origin — ignore */
@@ -1884,6 +2048,7 @@ function pruneMarkedFuncWidgets(): void {
  */
 function refreshBadges(): void {
   const enabled = isMarkEnabled();
+  const elementPreview = previewElementsEnabled();
   refreshing = true;
   try {
     const designer = designerInstance();
@@ -1896,8 +2061,9 @@ function refreshBadges(): void {
     for (const item of Object.values(items)) {
       const isMirror = isMirrorItem(item);
       const isFunc = isCbFuncItem(item);
-      const isFunctionality = isFunctionalityItem(item);
-      if (!isMirror && !isFunc && !isFunctionality) {
+      // In preview mode we ALSO need to reach plain elements (fields, fieldsets, containers, pages)
+      // so they get their own preview switch — so don't bail out on non-widget items in that mode.
+      if (!isMirror && !isFunc && !elementPreview) {
         continue;
       }
       const anchor = anchorFor(item);
@@ -1936,15 +2102,19 @@ function refreshBadges(): void {
           }
         }
       }
-      if (isFunctionality && anchor) {
+      // Per-element preview: only while the markers are ON (turning the markers off also drops the
+      // preview switches below) AND the form-level "Preview mode" is ON do the per-element preview
+      // switches get rendered for EVERY element (fields, fieldsets, containers, pages), not just
+      // those carrying `data-cb-func`. Widgets (Mirror) and the FORMCYCLE spacer (which has nothing
+      // to preview — it is pure layout) are excluded here.
+      if (enabled && elementPreview && !isMirror && !isSpacerItem(item) && anchor) {
         if (id) {
           livePreview.add(id);
         }
-        // The preview switch is a widget control — shown independent of the marker mode.
         try {
-          ensurePreviewSwitch(item, anchor);
+          ensureElementPreviewSwitch(item, anchor);
         } catch (x) {
-          console.error("[CodBi] Element markers: could not render the Functionality preview switch", x);
+          console.error("[CodBi] Element markers: could not render the element preview switch", x);
         }
       }
     }
@@ -1970,6 +2140,8 @@ function refreshBadges(): void {
       }
       pruneMarkedFuncWidgets();
     } else {
+      // Markers are OFF: the per-element preview switches (and their previews) turn off too.
+      removeAllPreviewSwitches();
       removeAllBadges();
       removeAllFuncBadges();
     }
@@ -2027,11 +2199,31 @@ function toggleMarkMode(): void {
   setRuntimeEnabled(!isMarkEnabled());
 }
 
+/**
+ * Toggles the per-element "Preview mode" for the currently selected designer element (e.g. via
+ * ALT+P). It mirrors the per-element preview switch's behaviour: it flips the element's persisted
+ * `data-cb-preview` attribute; the designer's `after-set-property` / `set-property` callbacks then
+ * refresh the badges and re-apply (or clear) the frontend preview — see {@link applyElementPreview}.
+ * When no element is selected, nothing happens.
+ */
+function toggleElementPreview(): void {
+  const item = designerInstance()?.getSelectedMasterItem?.() as IMarkerItemLike | undefined;
+  if (!item || !item.getId?.()) {
+    return;
+  }
+  const current = elementPreviewOn(item);
+  setItemAttributeValue(item, ELEMENT_PREVIEW_ATTRIBUTE, current ? "0" : "1");
+}
+
 /** The shared keydown handler (registered on the designer frame and on the canvas document). */
 function onKeyDown(event: KeyboardEvent): void {
-  if (event.altKey && event.key.toLowerCase() === "v") {
+  const key = event.key.toLowerCase();
+  if (event.altKey && key === "v") {
     event.preventDefault();
     toggleMarkMode();
+  } else if (event.altKey && key === "p") {
+    event.preventDefault();
+    toggleElementPreview();
   }
 }
 

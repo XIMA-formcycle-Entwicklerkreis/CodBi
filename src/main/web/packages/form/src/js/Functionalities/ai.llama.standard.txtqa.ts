@@ -109,6 +109,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
     )
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField, XTextArea */
     // #region Determine if early exit is appropriate.
     const tagName = (toProcess as HTMLElement).tagName.toUpperCase();
     const inputType = (toProcess as HTMLInputElement).type?.toLowerCase();

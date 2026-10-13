@@ -66,6 +66,7 @@ export class Media_Image_Cropper {
     )
     toProcess: Element,
   ): void {
+    /** @funcElement XContainer, XContainerInvisible, XFieldSet */
     const container: HTMLElement | undefined = toProcess.querySelector(toLoad.container as string);
     // Do nothing if there's no image container.
     if (container === undefined) {

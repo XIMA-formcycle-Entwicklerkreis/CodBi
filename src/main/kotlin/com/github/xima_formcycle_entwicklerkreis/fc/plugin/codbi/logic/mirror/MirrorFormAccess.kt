@@ -441,7 +441,7 @@ object MirrorFormAccess {
   /**
    * The CSS classes FORMCYCLE puts on the form's root `<form>` element (`xm-form modern
    * responsive`) for an already-parsed [form]. Shared by the Mirror widget's element preview and
-   * the Functionality widget's whole-form preview.
+   * the per-element whole-form preview.
    *
    * IMPORTANT: NEVER use IXForm.isUseModernTheme()/XForm.isUseModernTheme() — that method is a
    * legacy stub whose body is literally `return false` (both the interface default and XForm's
@@ -522,9 +522,9 @@ object MirrorFormAccess {
 
   /**
    * Renders a single element (and its children) of the CURRENT form from an already-parsed form
-   * JSON — used by the Functionality widget's preview so the contained element renders exactly like
-   * the frontend (the same server-side designer-preview path the Mirror's hover preview uses),
-   * without requiring the form to be persisted under a project key first.
+   * JSON — used by the per-element preview so the element renders exactly like the frontend (the
+   * same server-side designer-preview path the Mirror's hover preview uses), without requiring the
+   * form to be persisted under a project key first.
    *
    * @return the rendered node, or `null` when the element cannot be resolved/rendered.
    */
@@ -572,9 +572,9 @@ object MirrorFormAccess {
    * Renders the **entire** current form — every ROOT element plus all its descendants — from an
    * already-parsed form JSON, returning the concatenated inner `<form>` markup.
    *
-   * This is the backend half of the Functionality widget's **whole-form preview**: the DOM is built
-   * here exactly like the Mirror's element preview (item.render + [appendDescendants]), then loaded
-   * into a hidden, same-origin iframe where the FORMCYCLE + CodBi runtime scripts initialize every
+   * This is the backend half of the per-element **whole-form preview**: the DOM is built here
+   * exactly like the Mirror's element preview (item.render + [appendDescendants]), then loaded into
+   * a hidden, same-origin iframe where the FORMCYCLE + CodBi runtime scripts initialize every
    * element/functionality like on a published form — giving full form-level fidelity (navigator,
    * conditional visibility, per-element functionalities) instead of patching a single element.
    *

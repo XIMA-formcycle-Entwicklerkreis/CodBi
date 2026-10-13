@@ -98,6 +98,7 @@ export class OpenPLZ_Autocomplete {
     @EQ.PRE("text", false, "type", 'Isn\'t the tagged <input type = "text"/> ?')
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     const targetResultProperty =
       toLoad.targetdata.toLowerCase() === "localities" || toLoad.targetdata.toLowerCase() === "streets"
         ? "name"

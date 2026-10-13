@@ -173,6 +173,7 @@ export class MEDIA_INPUT_SPEECH {
     )
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField, XTextArea */
     const field = toProcess as HTMLInputElement | HTMLTextAreaElement;
 
     MEDIA_INPUT_SPEECH.ensureStyles();

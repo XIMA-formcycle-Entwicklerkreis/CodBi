@@ -30,10 +30,6 @@ export function decodeSeparatorWhitespaceEscapes(value: string): string {
 /**
  * Provides the {@link HTML_Panel.functionality }.
  *
- * @funcElement XContainer
- * @funcElement XContainerInvisible
- * @funcElement XFieldSet
- *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
@@ -168,6 +164,7 @@ export class HTML_Panel {
     )
     toProcess: Element,
   ): undefined {
+    /** @funcElement XContainer, XContainerInvisible, XFieldSet */
     if (XFC_METADATA.requestType === "print") {
       return;
     }

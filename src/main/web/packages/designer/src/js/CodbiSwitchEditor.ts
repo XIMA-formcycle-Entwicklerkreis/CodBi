@@ -26,6 +26,13 @@ export interface ICodbiSwitchEditorDescriptor extends IPropertyDescriptor<typeof
   onValue?: string;
   /** Value persisted for the "off" state (default `"0"`). */
   offValue?: string;
+  /**
+   * Whether to also render the companion switch (right of the primary one) that edits the
+   * {@link SECONDARY_PROPERTY} ("always show the reference"). Default `true`. Set `false` when the
+   * companion belongs next to only ONE of the editor's rows — otherwise a property reusing this
+   * editor (e.g. "Preview") would show a duplicate companion switch.
+   */
+  showCompanion?: boolean;
 }
 
 /** Augments **@de-xima/fc-form-designer** so the editor is known to the {@link IEditorMap}. */
@@ -74,6 +81,12 @@ export class CodbiSwitchEditor extends Editors.BaseEditor<typeof CodbiSwitchEdit
     this.offValue = config.offValue ?? "0";
     this.value = this.offValue;
 
+    // The companion "always show the reference" switch may be hidden (see `showCompanion`) when a
+    // property reuses this editor but must not duplicate the companion next to it. The companion
+    // INPUT is still built (and seeded) either way so it is a real, independent element — aliasing it
+    // to the primary would make `setValue`/`notifyChanged` overwrite the primary with the
+    // `mark_labels` value and the primary switch could no longer be toggled.
+    const showCompanion = config.showCompanion !== false;
     const primary = this.buildSwitch(`${config.id || `form-${config.property}`}-input`, ALT_V_TOOLTIP);
     const secondary = this.buildSwitch(`form-${SECONDARY_PROPERTY}-input`, i18n("designer.property.mark_labels"));
     this.primary = primary.input;
@@ -91,15 +104,23 @@ export class CodbiSwitchEditor extends Editors.BaseEditor<typeof CodbiSwitchEdit
 
     this.root = document.createElement("div");
     this.root.className = "codbi-switch-row";
-    // Caption shown to the RIGHT of the companion switch.
-    const secondaryCaption = document.createElement("span");
-    secondaryCaption.className = "codbi-switch__caption";
-    secondaryCaption.textContent = i18n("designer.marker.detail");
-    // The companion switch and its caption sit inside a rounded dark-orange box.
-    const secondaryGroup = document.createElement("span");
-    secondaryGroup.className = "codbi-switch-group";
-    secondaryGroup.append(secondary.label, secondaryCaption);
-    this.root.append(primary.label, secondaryGroup);
+    if (showCompanion) {
+      // Caption shown to the RIGHT of the companion switch.
+      const secondaryCaption = document.createElement("span");
+      secondaryCaption.className = "codbi-switch__caption";
+      secondaryCaption.textContent = i18n("designer.marker.detail");
+      // The companion switch and its caption sit inside a rounded dark-orange box.
+      const secondaryGroup = document.createElement("span");
+      secondaryGroup.className = "codbi-switch-group";
+      secondaryGroup.append(secondary.label, secondaryCaption);
+      this.root.append(primary.label, secondaryGroup);
+    } else {
+      // Hide the companion's chrome (only its label/track), but keep the input mounted so its state
+      // is still seeded from the persisted `mark_labels` value.
+      secondary.label.style.display = "none";
+      secondary.label.append(secondary.input);
+      this.root.appendChild(primary.label);
+    }
 
     // Seed the companion switch from the persisted value (the designer may not call `setValue` for
     // a property that has no dedicated editor row).

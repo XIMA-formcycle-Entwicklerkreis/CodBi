@@ -114,6 +114,7 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
     )
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField, XTextArea */
     // #region Validate element type
     const tagName = (toProcess as HTMLElement).tagName.toUpperCase();
     const inputType = (toProcess as HTMLInputElement).type?.toLowerCase();

@@ -45,6 +45,7 @@ export class HTML_Input_REGEX {
     @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     // #region Normalize Parameter.
     if (toLoad.expression) {
       toLoad.expression = (toLoad.expression as string).replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^");

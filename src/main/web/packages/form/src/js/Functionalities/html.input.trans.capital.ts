@@ -28,6 +28,8 @@ export class HTML_Input_Trans_Capital extends HTML_Input_Transformer {
    * @param toLoad    As provided bny the **CodBi**.
    * @param toProcess As provided bny the **CodBi**. */
   public static override functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
+    /** @funcElement XTextField */
+
     HTML_Input_Transformer.functionality(toLoad, toProcess, HTML_Input_Trans_Capital.transformer);
   }
 }

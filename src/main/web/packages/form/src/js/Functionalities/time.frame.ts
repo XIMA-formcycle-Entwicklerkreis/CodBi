@@ -47,6 +47,7 @@ export class Time_Frame {
     @EQ.PRE("text", false, "type", 'Is it not an <input type = "time"> that is tagged with this functionality?')
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     const maximumField: HTMLInputElement = toProcess.parentElement.parentElement.querySelector(
       toLoad.maxfield as string,
     ) as HTMLInputElement;

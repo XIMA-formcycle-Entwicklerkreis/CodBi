@@ -39,6 +39,7 @@ export class HTML_Panel_Accordion {
     )
     toProcess: Element,
   ): undefined {
+    /** @funcElement XContainer, XContainerInvisible, XFieldSet */
     if (toLoad.accordion === undefined || XFC_METADATA.requestType === "print") {
       return;
     }

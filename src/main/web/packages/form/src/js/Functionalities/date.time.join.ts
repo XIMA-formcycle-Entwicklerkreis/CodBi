@@ -63,6 +63,7 @@ export class Date_Time_Join {
     @INSTANCE.PRE(HTMLInputElement, undefined, "Is it not an <input/> that is tagged with this functionality?")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     const $ = getJQuery();
     // #region Resolve the container the tagged {@link Element} is within (falls back to the page).
     const container: ParentNode = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet") ?? document;

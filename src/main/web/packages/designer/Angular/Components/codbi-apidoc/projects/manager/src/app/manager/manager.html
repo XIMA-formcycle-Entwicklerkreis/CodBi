@@ -271,11 +271,14 @@
 
                                 <p-accordion-content>
                                     <div>
-                                        <label for = "CodBi_LocalAPIDoc_RightPanel_FormElements">Allowed FORMCYCLE widget class names (comma separated, empty = any)</label>
-                                        <input  id          = "CodBi_LocalAPIDoc_RightPanel_FormElements"
-                                                type        = "text"
-                                                [(ngModel)] = "currentlySelectedFunctionalityData.formElements"
-                                                placeholder = "XFieldSet, XContainer, XContainerInvisible"></div></p-accordion-content></p-accordion-panel>
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_FormElements">Allowed FORMCYCLE widget classes (multi-select, empty = any)</label>
+                                        <select id            = "CodBi_LocalAPIDoc_RightPanel_FormElements"
+                                                class        = "CodBi_FormElements"
+                                                multiple
+                                                [ngModel]    = "selectedFormElementTypes"
+                                                (ngModelChange) = "onFormElementTypesChange( $event )">
+                                            <option *ngFor = "let type of formElementTypeOptions" [value] = "type">{{ type }}</option>
+                                        </select></div></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value = "Notes">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>

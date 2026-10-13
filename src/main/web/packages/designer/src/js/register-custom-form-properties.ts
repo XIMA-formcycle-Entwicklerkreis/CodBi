@@ -44,6 +44,19 @@ export function registerCustomFormProperties(): void {
     title: "ALT + V",
     availableIf: WhenCodBiEnabled,
   });
+  // "Preview mode": when enabled, a preview switch appears on every form element in the design
+  // canvas so each element's CodBi functionalities can be previewed in isolation (see
+  // `CodbiElementMarkers.ts`).
+  registerCustomFormProperty({
+    editor: CodbiSwitchEditorType,
+    cat: Constants["designer.category.codbi_panel"],
+    property: Constants["designer.property.preview_elements"],
+    label: i18n("designer.property.preview_elements"),
+    availableIf: WhenCodBiEnabled,
+    // The companion "always show the reference" (= detailed) switch belongs next to the "Mark
+    // elements" marker switch only; do NOT duplicate it after the preview switch.
+    showCompanion: false,
+  });
   // Configuration template
   registerCustomFormProperty({
     editor: "SelectEditor",

@@ -72,6 +72,7 @@ export class Date_Time_Join_Span {
     @INSTANCE.PRE(Element, undefined, "Is it not an element that is tagged with this functionality?")
     toProcess: Element,
   ): void {
+    /** @funcElement XContainer, XContainerInvisible, XFieldSet */
     const $ = getJQuery();
     // #region The tagged element is the scope within which the fields are searched.
     const scope: ParentNode = toProcess;

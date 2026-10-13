@@ -102,6 +102,7 @@ export class AI_OCR {
     @EQ.PRE("file", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XUpload */
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
       const container =
         (toProcess as HTMLElement).closest(".XContainer, .XFieldSet") ??

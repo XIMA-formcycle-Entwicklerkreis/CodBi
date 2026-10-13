@@ -3216,6 +3216,57 @@ export class Manager implements AfterViewInit {
     this.synchronized = false;
   }
   // #endregion Notes
+  // #region Form element types
+  /**
+   * The selectable FORMCYCLE **widget class** names a {@link Manager.TreeNodeData functionality} may be
+   * applied to. Mirrors the server-side core-widget list (`InstalledFormcycleElements.CORE_WIDGETS`,
+   * excluding the `XFunctionality` widget itself). */
+  protected formElementTypeOptions: string[] = [
+    "XTextField",
+    "XTextArea",
+    "XUpload",
+    "XSelect",
+    "XCheckbox",
+    "XButtonList",
+    "XSpan",
+    "XImage",
+    "XFieldSet",
+    "XContainer",
+    "XContainerInvisible",
+    "XLine",
+    "XSpacer",
+    "XPage",
+    "XHeader",
+    "XFooter",
+  ];
+  /**
+   * The {@link string[] } of widget class names currently assigned to the selected functionality
+   * (derived from the `formElements` CSV string, empty = any). */
+  protected get selectedFormElementTypes(): string[] {
+    const raw = this.currentlySelectedFunctionalityData?.formElements;
+    if (typeof raw !== "string" || raw.trim() === "") {
+      return [];
+    }
+    return raw
+      .split(/[,\s]+/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+  /**
+   * Persists the chosen widget classes as a CSV string on
+   * {@link currentFunctionalityData.formElements}, so the existing
+   * export/import path (`String(...).split(/[,\s]+/)`) keeps working. Empty = any element.
+   *
+   * @param selected The widget class names selected in the dropdown. */
+  protected onFormElementTypesChange(selected: string[]) {
+    if (this.currentlySelectedFunctionalityData === undefined) {
+      return;
+    }
+    this.currentlySelectedFunctionalityData.formElements =
+      Array.isArray(selected) && selected.length > 0 ? selected.join(", ") : undefined;
+    this.synchronized = false;
+  }
+  // #endregion Form element types
   // #region Description
   /** Stores an {@link ElementRef } to the description {@link TinyMCE } fpr functionalities. */
   @ViewChild("CodBi_LocalAPIDoc_Functionalities_Description")

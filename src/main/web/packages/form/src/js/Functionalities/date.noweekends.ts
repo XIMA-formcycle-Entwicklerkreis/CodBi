@@ -40,6 +40,7 @@ export class Date_NoWeekends {
     @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XTextField */
     const $ = getJQuery();
     // If JQuery's datepicker hasn't been initialized yet
     if ($(toProcess).data("datepicker") === 1) {

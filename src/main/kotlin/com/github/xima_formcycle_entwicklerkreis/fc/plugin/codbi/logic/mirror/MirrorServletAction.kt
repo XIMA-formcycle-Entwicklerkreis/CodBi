@@ -107,9 +107,8 @@ class MirrorServletAction : IPluginServletAction {
    */
   /**
    * Lists the FORMCYCLE form-element TYPES available on this installation: FORMCYCLE's core widgets
-   * plus every plugin-provided widget detected via [InstalledFormcycleElements]. Used by the
-   * Functionality widget's configurator so the contained element can be one of ANY installed widget
-   * type — not just the hard-coded core list. The Functionality widget itself is excluded.
+   * plus every plugin-provided widget detected via [InstalledFormcycleElements]. Used so a
+   * contained element can be one of ANY installed widget type — not just the hard-coded core list.
    */
   private fun widgetsJson(params: IPluginServletActionParams): String {
     val types = LinkedHashSet<String>()
@@ -119,7 +118,6 @@ class MirrorServletAction : IPluginServletAction {
     runCatching { types.addAll(InstalledFormcycleElements.snapshotFor(params).widgets) }
     // The CodBi Mirror is a real, droppable widget and a valid contained element.
     types.add("XMirror")
-    types.remove("XFunctionality")
     val array = JSONArray()
     types.sorted().forEach { array.add(it) }
     logger.info("[MirrorServletAction] action='widgets' -> {} type(s)", array.size)
@@ -128,9 +126,9 @@ class MirrorServletAction : IPluginServletAction {
 
   /**
    * Renders a single element of the CURRENT form from the posted form JSON (`json` request param)
-   * plus the element reference (`element`). Used by the Functionality widget's preview to show the
-   * contained element exactly like the frontend (same server-side designer-preview path as the
-   * Mirror's hover preview).
+   * plus the element reference (`element`). Used by the per-element preview to show the element
+   * exactly like the frontend (same server-side designer-preview path as the Mirror's hover
+   * preview).
    */
   private fun renderCurrentHtml(params: IPluginServletActionParams): String {
     val rawJson = params.requestParameters["json"]?.firstOrNull() ?: return ""
@@ -152,10 +150,10 @@ class MirrorServletAction : IPluginServletAction {
 
   /**
    * Returns a COMPLETE, standalone HTML document for the CURRENT form (posted as `json`), used by
-   * the Functionality widget's **whole-form preview**: the document is loaded into a hidden,
-   * same-origin iframe so the FORMCYCLE + CodBi runtime scripts initialize a REAL form instance —
-   * full form-level fidelity (navigator, conditional visibility, per-element functionalities)
-   * instead of patching a single element client-side.
+   * the **per-element whole-form preview**: the document is loaded into a hidden, same-origin
+   * iframe so the FORMCYCLE + CodBi runtime scripts initialize a REAL form instance — full
+   * form-level fidelity (navigator, conditional visibility, per-element functionalities) instead of
+   * patching a single element client-side.
    *
    * The document combines the server-rendered whole-form body (see
    * [MirrorFormAccess.renderWholeFormBody]) with the platform theme CSS, the form's user CSS, the

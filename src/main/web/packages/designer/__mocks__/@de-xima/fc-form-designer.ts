@@ -27,6 +27,18 @@ export const registerCustomFormProperty: Module["registerCustomFormProperty"] = 
 export const registerCustomFormCategory: Module["registerCustomFormCategory"] = (category, location) =>
   TestState.customFormCategories.push([category, location]);
 
+export const registerCustomProperty: Module["registerCustomProperty"] = (propertyDescriptor, location) =>
+  TestState.customProperties.push([propertyDescriptor, location]);
+
+export const registerCustomCategory: Module["registerCustomCategory"] = (category, location) =>
+  TestState.customCategories.push([category, location]);
+
+export const registerLocalizableProperty: Module["registerLocalizableProperty"] = (propertyName) =>
+  TestState.localizableProperties.push([propertyName]);
+
+export const registerCustomEditor: Module["registerCustomEditor"] = (name, editor) =>
+  TestState.customEditors.push([String(name), editor]);
+
 export const registerCustomTranslations: Module["registerCustomTranslations"] = (translations) =>
   TestState.customTranslations.push([translations]);
 

@@ -169,6 +169,7 @@ export class AI_LLAMA_STANDARD_QA {
     @EQ.PRE("file", false, "type")
     toProcess: Element,
   ): void {
+    /** @funcElement XUpload */
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
       // #region Check if early exit is appropriate (no files selected)
       const files = (toProcess as HTMLInputElement).files;

@@ -260,6 +260,17 @@ export function loadConfig(): void {
         /* #region Paragraphs etc. */
         p, h1, h2, h3, h4, h5, h6, ul, span { color : #ACCENT_DM ;}
         /* #endregion Paragraphs etc. */
+        /* #region Header */
+        .XFieldSet h2,
+        .CodBi_HTML_Panel_Header h2,
+        .xm-form.modern .CXHeader *     { color: green !important ;}
+    
+        .xm-form.modern H1,
+        .xm-form.modern .CXHeader * H1,
+        .xm-form.modern H3  { color: darkorange !important ;}
+    
+        .xm-form.modern H3  { color: green !important ;}
+        /* #endregion Header*/
         /* #region Print */
         @media print {
           .xm-form .xm-content div.print.XSpan { background-color: #ACCENT_DM10 !important ;}

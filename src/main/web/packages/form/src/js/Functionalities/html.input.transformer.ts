@@ -40,6 +40,7 @@ export class HTML_Input_Transformer {
       toLoad: { [key: string]: unknown },
     ) => string = HTML_Input_Transformer.transformer,
   ): void {
+    /** @funcElement XTextField */
     const $ = getJQuery();
     // #region Perform transformation
     toProcess.addEventListener("change", (event) => {

@@ -3,7 +3,10 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.localize
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.functionality.XFunctionality
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.XMirror
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.FUNCTIONALITY_PROPERTY_ELEMENT
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.FUNCTIONALITY_PROPERTY_FUNCS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.MIRROR_PROPERTY_ELEMENT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.MIRROR_PROPERTY_FORM
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_FORM_ELEMENT_CATALOGUE_ID
@@ -73,6 +76,18 @@ class CodbiFormElementCataloguePlugin : IPluginFormElementCatalogue {
                       .fluentPut("name", "mirFormElement")
                       .fluentPut(MIRROR_PROPERTY_FORM, "")
                       .fluentPut(MIRROR_PROPERTY_ELEMENT, "")))
+      add(
+          JSONObject()
+              .fluentPut("className", XFunctionality::class.java.simpleName)
+              // Unique id (e.g. `xi-fnc-1`) from the widget prefix; `use_name_idx` also uniquifies
+              // the NAME so several Functionality widgets never share the same child-name prefix.
+              .fluentPut("use_name_idx", true)
+              .fluentPut(
+                  "properties",
+                  JSONObject()
+                      .fluentPut("name", "fncFormElement")
+                      .fluentPut(FUNCTIONALITY_PROPERTY_FUNCS, "")
+                      .fluentPut(FUNCTIONALITY_PROPERTY_ELEMENT, "")))
     }
   }
 }

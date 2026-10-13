@@ -56,10 +56,26 @@ interface Window {
         Description: string;
         /** Stores the parameter that this **CodBi-Functionality** provides. */
         Parameter: { [key: string]: string };
+        /**
+         * The FORMCYCLE widget class names this functionality is intended for (e.g. `XFieldSet`).
+         * An empty/absent list means "any element" (fail-open). Populated by the build-time
+         * generator (Tier A) or the local API-doc manager (Tier B). */
+        formElements?: Array<string>;
         /** Stores a {@link boolean } stating whether this entry is a local or a native one. */
         local: boolean;
         /** Stores the JS-Code for that CodBi-Element. */
         Code: string | undefined;
+      };
+    };
+    /**
+     * Stores the **form-element-type** metadata of the CodBi functionalities, keyed by (lowercase)
+     * functionality id. Published by the build-time generator or the local API-doc manager. */
+    funcMeta?: {
+      [key: string]: {
+        /** The widget class names the functionality applies to (empty = any). */
+        formElements: Array<string>;
+        /** The tier that produced this entry. */
+        source?: string;
       };
     };
     /** Stores the available Element-Placeholder. */

@@ -144,6 +144,11 @@ interface TreeNodeData {
   CondensedPrompt?: string;
   /** The element's detailed prompt (transmitted to the AI as part of the detailed prompt). */
   DetailedPrompt?: string;
+  /**
+   * The FORMCYCLE widget class names a **Functionality** may be applied to (comma/space separated,
+   * e.g. `XFieldSet, XContainer`). Empty/absent ⇒ "any element". Only meaningful for functionalities.
+   */
+  formElements?: string;
   /** The detailed prompts of the element's parameters (name → prompt). */
   ParameterPrompts?: { [key: string]: string };
   /** The detailed prompts of the element's global variables (name → prompt). */
@@ -161,6 +166,10 @@ interface InputDataItem {
   classes?: { [name: string]: string } | SimplifiedNamedItem[];
   /** The parameter defined, if we're dealing with either a CodBi Functionality or an Elementplaceholder. */
   Parameter?: { [name: string]: string } | SimplifiedNamedItem[];
+  /**
+   * The FORMCYCLE widget class names a **Functionality** may be applied to (either a CSV string or an
+   * array). Empty/absent ⇒ "any element". */
+  formElements?: string | string[];
   /** Stores the JS-Code for that CodBi-Element. */
   Code: string | undefined;
   /** The element's condensed prompt (transmitted to the AI as a compact/condensed prompt). */
@@ -2128,6 +2137,13 @@ export class Manager implements AfterViewInit {
         Parameter: node.data?.Parameter ? this.arrayToObject(node.data.Parameter) : [],
         globals: node.data?.globals ? this.arrayToObject(node.data.globals) : [],
         classes: node.data?.classes ? this.arrayToObject(node.data.classes) : [],
+        // The allowed form-element types of a functionality (CSV → array), empty = "any".
+        formElements: node.data?.formElements
+          ? String(node.data.formElements)
+              .split(/[,\s]+/)
+              .map((entry) => entry.trim())
+              .filter((entry) => entry.length > 0)
+          : [],
         notes: node.data.Notes ? node.data.Notes : "",
         CondensedPrompt: node.data?.CondensedPrompt ?? "",
         DetailedPrompt: node.data?.DetailedPrompt ?? "",
@@ -3030,6 +3046,15 @@ export class Manager implements AfterViewInit {
                 window.CodbiPluginData.detFunctionalities[key] = {
                   Description: parsedData.detFunctionalities[key].Description,
                   Parameter: parsedData.detFunctionalities[key].Parameter as { [name: string]: string },
+                  formElements: Array.isArray(parsedData.detFunctionalities[key].formElements)
+                    ? parsedData.detFunctionalities[key].formElements
+                    : typeof parsedData.detFunctionalities[key].formElements === "string" &&
+                        parsedData.detFunctionalities[key].formElements !== ""
+                      ? String(parsedData.detFunctionalities[key].formElements)
+                          .split(/[,\s]+/)
+                          .map((entry) => entry.trim())
+                          .filter((entry) => entry.length > 0)
+                      : undefined,
                   Code: parsedData.detFunctionalities[key].Code,
                   local: true,
                 };

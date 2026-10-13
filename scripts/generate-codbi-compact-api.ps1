@@ -517,12 +517,29 @@ Get-ChildItem $funcDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
     }
   }
 
+  # #region Allowed FORMCYCLE form-element types (`@funcElement <ClassName>` tags, Tier A)
+  # Repeatable; comma/space separated names accepted. Empty ⇒ "any element" (fail-open). Emitted as
+  # `formElements` so the designer's functionality configurator can filter the target-element picker.
+  $formElements = @()
+  foreach ($m in [regex]::Matches($ts, '@funcElement\s+([^\r\n*/]+)')) {
+    foreach ($part in ($m.Groups[1].Value -split '[,\s]+')) {
+      $name = $part.Trim()
+      if ($name -ne "") { $formElements += $name }
+    }
+  }
+  $formElements = @($formElements | Select-Object -Unique)
+  if ($formElements.Count -gt 0) {
+    [void]$sb.AppendLine("  - Applies to: $($formElements -join ', ')")
+  }
+  # #endregion Allowed FORMCYCLE form-element types
+
   $detailsEntries[$id] = [ordered]@{
     id = $id
     type = "functionality"
     summary = $desc
     tsdoc = $docDetail
     parameters = $entryParams
+    formElements = $formElements
     classDescriptions = [ordered]@{}
   }
   $detailsAliases[$id] = $id

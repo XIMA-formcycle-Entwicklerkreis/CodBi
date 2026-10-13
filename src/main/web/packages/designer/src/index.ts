@@ -5,11 +5,13 @@ import { registerButtonActionTranslations } from "./js/register-custom-translati
 import { registerCustomFormCategories } from "./js/register-custom-form-categories.js";
 import { registerCustomFormProperties } from "./js/register-custom-form-properties.js";
 import { registerCustomMirrorProperties } from "./js/register-custom-mirror-properties.js";
+import { registerCustomFunctionalityProperties } from "./js/FunctionalityConfigEditor.js";
 
 registerButtonActionTranslations();
 registerCustomFormCategories();
 registerCustomFormProperties();
 registerCustomMirrorProperties();
+registerCustomFunctionalityProperties();
 registerCustomElements();
 // Paints the CodBi overlays (Mirror badges) when the "mark CodBi elements" mode is on (ALT+V).
 enableCodbiElementMarkers();

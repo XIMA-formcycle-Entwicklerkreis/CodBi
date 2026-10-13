@@ -41,6 +41,26 @@ export interface EPSignature {
   source: "tsdoc" | "manager" | "runtime" | "heuristic";
 }
 /**
+ * Describes which FORMCYCLE form-element types (widget class names, e.g. `XFieldSet`) a **CodBi
+ * Functionality** may be applied to.
+ *
+ * A functionality with **no** metadata (empty list / never described) is treated as applicable to
+ * **any** element — the resolver is deliberately fail-open, exactly like the EP signature resolver.
+ */
+export interface FunctionalityMetaInput {
+  /**
+   * The widget class names this functionality is intended for (e.g. `["XFieldSet", "XContainer"]`).
+   * An empty array means "any element". */
+  formElements: Array<string>;
+}
+/** A fully resolved **CodBi Functionality** metadata record. */
+export interface FunctionalityMeta {
+  /** The widget class names this functionality is intended for (empty = any). */
+  formElements: Array<string>;
+  /** Where the metadata originated from. */
+  source: "tsdoc" | "manager" | "runtime" | "heuristic";
+}
+/**
  * The global codbi object, available via `window.codbi`. Should only be used
  * when it is absolutely necessary to expose symbols externally. Use ESM imports
  * otherwise. */
@@ -53,7 +73,17 @@ export interface CodbiGlobal {
   checkAttributes: () => Promise<boolean>;
   /** See {@link CodBi.registerFunctionality }. */
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
-  registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
+  registerFunctionality(
+    id: string,
+    init: (toLoad: any, toProcess: Element) => any,
+    meta?: FunctionalityMetaInput,
+  ): boolean;
+  /** See {@link CodBi.describeFunctionality }. */
+  describeFunctionality(id: string, meta: FunctionalityMetaInput): void;
+  /** See {@link CodBi.resolveFunctionalityMeta }. */
+  resolveFunctionalityMeta(id: string): FunctionalityMeta | undefined;
+  /** Stores the **CodBi Functionality** metadata resolved so far (id → meta). */
+  availableFunctionalityMeta: { [k: string]: FunctionalityMeta };
   /** See {@link CodBi.extendFunctionality }. */
   extendFunctionality(
     id: string,
@@ -312,6 +342,12 @@ export class CodBi implements CodbiGlobal {
   protected epArities: { [k: string]: number } = {};
   /** Stores signatures provided via {@link CodBi.describeEP } before the EP itself was registered. */
   protected pendingEPSignatures: { [k: string]: EPSignature } = {};
+  /** Stores the **CodBi Functionality** metadata resolved so far (id → meta). Public so the designer
+   *  can read it (e.g. to filter the target-element selector by the allowed form-element types). */
+  public availableFunctionalityMeta: { [k: string]: FunctionalityMeta } = {};
+  /** Stores metadata provided via {@link CodBi.describeFunctionality } before the functionality
+   *  itself was registered. */
+  protected pendingFunctionalityMeta: { [k: string]: FunctionalityMeta } = {};
   /** Stores all active CSS-Classes that're references to CodBi Standard-Configurations. */
   protected configs: Array<string> = new Array<string>();
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
@@ -487,6 +523,140 @@ export class CodBi implements CodbiGlobal {
     }
 
     return undefined;
+  }
+  /**
+   * Records the **form-element-type** metadata of a **CodBi Functionality** without touching its
+   * implementation. This is the primary way to describe functionalities authored in FormCycle's
+   * JavaScript editor (which never pass through the LocalAPIDoc manager) and the ones the designer's
+   * functionality configurator describes on the fly.
+   *
+   * If the functionality is not registered yet the metadata is buffered and merged on
+   * {@link CodBi.registerFunctionality }.
+   *
+   * @param id   The functionality's id (case insensitive).
+   * @param meta The metadata to record. */
+  public describeFunctionality(id: string, meta: FunctionalityMetaInput): void {
+    // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
+    id = id.toLowerCase().trim();
+
+    const normalized = CodBi.normalizeFunctionalityMeta(meta, "runtime");
+
+    if (!this.functionalities.has(id)) {
+      this.pendingFunctionalityMeta[id] = normalized;
+    } else {
+      this.availableFunctionalityMeta[id] = normalized;
+    }
+  }
+  /**
+   * Resolves the **form-element-type** metadata of the functionality **id** lazily and never throws.
+   * Resolution order (first hit wins):
+   *
+   * 1. metadata recorded via {@link CodBi.registerFunctionality } / {@link CodBi.describeFunctionality };
+   * 2. `@funcElement <ClassName>` tags found in the live init function's source
+   *    (`Function.prototype.toString()` — only comments **inside** the function body are visible);
+   * 3. a `window.CodbiPluginData.funcMeta[id]` entry published by the build-time generator or the
+   *    local API-doc manager.
+   *
+   * Returns **undefined** when nothing is known — callers must treat that as "any element"
+   * (fail-open), exactly like the untyped EP signature case.
+   *
+   * @param id The functionality's id (case insensitive).
+   *
+   * @returns The resolved {@link FunctionalityMeta } or **undefined**. */
+  public resolveFunctionalityMeta(id: string): FunctionalityMeta | undefined {
+    const key = id.toLowerCase().trim();
+    const known = this.availableFunctionalityMeta[key];
+
+    if (known) {
+      return known;
+    }
+
+    const init = this.functionalities.get(key);
+
+    if (init !== undefined) {
+      const scanned = CodBi.scanFunctionalityMetaFromSource(init);
+
+      if (scanned) {
+        this.availableFunctionalityMeta[key] = scanned;
+
+        return scanned;
+      }
+    }
+
+    // Tier A/B: metadata published by the build-time generator or the local API-doc manager.
+    try {
+      const published = (
+        window as unknown as {
+          CodbiPluginData?: { funcMeta?: { [k: string]: FunctionalityMetaInput } };
+        }
+      ).CodbiPluginData?.funcMeta?.[key];
+
+      if (published) {
+        this.availableFunctionalityMeta[key] = CodBi.normalizeFunctionalityMeta(published, "manager");
+
+        return this.availableFunctionalityMeta[key];
+      }
+    } catch {
+      /* window not available */
+    }
+
+    return undefined;
+  }
+  /**
+   * Normalizes a (possibly partial) metadata input into a well-formed {@link FunctionalityMeta },
+   * trimming and de-duplicating the widget class names (preserving their order).
+   *
+   * @param input  The metadata input to normalize.
+   * @param source The source to tag the resulting metadata with.
+   *
+   * @returns The normalized {@link FunctionalityMeta }. */
+  protected static normalizeFunctionalityMeta(
+    input: FunctionalityMetaInput,
+    source: FunctionalityMeta["source"],
+  ): FunctionalityMeta {
+    const formElements = Array.from(
+      new Set((input?.formElements ?? []).map((entry) => String(entry).trim()).filter((entry) => entry.length > 0)),
+    );
+
+    return { formElements, source };
+  }
+  /**
+   * Scans the source of the live **init** function for `@funcElement <ClassName>` tags (repeatable,
+   * comma/space separated names accepted) so functionalities authored without an explicit descriptor
+   * can still declare the form-element types they apply to. Only comments inside the function body
+   * are visible to `Function.prototype.toString()`.
+   *
+   * @param init The live functionality init function.
+   *
+   * @returns The scanned {@link FunctionalityMeta } or **undefined** when no tag was found. */
+  protected static scanFunctionalityMetaFromSource(
+    init: (toLoad: unknown, toProcess: Element) => unknown,
+  ): FunctionalityMeta | undefined {
+    let source = "";
+
+    try {
+      source = Function.prototype.toString.call(init);
+    } catch {
+      return undefined;
+    }
+
+    const formElements = new Array<string>();
+
+    for (const match of source.matchAll(/@funcElement\s+([A-Za-z0-9_$.,\s]+)/g)) {
+      for (const part of match[1].split(/[,\s]+/)) {
+        const name = part.trim();
+
+        if (name.length > 0) {
+          formElements.push(name);
+        }
+      }
+    }
+
+    if (formElements.length === 0) {
+      return undefined;
+    }
+
+    return { formElements: Array.from(new Set(formElements)), source: "tsdoc" };
   }
   /**
    * Normalizes a (possibly partial) signature input into a well-formed {@link EPSignature }, filling
@@ -1254,7 +1424,11 @@ export class CodBi implements CodbiGlobal {
    * @param init  The method to incorporating the new functionality.
    *
    * @return **TRUE** on successful registration, otherwise **FALSE**. */
-  public registerFunctionality(id: string, init: (toLoad: unknown, toProcess: Element) => unknown): boolean {
+  public registerFunctionality(
+    id: string,
+    init: (toLoad: unknown, toProcess: Element) => unknown,
+    meta?: FunctionalityMetaInput,
+  ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
 
@@ -1265,6 +1439,15 @@ export class CodBi implements CodbiGlobal {
     }
 
     this.functionalities.set(id, init);
+    // #region Capture the functionality's metadata (explicit or previously described) without affecting behaviour.
+    const providedMeta = meta ?? this.pendingFunctionalityMeta[id];
+
+    if (providedMeta) {
+      this.availableFunctionalityMeta[id] = CodBi.normalizeFunctionalityMeta(providedMeta, "runtime");
+
+      delete this.pendingFunctionalityMeta[id];
+    }
+    // #endregion Capture the functionality's metadata (explicit or previously described) without affecting behaviour.
 
     for (const element of document.querySelectorAll(`[data-cb-checked*="${id.toLowerCase()}"]`)) {
       element.setAttribute("data-cb-checked", element.getAttribute("data-cb-checked").replace(id.toLowerCase(), ""));

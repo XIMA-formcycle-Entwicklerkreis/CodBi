@@ -266,6 +266,17 @@
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
                                                     [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? currentlySelectedFunctionalityData.Parameter : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
 
+                            <p-accordion-panel value = "FormElements">
+                                <p-accordion-header>Form element types</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <div>
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_FormElements">Allowed FORMCYCLE widget class names (comma separated, empty = any)</label>
+                                        <input  id          = "CodBi_LocalAPIDoc_RightPanel_FormElements"
+                                                type        = "text"
+                                                [(ngModel)] = "currentlySelectedFunctionalityData.formElements"
+                                                placeholder = "XFieldSet, XContainer, XContainerInvisible"></div></p-accordion-content></p-accordion-panel>
+
                             <p-accordion-panel value = "Notes">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
 

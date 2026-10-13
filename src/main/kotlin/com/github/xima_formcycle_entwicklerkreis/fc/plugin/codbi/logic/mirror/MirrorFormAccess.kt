@@ -431,26 +431,35 @@ object MirrorFormAccess {
   fun formRootClasses(userContext: Any?, formKey: String?): String {
     val json = loadFormJson(userContext, formKey) ?: return ""
     return try {
-      val form = XForm(json)
-      // IMPORTANT: NEVER use IXForm.isUseModernTheme()/XForm.isUseModernTheme() — that method is a
-      // legacy stub whose body is literally `return false` (both the interface default and XForm's
-      // override), so it can never report a modern form. Relying on it silently dropped the
-      // `modern`
-      // class from the wrapper, which is why the modern theme AND the CodBi standard CSS (both
-      // scoped under `.xm-form.modern` / `body.modern.xm-body`) never matched in the preview. The
-      // real flag lives on the parsed form properties (`isModernTheme()`), the exact same source
-      // `isResponsive()` already reads (`pageResponsive`).
-      val modern = form.formProperties?.isModernTheme == true
-      buildString {
-        append("xm-form")
-        if (modern) append(" modern")
-        if (form.isResponsive()) append(" responsive")
-      }
+      rootClassesOf(XForm(json))
     } catch (x: Exception) {
       logger.warn("[MirrorFormAccess] formRootClasses failed: {}", x.message)
       ""
     }
   }
+
+  /**
+   * The CSS classes FORMCYCLE puts on the form's root `<form>` element (`xm-form modern
+   * responsive`) for an already-parsed [form]. Shared by the Mirror widget's element preview and
+   * the Functionality widget's whole-form preview.
+   *
+   * IMPORTANT: NEVER use IXForm.isUseModernTheme()/XForm.isUseModernTheme() — that method is a
+   * legacy stub whose body is literally `return false` (both the interface default and XForm's
+   * override), so it can never report a modern form. The real flag lives on the parsed form
+   * properties (`isModernTheme()`), the exact same source `isResponsive()` already reads
+   * (`pageResponsive`).
+   */
+  fun rootClassesOf(form: XForm): String {
+    val modern = form.formProperties?.isModernTheme == true
+    return buildString {
+      append("xm-form")
+      if (modern) append(" modern")
+      if (form.isResponsive()) append(" responsive")
+    }
+  }
+
+  /** Whether [form] uses the modern theme (see [rootClassesOf] for why this cannot use IXForm). */
+  fun isModernTheme(form: XForm): Boolean = form.formProperties?.isModernTheme == true
 
   // endregion Form JSON
 
@@ -510,6 +519,131 @@ object MirrorFormAccess {
       renderContext: IXFormRenderContext?
   ): String? =
       renderElementNode(userContext, formKey, elementRef, renderConfig, renderContext)?.write()
+
+  /**
+   * Renders a single element (and its children) of the CURRENT form from an already-parsed form
+   * JSON — used by the Functionality widget's preview so the contained element renders exactly like
+   * the frontend (the same server-side designer-preview path the Mirror's hover preview uses),
+   * without requiring the form to be persisted under a project key first.
+   *
+   * @return the rendered node, or `null` when the element cannot be resolved/rendered.
+   */
+  fun renderElementFromJson(
+      json: JSONObject?,
+      elementRef: String?,
+      renderConfig: IXFormRenderConfig?,
+      renderContext: IXFormRenderContext?
+  ): Div? {
+    if (json == null || renderConfig == null || renderContext == null) return null
+    return try {
+      val form = XForm(json)
+      val item = findItem(form, null, elementRef) ?: return null
+      val node =
+          item.render(
+              renderConfig, HashMap(), emptyMap(), false, renderContext, JSONObject(), false, false)
+              ?: return null
+      itemJsonByRef(json, elementRef)?.let { elementJson ->
+        appendDescendants(
+            childrenIndex(json),
+            xItemsByRef(form),
+            elementJson,
+            node,
+            renderConfig,
+            renderContext,
+            0,
+            HashSet())
+      }
+      node
+    } catch (x: Exception) {
+      logger.warn("[MirrorFormAccess] renderElementFromJson failed: {}", x.message)
+      null
+    }
+  }
+
+  /** Convenience wrapper around [renderElementFromJson] that returns the rendered HTML string. */
+  fun renderElementFromJsonHtml(
+      json: JSONObject?,
+      elementRef: String?,
+      renderConfig: IXFormRenderConfig?,
+      renderContext: IXFormRenderContext?
+  ): String? = renderElementFromJson(json, elementRef, renderConfig, renderContext)?.write()
+
+  /**
+   * Renders the **entire** current form — every ROOT element plus all its descendants — from an
+   * already-parsed form JSON, returning the concatenated inner `<form>` markup.
+   *
+   * This is the backend half of the Functionality widget's **whole-form preview**: the DOM is built
+   * here exactly like the Mirror's element preview (item.render + [appendDescendants]), then loaded
+   * into a hidden, same-origin iframe where the FORMCYCLE + CodBi runtime scripts initialize every
+   * element/functionality like on a published form — giving full form-level fidelity (navigator,
+   * conditional visibility, per-element functionalities) instead of patching a single element.
+   *
+   * We deliberately do NOT use `XFormRenderer.getRenderedForm`: that platform entry point requires
+   * the server's provider stack (render-callback / meta-data / v-rules / replacer / language / item
+   * providers) which a plugin servlet cannot supply.
+   *
+   * @return the inner form markup, or `null` when the form cannot be rendered.
+   */
+  fun renderWholeFormBody(
+      json: JSONObject?,
+      renderConfig: IXFormRenderConfig?,
+      renderContext: IXFormRenderContext?
+  ): String? {
+    if (json == null || renderConfig == null || renderContext == null) return null
+    return try {
+      val form = XForm(json)
+      val itemsByRef = xItemsByRef(form)
+      val index = childrenIndex(json)
+      // Every element that is referenced as somebody's child is NOT a root element.
+      val childRefs = HashSet<String>()
+      for (children in index.values) {
+        for (child in children) {
+          val props = child.getJSONObject("properties") ?: continue
+          props.getString("id")?.takeIf { it.isNotBlank() }?.let { childRefs.add(it) }
+          props.getString("name")?.takeIf { it.isNotBlank() }?.let { childRefs.add(it) }
+        }
+      }
+      val container = Div()
+      val seen = HashSet<String>()
+      val items = json.getJSONArray("items") ?: return ""
+      for (i in 0 until items.size) {
+        val itemJson = items.getJSONObject(i) ?: continue
+        val props = itemJson.getJSONObject("properties") ?: continue
+        val id = props.getString("id").orEmpty()
+        val name = props.getString("name").orEmpty()
+        val ref = id.ifBlank { name }
+        if (ref.isEmpty() || childRefs.contains(id) || childRefs.contains(name)) continue
+        val item = itemsByRef[ref] ?: itemsByRef[name] ?: continue
+        if (!seen.add(ref)) continue
+        val node =
+            item.render(
+                renderConfig,
+                HashMap(),
+                emptyMap(),
+                false,
+                renderContext,
+                JSONObject(),
+                false,
+                false) ?: continue
+        container.children.add(node)
+        node.setParent(container)
+        appendDescendants(index, itemsByRef, itemJson, node, renderConfig, renderContext, 0, seen)
+      }
+      container.write()
+    } catch (x: Exception) {
+      logger.warn("[MirrorFormAccess] renderWholeFormBody failed: {}", x.message)
+      null
+    }
+  }
+
+  /** Extracts the form's own user CSS (`form.getUserCSS()`), or `""`. */
+  fun userCssOf(form: XForm): String =
+      try {
+        form.getUserCSS().orEmpty()
+      } catch (x: Exception) {
+        logger.warn("[MirrorFormAccess] userCssOf failed: {}", x.message)
+        ""
+      }
 
   /** Locates an [XItem] inside the parsed foreign [XForm] by id or name. */
   fun findItem(form: XForm, formKey: String?, elementRef: String?): XItem? {

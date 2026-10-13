@@ -1,10 +1,10 @@
 // #region Imports
-import { Callbacks, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
+import { $, Callbacks, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 import { Constants } from "codbi-common";
 import { MARK_ELEMENTS_CHANGED_EVENT } from "./CodbiSwitchEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
-import { i18n } from "./i18n.js";
 import { mirrorElementOptions, mirrorFormOptions } from "./MirrorSelect.js";
+import { i18n } from "./i18n.js";
 // #endregion Imports
 
 /**
@@ -63,6 +63,30 @@ const MIRROR_ELEMENT_NAME_PROPERTY = String(Constants["mirror.property.element_n
 
 /** The widget class name of the CodBi Mirror (see `XMirror`). */
 const MIRROR_CLASS_NAME = "XMirror";
+
+/** The widget class name of the CodBi Functionality widget (see `XFunctionality`). */
+const FUNCTIONALITY_CLASS_NAME = "XFunctionality";
+
+/** Item property holding the Functionality widget's “preview with functionalities applied” toggle. */
+const FUNC_PREVIEW_PROPERTY = String(Constants["functionality.property.preview"]);
+
+/** Marker property stored on the element the Functionality widget contains (see FunctionalityChildItems). */
+const FUNC_CHILD_PROPERTY = "codbi_func_child";
+
+/** CSS class toggled on the Functionality widget while its frontend preview is on. */
+const FUNC_PREVIEW_CLASS = "codbi-func-preview";
+
+/** Live preview-switch widgets keyed by the Functionality widget's item id. */
+const previewSwitches = new Map<string, HTMLElement>();
+
+/** Signature of the attributes last applied to a preview wrapper, so the runtime isn't re-run. */
+const previewApplied = new WeakMap<HTMLElement, string>();
+
+/** The preview-toggle icon (an eye). */
+const EYE_ICON_SVG =
+  '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">' +
+  '<path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>' +
+  '<circle cx="8" cy="8" r="2" fill="currentColor"/></svg>';
 
 /** Root class of an injected badge; `--empty` marks a Mirror without a selected source element. */
 const BADGE_CLASS = "codbi-elem-badge";
@@ -133,6 +157,20 @@ const BADGE_CSS = `
 .codbi-func-item__params--max .codbi-func-table{width:100%}
 .codbi-func-item__params--max .codbi-func-value{width:100%}
 .codbi-func-item__params--max .codbi-func-input{flex:1 1 auto;width:auto;min-width:0}
+.codbi-func-preview-switch{position:absolute;top:4px;left:4px;z-index:30;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:999px;box-shadow:0 1px 3px rgba(15,23,42,.28);padding:3px 7px;cursor:pointer;pointer-events:auto;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;user-select:none}
+.codbi-func-preview-switch__icon{display:inline-flex;align-items:center;justify-content:center;color:currentColor}
+.codbi-func-preview-switch__input{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+.codbi-func-preview-switch__track{position:relative;flex:0 0 auto;width:26px;height:14px;border-radius:999px;background:#cbd5e1;transition:background .15s}
+.codbi-func-preview-switch__knob{position:absolute;top:1px;left:1px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.35);transition:transform .15s}
+.codbi-func-preview-switch--on{border-color:#f97316}
+.codbi-func-preview-switch--on .codbi-func-preview-switch__track{background:#ff8c00}
+.codbi-func-preview-switch--on .codbi-func-preview-switch__knob{transform:translateX(12px)}
+.codbi-func-preview{outline:2px dashed rgba(255,140,0,.55);outline-offset:2px}
+.codbi-functionality.codbi-func-preview--rendered > *:not(.codbi-func-preview-frame):not(.codbi-func-preview-switch){display:none !important}
+/* Keep the embedded preview interactive: the designer canvas puts an item overlay/selection layer over
+   the item, so the iframe must opt back in to pointer events and sit ABOVE that layer. */
+.codbi-functionality.codbi-func-preview--rendered{pointer-events:auto !important}
+.codbi-func-preview-frame{display:block;width:100%;box-sizing:border-box;border:0;background:#fff;overflow:hidden;pointer-events:auto !important;position:relative;z-index:8}
 `;
 // NOTE: the Mirror badge never captures the pointer (not even its icon/text). A hover-capturing
 // overlay inside an item can become the drop target when a new element is dropped onto the widget,
@@ -163,6 +201,15 @@ interface IMarkerItemLike {
 /** Minimal structural view of the designer internals used here. */
 interface IDesignerLike {
   items?: Record<string, IMarkerItemLike>;
+  /**
+   * Whether the designer is still (re)loading a form. While `true`, `getPersist()`.
+   * internally calls `getBaseProperties()`, which is not populated until loading
+   * finishes — so `getPersist()` THROWS while the form is loading. Poll this before
+   * reading the persist.
+   */
+  _isLoading?: unknown;
+  /** Returns the current form persist (the serialized form JSON). */
+  getPersist?(): unknown;
   getFormPropertyValueForCurrentLang?(name: string): unknown;
   /** Persist differ — used to nudge the server sync after a direct property mutation. */
   getPersistDiffer?(): { checkForChanges?(): void } | undefined;
@@ -333,11 +380,18 @@ function syncAttributesEditor(item: IMarkerItemLike): void {
     if (!designer) {
       return;
     }
-    // The attribute grid is a SHARED editor that is only (re)bound to an item when that item is
-    // selected. If the edited item is not the selected one, bind it first so the grid shows (and
-    // commits) this item's attributes.
-    if (designer.getSelectedMasterItem?.() !== item) {
-      designer.showProperties?.(item);
+    // The attribute grid is a SHARED editor that is only bound to the item that is CURRENTLY
+    // SELECTED. Committing through it is therefore only valid for that selected item. When the edited
+    // item is a DIFFERENT one (e.g. the contained child of a Functionality widget, selected while the
+    // widget stays selected), we must NOT call `showProperties`/`triggerSetProperty` here — rebinding
+    // the selection mid-edit is jarring, and pushing the child's `data-cb-*` through the mis-bound
+    // shared editor COMMITS them into the previously-selected item (the widget), which is exactly the
+    // "attributes written on the widget too" regression. The model is already persisted directly via
+    // `props.attributes = attrs` (see `setFuncAttribute`), so skipping the grid sync for a
+    // non-selected item loses nothing — the grid shows the child's attributes once it is selected.
+    const selected = designer.getSelectedMasterItem?.();
+    if (selected !== item) {
+      return;
     }
     const view = designer.getPropertyView?.();
     // Locate the attributes editor (some designer builds key it differently — fall back to a scan).
@@ -410,6 +464,19 @@ function writablePropertyBags(item: IMarkerItemLike): TItemProperties[] {
  * AttributesEditor reads/writes) so the change is reflected in the element's config attribute table.
  */
 function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): boolean {
+  // DEBUG: log every attribute write with the target item, so we can see whether the data-cb-*
+  // are ever written onto the Functionality WIDGET item instead of only the CONTAINED child.
+  try {
+    console.info(
+      "[CodBi] DEBUG write attr=%s onto class=%s id=%s val=%s",
+      name,
+      String(item.className ?? ""),
+      item.getId?.() ?? "",
+      value,
+    );
+  } catch {
+    /* debug only */
+  }
   const bags = writablePropertyBags(item);
   if (bags.length === 0) {
     return false;
@@ -435,6 +502,20 @@ function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): b
   notifyAttributeChange();
   syncAttributesEditor(item);
   return true;
+}
+
+/**
+ * Sets or updates one attribute on an arbitrary designer item's property bag — the same bag the
+ * designer's AttributesEditor reads/writes. Exported so the Functionality configurator can write a
+ * parameter straight into the CONTAINED element's config attribute table.
+ *
+ * @param item  The target item.
+ * @param name  The attribute name (e.g. `data-cb-reverse`).
+ * @param value The new attribute value.
+ *
+ * @returns **True** when the attribute was written. */
+export function setItemAttributeValue(item: IMarkerItemLike, name: string, value: string): boolean {
+  return setFuncAttribute(item, name, value);
 }
 
 /**
@@ -547,6 +628,546 @@ function attributeValue(attrs: IAttributeEntry[], name: string): string {
 /** @returns `true` when the item carries at least one `data-cb-func` functionality. */
 function isCbFuncItem(item: IMarkerItemLike): boolean {
   return attributeValue(attributeEntries(item), CB_FUNC_ATTRIBUTE) !== "";
+}
+
+/** @returns `true` when the item is a CodBi Functionality widget. */
+function isFunctionalityItem(item: IMarkerItemLike): boolean {
+  return String(item.className ?? "") === FUNCTIONALITY_CLASS_NAME;
+}
+
+/** Reads one persisted property of an item (as a string). */
+function itemProperty(item: IMarkerItemLike, name: string): string {
+  const props = item.getPersist?.()?.properties ?? item.properties;
+  return String((props as Record<string, unknown> | undefined)?.[name] ?? "");
+}
+
+/** Writes one property on the item's property bags and nudges the designer's persist differ. */
+function setItemPropertyValue(item: IMarkerItemLike, name: string, value: string): boolean {
+  const bags = writablePropertyBags(item);
+  if (bags.length === 0) {
+    return false;
+  }
+  for (const props of bags) {
+    (props as Record<string, unknown>)[name] = value;
+  }
+  notifyAttributeChange();
+  syncAttributesEditor(item);
+  return true;
+}
+
+/** @returns the element item the Functionality widget [widgetId] contains (or `undefined`). */
+function containedItemOf(widgetId: string): IMarkerItemLike | undefined {
+  const designer = designerInstance();
+  for (const item of Object.values(designer?.items ?? {})) {
+    const props = item.getPersist?.()?.properties ?? item.properties;
+    const record = props as Record<string, unknown> | undefined;
+    if (!record) {
+      continue;
+    }
+    // Primary: our own marker property. Fallback: the designer's own `parentid` (FORMCYCLE nests
+    // the contained element under the widget and always sets it).
+    if (String(record[FUNC_CHILD_PROPERTY] ?? "") === widgetId || String(record.parentid ?? "") === widgetId) {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Applies/removes the **frontend preview** of a Functionality widget. When enabled, a REAL form
+ * instance (a standalone document for the CURRENT form, built by the backend `form` servlet action)
+ * is loaded into a hidden, same-origin iframe so the FORMCYCLE + CodBi runtime initialize every
+ * element/functionality exactly like on a published form — see {@link renderServerPreview}.
+ */
+function applyFunctionalityPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boolean): void {
+  try {
+    const wrapper = (anchor.querySelector<HTMLElement>(".codbi-functionality") ?? anchor) as HTMLElement;
+    wrapper.classList.toggle(FUNC_PREVIEW_CLASS, on);
+    if (!on) {
+      previewApplied.delete(wrapper);
+      clearServerPreview(wrapper);
+      return;
+    }
+    const widgetId = item.getId?.() ?? "";
+    const child = containedItemOf(widgetId);
+    // Signature = the widget + the contained element; re-render only when either changed.
+    const signature = `${widgetId}\u0001${child?.getId?.() ?? ""}`;
+    if (previewApplied.get(wrapper) === signature) {
+      return;
+    }
+    void renderServerPreview(wrapper, child, signature);
+  } catch (x) {
+    console.error("[CodBi] Functionality: could not apply the preview", x);
+  }
+}
+
+/** Creates or updates the preview switch (a slider toggle) for one Functionality widget (idempotent). */
+function ensurePreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement): void {
+  const id = item.getId?.() ?? "";
+  if (!id) {
+    return;
+  }
+  const doc = anchor.ownerDocument ?? document;
+  const on = itemProperty(item, FUNC_PREVIEW_PROPERTY) === "1";
+
+  let widget = previewSwitches.get(id);
+  if (!widget || !widget.isConnected || widget.parentElement !== anchor) {
+    if (widget && widget.parentElement !== anchor) {
+      widget.remove();
+    }
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.className = "codbi-func-preview-switch";
+    button.dataset.codbiPreview = id;
+    const icon = doc.createElement("span");
+    icon.className = "codbi-func-preview-switch__icon";
+    icon.innerHTML = EYE_ICON_SVG;
+    const track = doc.createElement("span");
+    track.className = "codbi-func-preview-switch__track";
+    const knob = doc.createElement("span");
+    knob.className = "codbi-func-preview-switch__knob";
+    track.appendChild(knob);
+    button.append(icon, track);
+    // Keep the designer from reacting to the switch interaction (it must not select/move the widget).
+    for (const type of ["mousedown", "mouseup", "click", "dblclick", "keydown", "keyup"] as const) {
+      button.addEventListener(type, (event) => event.stopPropagation());
+    }
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      // Read the CURRENT state (the captured `on` may be stale if the widget was reused).
+      const current = itemProperty(item, FUNC_PREVIEW_PROPERTY) === "1";
+      // Toggling persists the property; the designer re-renders the widget and refreshBadges re-applies.
+      setItemPropertyValue(item, FUNC_PREVIEW_PROPERTY, current ? "0" : "1");
+    });
+    widget = button;
+    previewSwitches.set(id, widget);
+  }
+
+  widget.classList.toggle("codbi-func-preview-switch--on", on);
+  widget.title = on ? "Vorschau deaktivieren" : "Vorschau mit Funktionalitäten";
+  if (widget.parentElement !== anchor) {
+    anchor.appendChild(widget);
+  }
+  if (getComputedStyle(anchor).position === "static") {
+    anchor.style.position = "relative";
+  }
+  applyFunctionalityPreview(item, anchor, on);
+}
+
+/** Removes a preview switch from the DOM and forgets it. */
+function dropPreviewSwitch(id: string): void {
+  previewSwitches.get(id)?.remove();
+  previewSwitches.delete(id);
+}
+
+/**
+ * Loads the CONTAINED element's frontend preview by embedding the platform's OWN designer-preview page
+ * for the current form (`…/form-management/designer/preview/<projectId>?xfd2id=<draft>`) in a hidden,
+ * SAME-ORIGIN iframe. Because that page is a genuine formcycle render, it brings the full bootstrap
+ * (`XM_FORM_MODEL` / `XFC_METADATA` / …), the form runtime AND — via this plugin's form-render callback
+ * — the CodBi runtime, so every functionality (e.g. `HTML.Input.TinyMCE`) initialises exactly like on a
+ * real form. This replaces the impossible approach of assembling a form page ourselves: a plugin cannot
+ * produce the platform's inline model/validation bootstrap.
+ *
+ * The iframe is then clipped to the CONTAINED element (see {@link clipPreviewToElement}).
+ */
+async function renderServerPreview(
+  wrapper: HTMLElement,
+  child: IMarkerItemLike | undefined,
+  signature: string,
+): Promise<void> {
+  try {
+    const elementRef = child?.getId?.() ?? "";
+    const url = designerPreviewUrl();
+    if (!url) {
+      console.warn("[CodBi] Functionality: cannot determine the designer preview URL — skipping preview");
+      return;
+    }
+    const doc = wrapper.ownerDocument ?? document;
+    let frame = wrapper.querySelector<HTMLIFrameElement>(":scope > .codbi-func-preview-frame");
+    if (!frame) {
+      frame = doc.createElement("iframe");
+      frame.className = "codbi-func-preview-frame";
+      frame.setAttribute("title", "CodBi form preview");
+      // Plain same-origin iframe (no `sandbox`): the platform preview page is trusted and its runtime
+      // (plus TinyMCE's nested editors) must run unfettered; sandboxing it can break those sub-frames.
+      frame.style.height = "360px";
+      wrapper.appendChild(frame);
+    }
+    const target = frame;
+    // The preview page renders the form asynchronously, so the element may appear AFTER `load`.
+    target.addEventListener("load", () => scheduleClip(target, elementRef), { once: true });
+    target.src = url;
+    wrapper.classList.add("codbi-func-preview--rendered");
+    // Mark applied only once the iframe is pointed at the preview (a re-enable with the same target
+    // skips the reload; changing the contained element changes the signature and reloads).
+    previewApplied.set(wrapper, signature);
+    console.info("[CodBi] Functionality: form preview loading %s", url);
+  } catch (x) {
+    console.error("[CodBi] Functionality: form preview failed", x);
+  }
+}
+
+/**
+ * Keeps the preview fitted to the element: retries until the element exists, then re-fits a few more
+ * times AFTER success, because a functionality (e.g. `HTML.Input.TinyMCE`) mounts its editor
+ * asynchronously AFTER the form rendered and thereby changes the element's height (and the preview
+ * chrome settles late).
+ */
+function scheduleClip(frame: HTMLIFrameElement, elementRef: string, attempts = 0): void {
+  const ok = clipPreviewToElement(frame, elementRef);
+  if (attempts >= 16) {
+    if (!ok) {
+      sizePreviewToFullDocument(frame);
+    }
+    return;
+  }
+  window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1), ok ? 500 : 250);
+}
+
+/** A form control — never a valid "item wrapper" (its siblings include the functionality's own UI). */
+function isFormControl(node: HTMLElement): boolean {
+  const tag = node.tagName;
+  return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || tag === "BUTTON";
+}
+
+/** Pop-up/overlay nodes that must never be hidden (calendar, menus, autocomplete, select menus). */
+function isPreviewPopup(node: Element): boolean {
+  const cls = typeof (node as HTMLElement).className === "string" ? (node as HTMLElement).className : "";
+  return /ui-datepicker|tox-tinymce-aux|tox-menu|tox-pop|ui-autocomplete|ui-selectmenu|xm-select-options/i.test(cls);
+}
+
+/**
+ * Resolves the single-element FORMCYCLE "item wrapper" for [el]: the node that represents ONE form
+ * element (as opposed to the whole form).
+ *
+ * - If a functionality rendered an editor (TinyMCE → `.tox-tinymce`), the wrapper is the closest
+ *   ancestor that CONTAINS the editor — never the bare `<textarea>`: the editor is a sibling of the
+ *   textarea, so treating the textarea as the wrapper hid the editor and collapsed the height to 0.
+ * - Otherwise the nearest ancestor/self with an item class (`.XItem` / `xm-item…`), skipping form
+ *   controls (the field itself carries `XItem XTextArea`, which would otherwise win).
+ */
+function resolveItemWrapper(el: HTMLElement, owner: Document): HTMLElement | null {
+  const editor = owner.querySelector<HTMLElement>(".tox-tinymce, .mce-tinymce, .tox-editor-container");
+  if (editor) {
+    let found: HTMLElement | null = null;
+    for (let n: HTMLElement | null = el; n && n !== owner.body; n = n.parentElement) {
+      if (n.contains(editor)) {
+        found = n; // keep climbing → the highest ancestor that still contains the editor
+      }
+    }
+    if (found && !isFormControl(found)) {
+      return found;
+    }
+  }
+  for (let n: HTMLElement | null = el; n && n !== owner.body; n = n.parentElement) {
+    if (isFormControl(n)) {
+      continue;
+    }
+    const cls = typeof n.className === "string" ? n.className : "";
+    if (/XItem|xm-item/i.test(cls) || n.hasAttribute("data-xm-appendable")) {
+      return n;
+    }
+  }
+  return null;
+}
+
+/** Pop-up/overlay selectors whose height must be included in the iframe (calendar, menus, …). */
+const PREVIEW_POPUP_SELECTORS = [
+  ".ui-datepicker",
+  ".ui-autocomplete",
+  ".ui-selectmenu-menu",
+  ".tox-tinymce-aux",
+  ".tox-menu",
+  ".tox-pop",
+  ".xm-select-options",
+  "[role='listbox']",
+];
+
+/** One active preview iframe + the element it shows, for pop-up-aware re-fitting. */
+interface IPreviewFit {
+  frame: HTMLIFrameElement;
+  owner: Document;
+  item: HTMLElement;
+  timer?: number;
+}
+
+/** Active previews (re-fitted whenever the preview document mutates). */
+const previewFits = new Set<IPreviewFit>();
+/** Preview documents already observed (install the MutationObserver at most once per document). */
+const observedPreviewDocs = new WeakSet<Document>();
+
+/** Registers/updates the fit record for [frame] and returns it. */
+function registerPreviewFit(frame: HTMLIFrameElement, owner: Document, item: HTMLElement): IPreviewFit {
+  for (const entry of previewFits) {
+    if (entry.frame === frame) {
+      entry.owner = owner;
+      entry.item = item;
+      return entry;
+    }
+  }
+  const entry: IPreviewFit = { frame, owner, item };
+  previewFits.add(entry);
+  return entry;
+}
+
+/** Unregisters the fit record of [frame] (called when the preview iframe is removed). */
+function unregisterPreviewFit(frame: HTMLIFrameElement): void {
+  for (const entry of Array.from(previewFits)) {
+    if (entry.frame === frame) {
+      if (entry.timer !== undefined) {
+        window.clearTimeout(entry.timer);
+      }
+      previewFits.delete(entry);
+    }
+  }
+}
+
+/** Debounced re-fit of one preview (called from the DOM observer). */
+function scheduleFit(entry: IPreviewFit): void {
+  if (entry.timer !== undefined) {
+    window.clearTimeout(entry.timer);
+  }
+  entry.timer = window.setTimeout(() => {
+    entry.timer = undefined;
+    fitPreviewHeight(entry);
+  }, 60);
+}
+
+/** Observes [owner] so pop-ups added/removed AFTER the initial clip are reflected in the height. */
+function observePreview(owner: Document): void {
+  if (observedPreviewDocs.has(owner) || !owner.body) {
+    return;
+  }
+  observedPreviewDocs.add(owner);
+  try {
+    const observer = new MutationObserver(() => {
+      for (const entry of previewFits) {
+        if (entry.owner === owner) {
+          scheduleFit(entry);
+        }
+      }
+    });
+    observer.observe(owner.body, { childList: true, subtree: true });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Sizes the iframe to hold the element AND any open pop-up (jQuery-UI calendar, TinyMCE menu, …) that
+ * has been appended to the preview document, so pop-ups are fully visible instead of clipped at the
+ * iframe edge. Returns the applied height.
+ */
+function fitPreviewHeight(entry: IPreviewFit): number {
+  const { frame, owner, item } = entry;
+  let bottom = item.getBoundingClientRect().bottom;
+  // Include the rendered editor (TinyMCE) height: the tagged field often collapses to 0 once the
+  // editor takes over, so the item's own rect alone would be too small.
+  const editor = owner.querySelector<HTMLElement>(".tox-tinymce, .mce-tinymce, .tox-editor-container");
+  if (editor) {
+    const editorRect = editor.getBoundingClientRect();
+    if (editorRect.height > 0) {
+      bottom = Math.max(bottom, editorRect.bottom);
+    }
+  }
+  for (const selector of PREVIEW_POPUP_SELECTORS) {
+    for (const popup of Array.from(owner.querySelectorAll<HTMLElement>(selector))) {
+      const rect = popup.getBoundingClientRect();
+      if (rect.height > 0 && rect.width > 0) {
+        bottom = Math.max(bottom, rect.bottom);
+      }
+    }
+  }
+  const height = Math.max(60, Math.min(Math.ceil(bottom) + 12, 4000));
+  frame.style.height = `${height}px`;
+  // Ask the designer to recompute the item layout so the item grows to the iframe's new height.
+  try {
+    window.dispatchEvent(new Event("resize"));
+  } catch {
+    /* ignore */
+  }
+  return height;
+}
+
+/**
+ * Clips the preview iframe to the CONTAINED element so the widget shows just that element (as if it
+ * were a native designer element): it hides the element's SIBLINGS (other elements, pages, buttons,
+ * preview chrome) but NEVER its own children, and grows the iframe to the element's full frontend
+ * height so there is no scrollbar. Returns `false` while the element is not (yet) present.
+ */
+function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boolean {
+  try {
+    const cdoc = frame.contentDocument;
+    if (!cdoc || !cdoc.body) {
+      return false;
+    }
+    const el = elementRef ? findPreviewElement(cdoc, elementRef) : null;
+    const owner = el?.ownerDocument;
+    if (!el || !owner || !owner.body) {
+      return false;
+    }
+    const wrapper = resolveItemWrapper(el, owner);
+    const item: HTMLElement = wrapper ?? el;
+    // The top-level block (body child) that contains the item.
+    let top: HTMLElement = item;
+    while (top.parentElement && top.parentElement !== owner.body) {
+      top = top.parentElement;
+    }
+    // Hide the element's SIBLINGS at every level up to the top-level block, and every other top-level
+    // node — but NEVER a node that contains the functionality's editor (its UI is a sibling of the
+    // tagged field) and never a pop-up. This is done unconditionally (not only when the wrapper was
+    // recognised), so re-enabling the preview reliably isolates the element even if the editor has not
+    // mounted yet (in which case the not-yet-created editor is simply a new node, never hidden).
+    const editor = owner.querySelector<HTMLElement>(".tox-tinymce, .mce-tinymce, .tox-editor-container");
+    const containsEditor = (node: Element): boolean => editor !== null && (node === editor || node.contains(editor));
+    const shouldHide = (sibling: Element, keep: Element): boolean =>
+      sibling !== keep && !isPreviewPopup(sibling) && !containsEditor(sibling);
+    let node: HTMLElement = item;
+    while (node !== top) {
+      const parent = node.parentElement;
+      if (!parent) {
+        break;
+      }
+      for (const sibling of Array.from(parent.children)) {
+        if (shouldHide(sibling, node)) {
+          (sibling as HTMLElement).style.display = "none";
+        }
+      }
+      node = parent;
+    }
+    for (const child of Array.from(owner.body.children)) {
+      if (shouldHide(child, top)) {
+        (child as HTMLElement).style.display = "none";
+      }
+    }
+    // No scrolling inside the widget. Fit the iframe to the element PLUS any open pop-up (calendar,
+    // TinyMCE menu, …) via the MutationObserver, so pop-ups are never cut off at the iframe edge.
+    owner.documentElement.style.overflow = "hidden";
+    owner.documentElement.style.height = "auto";
+    owner.body.style.margin = "0";
+    owner.body.style.overflow = "hidden";
+    owner.body.style.height = "auto";
+    const fit = registerPreviewFit(frame, owner, item);
+    observePreview(owner);
+    const height = fitPreviewHeight(fit);
+    console.info(
+      "[CodBi] Functionality: preview clipped to %s (item=%s, height=%d, wrapper=%o)",
+      elementRef,
+      `${item.tagName}.${item.className || ""}`,
+      height,
+      wrapper !== null,
+    );
+    return true;
+  } catch (x) {
+    console.error("[CodBi] Functionality: could not clip the preview to the element", x);
+    return false;
+  }
+}
+
+/** Finds [id] in [doc] or in a nested same-origin iframe (the preview page may frame the form). */
+function findPreviewElement(doc: Document, id: string): HTMLElement | null {
+  const direct = doc.getElementById(id);
+  if (direct) {
+    return direct as HTMLElement;
+  }
+  for (const frame of Array.from(doc.querySelectorAll("iframe"))) {
+    try {
+      const inner = (frame as HTMLIFrameElement).contentDocument;
+      const found = inner?.getElementById(id);
+      if (found) {
+        return found as HTMLElement;
+      }
+    } catch {
+      /* cross-origin — ignore */
+    }
+  }
+  return null;
+}
+
+/** Fallback sizing: show the whole preview document (clamped) when the element cannot be located. */
+function sizePreviewToFullDocument(frame: HTMLIFrameElement): void {
+  try {
+    const full = frame.contentDocument?.documentElement?.scrollHeight ?? 0;
+    if (full > 0) {
+      frame.style.height = `${Math.min(full, 1600)}px`;
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** The designer's current form/project id (`XFC_METADATA.currentProject.id`), or `""`. */
+function currentProjectId(): string {
+  try {
+    const meta = (window as unknown as { XFC_METADATA?: { currentProject?: { id?: number | string } } }).XFC_METADATA;
+    const id = meta?.currentProject?.id;
+    return id === undefined || id === null ? "" : String(id);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The platform's designer-preview URL for the CURRENT form, e.g.
+ * `http://host/context/form-management/designer/preview/152?xfd2id=<draftId>`. Loading this URL in a
+ * hidden iframe yields a real formcycle form instance (full bootstrap + runtime + CodBi runtime), so
+ * the preview shows full form-level fidelity instead of a hand-patched element.
+ *
+ * The project id comes from `XFC_METADATA.currentProject.id`; the `xfd2id` (the form-design / draft id)
+ * is read from the designer page's URL (walking up the frame chain, since the designer may be framed).
+ */
+function designerPreviewUrl(): string {
+  const projectId = currentProjectId();
+  if (!projectId) {
+    return "";
+  }
+  const base = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+  const draftId = designerDraftId();
+  const query = draftId ? `?xfd2id=${encodeURIComponent(draftId)}` : "";
+  return `${base}form-management/designer/preview/${encodeURIComponent(projectId)}${query}`;
+}
+
+/** The `xfd2id` (form-design / draft id) from the designer page URL, or `""`. */
+function designerDraftId(): string {
+  const read = (search: string): string => {
+    try {
+      return new URLSearchParams(search).get("xfd2id") ?? "";
+    } catch {
+      return "";
+    }
+  };
+  let win: Window | null = window;
+  for (let depth = 0; depth < 6 && win; depth++) {
+    try {
+      const id = read(win.location.search);
+      if (id) {
+        return id;
+      }
+      if (win === win.top) {
+        break;
+      }
+      win = win.parent;
+    } catch {
+      break; // cross-origin ancestor
+    }
+  }
+  return "";
+}
+
+/** Removes the whole-form preview iframe (and, with it, its runtime) from a widget wrapper. */
+function clearServerPreview(wrapper: HTMLElement): void {
+  try {
+    const frame = wrapper.querySelector<HTMLIFrameElement>(":scope > .codbi-func-preview-frame");
+    if (frame) {
+      unregisterPreviewFit(frame);
+      frame.remove();
+    }
+    wrapper.classList.remove("codbi-func-preview--rendered");
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -1269,12 +1890,14 @@ function refreshBadges(): void {
     const items = designer?.items ?? {};
     const liveMirrors = new Set<string>();
     const liveFuncs = new Set<string>();
+    const livePreview = new Set<string>();
     let mirrors = 0;
     let functions = 0;
     for (const item of Object.values(items)) {
       const isMirror = isMirrorItem(item);
       const isFunc = isCbFuncItem(item);
-      if (!isMirror && !isFunc) {
+      const isFunctionality = isFunctionalityItem(item);
+      if (!isMirror && !isFunc && !isFunctionality) {
         continue;
       }
       const anchor = anchorFor(item);
@@ -1312,6 +1935,23 @@ function refreshBadges(): void {
             console.error("[CodBi] Element markers: could not render the function badge", x);
           }
         }
+      }
+      if (isFunctionality && anchor) {
+        if (id) {
+          livePreview.add(id);
+        }
+        // The preview switch is a widget control — shown independent of the marker mode.
+        try {
+          ensurePreviewSwitch(item, anchor);
+        } catch (x) {
+          console.error("[CodBi] Element markers: could not render the Functionality preview switch", x);
+        }
+      }
+    }
+    // Drop preview switches whose widget no longer exists (always, independent of the mode).
+    for (const id of Array.from(previewSwitches.keys())) {
+      if (!livePreview.has(id)) {
+        dropPreviewSwitch(id);
       }
     }
     if (enabled) {

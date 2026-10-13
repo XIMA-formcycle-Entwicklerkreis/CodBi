@@ -3240,17 +3240,38 @@ export class Manager implements AfterViewInit {
     "XFooter",
   ];
   /**
+   * The raw `formElements` CSV that {@link cachedFormElementTypes } was derived from. Used to keep
+   * {@link selectedFormElementTypes } returning a STABLE array reference. */
+  private cachedFormElementsRaw: string | undefined;
+  /**
+   * Cached, STABLE array returned by {@link selectedFormElementTypes }.
+   *
+   * It MUST NOT be recreated on every getter call: the template binds it with
+   * `[ngModel]="selectedFormElementTypes"`, and a brand-new array on every change-detection cycle
+   * makes Angular treat the binding as perpetually changed, which drives an endless CD/write loop
+   * and stalls the whole designer page (it froze the designer as soon as the bundle loaded). */
+  private cachedFormElementTypes: string[] = [];
+  /**
    * The {@link string[] } of widget class names currently assigned to the selected functionality
-   * (derived from the `formElements` CSV string, empty = any). */
+   * (derived from the `formElements` CSV string, empty = any).
+   *
+   * Returns a STABLE array reference that only changes when the underlying CSV actually changes; a
+   * fresh array per call would stall the designer's change detection (it is bound to a `<select>`
+   * via `[ngModel]`). */
   protected get selectedFormElementTypes(): string[] {
     const raw = this.currentlySelectedFunctionalityData?.formElements;
-    if (typeof raw !== "string" || raw.trim() === "") {
-      return [];
+
+    if (raw !== this.cachedFormElementsRaw) {
+      this.cachedFormElementsRaw = raw;
+      this.cachedFormElementTypes =
+        typeof raw !== "string" || raw.trim() === ""
+          ? []
+          : raw
+              .split(/[,\s]+/)
+              .map((entry) => entry.trim())
+              .filter((entry) => entry.length > 0);
     }
-    return raw
-      .split(/[,\s]+/)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
+    return this.cachedFormElementTypes;
   }
   /**
    * Persists the chosen widget classes as a CSV string on

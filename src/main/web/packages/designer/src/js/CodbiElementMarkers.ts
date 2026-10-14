@@ -25,14 +25,16 @@ import { i18n } from "./i18n.js";
  * expands DOWNWARD to reveal the NAME of the linked source form and source element (only when a
  * source element is already selected).
  *
- * ## The second effect: CodBi function badges
+ * ## The second effect: CodBi marker badges
  * While the same **“Mark CodBi elements in the designer”** mode is on, every form element carrying a
- * `data-cb-func` attribute also gets a badge pinned to the top-left corner. It shows the CodBi logo
- * (`Symbol_CodBi.svg`) and — on hovering the widget — expands to the right to list one sub-badge per
- * functionality that is actually known to the designer
- * (`window.CodbiPluginData.detFunctionalities`). Hovering one functionality sub-badge expands it
- * DOWNWARD (over the marker badge's bounds) to show the `data-cb-*` parameters set on the element
- * for that functionality, as a parameter/value table.
+ * `data-cb-func` attribute OR a CodBi standard-configuration CSS class (e.g.
+ * `CodBi_People_Name`, `CodBi_Currency`) also gets a badge pinned to the top-left corner. It shows
+ * the CodBi logo (`Symbol_CodBi.svg`) and — on hovering the widget — expands to the right to list
+ * one sub-badge per functionality that is actually known to the designer
+ * (`window.CodbiPluginData.detFunctionalities`, orange) and one BLUE sub-badge per applied
+ * standard-configuration class (`window.CodbiPluginData.detStandards[*].classes`). Hovering one
+ * functionality sub-badge expands it DOWNWARD (over the marker badge's bounds) to show the
+ * `data-cb-*` parameters set on the element for that functionality, as a parameter/value table.
  *
  * ## The canvas is a separate document
  * FORMCYCLE renders the design canvas inside a **same-origin iframe**. The designer stylesheet
@@ -116,12 +118,20 @@ const CB_FUNC_ATTRIBUTE = "data-cb-func";
 /** Prefix of the element attributes that carry a CodBi functionality parameter. */
 const CB_PARAM_PREFIX = "data-cb-";
 
+/** Persisted element property holding the CSS classes applied to the element (an array of strings). */
+const CSS_CLASSES_PROPERTY = "cssclasses";
+
 /**
  * Badge stylesheet. Injected into every document that hosts a badge (see `installBadgeStyles`),
  * because the designer stylesheet does not reach the canvas iframe.
  */
 const BADGE_CSS = `
 .codbi-elem-badge{position:absolute;top:4px;left:0;transform:translateX(6px);z-index:5;display:inline-flex;align-items:center;height:22px;box-sizing:border-box;overflow:hidden;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:5px;box-shadow:0 1px 3px rgba(15,23,42,.28);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;pointer-events:none;user-select:none;white-space:nowrap}
+/* Mirror badges sit in the widget's BOTTOM-LEFT corner (the function/CodBi badges keep top-left).
+   They are deliberately stacked BELOW the functionality badge/popup (lower z-index), so when both
+   are displayed the functionality widget's parameter table is drawn over/in front of the mirror
+   badge instead of the mirror badge covering it. */
+.codbi-elem-badge--bottom{top:auto;bottom:4px;left:0;z-index:4}
 .codbi-elem-badge__icon{flex:0 0 auto;width:20px;height:20px;box-sizing:border-box;margin:0 1px;pointer-events:none;background-repeat:no-repeat;background-position:center;background-size:16px 16px;filter:drop-shadow(0 0 1.5px rgba(56,189,248,.85)) drop-shadow(0 0 3px rgba(37,99,235,.45))}
 .codbi-elem-badge__text{display:inline-block;max-width:0;overflow:hidden;opacity:0;pointer-events:none;transition:max-width .25s ease,opacity .25s ease,padding .25s ease}
 *:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty){border-color:#c96a00;background:#fff7ed}
@@ -135,19 +145,82 @@ const BADGE_CSS = `
 .codbi-func-list{display:inline-flex;align-items:center;gap:4px;max-width:0;overflow:hidden;opacity:0;pointer-events:none;transition:max-width .25s ease,opacity .25s ease,padding .25s ease}
 *:hover>.codbi-elem-badge--funcs>.codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
 .codbi-func-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #c96a00;border-radius:4px;background:#fff7ed;color:#7c2d12;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0;transition:opacity .25s ease}
+/* The CSS-standard-configuration-class sub-badges are BLUE to distinguish them from the orange
+   functionality sub-badges. */
+.codbi-css-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #1d4ed8;border-radius:4px;background:#eff6ff;color:#1e40af;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0;transition:opacity .25s ease}
+/* The HOLISTIC standard-configuration sub-badges are GREEN to mark elements that a runtime
+   selector-resolved (holistic) configuration applies to. */
+.codbi-holistic-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #15803d;border-radius:4px;background:#ecfdf5;color:#14532d;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0;transition:opacity .25s ease}
 /* Reveal the sub-badges only once the list is expanded (prevents a flash while overflow is still hidden). */
 *:hover>.codbi-elem-badge--funcs>.codbi-func-list>.codbi-func-item{opacity:1}
+*:hover>.codbi-elem-badge--funcs>.codbi-func-list>.codbi-css-item{opacity:1}
+*:hover>.codbi-elem-badge--funcs>.codbi-func-list>.codbi-holistic-item{opacity:1}
 /* "Detailed" mode: reveal the functionality list without hovering (the parameter table stays
    hover-only, since no --open rule targets it). */
 .codbi-elem-badge--open .codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
 .codbi-elem-badge--open .codbi-func-list>.codbi-func-item{opacity:1}
+.codbi-elem-badge--open .codbi-func-list>.codbi-css-item{opacity:1}
+.codbi-elem-badge--open .codbi-func-list>.codbi-holistic-item{opacity:1}
+/* While any control inside the badge (the "+ Add" select or a value input) holds focus the whole
+   functionality list stays expanded even if the pointer is no longer over the widget — a native
+   select dropdown can move the cursor away, which would otherwise collapse the badge. */
+.codbi-elem-badge--focus-active .codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
+.codbi-elem-badge--focus-active .codbi-func-list>.codbi-func-item{opacity:1}
+.codbi-elem-badge--focus-active .codbi-func-list>.codbi-css-item{opacity:1}
+.codbi-elem-badge--focus-active .codbi-func-list>.codbi-holistic-item{opacity:1}
 .codbi-func-item__name{pointer-events:none}
+.codbi-css-item__name{pointer-events:none}
+.codbi-holistic-item__name{pointer-events:none}
 .codbi-func-item__params{position:absolute;top:100%;left:-1px;margin-top:3px;z-index:6;width:max-content;max-width:var(--codbi-func-anchor-width,320px);box-sizing:border-box;padding:0 6px;border:1px solid #c96a00;border-radius:4px;background:rgba(255,255,255,.98);box-shadow:0 2px 6px rgba(15,23,42,.3);color:#374151;visibility:hidden;opacity:0;max-height:0;overflow:hidden;transform:translateY(-4px);transition:max-height .25s ease,opacity .25s ease,transform .25s ease,padding .25s ease,visibility .25s}
 .codbi-func-item:hover>.codbi-func-item__params{visibility:visible;opacity:1;max-height:520px;padding:4px 6px;transform:translateY(0)}
+/* The CSS-standard-configuration sub-badges (blue) reveal their accumulated parameter table the same
+   way the orange functionality badges do. */
+.codbi-css-item:hover>.codbi-func-item__params{visibility:visible;opacity:1;max-height:520px;padding:4px 6px;transform:translateY(0)}
+/* The HOLISTIC sub-badges (green) reveal their applied-FUNC parameter table the same way. */
+.codbi-holistic-item:hover>.codbi-func-item__params{visibility:visible;opacity:1;max-height:520px;padding:4px 6px;transform:translateY(0)}
+/* A sub-badge can also be held "open" by JS (class .codbi-func-item--open / .codbi-css-item--open /
+   .codbi-holistic-item--open). This keeps the parameter popup visible while a control inside it
+   (select, value input) holds focus, so interacting with the "+ Add" dropdown or typing into a value
+   does NOT collapse the popup even when the pointer momentarily leaves the sub-badge. */
+.codbi-func-item--open>.codbi-func-item__params,
+.codbi-css-item--open>.codbi-func-item__params,
+.codbi-holistic-item--open>.codbi-func-item__params{visibility:visible;opacity:1;max-height:520px;padding:4px 6px;transform:translateY(0)}
+.codbi-css-item>.codbi-func-item__params{border-color:#93c5fd}
+.codbi-holistic-item>.codbi-func-item__params{border-color:#6ee7b7}
 .codbi-func-table{width:max-content;max-width:100%;border-collapse:collapse;font-size:10.5px;line-height:1.3}
 .codbi-func-table th,.codbi-func-table td{border:1px solid #e7c9a3;padding:1px 5px;text-align:left;vertical-align:top}
 .codbi-func-table thead th{background:#fde7cf;color:#7c2d12;font-weight:600;white-space:nowrap}
 .codbi-func-table tbody th{color:#7c2d12;font-weight:600;white-space:nowrap}
+.codbi-func-table--css th,.codbi-func-table--css td{border-color:#bfdbfe}
+.codbi-func-table--css thead th{background:#dbeafe;color:#1e40af}
+.codbi-func-table--css tbody th{color:#1e40af}
+.codbi-func-table--css .codbi-func-input:focus{border-color:#2563eb}
+/* GREEN: the parameter table on a HOLISTIC sub-badge (green styling mirrors the blue --css variant). */
+.codbi-func-table--holistic th,.codbi-func-table--holistic td{border-color:#a7f3d0}
+.codbi-func-table--holistic thead th{background:#d1fae5;color:#14532d}
+.codbi-func-table--holistic tbody th{color:#14532d}
+.codbi-func-table--holistic .codbi-func-input:focus{border-color:#16a34a}
+.codbi-func-section-title th{background:#f5f5f5;color:#4b5563;font-weight:700;font-size:10px;letter-spacing:.3px}
+.codbi-func-table--css .codbi-func-section-title th{background:#eff6ff;color:#1e40af}
+.codbi-func-table--holistic .codbi-func-section-title th{background:#ecfdf5;color:#14532d}
+.codbi-func-addrow th{color:#6b7280;font-weight:500;white-space:nowrap}
+.codbi-func-addtrigger{display:inline-flex;align-items:center;gap:4px;box-sizing:border-box;max-width:100%;border:1px solid #d1d5db;border-radius:3px;background:#fff;padding:1px 4px;margin:0;font:inherit;font-size:10.5px;line-height:1.2;color:#1f2937;cursor:pointer;pointer-events:auto;white-space:nowrap}
+.codbi-func-addtrigger::after{content:"▾";font-size:9px;color:#9ca3af}
+.codbi-func-addtrigger:hover{border-color:#c96a00;background:#fef3e2}
+.codbi-func-addtrigger--open{border-color:#c96a00;background:#fde7cf}
+.codbi-func-table--css .codbi-func-addtrigger:hover{border-color:#2563eb;background:#eff6ff}
+.codbi-func-table--css .codbi-func-addtrigger--open{border-color:#2563eb;background:#dbeafe}
+.codbi-func-table--holistic .codbi-func-addtrigger:hover{border-color:#16a34a;background:#ecfdf5}
+.codbi-func-table--holistic .codbi-func-addtrigger--open{border-color:#16a34a;background:#d1fae5}
+/* The available parameters revealed when the trigger is opened — inline option rows so they are not
+   clipped by the popup's overflow:hidden. They replace the native <select> (which pushed focus and the
+   pointer outside the badge and collapsed the hover-driven popup). */
+.codbi-func-addoption td{color:#2563eb;font-weight:500;white-space:nowrap;cursor:pointer;border-top:0}
+.codbi-func-addoption:hover td{background:#eff6ff;text-decoration:underline}
+.codbi-func-table--css .codbi-func-addoption td{color:#1e40af}
+.codbi-func-table--css .codbi-func-addoption:hover td{background:#dbeafe}
+.codbi-func-table--holistic .codbi-func-addoption td{color:#15803d}
+.codbi-func-table--holistic .codbi-func-addoption:hover td{background:#d1fae5}
 .codbi-func-input{min-width:0;max-width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:3px;background:transparent;padding:0 3px;margin:0;font:inherit;color:#1f2937;pointer-events:auto}
 .codbi-func-input:focus{outline:none;border-color:#c96a00;background:#fff}
 .codbi-func-actions{width:1%;white-space:nowrap;text-align:center}
@@ -324,6 +397,83 @@ let resolving = false;
 
 /** Pending debounce handle for the observer-driven refresh. */
 let refreshHandle: number | null = null;
+
+/**
+ * The parameter name most recently added via a badge's "+ Add" dropdown. Survives the badge
+ * re-renders that `refreshBadges` performs, so {@link ensureFuncBadge} can move focus back into the
+ * freshly-built value input (and thus re-expand the popup via the focus listeners) right after the
+ * mousedown-driven re-render would otherwise leave the badge collapsed at icon size.
+ */
+let pendingAddedParam: string | null = null;
+
+/**
+ * The label (functionality name or CSS standard-configuration class) of the sub-badge whose
+ * parameter popup is currently being used. The badge is rebuilt (via `replaceChildren`) after almost
+ * every parameter change, and a rebuild starts with the popup collapsed at icon size. Remembering the
+ * open sub-badge lets {@link ensureFuncBadge} re-expand exactly the sub-badge the user is working on
+ * after every rebuild, so the table never "vanishes" while editing.
+ */
+let openFuncSubBadge: string | null = null;
+
+/**
+ * After a badge rebuild, refocus the input of the parameter that was just added through the "+ Add"
+ * dropdown and keep the popup expanded. Moving focus into the input fires the badge/sub-badge
+ * `focusin` listeners, which add the `codbi-elem-badge--focus-active` / `--open` classes and thereby
+ * keep the table open even though the pointer is no longer over the badge.
+ */
+function restorePendingParamFocus(badge: HTMLElement): void {
+  if (!pendingAddedParam) {
+    return;
+  }
+  const name = pendingAddedParam;
+  try {
+    const input = badge.querySelector<HTMLInputElement>(`tr[data-param="${CSS.escape(name)}"] input.codbi-func-input`);
+    if (input) {
+      input.focus();
+      input.select();
+      // Belt-and-suspenders: make sure the param table is guaranteed to be revealed. The focus above
+      // normally bubbles up to the item's `focusin` listener (which adds `codbi-func-item--open` /
+      // `codbi-css-item--open`) and the badge's `focusin` listener (which adds
+      // `codbi-elem-badge--focus-active`). Add those classes directly as well so the popup cannot be
+      // left collapsed at icon size even if the focus event never reaches a listener after a rebuild.
+      const params = input.closest<HTMLElement>(".codbi-func-item__params");
+      if (params) {
+        const item = params.parentElement;
+        if (item) {
+          if (item.classList.contains("codbi-css-item")) {
+            item.classList.add("codbi-css-item--open");
+          } else {
+            item.classList.add("codbi-func-item--open");
+          }
+          // Remember WHICH sub-badge is open so that ANY later rebuild (e.g. adding a second parameter
+          // to the same sub-badge) re-expands the correct table instead of collapsing to icon size.
+          const subKey = item.dataset.cbSub;
+          if (subKey) {
+            openFuncSubBadge = subKey;
+          }
+        }
+      }
+      badge.classList.add("codbi-elem-badge--focus-active");
+      console.info(
+        "[CodBi][DBG] restore-focus attr=%s openFuncSubBadge=%j itemOpen=%s badgeFocus=%s",
+        name,
+        openFuncSubBadge,
+        params?.parentElement?.className ?? "",
+        badge.classList.contains("codbi-elem-badge--focus-active"),
+      );
+    } else {
+      console.info("[CodBi][DBG] restore-focus attr=%s NOT FOUND (row not rendered yet)", name);
+    }
+  } catch {
+    /* the row may not have been rendered — clear the hint below */
+  }
+  // Clear the hint shortly after so a later refresh no longer keeps stealing focus to this row.
+  window.setTimeout(() => {
+    if (pendingAddedParam === name) {
+      pendingAddedParam = null;
+    }
+  }, 500);
+}
 
 /**
  * @returns the designer instance, or `undefined` when it has not been created yet. The designer's
@@ -638,6 +788,460 @@ function attributeValue(attrs: IAttributeEntry[], name: string): string {
 /** @returns `true` when the item carries at least one `data-cb-func` functionality. */
 function isCbFuncItem(item: IMarkerItemLike): boolean {
   return attributeValue(attributeEntries(item), CB_FUNC_ATTRIBUTE) !== "";
+}
+
+/** Structural view of one CodBi standard-configuration (the JSON descriptor's shape). */
+interface IStandardConfigDef {
+  Description?: string;
+  Active?: boolean;
+  classes?: Record<string, string>;
+  globals?: Record<string, string>;
+  /** Maps each CSS-Class (that is a `loadConfig` target) to the comma-separated `FUNC` list. */
+  funcs?: Record<string, string>;
+  /**
+   * The real CSS selector the holistic configuration resolves against at form runtime
+   * (`window.codbi.loadConfig({ targets, FUNC })`). Multiple selectors are separated by `~`
+   * (matching the runtime split in `global-scope.ts`). Only present on `Holistic.*` descriptors.
+   */
+  targets?: string;
+  /**
+   * The single functionality (`FUNC`) a holistic configuration applies to every element its
+   * `targets` selector resolves to. Its parameter table is shown in the green sub-badge.
+   */
+  func?: string;
+}
+
+/** @returns the CodBi standard-configuration data injected by the designer resource plugin. */
+function standardsData(): Record<string, IStandardConfigDef> | undefined {
+  try {
+    const data = (window as unknown as { CodbiPluginData?: { detStandards?: Record<string, unknown> } })
+      .CodbiPluginData;
+    return data?.detStandards as Record<string, IStandardConfigDef> | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Collects every CSS class name that the CodBi standard configurations provide
+ * (`window.CodbiPluginData.detStandards[*].classes`). These are the class names the element CSS-class
+ * property is checked against.
+ */
+function standardClassNames(): Set<string> {
+  const names = new Set<string>();
+  const standards = standardsData();
+  for (const standardKey of Object.keys(standards ?? {})) {
+    const standard = standards?.[standardKey];
+    if (!standard?.classes) {
+      continue;
+    }
+    for (const cssClass of Object.keys(standard.classes)) {
+      names.add(cssClass);
+    }
+  }
+  return names;
+}
+
+/**
+ * Reads the element's `cssclasses` property (an array of class names) and returns the subset that are
+ * recognized CodBi standard-configuration classes. Handles an array or a whitespace/comma separated
+ * string defensively.
+ */
+function existingCssClasses(item: IMarkerItemLike): string[] {
+  const props = propertiesOf(item);
+  const raw = props?.[CSS_CLASSES_PROPERTY];
+  const parts = Array.isArray(raw)
+    ? raw.map((c) => String(c))
+    : String(raw ?? "")
+        .split(/[\s,]+/)
+        .map((c) => c.trim());
+  const recognized = standardClassNames();
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    const name = part.trim();
+    if (!name || seen.has(name) || !recognized.has(name)) {
+      continue;
+    }
+    seen.add(name);
+    result.push(name);
+  }
+  return result;
+}
+
+/** @returns `true` when the item carries at least one recognized CodBi standard-configuration class. */
+function hasCssClasses(item: IMarkerItemLike): boolean {
+  return existingCssClasses(item).length > 0;
+}
+
+/**
+ * One group of parameter rows inside a parameter table (see {@link buildParamTable}). A group lists the
+ * parameters of ONE functionality — the bare functionality badge holds a single group; a CSS-standard-
+ * configuration badge accumulates one group per functionality mentioned in its `FUNC` list.
+ */
+interface IParamTableSection {
+  /** Optional human-readable header shown above the group (mainly the functionality name). */
+  title?: string;
+  /** The parameters already set on the element (name = full `data-cb-*` attribute, value). */
+  params: Array<{ name: string; value: string }>;
+  /** The full list of available parameter attribute names (`data-cb-xyz`) for this functionality. */
+  available: string[];
+}
+
+/**
+ * Returns the functionality names (`FUNC`s) applied to an element that carries the CSS standard-
+ * configuration class `cssClass`, derived from the enriched `detStandards[*].funcs` map.
+ */
+function funcNamesForCssClass(cssClass: string): string[] {
+  const result: string[] = [];
+  const standards = standardsData();
+  for (const standardKey of Object.keys(standards ?? {})) {
+    const funcsCsv = standards?.[standardKey]?.funcs?.[cssClass];
+    if (!funcsCsv) {
+      continue;
+    }
+    for (const part of funcsCsv.split(",")) {
+      const name = part.trim();
+      if (name && !result.includes(name.toLowerCase())) {
+        result.push(name);
+      }
+    }
+  }
+  return result;
+}
+
+/** One active holistic standard-configuration that targets per-element widgets in the form. */
+interface IActiveHolisticConfig {
+  /** The standard-configuration id, e.g. `"Holistic.Media.Input.Speech"`. */
+  id: string;
+  /** The descriptor (`detStandards[id]`). */
+  def: IStandardConfigDef;
+}
+
+/** Selectors a holistic configuration resolves against that are GLOBAL and never per-element widgets. */
+const GLOBAL_HOLISTIC_TARGETS = new Set(["head", "body", "html", "form", "body > *"]);
+
+/** Prefix that marks a standard-configuration id as a holistic (runtime-selector-resolved) config. */
+const HOLISTIC_STANDARD_PREFIX = "Holistic.";
+
+/**
+ * The currently-ACTIVE holistic standard-configurations (`detStandards[*].Active === true` whose id
+ * starts with `Holistic.` and that carry a real `targets` selector resolving to per-element widgets).
+ * Global-target configs (`Holistic.CSS.Standard` → `head`, `Holistic.Matomo.Tracking` → `body`) are
+ * excluded because they apply form-wide and must not produce a badge on any single element.
+ */
+function activeHolisticConfigs(): IActiveHolisticConfig[] {
+  const standards = standardsData();
+  if (!standards) {
+    console.warn(
+      "[CodBi][DBG][holistic] standardsData() returned undefined — detStandards not loaded in window.CodbiPluginData",
+    );
+    return [];
+  }
+  const holisticIds = Object.keys(standards).filter((id) => id.startsWith(HOLISTIC_STANDARD_PREFIX));
+  console.info(
+    "[CodBi][DBG][holistic] detStandards has %d entry/entries; Holistic.* ids = %O",
+    Object.keys(standards).length,
+    holisticIds,
+  );
+  const result: IActiveHolisticConfig[] = [];
+  for (const id of holisticIds) {
+    const def = standards[id];
+    const active = Boolean(def?.Active);
+    const hasTargets = Boolean(def?.targets);
+    const skippedGlobal = hasTargets && GLOBAL_HOLISTIC_TARGETS.has((def?.targets ?? "").trim());
+    console.info(
+      "[CodBi][DBG][holistic] config %s: Active=%s targets=%s skippedGlobalTarget=%s",
+      id,
+      active,
+      JSON.stringify(def?.targets ?? ""),
+      skippedGlobal,
+    );
+    if (!active || !hasTargets || skippedGlobal) {
+      continue;
+    }
+    result.push({ id, def: def as IStandardConfigDef });
+  }
+  if (result.length === 0) {
+    console.warn("[CodBi][DBG][holistic] NO active, non-global holistic config found — green badges will not render");
+  }
+  return result;
+}
+
+/**
+ * Determines whether an element (its DOM anchor) is targeted by a holistic configuration's
+ * `targets` selector. Mirrors the form runtime: the selector is split on `~` and each part is tested
+ * with `Element.matches` (which natively handles comma-separated selectors inside one part). Returns
+ * `false` on any selector error rather than throwing into the badge pipeline.
+ *
+ * The anchor in the designer is the item's CONTENT CELL (a `<td class="xm-item-content">` wrapper),
+ * NOT the inner form `<input>`/`<fieldset>` the runtime selectors actually target. So besides testing
+ * the anchor itself we also test the form controls nested inside it (via a descendant `querySelector`),
+ * which is what makes selectors like `input[data-datepicker="1"]`, `input[data-vdt="time"]`,
+ * `input[type="text"]` and `fieldset:...` resolve against the real widget even when the anchor is the
+ * wrapper `<td>`.
+ */
+function holisticTargetsAnchor(anchor: HTMLElement, targets: string): boolean {
+  if (!anchor || !targets) {
+    return false;
+  }
+  // The candidate elements to test: the anchor itself plus the form control(s) nested inside it.
+  // A `querySelector` (first match) is sufficient — the runtime targets one concrete control and the
+  // badge is bound to the owning wrapper, so a single control match grants the badge to the wrapper.
+  const candidates: HTMLElement[] = [anchor];
+  try {
+    const inner = anchor.querySelector(
+      "input[type], textarea, select, fieldset, input, [role='presentation'] input, .xm-item-div input, .xm-item-div fieldset",
+    );
+    if (inner instanceof HTMLElement && !candidates.includes(inner)) {
+      candidates.push(inner);
+    }
+  } catch {
+    /* ignore invalid descendant selector */
+  }
+  for (const part of targets.split("~")) {
+    const selector = part.trim();
+    if (!selector) {
+      continue;
+    }
+    try {
+      for (const candidate of candidates) {
+        if (candidate.matches(selector)) {
+          return true;
+        }
+      }
+    } catch {
+      /* invalid selector — ignore this part */
+    }
+  }
+  return false;
+}
+
+/**
+ * The active holistic configurations that hit the given element (by matching its DOM anchor against
+ * each config's `targets` selector). Used to decide whether an element earns a GREEN holistic
+ * sub-badge and which ones to render.
+ */
+function holisticConfigsFor(anchor: HTMLElement | null): IActiveHolisticConfig[] {
+  if (!anchor) {
+    console.warn("[CodBi][DBG][holistic] holisticConfigsFor(anchor=null)");
+    return [];
+  }
+  console.info(
+    "[CodBi][DBG][holistic] anchor: tag=%s id=%s class=%s data-cb-func=%s isFormInput=%s outerHTML=%s",
+    anchor.tagName,
+    anchor.id,
+    anchor.className,
+    anchor.getAttribute("data-cb-func") ?? "",
+    ["INPUT", "TEXTAREA", "SELECT", "FIELDSET"].includes(anchor.tagName),
+    anchor.outerHTML.length > 220 ? `${anchor.outerHTML.slice(0, 220)}…` : anchor.outerHTML,
+  );
+  const actives = activeHolisticConfigs();
+  const matched: IActiveHolisticConfig[] = [];
+  for (const config of actives) {
+    let matchResult = false;
+    let matchError = "";
+    try {
+      matchResult = holisticTargetsAnchor(anchor, config.def.targets ?? "");
+    } catch (e) {
+      matchError = String(e);
+    }
+    console.info(
+      "[CodBi][DBG][holistic]   match %s => %s targets=%s%s",
+      config.id,
+      matchResult,
+      JSON.stringify(config.def.targets ?? ""),
+      matchError ? ` ERROR=${matchError}` : "",
+    );
+    if (matchResult) {
+      matched.push(config);
+    }
+  }
+  if (matched.length === 0) {
+    console.warn(
+      "[CodBi][DBG][holistic] anchor did NOT match any active holistic config — check whether the targets selector matches the ANCHOR element (a wrapper, not the inner <input>).",
+    );
+  }
+  return matched;
+}
+
+/** The ids of the active holistic configurations that hit `anchor` (for badge change-signatures). */
+function holisticConfigIdsFor(anchor: HTMLElement | null): string[] {
+  return holisticConfigsFor(anchor).map((config) => config.id);
+}
+
+/**
+ * The parameter-table groups for one holistic configuration's applied `FUNC`. Exactly like a CSS-class
+ * group, each group lists the functionality's available parameter attributes and the ones the element
+ * has already set, so the config's parameter space is editable from the green sub-badge.
+ */
+function buildHolisticSections(id: string, def: IStandardConfigDef, item: IMarkerItemLike): IParamTableSection[] {
+  const funcName = (def.func ?? "").trim();
+  if (!funcName) {
+    return [];
+  }
+  const available = availableParameterNames(funcName);
+  const entries = attributeEntries(item);
+  const params: Array<{ name: string; value: string }> = [];
+  for (const attrName of available) {
+    const present = attributeEntriesContain(entries, attrName);
+    const value = currentParamValue(item, attrName);
+    if (present || value !== "") {
+      params.push({ name: attrName, value });
+    }
+  }
+  return [{ title: `${id} · ${funcName}`, params, available }];
+}
+
+/**
+ * The available parameter ATTRIBUTE names (`data-cb-<param>`) of one functionality, taken from the
+ * reliability source `detFunctionalities[*].Parameter`. Used to populate the "add parameter" dropdown.
+ */
+function availableParameterNames(funcName: string): string[] {
+  const data = functionalityData();
+  const def = data?.[funcName.toLowerCase()];
+  if (!def?.Parameter) {
+    return [];
+  }
+  return Object.keys(def.Parameter).map((key) => `${CB_PARAM_PREFIX}${key}`);
+}
+
+/** Strip the `data-cb-` prefix so a parameter attribute shows without a redundant `data-cb-` label. */
+function paramLabel(attrName: string): string {
+  return attrName.toLowerCase().startsWith(CB_PARAM_PREFIX) ? attrName.slice(CB_PARAM_PREFIX.length) : attrName;
+}
+
+/** Reads the value of a `data-cb-*` parameter attribute from the current item ("" when unset). */
+function currentParamValue(item: IMarkerItemLike, attrName: string): string {
+  return attributeValue(attributeEntries(item), attrName);
+}
+
+/**
+ * The parameter-table groups for a CSS standard-configuration class: one group per functionality in
+ * the class's `FUNC` list (see {@link funcNamesForCssClass }). Each group lists that functionality's
+ * available parameter names and the ones the element already set, so the whole class's possible
+ * parameter space (unioned across its functionalities) is editable from the single blue badge.
+ *
+ * A parameter counts as "present" when its attribute already exists on the element's bag — a value row
+ * is rendered even when the value is still empty. This is essential after the "+ Add" dropdown sets a
+ * fresh parameter to `""`: the row must stay on screen (with its value input) so the user can type the
+ * value, instead of vanishing the moment the badge is rebuilt.
+ */
+function buildCssClassSections(cssClass: string, item: IMarkerItemLike): IParamTableSection[] {
+  const funcNames = funcNamesForCssClass(cssClass);
+  const entries = attributeEntries(item);
+  return funcNames.map((funcName) => {
+    const available = availableParameterNames(funcName);
+    const params: Array<{ name: string; value: string }> = [];
+    for (const attrName of available) {
+      // "Present" means the attribute exists in the bag, REGARDLESS of its (possibly empty) value.
+      const present = attributeEntriesContain(entries, attrName);
+      const value = currentParamValue(item, attrName);
+      if (present || value !== "") {
+        params.push({ name: attrName, value });
+      }
+    }
+    return { title: funcName, params, available };
+  });
+}
+
+/** @returns `true` when the item's attribute bag carries an attribute whose name equals `attrName`. */
+function attributeEntriesContain(entries: IAttributeEntry[], attrName: string): boolean {
+  const wanted = attrName.toLowerCase();
+  for (const attr of entries) {
+    if (
+      String(attr?.text ?? "")
+        .trim()
+        .toLowerCase() === wanted
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Flattens the `data-cb-*` parameter attributes the element has SET for the given CSS classes into a
+ * stable signature fragment, so re-rendering (e.g. after adding a parameter to a blue badge) reflects
+ * the new attributes without relying on the transient DOM state.
+ */
+function cssClassesParamSignature(cssClasses: string[], item: IMarkerItemLike): string {
+  // Deterministically collect the union of every functionality's available params (with their current
+  // values, empty when unset) so ANY change re-renders the badge, independent of attribute-bag order.
+  const attrs = attributeEntries(item);
+  const valueFor = (attrName: string): string => {
+    const key = attrName.toLowerCase();
+    for (const attr of attrs) {
+      if (
+        String(attr?.text ?? "")
+          .trim()
+          .toLowerCase() === key
+      ) {
+        return String(attr?.value ?? "").trim();
+      }
+    }
+    return "";
+  };
+  const all = new Map<string, string>();
+  for (const cssClass of cssClasses) {
+    for (const funcName of funcNamesForCssClass(cssClass)) {
+      for (const attrName of availableParameterNames(funcName)) {
+        const key = attrName.toLowerCase();
+        if (!all.has(key)) {
+          all.set(key, valueFor(attrName));
+        }
+      }
+    }
+  }
+  const parts: string[] = [];
+  for (const key of Array.from(all.keys()).sort()) {
+    parts.push(`${key}\u0003${all.get(key) ?? ""}`);
+  }
+  return parts.join("\u0002");
+}
+
+/**
+ * Flattens the `data-cb-*` parameter attributes the element has SET for the given holistic configs'
+ * applied `FUNC`s into a stable signature fragment, so re-rendering (e.g. after adding a parameter to
+ * a GREEN holistic sub-badge) reflects the new attributes without relying on the transient DOM state.
+ * This mirrors {@link cssClassesParamSignature} for the holistic configs' `func`.
+ */
+function holisticParamsSignature(configs: IActiveHolisticConfig[], item: IMarkerItemLike): string {
+  if (configs.length === 0) {
+    return "";
+  }
+  const attrs = attributeEntries(item);
+  const valueFor = (attrName: string): string => {
+    const key = attrName.toLowerCase();
+    for (const attr of attrs) {
+      if (
+        String(attr?.text ?? "")
+          .trim()
+          .toLowerCase() === key
+      ) {
+        return String(attr?.value ?? "").trim();
+      }
+    }
+    return "";
+  };
+  const all = new Map<string, string>();
+  for (const config of configs) {
+    const funcName = (config.def.func ?? "").trim();
+    if (!funcName) {
+      continue;
+    }
+    for (const attrName of availableParameterNames(funcName)) {
+      const key = attrName.toLowerCase();
+      if (!all.has(key)) {
+        all.set(key, valueFor(attrName));
+      }
+    }
+  }
+  const parts: string[] = [];
+  for (const key of Array.from(all.keys()).sort()) {
+    parts.push(`${key}\u0003${all.get(key) ?? ""}`);
+  }
+  return parts.join("\u0002");
 }
 
 /** Removes a preview switch from the DOM and forgets it. */
@@ -1646,7 +2250,7 @@ function ensureBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   let badge = badges.get(id);
   if (!badge || !badge.isConnected || badge.parentElement !== anchor) {
     badge = doc.createElement("span");
-    badge.className = BADGE_CLASS;
+    badge.className = `${BADGE_CLASS} codbi-elem-badge--bottom`;
     badge.dataset.codbiBadge = id;
     badges.set(id, badge);
   }
@@ -1709,10 +2313,15 @@ function pruneMarkedWidgets(): void {
  * Content signature used to make {@link ensureFuncBadge} idempotent so the `MutationObserver` never
  * triggers an endless rebuild loop.
  */
-function funcSignature(funcs: IFunctionalityEntry[]): string {
-  return funcs
+function funcSignature(funcs: IFunctionalityEntry[], cssClasses: string[], item: IMarkerItemLike): string {
+  const funcsPart = funcs
     .map((fn) => `${fn.name}\u0002${fn.params.map((p) => `${p.name}\u0003${p.value}`).join("\u0002")}`)
     .join("\u0001");
+  const cssPart = cssClasses.join("\u0004");
+  // Fold in the `data-cb-*` parameters the element has set for the CSS-class FUNCs, so adding/editing a
+  // parameter via a BLUE badge re-renders the badge (the funcsPart above only covers `data-cb-func`).
+  const cssParamsPart = cssClassesParamSignature(cssClasses, item);
+  return `${funcsPart}\u0005${cssPart}\u0005${cssParamsPart}`;
 }
 
 /** Inline SVG of a trash can, used by the parameter table's remove button. */
@@ -1768,25 +2377,41 @@ function listElementPlaceholders(): Array<string> {
 }
 
 /**
- * Builds the parameter/value table shown when a functionality sub-badge is hovered: one row per
- * `data-cb-*` parameter. The first column holds the (fixed) parameter name, the second an EDITABLE
- * value input and the third a trash button that removes the parameter. Every change is written
- * straight into the item's property bag, so it shows up in the element's config attribute table.
+ * Builds the parameter/value table shown inside a badge's hover popup. The table is composed of one
+ * or more {@link IParamTableSection } groups — a bare functionality badge passes a single group for
+ * its own parameters, while a CSS-standard-configuration badge passes one group per functionality
+ * named in the class's `FUNC` list (so all of that class's possible parameters show up together).
+ *
+ * Every row holds the (fixed) parameter name, an EDITABLE value input and a trash button that removes
+ * the parameter; every change is written straight into the item's property bag, so it shows up in the
+ * element's config attribute table. At the end of each group an "add parameter" `<select>` lists the
+ * functionality's available parameters that are NOT yet set — choosing one adds it (empty value) and
+ * re-renders the badge.
  *
  * Pressing **ALT+E** on a value input opens the {@link openEPBuilder } popup so Element Placeholders
  * can be composed and nested; applying writes the serialized value back through the same path as a
  * manual edit.
+ *
+ * @param variant Which styling variant the table uses: `"func"` (orange), `"css"` (blue) or
+ *   `"holistic"` (green, the runtime-selector-resolved standard configurations).
  */
-function buildFuncParamTable(
+function buildParamTable(
   doc: Document,
-  params: Array<{ name: string; value: string }>,
+  sections: IParamTableSection[],
   resolve: () => IMarkerItemLike,
   anchor: HTMLElement,
   subBadge: HTMLElement,
   popup: HTMLElement,
+  variant: "func" | "css" | "holistic" = "func",
+  badge?: HTMLDivElement,
 ): HTMLTableElement {
   const table = doc.createElement("table");
-  table.className = "codbi-func-table";
+  table.className =
+    variant === "css"
+      ? "codbi-func-table codbi-func-table--css"
+      : variant === "holistic"
+        ? "codbi-func-table codbi-func-table--holistic"
+        : "codbi-func-table";
   const head = doc.createElement("thead");
   const headRow = doc.createElement("tr");
   const headName = doc.createElement("th");
@@ -1799,13 +2424,12 @@ function buildFuncParamTable(
   head.appendChild(headRow);
   table.appendChild(head);
 
-  const body = doc.createElement("tbody");
-  for (const param of params) {
-    const row = doc.createElement("tr");
+  const addRow = (row: HTMLTableRowElement): void => {
+    const attrName = row.dataset.param ?? "";
     // Column 1 — the (fixed) parameter name.
     const name = doc.createElement("th");
     name.scope = "row";
-    name.textContent = param.name;
+    name.textContent = paramLabel(attrName);
     // Column 2 — the editable value, followed by the maximize button at its right end.
     const valueCell = doc.createElement("td");
     const valueWrap = doc.createElement("span");
@@ -1813,13 +2437,13 @@ function buildFuncParamTable(
     const input = doc.createElement("input");
     input.type = "text";
     input.className = "codbi-func-input";
-    input.value = param.value;
+    input.value = row.dataset.value ?? "";
     // Let the input claim enough width for the whole value (a stylesheet width can still cap it).
-    input.size = Math.min(Math.max(param.value.length + 1, 8), 200);
-    input.title = param.name;
+    input.size = Math.min(Math.max((row.dataset.value ?? "").length + 1, 8), 200);
+    input.title = attrName;
     isolateControl(input);
     input.addEventListener("change", () => {
-      setFuncAttribute(resolve(), param.name, input.value);
+      setFuncAttribute(resolve(), attrName, input.value);
     });
     input.addEventListener("keydown", (event) => {
       // #region Alt+E → open the EP builder for this attribute value.
@@ -1837,7 +2461,7 @@ function buildFuncParamTable(
           listEPs: listElementPlaceholders,
           onApply: (value) => {
             input.value = value;
-            setFuncAttribute(resolve(), param.name, value);
+            setFuncAttribute(resolve(), attrName, value);
             input.blur();
           },
         });
@@ -1880,28 +2504,163 @@ function buildFuncParamTable(
     remove.addEventListener("click", (event) => {
       event.preventDefault();
       const target = resolve();
-      if (removeFuncAttribute(target, param.name)) {
+      if (removeFuncAttribute(target, attrName)) {
         ensureFuncBadge(target, anchor); // Re-render without the removed parameter.
       }
     });
     actionsCell.appendChild(remove);
     row.append(name, valueCell, actionsCell);
-    body.appendChild(row);
+  };
+
+  const body = doc.createElement("tbody");
+  for (const section of sections) {
+    // Optional per-group header (the functionality / standard-configuration name).
+    if (section.title && sections.length > 1) {
+      const titleRow = doc.createElement("tr");
+      titleRow.className = "codbi-func-section-title";
+      const titleCell = doc.createElement("th");
+      titleCell.scope = "colgroup";
+      titleCell.colSpan = 3;
+      titleCell.textContent = section.title;
+      titleRow.appendChild(titleCell);
+      body.appendChild(titleRow);
+    }
+    const present = new Set(section.params.map((p) => p.name.toLowerCase()));
+    for (const param of section.params) {
+      const row = doc.createElement("tr");
+      row.dataset.param = param.name;
+      row.dataset.value = param.value;
+      addRow(row);
+      body.appendChild(row);
+    }
+    // "Add parameter" dropdown: the functionality's available params not yet present here. This is a
+    // CUSTOM dropdown built inside the badge — NOT a native <select>. A native select opens an OS
+    // picker that moves focus and the pointer outside the badge, collapsing the hover-driven popup.
+    // A custom trigger reveals the available parameters as INLINE table rows (not a floating overlay),
+    // because the popup has `overflow:hidden` and would clip any floating menu. Every interaction
+    // therefore stays inside the table/badge, so the popup stays open and the newly-added parameter's
+    // value input can be focused immediately.
+    const missing = section.available.filter((name) => !present.has(name.toLowerCase()));
+    if (missing.length > 0) {
+      const addRowEl = doc.createElement("tr");
+      addRowEl.className = "codbi-func-addrow";
+      const labelCell = doc.createElement("th");
+      labelCell.scope = "row";
+      labelCell.textContent = `\u002b ${i18n("designer.marker.table.add")}`;
+      const selectCell = doc.createElement("td");
+      selectCell.colSpan = 2;
+      // The trigger button, e.g. "Parameter auswählen…".
+      const trigger = doc.createElement("button");
+      trigger.type = "button";
+      trigger.className = "codbi-func-addtrigger";
+      trigger.dataset.cbOpen = "0";
+      trigger.textContent = i18n("designer.marker.table.pick");
+      trigger.title = i18n("designer.marker.table.pick");
+      isolateControl(trigger);
+      // The inline option rows, inserted right after the add-row while the trigger is open. Each row
+      // lists one of the functionality's available parameters; clicking it adds the parameter IN PLACE.
+      const optionRows: HTMLTableRowElement[] = [];
+      const refreshRows = (): void => {
+        if (trigger.dataset.cbOpen !== "1") {
+          return;
+        }
+        for (const optRow of optionRows) {
+          if (optRow.isConnected) {
+            optRow.remove();
+          }
+        }
+        for (const attrName of missing) {
+          if (present.has(attrName.toLowerCase())) {
+            continue;
+          }
+          const optRow = doc.createElement("tr");
+          optRow.className = "codbi-func-addoption";
+          optRow.dataset.param = attrName;
+          const optCell = doc.createElement("td");
+          optCell.colSpan = 3;
+          optCell.textContent = `\u2192 ${paramLabel(attrName)}`;
+          optRow.appendChild(optCell);
+          isolateControl(optRow);
+          optRow.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            event.stopPropagation();
+            const target = resolve();
+            // Remember the parameter being added so that AFTER the debounced badge re-render
+            // (`setFuncAttribute` → designer mutation → `refreshBadges` → `ensureFuncBadge` →
+            // `badge.replaceChildren`) the freshly-built value input is re-focused again and the
+            // popup is re-expanded. Without this, the rebuild leaves the popup collapsed at icon size.
+            pendingAddedParam = attrName;
+            // DEBUG: which sub-badge is tracked as open when a parameter is being added — if this is
+            // null on the 2nd+ add, that is why the rebuild collapses the table.
+            console.info(
+              "[CodBi][DBG] add-param click attr=%s pending=%s openFuncSubBadge=%j missingLeft=%d",
+              attrName,
+              pendingAddedParam,
+              openFuncSubBadge,
+              missing.filter((n) => !present.has(n.toLowerCase())).length,
+            );
+            if (setFuncAttribute(target, attrName, "")) {
+              present.add(attrName.toLowerCase());
+              // Add the new parameter row IN PLACE and focus its value input. Because the whole
+              // interaction stays inside the badge, focus and hover are preserved, so the popup stays
+              // open and the user can immediately type the value.
+              const row = doc.createElement("tr");
+              row.dataset.param = attrName;
+              row.dataset.value = "";
+              addRow(row);
+              body.insertBefore(row, addRowEl);
+              const input = row.querySelector<HTMLInputElement>("input.codbi-func-input");
+              input?.focus();
+              input?.select();
+              refreshRows();
+              if (missing.every((name) => present.has(name.toLowerCase()))) {
+                addRowEl.remove();
+              }
+            }
+          });
+          optionRows.push(optRow);
+          body.insertBefore(optRow, addRowEl);
+        }
+      };
+      const openMenu = (open: boolean): void => {
+        trigger.dataset.cbOpen = open ? "1" : "0";
+        if (open) {
+          trigger.classList.add("codbi-func-addtrigger--open");
+        } else {
+          trigger.classList.remove("codbi-func-addtrigger--open");
+        }
+        refreshRows();
+      };
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        event.stopPropagation();
+        openMenu(trigger.dataset.cbOpen !== "1");
+      });
+      selectCell.appendChild(trigger);
+      addRowEl.append(labelCell, selectCell);
+      body.appendChild(addRowEl);
+    }
   }
   table.appendChild(body);
   return table;
 }
 
 /**
- * Builds the function badge's inner DOM: the CodBi logo icon plus the list of functionality badges.
- * The list is revealed when the widget is hovered; hovering one functionality badge expands it
- * downward to show that functionality's `data-cb-*` parameters (see `BADGE_CSS`).
+ * Builds the badge's inner DOM: the CodBi logo icon plus the list of functionality sub-badges
+ * (orange) and CSS-standard-configuration-class sub-badges (blue). The list is revealed when the
+ * widget is hovered; hovering one functionality sub-badge expands it downward to show that
+ * functionality's `data-cb-*` parameters (see `BADGE_CSS`).
  */
 function buildFuncBadgeInner(
   doc: Document,
   funcs: IFunctionalityEntry[],
+  cssClasses: string[],
+  holistic: IActiveHolisticConfig[],
   resolve: () => IMarkerItemLike,
   anchor: HTMLElement,
+  badge?: HTMLDivElement,
 ): DocumentFragment {
   const fragment = doc.createDocumentFragment();
   const icon = doc.createElement("span");
@@ -1914,24 +2673,149 @@ function buildFuncBadgeInner(
 
   const list = doc.createElement("div");
   list.className = "codbi-func-list";
-  for (const func of funcs) {
-    const item = doc.createElement("div");
-    item.className = "codbi-func-item";
-    const name = doc.createElement("span");
-    name.className = "codbi-func-item__name";
-    name.textContent = func.name;
-    item.appendChild(name);
-    if (func.params.length > 0) {
+  // Only clear the tracked open sub-badge when the pointer leaves the ENTIRE badge, never on a
+  // mere `focusout` — otherwise moving from the focused value input up to the "+ Add" trigger (to add
+  // a second parameter) would wipe it and the following rebuild would collapse the table.
+  list.addEventListener("mouseleave", () => {
+    openFuncSubBadge = null;
+  });
+  // Open exactly ONE sub-badge at a time. Opening another sub-badge (hover or focus) must first
+  // close every other one — otherwise moving the pointer from badge A to badge B leaves A's `--open`
+  // class intact and BOTH tables stay expanded.
+  const openOnly = (active: HTMLElement): void => {
+    for (const sibling of Array.from(
+      list.querySelectorAll<HTMLElement>(".codbi-func-item, .codbi-css-item, .codbi-holistic-item"),
+    )) {
+      if (sibling !== active) {
+        sibling.classList.remove("codbi-func-item--open");
+        sibling.classList.remove("codbi-css-item--open");
+        sibling.classList.remove("codbi-holistic-item--open");
+      }
+    }
+  };
+  if (funcs.length > 0 || cssClasses.length > 0 || holistic.length > 0) {
+    for (const func of funcs) {
+      const item = doc.createElement("div");
+      item.className = "codbi-func-item";
+      item.dataset.cbSub = func.name;
+      const name = doc.createElement("span");
+      name.className = "codbi-func-item__name";
+      name.textContent = func.name;
+      item.appendChild(name);
+      // One section: the functionality's own set parameters PLUS an "add parameter" dropdown with every
+      // parameter the functionality offers (even when none are set yet — the popup is always shown).
+      const section: IParamTableSection = {
+        title: func.name,
+        params: func.params,
+        available: availableParameterNames(func.name),
+      };
       const params = doc.createElement("div");
       params.className = "codbi-func-item__params";
-      // Size the popup to the space available within the form element, measured from THIS badge.
+      item.appendChild(params);
       item.addEventListener("mouseenter", () => {
+        openFuncSubBadge = func.name;
+        openOnly(item);
+        item.classList.add("codbi-func-item--open");
         applyFuncPopupWidth(item, params, anchor, params.dataset.codbiMax === "1");
       });
-      params.appendChild(buildFuncParamTable(doc, func.params, resolve, anchor, item, params));
-      item.appendChild(params);
+      // Keep the popup open while a control inside it (the "+ Add" select or a value input) holds
+      // focus — hovering alone collapses once the pointer leaves the sub-badge (which happens as soon
+      // as a native select picker closes). `focusin`/`focusout` cover every control in the popup.
+      params.addEventListener("focusin", () => {
+        openFuncSubBadge = func.name;
+        openOnly(item);
+        item.classList.add("codbi-func-item--open");
+      });
+      params.addEventListener("focusout", () => {
+        // Remove the focus-held `--open` (standard focus retention), but KEEP `openFuncSubBadge`.
+        // Clearing it here is what made the SECOND "add parameter" collapse: when the user moves from
+        // the focused value input up to the "+ Add" trigger, `focusout` fires, wiping the tracked
+        // sub-badge — so the following rebuild could no longer re-expand the table. The tracked badge
+        // must survive until the user actually leaves the whole badge (see the `mouseleave` below).
+        item.classList.remove("codbi-func-item--open");
+      });
+      // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
+      if (openFuncSubBadge === func.name) {
+        item.classList.add("codbi-func-item--open");
+        console.info("[CodBi][DBG] rebuild reopens FUNC sub-badge %j", func.name);
+      }
+      params.appendChild(buildParamTable(doc, [section], resolve, anchor, item, params, "func", badge));
+      list.appendChild(item);
     }
-    list.appendChild(item);
+    // The applied CSS standard-configuration classes, shown as BLUE sub-badges. Each reveals the FULL
+    // parameter table accumulated across every functionality named in the class's `FUNC` list.
+    for (const cssClass of cssClasses) {
+      const item = doc.createElement("div");
+      item.className = "codbi-css-item";
+      item.dataset.cbSub = cssClass;
+      const name = doc.createElement("span");
+      name.className = "codbi-css-item__name";
+      name.textContent = cssClass;
+      item.appendChild(name);
+      const sections = buildCssClassSections(cssClass, resolve());
+      const params = doc.createElement("div");
+      params.className = "codbi-func-item__params";
+      item.appendChild(params);
+      item.addEventListener("mouseenter", () => {
+        openFuncSubBadge = cssClass;
+        openOnly(item);
+        item.classList.add("codbi-css-item--open");
+        applyFuncPopupWidth(item, params, anchor, params.dataset.codbiMax === "1");
+      });
+      params.addEventListener("focusin", () => {
+        openFuncSubBadge = cssClass;
+        openOnly(item);
+        item.classList.add("codbi-css-item--open");
+      });
+      params.addEventListener("focusout", () => {
+        // Remove the focus-held `--open`, but KEEP `openFuncSubBadge` (see the func-loop comment).
+        item.classList.remove("codbi-css-item--open");
+      });
+      // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
+      if (openFuncSubBadge === cssClass) {
+        item.classList.add("codbi-css-item--open");
+        console.info("[CodBi][DBG] rebuild reopens CSS sub-badge %j", cssClass);
+      }
+      params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "css", badge));
+      list.appendChild(item);
+    }
+    // The active HOLISTIC standard-configurations that hit this element, shown as GREEN sub-badges.
+    // Each is named by its config id and reveals the parameter table of the FUNC it applies to the
+    // element (the same `data-cb-*` bag the runtime resolves per-element overrides from).
+    for (const config of holistic) {
+      const item = doc.createElement("div");
+      item.className = "codbi-holistic-item";
+      item.dataset.cbSub = config.id;
+      const name = doc.createElement("span");
+      name.className = "codbi-holistic-item__name";
+      name.textContent = config.id;
+      item.appendChild(name);
+      const sections = buildHolisticSections(config.id, config.def, resolve());
+      const params = doc.createElement("div");
+      params.className = "codbi-func-item__params";
+      item.appendChild(params);
+      item.addEventListener("mouseenter", () => {
+        openFuncSubBadge = config.id;
+        openOnly(item);
+        item.classList.add("codbi-holistic-item--open");
+        applyFuncPopupWidth(item, params, anchor, params.dataset.codbiMax === "1");
+      });
+      params.addEventListener("focusin", () => {
+        openFuncSubBadge = config.id;
+        openOnly(item);
+        item.classList.add("codbi-holistic-item--open");
+      });
+      params.addEventListener("focusout", () => {
+        // Remove the focus-held `--open`, but KEEP `openFuncSubBadge` (see the func-loop comment).
+        item.classList.remove("codbi-holistic-item--open");
+      });
+      // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
+      if (openFuncSubBadge === config.id) {
+        item.classList.add("codbi-holistic-item--open");
+      }
+      params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "holistic", badge));
+      list.appendChild(item);
+    }
   }
   fragment.appendChild(list);
   return fragment;
@@ -1945,7 +2829,23 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   }
   const doc = anchor.ownerDocument ?? document;
   const funcs = existingFunctionalities(item);
-  const signature = funcSignature(funcs);
+  const cssClasses = existingCssClasses(item);
+  // The active holistic configurations whose `targets` selector resolves to this element (green
+  // sub-badges). Re-evaluated on every refresh so toggling a holistic config Active re-marks widgets.
+  const holistic = holisticConfigsFor(anchor);
+  console.info(
+    "[CodBi][DBG][mark] ensureFuncBadge id=%s anchor=%s: funcs=%d css=%d holistic=%s",
+    id,
+    anchor.tagName,
+    funcs.length,
+    cssClasses.length,
+    holistic.map((c) => c.id).join(",") || "(none)",
+  );
+  // Fold in the holistic config ids AND the `data-cb-*` parameters their `FUNC`s can carry, so
+  // toggling a config Active or editing a parameter via a GREEN sub-badge re-renders the badge.
+  const signature = `${funcSignature(funcs, cssClasses, item)}\u0006${holistic
+    .map((c) => c.id)
+    .join("\u0001")}\u0006${holisticParamsSignature(holistic, item)}`;
 
   let badge = funcBadges.get(id);
   if (!badge || !badge.isConnected || badge.parentElement !== anchor) {
@@ -1953,6 +2853,17 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
     badge.className = `${BADGE_CLASS} codbi-elem-badge--funcs`;
     badge.dataset.codbiBadge = id;
     funcBadges.set(id, badge);
+    // Keep the badge expanded while any control inside it (select / value input) holds focus, so the
+    // popup does not collapse when the pointer leaves the widget (e.g. while a native select is open).
+    if (!badge.dataset.codbiFocusWired) {
+      badge.dataset.codbiFocusWired = "1";
+      badge.addEventListener("focusin", () => {
+        badge.classList.add("codbi-elem-badge--focus-active");
+      });
+      badge.addEventListener("focusout", () => {
+        badge.classList.remove("codbi-elem-badge--focus-active");
+      });
+    }
   }
   if (badge.parentElement !== anchor) {
     anchor.appendChild(badge);
@@ -1977,11 +2888,18 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
     return; // Already rendered with the current functionalities — leave the DOM untouched.
   }
   badge.dataset.codbiFuncMark = signature;
-  // With no known functionality the badge must not expand (mirrors the Mirror `--empty` behaviour).
-  badge.classList.toggle("codbi-elem-badge--empty", funcs.length === 0);
+  // With no known functionality, CSS class or holistic config the badge must not expand (mirrors the
+  // Mirror `--empty` behaviour).
+  badge.classList.toggle(
+    "codbi-elem-badge--empty",
+    funcs.length === 0 && cssClasses.length === 0 && holistic.length === 0,
+  );
   // Resolve the item freshly on every edit (the badge may outlive the Item instance it was built for).
   const resolve = (): IMarkerItemLike => resolveFuncItem(id, anchor, item);
-  badge.replaceChildren(buildFuncBadgeInner(doc, funcs, resolve, anchor));
+  badge.replaceChildren(buildFuncBadgeInner(doc, funcs, cssClasses, holistic, resolve, anchor, badge));
+  // If a parameter was just added via the "+ Add" dropdown, move focus into its new value input so
+  // the popup stays open (and the user can type) instead of collapsing back to icon size.
+  restorePendingParamFocus(badge);
 }
 
 /** Removes a function badge from the DOM and forgets it. */
@@ -2039,13 +2957,34 @@ function refreshBadges(): void {
     let functions = 0;
     for (const item of Object.values(items)) {
       const isMirror = isMirrorItem(item);
-      const isFunc = isCbFuncItem(item);
+      const anchor = anchorFor(item);
+      const cbFunc = isCbFuncItem(item);
+      const css = hasCssClasses(item);
+      // The per-element holistic resolution ALSO logs each anchor match/failure — see holisticConfigsFor.
+      const hol = holisticConfigsFor(anchor).length > 0;
+      // A "marked" element carries a `data-cb-func` functionality and/or a CodBi standard-config
+      // CSS class (orange/blue sub-badges) and/or is a target of an ACTIVE holistic configuration
+      // (green sub-badge) — any of these earns the CodBi badge on the element.
+      const isFunc = cbFunc || css || hol;
+      const itemId = item.getId?.() ?? "";
+      if (anchor && (cbFunc || css || hol || isMirror)) {
+        console.info(
+          "[CodBi][DBG][mark] item=%s (%s) anchor=%s: isMirror=%s cbFunc=%s css=%s hol=%s -> isFunc=%s",
+          itemId,
+          item.constructor?.name ?? item.className ?? "?",
+          anchor.tagName,
+          isMirror,
+          cbFunc,
+          css,
+          hol,
+          isFunc,
+        );
+      }
       // In preview mode we ALSO need to reach plain elements (fields, fieldsets, containers, pages)
       // so they get their own preview switch — so don't bail out on non-widget items in that mode.
       if (!isMirror && !isFunc && !elementPreview) {
         continue;
       }
-      const anchor = anchorFor(item);
       if (anchor) {
         // Always inject the stylesheet + observe the canvas root (placeholder icon, see BADGE_CSS).
         const root = rootFor(anchor);
@@ -2110,7 +3049,8 @@ function refreshBadges(): void {
         }
       }
       pruneMarkedWidgets();
-      // Drop function badges whose item no longer exists or no longer carries a `data-cb-func`.
+      // Drop markers' badges whose item no longer exists or no longer carries a `data-cb-func`
+      // functionality or a CodBi standard-config CSS class.
       for (const id of Array.from(funcBadges.keys())) {
         if (!liveFuncs.has(id)) {
           dropFuncBadge(id);
@@ -2175,32 +3115,16 @@ function toggleMarkMode(): void {
   setRuntimeEnabled(!isMarkEnabled());
 }
 
-/**
- * Toggles the per-element "Preview mode" for the currently selected designer element (e.g. via
- * ALT+P). It mirrors the per-element preview switch's behaviour: it flips the element's persisted
- * `data-cb-preview` attribute; the designer's `after-set-property` / `set-property` callbacks then
- * refresh the badges and re-apply (or clear) the frontend preview — see {@link applyElementPreview}.
- * When no element is selected, nothing happens.
- */
-function toggleElementPreview(): void {
-  const item = designerInstance()?.getSelectedMasterItem?.() as IMarkerItemLike | undefined;
-  if (!item || !item.getId?.()) {
-    return;
-  }
-  const current = elementPreviewOn(item);
-  setItemAttributeValue(item, ELEMENT_PREVIEW_ATTRIBUTE, current ? "0" : "1");
-}
-
 /** The shared keydown handler (registered on the designer frame and on the canvas document). */
 function onKeyDown(event: KeyboardEvent): void {
   const key = event.key.toLowerCase();
   if (event.altKey && key === "v") {
     event.preventDefault();
     toggleMarkMode();
-  } else if (event.altKey && key === "p") {
-    event.preventDefault();
-    toggleElementPreview();
   }
+  // NOTE: ALT+P is intentionally NOT handled here — it is reserved for the attribute-editor
+  // shortcut that lists a functionality's parameters (see LocalDocInterface). A previous ALT+P
+  // binding here toggled the per-element preview (writing `data-cb-preview`) and stole that shortcut.
 }
 
 /** Installs the designer hooks, the ALT+V shortcut and the canvas mutation observers. */

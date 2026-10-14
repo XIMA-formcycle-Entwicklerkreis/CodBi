@@ -4,6 +4,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -32,6 +33,7 @@ export class HTML_Input_Transformer {
    * @param toLoad      As provided by the **CodBi**.
    * @param toProcess   As provided by the **CodBi**.
    * @param transformer The **(toTransform: string) => string** performing the actual change. */
+  @SupportedFormelementtype(["XTextField", "XTextArea"])
   public static functionality(
     toLoad: { [key: string]: unknown },
     toProcess: Element,

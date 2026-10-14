@@ -1,0 +1,7 @@
+{
+  "Description": "/functions/Configurations_Holistic.Cleave.Time.loadConfig.html",
+  "classes": {},
+  "globals": {},
+  "targets": "[data-vdt=\"time\"]:not(.CodBi_XCL):not(.CodBi_XCL_Cleave_Time)",
+  "func": "HTML.Input.Cleave"
+}

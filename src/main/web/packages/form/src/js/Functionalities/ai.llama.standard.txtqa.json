@@ -13,5 +13,6 @@
     "QueueText": "",
     "FilterResults": "",
     "QuestionRoot": ""
-  }
+  },
+  "supportedFormelementtypes": ["XTextField", "XTextArea"]
 }

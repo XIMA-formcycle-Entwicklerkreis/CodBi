@@ -4,6 +4,7 @@ import { DBC } from "xdbc/src/DBC";
 import { LDAP_Autocomplete } from "./ldap.autocomplete.js";
 // #endregion XDBC
 import { resolveLdapUrl } from "../global-scope.js";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link LDAP_Autocomplete.functionality }.
@@ -21,6 +22,7 @@ export class LDAP_Autocomplete_Set {
    * When a match is found for one of the autocompleting input fields, all other input fields get the corresponding
    * values filled in automatically according to their LDAP-Property. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
     /** @funcElement XContainer, XContainerInvisible, XFieldSet */
     // #region Define match-listener routine.

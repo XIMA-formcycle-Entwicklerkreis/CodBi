@@ -7,6 +7,7 @@ import { IF } from "xdbc/src/DBC/IF";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -41,6 +42,7 @@ export class Form_Navigator {
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
+  @SupportedFormelementtype(["XContainer", "XContainerInvisible"])
   public static functionality(
     @TYPE.PRE("string", "cssnavbuttons :: csshovernavbuttons :: cssblockednavbuttons")
     @IF.PRE(new TYPE("string"), new REGEX(REGEX.stdExp.boolean), "preview")

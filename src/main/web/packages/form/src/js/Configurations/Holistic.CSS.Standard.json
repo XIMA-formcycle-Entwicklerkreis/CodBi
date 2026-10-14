@@ -4,5 +4,7 @@
   "globals": {
     "CodBi_CSS_Scheme": "",
     "CodBi_CSS_Darkmodescheme": ""
-  }
+  },
+  "targets": "head",
+  "func": "HTML.CSS"
 }

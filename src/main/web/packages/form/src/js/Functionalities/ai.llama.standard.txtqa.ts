@@ -15,6 +15,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { formatWaitTime } from "../commons/format-wait-time";
 import { acquireWakeLock, releaseWakeLock } from "../commons/wake-lock";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 
 /**
@@ -80,6 +81,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XTextField", "XTextArea"])
   public static functionality(
     @TYPE.PRE("string", "aihint, language, responselanguage, specialist, queuebadge, queuetext")
     @TYPE.PRE("string | boolean", "useinternet, location")

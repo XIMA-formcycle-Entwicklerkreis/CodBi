@@ -7,6 +7,7 @@ import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -28,6 +29,7 @@ export class Date_NoWeekends {
    *  - MsgNoWeekends:  The optional {@link string } to be shown when a weekend is entered.
    *  - Delimiter:  The {@link string} separating the day, month & year. Defaults to: ".". */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype({ XTextField: { datatype: "date*" } })
   public static functionality(
     @TYPE.PRE("string", "msgnoweekends :: delimiter")
     toLoad: { [key: string]: unknown },

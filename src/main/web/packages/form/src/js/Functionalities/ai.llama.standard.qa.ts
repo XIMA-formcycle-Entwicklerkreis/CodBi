@@ -22,6 +22,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 // #endregion PDF.js
 import { formatWaitTime } from "../commons/format-wait-time";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link AI_LLAMA_STANDARD_QA.functionality }.
@@ -139,6 +140,7 @@ export class AI_LLAMA_STANDARD_QA {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XUpload")
   public static functionality(
     @TYPE.PRE(
       "string",

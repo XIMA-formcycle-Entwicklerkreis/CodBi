@@ -16,5 +16,9 @@
     "AI_LLAMA_STANDARD_QA_Question": "Apply to an XTextField that receives AI responses to questions specified in data-cb-Question.",
     "AI_LLAMA_STANDARD_TXTQA_Question": "Apply to an XTextField that receives AI responses to questions based on source fields.",
     "AI_LLAMA_TXTQA_Source": "Apply to an XTextField whose value should be supplied as source context to the AI for question answering."
+  },
+  "funcs": {
+    "AI_OCR_Receiver": "HTML.Input.Trans.RegEx",
+    "AI_LLAMA_STANDARD_QA_Question": "HTML.Input.Trans.RegEx"
   }
 }

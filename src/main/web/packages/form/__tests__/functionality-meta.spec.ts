@@ -3,6 +3,7 @@
  * (registerFunctionality metadata / describeFunctionality / resolveFunctionalityMeta / @funcElement).
  */
 import { describe, expect, it, beforeEach, jest } from "@jest/globals";
+import { SupportedFormelementtype } from "codbi-common";
 
 import { createCodbiGlobal } from "../src/js/global-scope.js";
 
@@ -26,6 +27,21 @@ describe("CodBi functionality metadata", () => {
     const meta = codbi.resolveFunctionalityMeta("func.explicit");
     expect(meta?.formElements).toEqual(["XFieldSet", "XContainer"]);
     expect(meta?.source).toBe("runtime");
+  });
+
+  it("reads the `@SupportedFormelementtype` decorator metadata (types + property constraints)", () => {
+    const codbi = createCodbiGlobal();
+    const fn: TInit = () => {};
+
+    // Apply the decorator directly (no decorator syntax required in the test).
+    SupportedFormelementtype({ XTextField: { datatype: "dateDE" } })({}, "functionality", { value: fn });
+    codbi.registerFunctionality("func.decorated", fn);
+
+    const meta = codbi.resolveFunctionalityMeta("func.decorated");
+
+    expect(meta?.source).toBe("decorator");
+    expect(meta?.formElements).toEqual(["XTextField"]);
+    expect(meta?.requirements).toEqual([{ type: "XTextField", properties: { datatype: ["datede"] } }]);
   });
 
   it("normalizes (trims + de-duplicates) the widget class names", () => {

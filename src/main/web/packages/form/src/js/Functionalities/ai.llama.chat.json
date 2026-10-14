@@ -22,5 +22,6 @@
     "QueueText": "",
     "AlertOnFinishText": "",
     "FilterResults": ""
-  }
+  },
+  "supportedFormelementtypes": "XTextArea"
 }

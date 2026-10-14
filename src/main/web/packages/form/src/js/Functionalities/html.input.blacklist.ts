@@ -7,6 +7,7 @@ import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -33,6 +34,7 @@ export class HTML_Input_Blacklist {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XTextField")
   public static functionality(
     @TYPE.PRE("string", "prefix :: postfix :: separator")
     @TYPE.PRE("string | boolean", "showblacklist")

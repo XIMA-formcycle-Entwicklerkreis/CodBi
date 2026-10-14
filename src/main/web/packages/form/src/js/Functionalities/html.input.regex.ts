@@ -7,6 +7,7 @@ import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -32,6 +33,7 @@ export class HTML_Input_REGEX {
    *  - ExposeExpression: Will expose the "expression" within the errormessage if set to **TRUE** (case insensitive). */
 
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XTextField")
   public static functionality(
     @TYPE.PRE("string", "expression :: flags :: keyexpression :: keyflags :: errorprefix :: errorpostfix")
     @TYPE.PRE("string | boolean", "exposeexpression")

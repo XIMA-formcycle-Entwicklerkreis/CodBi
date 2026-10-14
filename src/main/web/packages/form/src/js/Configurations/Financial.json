@@ -3,5 +3,9 @@
   "classes": {
     "CodBi_Currency": "Apply to an XTextField with datatype='money' or 'formattedNumber' that represents a currency/monetary amount. Formats input using Cleave with currency format.",
     "CodBi_TRANS_NTW": "Apply to an XTextField that represents a net/tax amount (NTW = Netto). Transforms input for net value calculations."
+  },
+  "funcs": {
+    "CodBi_Currency": "HTML.Input.Cleave",
+    "CodBi_TRANS_NTW": "HTML.Input.Cleave"
   }
 }

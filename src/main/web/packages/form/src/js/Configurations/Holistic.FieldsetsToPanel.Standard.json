@@ -1,0 +1,7 @@
+{
+  "Description": "/functions/Configurations_Holistic.FieldsetsToPanel.Standard.loadConfig.html",
+  "classes": {},
+  "globals": {},
+  "targets": "fieldset:not(.CodBi_XCL):not(.CodBi_XCL_FieldSetToPanel)",
+  "func": "HTML.Panel"
+}

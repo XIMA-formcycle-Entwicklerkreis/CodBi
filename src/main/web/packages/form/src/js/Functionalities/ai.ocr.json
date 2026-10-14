@@ -15,5 +15,6 @@
     "Field": "",
     "QueueBadge": "",
     "QueueText": ""
-  }
+  },
+  "supportedFormelementtypes": "XUpload"
 }

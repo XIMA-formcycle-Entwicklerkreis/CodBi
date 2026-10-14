@@ -9,6 +9,7 @@ import { EQ } from "xdbc/src/DBC/EQ";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { IF } from "xdbc/src/DBC/IF";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -34,6 +35,7 @@ export class Date_Min {
    *  - Delimiter:  The {@link string} separating the day, month & year. Defaults to: ".".
    *  - Unit:       A {@link string }-character specifying what unit **Minimum** is of. Either d, w, m, y ( defaults to: y).*/
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype({ XTextField: { datatype: "date*" } })
   public static functionality(
     @TYPE.PRE("string", "msghigher :: delimiter :: unit")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "minimum")

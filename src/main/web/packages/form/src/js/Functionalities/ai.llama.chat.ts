@@ -23,6 +23,7 @@ import { CodBiError, generateUUID } from "../global-scope";
 //region Commons
 import { convertToWav, preferredMimeType } from "../commons/whisper-utils";
 import { formatWaitTime } from "../commons/format-wait-time";
+import { SupportedFormelementtype } from "codbi-common";
 //endregion Commons
 //endregion Imports
 /**
@@ -132,6 +133,7 @@ export class AI_LLAMA_CHAT {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XTextArea")
   public static functionality(
     @TYPE.PRE(
       "string",

@@ -17,6 +17,9 @@ export { $ };
 
 export const getLanguage: Module["getLanguage"] = () => TestState.language;
 
+/** The mocked `instance()`: returns whatever the test placed on {@link TestState.designerInstance}. */
+export const instance: Module["instance"] = (() => TestState.designerInstance) as unknown as Module["instance"];
+
 export const registerCustomEditor: Module["registerCustomEditor"] = () => {};
 
 export const Callbacks: Partial<Module["Callbacks"]> = {};

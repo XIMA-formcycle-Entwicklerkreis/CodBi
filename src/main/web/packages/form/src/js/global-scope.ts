@@ -4,6 +4,12 @@ import { CodBiLogo } from "./Logo";
 import { DBC } from "xdbc/src/DBC";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
+import {
+  type IFormElementRequirement,
+  normalizeSupportedFormelementtype,
+  supportedFormelementtypeOf,
+  type TSupportedFormelementtypeSpec,
+} from "codbi-common";
 
 /** The datatypes an **E**lement **P**laceholder parameter or result may assume. "any" is the
  *  deliberate fallback — a parameter value may itself be produced by another EP and is therefore
@@ -50,15 +56,22 @@ export interface EPSignature {
 export interface FunctionalityMetaInput {
   /**
    * The widget class names this functionality is intended for (e.g. `["XFieldSet", "XContainer"]`).
-   * An empty array means "any element". */
-  formElements: Array<string>;
+   * An empty array means "any element". Kept for back-compat; derived from
+   * `supportedFormelementtypes` when that is provided. */
+  formElements?: Array<string>;
+  /**
+   * The `@SupportedFormelementtype` spec: the supported widget classes plus optional per-type property
+   * constraints (e.g. only an `XTextField` whose `datatype` is `dateDE`). */
+  supportedFormelementtypes?: TSupportedFormelementtypeSpec;
 }
 /** A fully resolved **CodBi Functionality** metadata record. */
 export interface FunctionalityMeta {
   /** The widget class names this functionality is intended for (empty = any). */
   formElements: Array<string>;
+  /** The rich requirements (types + per-type property constraints); empty/absent = any element. */
+  requirements?: IFormElementRequirement[];
   /** Where the metadata originated from. */
-  source: "tsdoc" | "manager" | "runtime" | "heuristic";
+  source: "tsdoc" | "manager" | "runtime" | "heuristic" | "decorator";
 }
 /**
  * The global codbi object, available via `window.codbi`. Should only be used
@@ -574,6 +587,17 @@ export class CodBi implements CodbiGlobal {
     const init = this.functionalities.get(key);
 
     if (init !== undefined) {
+      // Decorated `functionality()` methods (`@SupportedFormelementtype`) win over the comment scan.
+      const decorated = supportedFormelementtypeOf(init);
+
+      if (decorated !== undefined) {
+        const normalized = CodBi.normalizeFunctionalityMeta({ supportedFormelementtypes: decorated }, "decorator");
+
+        this.availableFunctionalityMeta[key] = normalized;
+
+        return normalized;
+      }
+
       const scanned = CodBi.scanFunctionalityMetaFromSource(init);
 
       if (scanned) {
@@ -614,11 +638,20 @@ export class CodBi implements CodbiGlobal {
     input: FunctionalityMetaInput,
     source: FunctionalityMeta["source"],
   ): FunctionalityMeta {
+    // The rich `@SupportedFormelementtype` spec (types + property constraints) wins when present.
+    if (input?.supportedFormelementtypes != null) {
+      const normalized = normalizeSupportedFormelementtype(input.supportedFormelementtypes);
+
+      return { formElements: normalized.formElements, requirements: normalized.requirements, source };
+    }
+
     const formElements = Array.from(
       new Set((input?.formElements ?? []).map((entry) => String(entry).trim()).filter((entry) => entry.length > 0)),
     );
+    // Type-only requirements, so consumers can always match against `requirements`.
+    const requirements: IFormElementRequirement[] = formElements.map((type) => ({ type }));
 
-    return { formElements, source };
+    return { formElements, requirements, source };
   }
   /**
    * Scans the source of the live **init** function for `@funcElement <ClassName>` tags (repeatable,
@@ -656,7 +689,9 @@ export class CodBi implements CodbiGlobal {
       return undefined;
     }
 
-    return { formElements: Array.from(new Set(formElements)), source: "tsdoc" };
+    const unique = Array.from(new Set(formElements));
+
+    return { formElements: unique, requirements: unique.map((type) => ({ type })), source: "tsdoc" };
   }
   /**
    * Normalizes a (possibly partial) signature input into a well-formed {@link EPSignature }, filling

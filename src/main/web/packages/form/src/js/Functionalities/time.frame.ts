@@ -11,6 +11,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE.js";
 import { IF } from "xdbc/src/DBC/IF.js";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 import { EQ } from "xdbc/src/DBC/EQ.js";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -36,6 +37,7 @@ export class Time_Frame {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype({ XTextField: { datatype: "time*" } })
   public static functionality(
     @DEFINED.PRE("maxfield")
     @TYPE.PRE("string", "maxfield :: msgmininvalid :: msgmaxinvalid")

@@ -13,6 +13,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
 import { TYPE } from "xdbc/src/DBC/TYPE.js";
 import { REGEX } from "xdbc/src/DBC/REGEX.js";
 import { EQ } from "xdbc/src/DBC/EQ.js";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Elementplaceholder
 // #endregion Imports
 
@@ -54,6 +55,7 @@ export class LDAP_Autocomplete {
    *  - MsgNotInLDAP:   The message to display when the entered value is not found in the LDAP.
    */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XTextField")
   public static functionality(
     @DEFINED.PRE("property")
     @TYPE.PRE("string", "property :: cssproposals :: url :: msgnotinldap")

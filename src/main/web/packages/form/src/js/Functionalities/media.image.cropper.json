@@ -8,5 +8,6 @@
     "AspectRatio": "",
     "OutputWidth": "",
     "CSSCropperHandle": ""
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
 }

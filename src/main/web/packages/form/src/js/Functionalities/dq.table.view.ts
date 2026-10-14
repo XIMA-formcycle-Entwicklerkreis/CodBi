@@ -10,6 +10,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region SheetJS
 import * as XLSX from "xlsx";
 // #endregion SheetJS
+import { CodBiError } from "../global-scope.js";
 // #endregion Imports
 
 /**
@@ -650,6 +651,7 @@ export class DQ_Table_View {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi - the container the table shall be injected into. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XContainer", "XContainerInvisible"])
   public static functionality(
     @TYPE.PRE("string", "dataquery :: css :: filename :: sheetname :: exportbutton :: centered :: excludecolumns")
     @TYPE.PRE("string | object", "columns")

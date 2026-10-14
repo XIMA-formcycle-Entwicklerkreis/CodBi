@@ -11,6 +11,7 @@ import { EQ } from "xdbc/src/DBC/EQ";
 import { UNDEFINED } from "xdbc/src/DBC/UNDEFINED";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Decodes whitespace escapes in the HTML.Panel header-title separator
@@ -145,6 +146,7 @@ export class HTML_Panel {
    * @throws  A {@link CodBiError } if the tagged {@link Element } does not contain
    *          a child of CSS-Class "CodBi_HTML_Panel_Header".*/
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   public static functionality(
     @TYPE.PRE("string", "autoheadertitle :: autoheadertitlesupplementsspacer :: scrollblock")
     @TYPE.PRE("string | boolean", "folded :: generateheader :: scroll :: scrolltotop")

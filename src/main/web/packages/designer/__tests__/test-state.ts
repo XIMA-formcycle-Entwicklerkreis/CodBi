@@ -20,6 +20,12 @@ export interface TestState {
   customEditors: Array<[name: string, editor: unknown]>;
 
   language: string;
+
+  /**
+   * The designer instance returned by the mocked `instance()` in `@de-xima/fc-form-designer`. Editor
+   * tests set this to a fake reporting a selected master item (see the per-element config editor specs).
+   */
+  designerInstance: unknown;
 }
 
 export let TestState: TestState = createDefaultTestState();
@@ -34,6 +40,7 @@ export function createDefaultTestState(): TestState {
     localizableProperties: [],
     customEditors: [],
     language: "en",
+    designerInstance: undefined,
   };
 }
 

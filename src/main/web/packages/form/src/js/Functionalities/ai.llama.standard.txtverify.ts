@@ -15,6 +15,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { OR } from "xdbc/src/DBC/OR";
 // #endregion XDBC
 import { formatWaitTime } from "../commons/format-wait-time";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 
 /**
@@ -93,6 +94,7 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XTextField", "XTextArea"])
   public static functionality(
     @TYPE.PRE(
       "string",

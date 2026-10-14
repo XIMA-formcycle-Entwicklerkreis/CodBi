@@ -5,6 +5,7 @@ import { IF } from "xdbc/src/DBC/IF";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 // #region Interfaces
@@ -158,6 +159,7 @@ export class MEDIA_INPUT_SPEECH {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XTextField", "XTextArea"])
   public static functionality(
     @TYPE.PRE("string", "voicehotkey, language, placeholder")
     @TYPE.PRE("string | boolean", "showhint")

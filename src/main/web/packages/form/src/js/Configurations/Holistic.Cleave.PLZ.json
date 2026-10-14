@@ -1,0 +1,7 @@
+{
+  "Description": "/functions/Configurations_Holistic.Cleave.PLZ.loadConfig.html",
+  "classes": {},
+  "globals": {},
+  "targets": "[data-vdt=\"plzDE\"]:not(.CodBi_XCL):not(.CodBi_XCL_Cleave_PLZ)",
+  "func": "HTML.Input.Cleave"
+}

@@ -8,6 +8,7 @@ import { IF } from "xdbc/src/DBC/IF.js";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 import { REGEX } from "xdbc/src/DBC/REGEX.js";
 import { TYPE } from "xdbc/src/DBC/TYPE.js";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -60,6 +61,7 @@ export class Date_Time_Join_Span {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   public static functionality(
     @TYPE.PRE("string", "begin :: begintime :: end :: endtime")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "begin", "Does the Begin-Parameter not contain a valid CSS-Selector?")

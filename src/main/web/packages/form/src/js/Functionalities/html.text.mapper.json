@@ -4,5 +4,6 @@
     "Replacements": "",
     "Property": "",
     "CSS": ""
-  }
+  },
+  "supportedFormelementtypes": ["XTextField", "XTextArea"]
 }

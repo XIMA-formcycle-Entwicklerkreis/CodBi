@@ -4,5 +4,6 @@
     "AutoLoad": "FALSE",
     "Lang": "",
     "Inline": "TRUE"
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
 }

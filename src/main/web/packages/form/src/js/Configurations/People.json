@@ -29,5 +29,24 @@
     "CodBi_OpenPLZ_Selection_Streets_regexName": "",
     "CodBi_OpenPLZ_Selection_Streets_PLZ": "",
     "CodBi_OpenPLZ_Selection_Localities_regexName": ""
+  },
+  "funcs": {
+    "CodBi_People_Alphanumeric": "HTML.Input.Regex",
+    "CodBi_People_Name": "HTML.Input.Regex",
+    "CodBi_People_BuildingNumber": "HTML.Input.Regex",
+    "CodBi_People_Mail": "HTML.Input.Regex",
+    "CodBi_People_18plus": "HTML.Input.Cleave, Date.Min",
+    "CodBi_People_16plus": "HTML.Input.Cleave, Date.Min",
+    "CodBi_People_Phone": "HTML.Input.Cleave",
+    "CodBi_People_PLZ": "HTML.Input.Cleave",
+    "CodBi_Fotocropper": "Media.Image.Cropper",
+    "CodBi_People_OpenPLZ_AC_SET_PLZ": "OpenPLZ.Autocomplete, HTML.Input.Cleave",
+    "CodBi_People_OpenPLZ_AC_SET_Locality": "OpenPLZ.Autocomplete, HTML.Input.Regex",
+    "CodBi_People_OpenPLZ_AC_SET_Street": "OpenPLZ.Autocomplete, HTML.Input.Regex",
+    "CodBi_People_OpenPLZ_AC_SET_BuildingNumber": "HTML.Input.Regex",
+    "CodBi_OpenPLZ_Select_Localities": "HTML.Select.Injection",
+    "CodBi_OpenPLZ_Select_Streets_By_PLZ": "HTML.Select.Injection",
+    "CodBi_OpenPLZ_Select_Orga_Bundeslaender": "HTML.Select.Injection",
+    "CodBi_OpenPLZ_Select_Orga_Bayern": "HTML.Select.Injection"
   }
 }

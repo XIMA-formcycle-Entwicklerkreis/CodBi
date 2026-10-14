@@ -6,5 +6,6 @@
     "Postfix": "",
     "Separator": "",
     "ShowBlacklist": ""
-  }
+  },
+  "supportedFormelementtypes": "XTextField"
 }

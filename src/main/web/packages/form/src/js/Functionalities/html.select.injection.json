@@ -7,5 +7,6 @@
     "TitleProperty": "",
     "ValueProperty": "",
     "TextProperty": ""
-  }
+  },
+  "supportedFormelementtypes": "XSelect"
 }

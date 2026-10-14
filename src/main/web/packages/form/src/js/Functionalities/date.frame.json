@@ -5,5 +5,10 @@
     "MsgMinInvalid": "",
     "MsgMaxInvalid": "",
     "EqualityPermitted": ""
+  },
+  "supportedFormelementtypes": {
+    "XTextField": {
+      "datatype": "dateDE"
+    }
   }
 }

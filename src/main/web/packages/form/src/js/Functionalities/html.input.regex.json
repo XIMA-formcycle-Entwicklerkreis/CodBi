@@ -8,5 +8,6 @@
     "ErrorPrefix": "",
     "ErrorPostfix": "",
     "ExposeExpression": ""
-  }
+  },
+  "supportedFormelementtypes": "XTextField"
 }

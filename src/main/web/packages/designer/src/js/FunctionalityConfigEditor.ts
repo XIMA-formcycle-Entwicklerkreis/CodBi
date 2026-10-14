@@ -11,7 +11,13 @@ import {
   registerCustomProperty,
   registerLocalizableProperty,
 } from "@de-xima/fc-form-designer";
-import { Constants } from "codbi-common";
+import {
+  Constants,
+  formElementMatchesRequirements,
+  type IFormElementRequirement,
+  normalizeSupportedFormelementtype,
+  type TSupportedFormelementtypeSpec,
+} from "codbi-common";
 import { setItemAttributeValue } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { containedElementItem, syncSelectedFunctionalityChild } from "./FunctionalityChildItems.js";
@@ -174,71 +180,132 @@ export function functionalityParameters(id: string): Record<string, string> {
 }
 
 /**
- * Resolves the FORMCYCLE widget class names a functionality is intended for. Returns `undefined`
- * when nothing is known (⇒ "any element", fail-open). Prefers the live runtime registry
- * (`window.codbi.resolveFunctionalityMeta`) and falls back to the published `funcMeta` /
- * `detFunctionalities[id].formElements` tiers.
- */
-function allowedFormElements(id: string): string[] | undefined {
+ * The minimal view of a form element used for applicability matching: its FORMCYCLE widget class name
+ * (e.g. `XTextField`) and its property bag (e.g. its `datatype`). */
+export interface IApplicabilityElement {
+  className?: string | null;
+  properties?: Record<string, unknown>;
+}
+
+/**
+ * Resolves the applicability requirements of a functionality (widget classes + optional per-type
+ * property constraints). An **empty** array means the functionality applies to **any** element
+ * (fail-open). Resolution order (first hit wins):
+ *
+ * 1. the live runtime registry `window.codbi.resolveFunctionalityMeta(id).requirements` — the rich
+ *    `@SupportedFormelementtype` / `describeFunctionality` metadata;
+ * 2. the published `window.CodbiPluginData.funcMeta[id]` (its `requirements`, else its `formElements`);
+ * 3. `detFunctionalities[id].formElements` (the local API-doc manager's CSV of widget classes).
+ *
+ * @param id The functionality id (case-insensitive).
+ *
+ * @returns The resolved requirements (never `undefined`; empty = any). */
+function functionalityRequirements(id: string): IFormElementRequirement[] {
   try {
     const runtime = (
       window as unknown as {
-        codbi?: { resolveFunctionalityMeta?: (id: string) => { formElements?: string[] } | undefined };
+        codbi?: {
+          resolveFunctionalityMeta?: (id: string) => { requirements?: IFormElementRequirement[] } | undefined;
+        };
       }
     ).codbi;
     const resolved = runtime?.resolveFunctionalityMeta?.(id);
-    if (resolved?.formElements && resolved.formElements.length > 0) {
-      return resolved.formElements;
+
+    if (resolved?.requirements && resolved.requirements.length > 0) {
+      return resolved.requirements;
     }
   } catch {
     /* runtime not available */
   }
+  /** A published entry carrying any of the three supported shapes. */
+  type TPublished = {
+    supportedFormelementtypes?: TSupportedFormelementtypeSpec;
+    requirements?: IFormElementRequirement[];
+    formElements?: string[];
+  };
+  /** Normalizes a raw `supportedFormelementtypes` spec into requirements (or undefined when absent). */
+  const fromSpec = (spec: TSupportedFormelementtypeSpec | undefined): IFormElementRequirement[] | undefined =>
+    spec != null ? normalizeSupportedFormelementtype(spec).requirements : undefined;
+  /** Resolves the requirements from a published entry (spec → requirements → type-only `formElements`). */
+  const fromEntry = (entry: TPublished | undefined): IFormElementRequirement[] | undefined => {
+    const fromSpecReqs = fromSpec(entry?.supportedFormelementtypes);
+
+    if (fromSpecReqs) {
+      return fromSpecReqs;
+    }
+    if (entry?.requirements && entry.requirements.length > 0) {
+      return entry.requirements;
+    }
+    if (Array.isArray(entry?.formElements) && entry.formElements.length > 0) {
+      return entry.formElements.map((type) => ({ type: String(type) }));
+    }
+    return undefined;
+  };
+
   try {
-    const published = window.CodbiPluginData?.funcMeta?.[id]?.formElements;
-    if (Array.isArray(published) && published.length > 0) {
-      return published;
+    const published = window.CodbiPluginData?.funcMeta?.[id] as TPublished | undefined;
+    const publishedReqs = fromEntry(published);
+
+    if (publishedReqs) {
+      return publishedReqs;
+    }
+    // The designer's built-in functionality registry (`detFunctionalities`, merged from the `.json`
+    // files by `CodbiFormDesignerResourcePlugin.getDetails()`); carries `supportedFormelementtypes`.
+    const detFunctionalities = (
+      window.CodbiPluginData as unknown as { detFunctionalities?: { [key: string]: TPublished } } | undefined
+    )?.detFunctionalities;
+    const detReqs = fromEntry(detFunctionalities?.[id]);
+
+    if (detReqs) {
+      return detReqs;
     }
     const entry = resolveFunctionalityEntry(id)?.formElements;
+
     if (Array.isArray(entry) && entry.length > 0) {
-      return entry;
+      return entry.map((type) => ({ type: String(type) }));
     }
   } catch {
     /* ignore */
   }
-  return undefined;
+  return [];
 }
 
 /**
- * Whether a functionality is intended for a form element of the given widget **class name** (e.g.
- * `XFieldSet`, `XContainer`, `XTextField`). When the functionality declares no supported element
- * types (or the requested type is unknown/empty) the check is **fail-open** — the functionality is
- * considered applicable, exactly like the untyped EP-signature case.
- */
-export function functionalityAppliesTo(id: string, elementType: string | undefined): boolean {
-  const allowed = allowedFormElements(id);
-  if (!allowed || allowed.length === 0) {
+ * Whether a functionality is applicable to the given form element. When the functionality declares no
+ * requirements the check is **fail-open** (any element). Matching evaluates the element's widget class
+ * name and, for requirements that carry property constraints, the element's property bag — e.g. the
+ * requirement `{ XTextField: { datatype: "dateDE" } }` only matches a German date field.
+ *
+ * @param id      The functionality id.
+ * @param element The element (`className` + property bag); a bare widget class name is accepted too.
+ *
+ * @returns **true** when the functionality may be applied to the element. */
+export function functionalityAppliesTo(id: string, element: IApplicabilityElement | string | undefined): boolean {
+  const requirements = functionalityRequirements(id);
+
+  if (requirements.length === 0) {
     return true;
   }
-  const type = String(elementType ?? "")
-    .trim()
-    .toLowerCase();
-  if (type === "") {
-    return true;
-  }
-  return allowed.some(
-    (entry) =>
-      String(entry ?? "")
-        .trim()
-        .toLowerCase() === type,
-  );
+
+  const className = typeof element === "string" ? element : (element?.className ?? undefined);
+  const properties = typeof element === "string" ? undefined : element?.properties;
+
+  return formElementMatchesRequirements(requirements, className ?? undefined, properties);
 }
 
 /** The union of allowed widget class names across the selected functionalities (empty = any). */
 export function allowedFormElementsFor(ids: string[]): Set<string> {
   const allowed = new Set<string>();
+
   for (const id of ids) {
-    for (const type of allowedFormElements(id) ?? []) {
-      allowed.add(type.toLowerCase());
+    for (const requirement of functionalityRequirements(id)) {
+      const type = requirement.type.trim().toLowerCase();
+
+      // A `"*"` requirement (any widget class) contributes no specific type; when only such
+      // requirements exist the set stays empty, which callers treat as "no restriction" (any).
+      if (type !== "*") {
+        allowed.add(type);
+      }
     }
   }
   return allowed;

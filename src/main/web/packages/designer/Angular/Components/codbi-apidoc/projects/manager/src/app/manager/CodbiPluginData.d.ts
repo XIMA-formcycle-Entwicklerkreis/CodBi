@@ -61,6 +61,13 @@ interface Window {
          * An empty/absent list means "any element" (fail-open). Populated by the build-time
          * generator (Tier A) or the local API-doc manager (Tier B). */
         formElements?: Array<string>;
+        /** The `@SupportedFormelementtype` spec (widget classes + per-type property constraints). */
+        supportedFormelementtypes?:
+          | string
+          | Array<string>
+          | { [type: string]: { [property: string]: string | Array<string> } | undefined };
+        /** The rich requirements (widget classes + per-type property constraints); absent = any. */
+        requirements?: Array<{ type: string; properties?: { [property: string]: Array<string> } }>;
         /** Stores a {@link boolean } stating whether this entry is a local or a native one. */
         local: boolean;
         /** Stores the JS-Code for that CodBi-Element. */
@@ -74,6 +81,8 @@ interface Window {
       [key: string]: {
         /** The widget class names the functionality applies to (empty = any). */
         formElements: Array<string>;
+        /** The rich requirements (widget classes + per-type property constraints); absent = any. */
+        requirements?: Array<{ type: string; properties?: { [property: string]: Array<string> } }>;
         /** The tier that produced this entry. */
         source?: string;
       };

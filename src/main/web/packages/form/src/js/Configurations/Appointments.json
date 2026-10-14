@@ -32,5 +32,29 @@
   },
   "globals": {
     "CodBi_Holidays_States": ""
+  },
+  "funcs": {
+    "CodBi_NoFutureDate": "Date.Min",
+    "CodBi_DateFrame_1_Begin": "HTML.Input.Cleave, Date.Frame",
+    "CodBi_DateFrame_1_End": "HTML.Input.Cleave",
+    "CodBi_DateFrame_2_Begin": "Date.Frame, HTML.Input.Cleave",
+    "CodBi_DateFrame_2_End": "HTML.Input.Cleave",
+    "CodBi_DateFrame_3_Begin": "Date.Frame, HTML.Input.Cleave",
+    "CodBi_DateFrame_3_End": "HTML.Input.Cleave",
+    "CodBi_DateFrame_4_Begin": "Date.Frame, HTML.Input.Cleave",
+    "CodBi_DateFrame_4_End": "HTML.Input.Cleave",
+    "CodBi_DateFrame_5_Begin": "Date.Frame, HTML.Input.Cleave",
+    "CodBi_DateFrame_5_End": "HTML.Input.Cleave",
+    "CodBi_TimeFrame_1_Begin": "HTML.Input.Cleave, Time.Frame",
+    "CodBi_TimeFrame_1_End": "HTML.Input.Cleave",
+    "CodBi_TimeFrame_2_Begin": "Time.Frame, HTML.Input.Cleave",
+    "CodBi_TimeFrame_2_End": "HTML.Input.Cleave",
+    "CodBi_TimeFrame_3_Begin": "Time.Frame, HTML.Input.Cleave",
+    "CodBi_TimeFrame_3_End": "HTML.Input.Cleave",
+    "CodBi_TimeFrame_4_Begin": "Time.Frame, HTML.Input.Cleave",
+    "CodBi_TimeFrame_4_End": "HTML.Input.Cleave",
+    "CodBi_TimeFrame_5_Begin": "Time.Frame,HTML.Input.Cleave",
+    "CodBi_TimeFrame_5_End": "HTML.Input.Cleave",
+    "CodBi_Holidays_Listing": "HTML.Select.Injection"
   }
 }

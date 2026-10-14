@@ -9,6 +9,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XIMA
 // #endregion Imports
 /**
@@ -28,6 +29,7 @@ export class Media_MultipleUpload {
    *  - Maximum:        The number of files that may be uploaded.
    *  - prefixTooMany:  The message that is displayed before the **Maximum** if too many files were selected.
    *  - postfixTooMany: The message that is displayed after the **Maximum** if too many files were selected. */
+  @SupportedFormelementtype("XUpload")
   public static functionality(
     @TYPE.PRE("string", "prefixtoomany :: postfixtoomany")
     @TYPE.PRE("string | number", "maximum")

@@ -5,5 +5,10 @@
     "TimeField": "",
     "ToMillis": "",
     "Divisor": ""
+  },
+  "supportedFormelementtypes": {
+    "XTextField": {
+      "datatype": "time"
+    }
   }
 }

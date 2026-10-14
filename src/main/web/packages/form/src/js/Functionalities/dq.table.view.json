@@ -9,5 +9,6 @@
     "ExportButton": "",
     "Centered": "",
     "ExcludeColumns": ""
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible"]
 }

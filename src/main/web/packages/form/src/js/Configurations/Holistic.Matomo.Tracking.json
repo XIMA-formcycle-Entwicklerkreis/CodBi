@@ -4,5 +4,7 @@
   "globals": {
     "Matomo_SiteID": "",
     "Matomo_URL": ""
-  }
+  },
+  "targets": "body",
+  "func": "Matomo.Tracking"
 }

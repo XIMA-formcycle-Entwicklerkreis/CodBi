@@ -8,6 +8,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link Security_Captcha_Google.functionality }.
@@ -33,6 +34,7 @@ export class Security_Captcha_Google {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   public static functionality(
     @DEFINED.PRE("sitekey :: script")
     @TYPE.PRE("string", "sitekey :: datacallback :: datacallbackcode :: script")

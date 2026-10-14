@@ -4,5 +4,6 @@
     "Property": "",
     "CSSProposals": "",
     "URL": ""
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
 }

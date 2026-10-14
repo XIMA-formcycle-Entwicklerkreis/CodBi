@@ -26,5 +26,6 @@
     "Scroll": "",
     "ScrollToTop": "",
     "Accordion": ""
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
 }

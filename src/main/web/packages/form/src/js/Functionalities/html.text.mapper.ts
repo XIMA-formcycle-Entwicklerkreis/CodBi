@@ -7,6 +7,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Text_Mapper.functionality }.
@@ -35,6 +36,7 @@ export class HTML_Text_Mapper {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype(["XTextField", "XTextArea"])
   public static functionality(
     @DEFINED.PRE("replacements")
     @TYPE.PRE("object", "replacements")

@@ -6,6 +6,7 @@ import { getXUtil } from "@de-xima/fc-form-renderer";
 import { DBC } from "xdbc/src/DBC";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -125,6 +126,7 @@ export class HTML_Input_TinyMCE {
    *                            ```white-space: pre-wrap``` to preserve line-breaks/paragraphs). This makes it
    *                            possible to render the content of an editor that was filled via TinyMCE into a PDF. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XTextArea")
   public static functionality(
     @TYPE.PRE("string", "plugins :: toolbar :: resourceurl :: uploadurl :: uploadimageurl :: uploadfieldname")
     @TYPE.PRE("string | boolean", "stripport :: rendertopdf")

@@ -3,6 +3,7 @@
 import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -21,6 +22,7 @@ export class HTML_Input_NoAutocomplete {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XTextField")
   public static functionality(
     toLoad: { [key: string]: unknown },
 

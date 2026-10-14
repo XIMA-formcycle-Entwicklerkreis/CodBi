@@ -10,6 +10,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 // #endregion XDBC
+import { SupportedFormelementtype } from "codbi-common";
 import { CodBiError } from "../global-scope.js";
 // #endregion Imports
 /**
@@ -36,6 +37,7 @@ export class Date_Frame {
    *                        the one in the minimum-{@link HTMLInputElement }.
    *  - EqualityPermitted:  A {@link boolean } indicating whether equality between minimum and maximum dates is allowed. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype({ XTextField: { datatype: "date*" } })
   public static functionality(
     @TYPE.PRE("string", "maxfield :: msgmininvalid :: msgmaxinvalid")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "maxfield", "Does the MaXField-Parameter not contain a valid CSS-Selector?")

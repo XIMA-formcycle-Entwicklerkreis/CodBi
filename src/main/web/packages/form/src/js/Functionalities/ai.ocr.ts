@@ -17,6 +17,7 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF
 import { CodBiError } from "../global-scope";
 import { formatWaitTime } from "../commons/format-wait-time";
+import { SupportedFormelementtype } from "codbi-common";
 //endregion Imports
 /**
  * Provides the {@link AI.functionality }.
@@ -81,6 +82,7 @@ export class AI_OCR {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XUpload")
   public static functionality(
     @TYPE.PRE(
       "string",

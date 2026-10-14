@@ -2,5 +2,6 @@
   "Description": "/classes/Functionalities_html.panel.accordion.HTML_Panel_Accordion.html#functionality",
   "Parameter": {
     "Accordion": ""
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
 }

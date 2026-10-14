@@ -3,5 +3,6 @@
   "Parameter": {
     "Extractor": "",
     "Replacements": ""
-  }
+  },
+  "supportedFormelementtypes": ["XTextField", "XTextArea"]
 }

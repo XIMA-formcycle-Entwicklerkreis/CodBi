@@ -9,5 +9,6 @@
     "UploadFieldName": "",
     "StripPort": "",
     "RenderToPdf": ""
-  }
+  },
+  "supportedFormelementtypes": "XTextArea"
 }

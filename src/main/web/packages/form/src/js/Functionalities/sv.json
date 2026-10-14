@@ -3,5 +3,6 @@
   "Parameter": {
     "Destinations": "",
     "Sources": ""
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
 }

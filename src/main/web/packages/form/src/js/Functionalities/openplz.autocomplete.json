@@ -11,5 +11,10 @@
     "FocusOnAutocomplete": "",
     "AllowEmpty": "",
     "AllowedValues": ""
+  },
+  "supportedFormelementtypes": {
+    "XTextField": {
+      "datatype": ["text", "plzDE"]
+    }
   }
 }

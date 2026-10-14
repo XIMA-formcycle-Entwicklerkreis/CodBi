@@ -4,5 +4,6 @@
     "Maximum": "",
     "PrefixTooMany": "",
     "PostfixTooMany": ""
-  }
+  },
+  "supportedFormelementtypes": "XUpload"
 }

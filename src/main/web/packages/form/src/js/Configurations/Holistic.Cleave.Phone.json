@@ -1,0 +1,7 @@
+{
+  "Description": "/functions/Configurations_Holistic.Cleave.Phone.loadConfig.html",
+  "classes": {},
+  "globals": {},
+  "targets": "[data-vdt=\"phone\"]:not(.CodBi_XCL):not(.CodBi_XCL_Cleave_Phone)",
+  "func": "HTML.Input.Cleave"
+}

@@ -7,5 +7,6 @@
     "DateMax": "",
     "Delimiter": "",
     "DatePattern": ""
-  }
+  },
+  "supportedFormelementtypes": "XTextField"
 }

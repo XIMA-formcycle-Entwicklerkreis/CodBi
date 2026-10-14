@@ -11,5 +11,15 @@
     "CodBi_Accordion_B": "Apply to a container to set up accordion group B. The container is NOT a panel — do NOT give it a panel type class; every member XFieldSet inside must ALSO carry one.",
     "CodBi_Accordion_C": "Apply to a container to set up accordion group C. The container is NOT a panel — do NOT give it a panel type class; every member XFieldSet inside must ALSO carry one.",
     "CodBi_Accordion_D": "Apply to a container to set up accordion group D. The container is NOT a panel — do NOT give it a panel type class; every member XFieldSet inside must ALSO carry one."
+  },
+  "funcs": {
+    "CodBi_HTML_Panel_Standard": "HTML.Panel",
+    "CodBi_HTML_Panel_Flat": "HTML.Panel",
+    "CodBi_HTML_Panel_Minimal": "HTML.Panel",
+    "CodBi_HTML_Panel_Index": "HTML.Panel",
+    "CodBi_Accordion_A": "HTML.Panel.Accordion",
+    "CodBi_Accordion_B": "HTML.Panel.Accordion",
+    "CodBi_Accordion_C": "HTML.Panel.Accordion",
+    "CodBi_Accordion_D": "HTML.Panel.Accordion"
   }
 }

@@ -6,5 +6,6 @@
     "End": "",
     "EndTime": "",
     "MsgInvalid": ""
-  }
+  },
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
 }

@@ -10,5 +10,16 @@
     "CodBi_LDAP_AC_Account": "Apply to an XTextField representing a username/account name. Autocompletes from LDAP directory (maps to LDAP sAMAccountName).",
     "CodBi_LDAP_AC_CommonName": "Apply to an XTextField representing a common name. Autocompletes from LDAP directory (maps to LDAP cn).",
     "CodBi_LDAP_AC_DisplayName": "Apply to an XTextField representing a display name. Autocompletes from LDAP directory (maps to LDAP displayName)."
+  },
+  "funcs": {
+    "CodBi_LDAP_AC_Mail": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_FirstName": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_LastName": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_Title": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_Department": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_Telephone": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_Account": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_CommonName": "LDAP.Autocomplete",
+    "CodBi_LDAP_AC_DisplayName": "LDAP.Autocomplete"
   }
 }

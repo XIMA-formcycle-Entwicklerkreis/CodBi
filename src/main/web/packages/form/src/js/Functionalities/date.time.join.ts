@@ -10,6 +10,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX.js";
 import { TYPE } from "xdbc/src/DBC/TYPE.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link Date_Time_Join.functionality }.
@@ -50,6 +51,7 @@ export class Date_Time_Join {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype({ XTextField: { datatype: "time" } })
   public static functionality(
     @TYPE.PRE("string", "datefield :: timefield")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "datefield", "Does the DateField-Parameter not contain a valid CSS-Selector?")

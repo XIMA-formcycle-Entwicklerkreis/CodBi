@@ -9,6 +9,7 @@ import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -35,6 +36,7 @@ export class HTML_Input_Cleave {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
+  @SupportedFormelementtype("XTextField")
   public static functionality(
     toLoad: { [key: string]: unknown },
 

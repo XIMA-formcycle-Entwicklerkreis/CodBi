@@ -17,6 +17,7 @@ import { openEPBuilder } from "./EPBuilder.js";
 import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
   CB_FUNC_ATTRIBUTE,
+  type IApplicabilityElement,
   type IDesignerLike,
   type IItemLike,
   parseCsv,
@@ -24,6 +25,7 @@ import {
   listFunctionalities,
   resolveFunctionalityEntry,
   functionalityParameters,
+  functionalityAppliesTo,
   parameterType,
   parameterLabel,
   currentAttributeValueForItem,
@@ -90,6 +92,14 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private readonly funcOptions: HTMLDivElement;
   /** The inline filter input of the functionality listing. */
   private readonly funcFilter: HTMLInputElement;
+  /** The container of the SECOND list: functionalities NOT applicable to the element. */
+  private readonly funcOptionsAll: HTMLDivElement;
+  /** The wrapper of the second list (its visibility is toggled by {@link allToggleButton}). */
+  private readonly funcAllList: HTMLDivElement;
+  /** The header button that shows/hides the second (non-applicable) functionality list. */
+  private readonly allToggleButton: HTMLButtonElement;
+  /** Whether the second (non-applicable) functionality list is currently visible. */
+  private showInapplicable = false;
   /** The current filter query for the functionality picker. */
   private funcQuery = "";
 
@@ -113,7 +123,15 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     addButton.className = "codbi-func-config__add";
     addButton.title = kI18n("designer.widget.functionality.addFunc");
     addButton.textContent = "+";
-    funcHeader.append(funcTitle, addButton);
+    // The toggle for the SECOND (non-applicable) functionality list. It is ALWAYS visible; the list it
+    // controls stays hidden until the user clicks it.
+    const allToggleButton = document.createElement("button");
+    allToggleButton.type = "button";
+    allToggleButton.className = "codbi-func-config__show-all";
+    allToggleButton.style.cssText = "margin-left:auto;font-size:11px;white-space:nowrap;";
+    allToggleButton.setAttribute("aria-expanded", "false");
+    allToggleButton.addEventListener("click", () => this.toggleInapplicableList());
+    funcHeader.append(funcTitle, addButton, allToggleButton);
     // The listing box CONTAINS the filter input (top) and the option rows below it.
     const funcList = document.createElement("div");
     funcList.className = "codbi-func-config__funclist";
@@ -135,10 +153,29 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       funcFilter.focus();
     });
     const funcOptions = document.createElement("div");
+    funcOptions.className = "codbi-func-config__options";
     funcList.append(funcFilter, funcOptions);
-    funcSection.append(funcHeader, funcList);
+    // The SECOND list: functionalities NOT applicable to the currently selected element. It is hidden
+    // until the user clicks the toggle above. It exists so a functionality whose applicability is not
+    // (yet) declared for this element — e.g. a future plugin-provided widget type that IS in fact
+    // compatible — can still be applied deliberately.
+    const funcAllList = document.createElement("div");
+    funcAllList.className = "codbi-func-config__funclist codbi-func-config__funclist--all";
+    funcAllList.style.cssText =
+      "max-height:220px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;display:none;margin-top:6px;";
+    const funcAllTitle = document.createElement("div");
+    funcAllTitle.className = "codbi-func-config__funclist-title";
+    funcAllTitle.style.cssText = "font-size:11px;color:#6b7280;margin:0 0 4px;";
+    funcAllTitle.textContent = kI18n("designer.widget.functionality.inapplicable");
+    const funcOptionsAll = document.createElement("div");
+    funcOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
+    funcAllList.append(funcAllTitle, funcOptionsAll);
+    funcSection.append(funcHeader, funcList, funcAllList);
     this.funcFilter = funcFilter;
     this.funcOptions = funcOptions;
+    this.funcAllList = funcAllList;
+    this.funcOptionsAll = funcOptionsAll;
+    this.allToggleButton = allToggleButton;
     // #endregion 1. Functionality picker.
 
     // #region 2. Parameter table (applied directly to the selected element).
@@ -156,6 +193,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.root.append(funcSection, paramSection);
     this.renderFunctionalityList();
     this.renderParams();
+    this.syncInapplicableVisibility();
   }
 
   /** See {@link Editors.BaseEditor }'s **getElement**. */
@@ -185,6 +223,27 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * The applicability view of the selected element (widget class name + property bag), used to filter
+   * the functionality list by the element's type and properties (e.g. its `datatype`).
+   */
+  private applicabilityElement(): IApplicabilityElement | undefined {
+    const item = this.targetElement();
+
+    if (!item) {
+      return undefined;
+    }
+
+    let properties: Record<string, unknown> | undefined;
+
+    try {
+      properties = item.getPersist?.()?.properties;
+    } catch {
+      properties = undefined;
+    }
+    return { className: item.className ?? undefined, properties };
   }
 
   /**
@@ -229,40 +288,88 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.renderFunctionalityList();
   }
 
-  /** Renders the (filtered) functionality option list with a checkbox per available functionality. */
+  /**
+   * Renders the two functionality option lists:
+   *
+   * 1. the **main** list with the functionalities applicable to the selected element (plus any
+   *    already-selected one, which is never hidden so a selection cannot silently disappear);
+   * 2. the **second** list (hidden until toggled) with the complement — the functionalities NOT deemed
+   *    applicable to this element — so they can still be applied deliberately (e.g. when a future
+   *    plugin-provided widget type IS compatible but the CodBi applicability metadata does not list it).
+   */
   private renderFunctionalityList(): void {
     const query = this.funcQuery.trim().toLowerCase();
     const available = listFunctionalities();
-    const fragment = document.createDocumentFragment();
-    let shown = 0;
+    const target = this.applicabilityElement();
+    const mainFragment = document.createDocumentFragment();
+    const otherFragment = document.createDocumentFragment();
+    let mainShown = 0;
     for (const id of available) {
       const isSelected = this.selected.includes(id.toLowerCase());
-      // When filtering, keep matches; without a query, always show selected entries plus everything
-      // (so the user can browse). Selected entries are never hidden by a filter mismatch.
+      // Applicable = applicable to THIS element's widget type and, where the functionality declares
+      // them (via `@SupportedFormelementtype`), property constraints such as `datatype`.
+      const applicable = isSelected || functionalityAppliesTo(id, target);
+      // When filtering, keep matches; without a query everything shows. Selected entries are never
+      // hidden by a filter mismatch.
       const matches = query.length === 0 || id.toLowerCase().includes(query) || isSelected;
       if (!matches) {
         continue;
       }
-      shown += 1;
-      const row = document.createElement("label");
-      row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;cursor:pointer;";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.value = id;
-      checkbox.checked = isSelected;
-      checkbox.addEventListener("change", () => this.toggleFunctionality(id, checkbox.checked));
-      const text = document.createElement("span");
-      text.textContent = id;
-      row.append(checkbox, text);
-      fragment.appendChild(row);
+      const row = this.buildFunctionalityRow(id, isSelected);
+      if (applicable) {
+        mainShown += 1;
+        mainFragment.appendChild(row);
+      } else {
+        otherFragment.appendChild(row);
+      }
     }
-    if (shown === 0) {
+    if (mainShown === 0) {
       const empty = document.createElement("div");
       empty.style.cssText = "padding:4px;color:#6b7280;";
       empty.textContent = kI18n("designer.widget.functionality.noResults");
-      fragment.appendChild(empty);
+      mainFragment.appendChild(empty);
     }
-    this.funcOptions.replaceChildren(fragment);
+    if (otherFragment.childElementCount === 0) {
+      const empty = document.createElement("div");
+      empty.style.cssText = "padding:4px;color:#6b7280;";
+      empty.textContent = kI18n("designer.widget.functionality.noInapplicable");
+      otherFragment.appendChild(empty);
+    }
+    this.funcOptions.replaceChildren(mainFragment);
+    this.funcOptionsAll.replaceChildren(otherFragment);
+  }
+
+  /** Builds one functionality option row (checkbox + id) wired to {@link toggleFunctionality}. */
+  private buildFunctionalityRow(id: string, isSelected: boolean): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "codbi-func-config__option";
+    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;cursor:pointer;";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = id;
+    checkbox.checked = isSelected;
+    checkbox.addEventListener("change", () => this.toggleFunctionality(id, checkbox.checked));
+    const text = document.createElement("span");
+    text.textContent = id;
+    row.append(checkbox, text);
+    return row;
+  }
+
+  /** Shows/hides the second (non-applicable) functionality list. */
+  private toggleInapplicableList(): void {
+    this.showInapplicable = !this.showInapplicable;
+    this.syncInapplicableVisibility();
+  }
+
+  /** Applies {@link showInapplicable} to the second list and its toggle button. */
+  private syncInapplicableVisibility(): void {
+    this.funcAllList.style.display = this.showInapplicable ? "block" : "none";
+    this.allToggleButton.textContent =
+      (this.showInapplicable ? "\u25BE " : "\u25B8 ") +
+      kI18n(
+        this.showInapplicable ? "designer.element.property.funcs.hideAll" : "designer.element.property.funcs.showAll",
+      );
+    this.allToggleButton.setAttribute("aria-expanded", String(this.showInapplicable));
   }
 
   /** Renders the parameter table of every selected functionality. */

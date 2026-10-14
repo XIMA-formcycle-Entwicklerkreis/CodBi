@@ -10,5 +10,11 @@
     "BayVIS_Behoerde": "",
     "BayVIS_Hauptansprechpartner": "",
     "BayVIS_WeitereAnsprechpartner": ""
+  },
+  "funcs": {
+    "CodBi_BayVIS_Behoerde": "HTML.Text.Mapper",
+    "CodBi_BayVIS_BehoerdeUndAnsprechpartner": "HTML.Text.Mapper",
+    "CodBi_BayVIS_Ansprechpartner": "HTML.Text.Mapper",
+    "CodBi_BayVIS_Auswahl_Behoerden": "HTML.Select.Injection"
   }
 }

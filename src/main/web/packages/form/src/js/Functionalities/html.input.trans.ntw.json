@@ -4,5 +4,6 @@
     "NumberWords": "",
     "PreFix": "",
     "PostFix": ""
-  }
+  },
+  "supportedFormelementtypes": ["XTextField", "XTextArea"]
 }

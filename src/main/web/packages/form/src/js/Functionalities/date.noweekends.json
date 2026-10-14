@@ -7,5 +7,10 @@
     "XTextField": {
       "datatype": "dateDE"
     }
+  },
+  "parameters": {
+    "MsgNoWeekends": {
+      "type": "string"
+    }
   }
 }

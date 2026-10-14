@@ -5,5 +5,19 @@
     "Replacements": "",
     "Darkmode": "",
     "Destination": ""
+  },
+  "parameters": {
+    "CSS": {
+      "type": "string"
+    },
+    "Replacements": {
+      "type": "string"
+    },
+    "Darkmode": {
+      "type": "string"
+    },
+    "Destination": {
+      "type": "string"
+    }
   }
 }

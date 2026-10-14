@@ -14,5 +14,43 @@
     "FilterResults": "",
     "QuestionRoot": ""
   },
-  "supportedFormelementtypes": ["XTextField", "XTextArea"]
+  "supportedFormelementtypes": ["XTextField", "XTextArea"],
+  "parameters": {
+    "AIHint": {
+      "type": "string"
+    },
+    "useinternet": {
+      "type": "boolean"
+    },
+    "debounce": {
+      "type": "integer"
+    },
+    "inferencedelay": {
+      "type": "integer"
+    },
+    "language": {
+      "type": "string"
+    },
+    "Location": {
+      "type": "boolean"
+    },
+    "ResponseLanguage": {
+      "type": "string"
+    },
+    "Specialist": {
+      "type": "string"
+    },
+    "QueueBadge": {
+      "type": "string"
+    },
+    "QueueText": {
+      "type": "string"
+    },
+    "FilterResults": {
+      "type": "boolean"
+    },
+    "QuestionRoot": {
+      "type": "string"
+    }
+  }
 }

@@ -13,7 +13,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
 import { TYPE } from "xdbc/src/DBC/TYPE.js";
 import { REGEX } from "xdbc/src/DBC/REGEX.js";
 import { EQ } from "xdbc/src/DBC/EQ.js";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Elementplaceholder
 // #endregion Imports
 
@@ -56,6 +56,12 @@ export class LDAP_Autocomplete {
    */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextField")
+  @ParameterTypes({
+    Property: { type: "string" },
+    CSSProposals: { type: "string" },
+    URL: { type: "string" },
+    MsgNotInLDAP: { type: "string" },
+  })
   public static functionality(
     @DEFINED.PRE("property")
     @TYPE.PRE("string", "property :: cssproposals :: url :: msgnotinldap")

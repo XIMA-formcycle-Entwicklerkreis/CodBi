@@ -179,6 +179,49 @@ export function functionalityParameters(id: string): Record<string, string> {
   return normalizeParameters(entry?.Parameter ?? entry?.parameters);
 }
 
+/** The structured type spec of one functionality parameter (the `parameters` metadata channel). */
+export interface IFunctionalityParameterSpec {
+  type?: "string" | "integer" | "number" | "boolean" | "enum";
+  options?: string[];
+  default?: string;
+}
+
+/**
+ * The structured TYPE metadata (`detFunctionalities[*].parameters`) of a functionality, keyed by
+ * parameter name. Empty when the functionality declares none (fall back to the legacy behaviour).
+ */
+export function functionalityParameterTypes(id: string): Record<string, IFunctionalityParameterSpec> {
+  const entry = resolveFunctionalityEntry(id) as
+    | {
+        parameters?: Record<string, IFunctionalityParameterSpec>;
+      }
+    | undefined;
+  const raw = entry?.parameters;
+  const out: Record<string, IFunctionalityParameterSpec> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [name, spec] of Object.entries(raw)) {
+      if (spec && typeof spec === "object") {
+        out[name] = spec as IFunctionalityParameterSpec;
+      }
+    }
+  }
+  return out;
+}
+
+/** Case-insensitive lookup of one parameter's spec in a {@link functionalityParameterTypes} map. */
+export function findParameterSpec(
+  types: Record<string, IFunctionalityParameterSpec>,
+  name: string,
+): IFunctionalityParameterSpec | undefined {
+  const wanted = name.toLowerCase();
+  for (const key of Object.keys(types)) {
+    if (key.toLowerCase() === wanted) {
+      return types[key];
+    }
+  }
+  return undefined;
+}
+
 /**
  * The minimal view of a form element used for applicability matching: its FORMCYCLE widget class name
  * (e.g. `XTextField`) and its property bag (e.g. its `datatype`). */
@@ -682,8 +725,8 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     let any = false;
     for (const id of this.selected) {
       const params = functionalityParameters(id);
+      const types = functionalityParameterTypes(id);
       const names = Object.keys(params);
-      console.info("[CodBi] Functionality: parameters for '%s' -> %d", id, names.length);
       if (names.length === 0) {
         continue;
       }
@@ -694,7 +737,7 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       fragment.appendChild(header);
       for (const name of names) {
         try {
-          fragment.appendChild(this.buildParamRow(name, params[name]));
+          fragment.appendChild(this.buildParamRow(name, params[name], findParameterSpec(types, name)));
         } catch (x) {
           console.error("[CodBi] Functionality: could not render parameter", id, name, x);
         }
@@ -710,7 +753,7 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
   }
 
   /** Builds one parameter row: name + (checkbox | text input) + EP button. */
-  private buildParamRow(name: string, description: string): HTMLElement {
+  private buildParamRow(name: string, description: string, spec?: IFunctionalityParameterSpec): HTMLElement {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:6px;margin:2px 0;";
 
@@ -720,7 +763,8 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     label.textContent = name;
 
     const currentValue = this.currentAttributeValue(name);
-    const type = parameterType(description);
+    // The structured type wins; the legacy `{Type}`-in-description hint stays as a fallback.
+    const type = spec?.type ?? parameterType(description);
 
     // The value cell can flip between a checkbox (boolean) and a text input (any/string). The
     // current implementation always creates the text input first when the value is not a plain
@@ -730,6 +774,7 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
 
     let textInput: HTMLInputElement | undefined;
     let checkbox: HTMLInputElement | undefined;
+    let select: HTMLSelectElement | undefined;
 
     // Writes a parameter (and the FUNC attribute) into the CONTAINED element's config attribute
     // table. The attributes live ONLY on the contained element (a real form control), never on the
@@ -751,7 +796,12 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       }
       if (!textInput) {
         textInput = document.createElement("input");
-        textInput.type = "text";
+        textInput.type = type === "integer" || type === "number" ? "number" : "text";
+        if (type === "integer") {
+          textInput.step = "1";
+        } else if (type === "number") {
+          textInput.step = "any";
+        }
         textInput.className = "codbi-func-config__value";
         textInput.style.flex = "1";
         textInput.addEventListener("change", () => {
@@ -792,6 +842,34 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       checkbox.checked = currentValue === "true" || currentValue === "1";
     };
 
+    const showSelect = (options: string[]): void => {
+      if (textInput) {
+        textInput.remove();
+        textInput = undefined;
+      }
+      if (checkbox) {
+        checkbox.remove();
+        checkbox = undefined;
+      }
+      if (!select) {
+        select = document.createElement("select");
+        select.className = "codbi-func-config__value";
+        select.style.flex = "1";
+        const blank = document.createElement("option");
+        blank.value = "";
+        select.appendChild(blank);
+        for (const option of options) {
+          const opt = document.createElement("option");
+          opt.value = option;
+          opt.textContent = option;
+          select.appendChild(opt);
+        }
+        select.addEventListener("change", () => write(select?.value ?? ""));
+        cell.insertBefore(select, epButton);
+      }
+      select.value = currentValue;
+    };
+
     const isBooleanParam = (): boolean => type === "boolean";
 
     // The EP button opens the flat EP listing + the EP builder; on a boolean it first flips to text.
@@ -821,6 +899,8 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
         currentValue === "0")
     ) {
       showCheckbox();
+    } else if (type === "enum" && spec?.options && spec.options.length > 0) {
+      showSelect(spec.options);
     } else {
       showText(currentValue);
     }

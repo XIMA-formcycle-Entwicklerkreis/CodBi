@@ -6,5 +6,19 @@
     "Placeholder": "",
     "ShowHint": ""
   },
-  "supportedFormelementtypes": ["XTextField", "XTextArea"]
+  "supportedFormelementtypes": ["XTextField", "XTextArea"],
+  "parameters": {
+    "VoiceHotkey": {
+      "type": "string"
+    },
+    "Language": {
+      "type": "string"
+    },
+    "Placeholder": {
+      "type": "string"
+    },
+    "ShowHint": {
+      "type": "boolean"
+    }
+  }
 }

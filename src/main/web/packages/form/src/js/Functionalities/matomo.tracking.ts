@@ -15,6 +15,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { CodBi, CodBiError } from "../global-scope";
 import { OR } from "xdbc/src/DBC/OR";
+import { ParameterTypes } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
@@ -36,6 +37,11 @@ export class Matomo_Tracking {
    *  - URL:    The URL of the Matomo-Server that shall track the tagged form.
    *  - SiteID: The ID of the Matomo-Project-Site that shall be used for tracking. */
   @DBC.ParamvalueProvider
+  @ParameterTypes({
+    SiteID: { type: "integer" },
+    URL: { type: "string" },
+    ImageURL: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "url")
     @TYPE.PRE("string", "siteid")

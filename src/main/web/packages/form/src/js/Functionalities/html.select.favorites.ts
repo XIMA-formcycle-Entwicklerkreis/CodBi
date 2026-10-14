@@ -8,7 +8,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { AE } from "xdbc/src/DBC/AE";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -45,6 +45,12 @@ export class HTML_Select_Favorites {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XSelect")
+  @ParameterTypes({
+    DividerTarget: { type: "string" },
+    InitialElement: { type: "string" },
+    Favorites: { type: "string" },
+    Divider: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE(
       "string",

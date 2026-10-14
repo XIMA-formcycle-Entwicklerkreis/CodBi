@@ -4,5 +4,16 @@
     "ParentalLevel": "",
     "DocumentSelector": "",
     "Invert": ""
+  },
+  "parameters": {
+    "ParentalLevel": {
+      "type": "integer"
+    },
+    "DocumentSelector": {
+      "type": "string"
+    },
+    "Invert": {
+      "type": "boolean"
+    }
   }
 }

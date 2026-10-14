@@ -1,6 +1,6 @@
 // #region Imports
 import { HTML_Input_Transformer } from "./html.input.transformer";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Input_Transformer.functionality } along with the {@link HTML_Input_Trans_Capital.transformer }.
@@ -33,6 +33,10 @@ export class HTML_Input_Trans_RegEx extends HTML_Input_Transformer {
    * @param toLoad    As provided bny the **CodBi**.
    * @param toProcess As provided bny the **CodBi**. */
   @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @ParameterTypes({
+    Extractor: { type: "string" },
+    Replacements: { type: "string" },
+  })
   public static override functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
     /** @funcElement XTextField */
 

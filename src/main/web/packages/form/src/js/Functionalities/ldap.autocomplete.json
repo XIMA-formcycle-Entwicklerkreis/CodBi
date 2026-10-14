@@ -6,5 +6,19 @@
     "URL": "",
     "MsgNotInLDAP": ""
   },
-  "supportedFormelementtypes": "XTextField"
+  "supportedFormelementtypes": "XTextField",
+  "parameters": {
+    "Property": {
+      "type": "string"
+    },
+    "CSSProposals": {
+      "type": "string"
+    },
+    "URL": {
+      "type": "string"
+    },
+    "MsgNotInLDAP": {
+      "type": "string"
+    }
+  }
 }

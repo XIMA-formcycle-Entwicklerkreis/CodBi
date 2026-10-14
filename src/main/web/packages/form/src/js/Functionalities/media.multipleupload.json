@@ -5,5 +5,16 @@
     "PrefixTooMany": "",
     "PostfixTooMany": ""
   },
-  "supportedFormelementtypes": "XUpload"
+  "supportedFormelementtypes": "XUpload",
+  "parameters": {
+    "Maximum": {
+      "type": "integer"
+    },
+    "PrefixTooMany": {
+      "type": "string"
+    },
+    "PostfixTooMany": {
+      "type": "string"
+    }
+  }
 }

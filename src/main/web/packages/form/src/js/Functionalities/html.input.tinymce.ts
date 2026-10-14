@@ -6,7 +6,7 @@ import { getXUtil } from "@de-xima/fc-form-renderer";
 import { DBC } from "xdbc/src/DBC";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -127,6 +127,16 @@ export class HTML_Input_TinyMCE {
    *                            possible to render the content of an editor that was filled via TinyMCE into a PDF. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextArea")
+  @ParameterTypes({
+    Plugins: { type: "string" },
+    Toolbar: { type: "string" },
+    ResourceURL: { type: "string" },
+    UploadURL: { type: "string" },
+    UploadImageURL: { type: "string" },
+    UploadFieldName: { type: "string" },
+    StripPort: { type: "boolean" },
+    RenderToPdf: { type: "boolean" },
+  })
   public static functionality(
     @TYPE.PRE("string", "plugins :: toolbar :: resourceurl :: uploadurl :: uploadimageurl :: uploadfieldname")
     @TYPE.PRE("string | boolean", "stripport :: rendertopdf")

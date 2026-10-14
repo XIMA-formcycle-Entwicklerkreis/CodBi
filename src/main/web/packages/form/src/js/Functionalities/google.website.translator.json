@@ -5,5 +5,18 @@
     "Lang": "",
     "Inline": "TRUE"
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+  "parameters": {
+    "AutoLoad": {
+      "type": "boolean",
+      "default": "false"
+    },
+    "Lang": {
+      "type": "string"
+    },
+    "Inline": {
+      "type": "boolean",
+      "default": "true"
+    }
+  }
 }

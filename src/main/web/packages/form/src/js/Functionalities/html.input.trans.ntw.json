@@ -5,5 +5,16 @@
     "PreFix": "",
     "PostFix": ""
   },
-  "supportedFormelementtypes": ["XTextField", "XTextArea"]
+  "supportedFormelementtypes": ["XTextField", "XTextArea"],
+  "parameters": {
+    "NumberWords": {
+      "type": "string"
+    },
+    "PreFix": {
+      "type": "string"
+    },
+    "PostFix": {
+      "type": "string"
+    }
+  }
 }

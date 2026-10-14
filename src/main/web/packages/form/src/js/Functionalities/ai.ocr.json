@@ -16,5 +16,50 @@
     "QueueBadge": "",
     "QueueText": ""
   },
-  "supportedFormelementtypes": "XUpload"
+  "supportedFormelementtypes": "XUpload",
+  "parameters": {
+    "Mode": {
+      "type": "enum",
+      "options": ["Print", "Verify", "Extract Fields"]
+    },
+    "Pattern": {
+      "type": "string"
+    },
+    "Separator": {
+      "type": "string"
+    },
+    "MaxPages": {
+      "type": "integer"
+    },
+    "FieldPattern_": {
+      "type": "string"
+    },
+    "RegExFlags": {
+      "type": "string"
+    },
+    "Preprocess": {
+      "type": "boolean"
+    },
+    "ProcessingImageText": {
+      "type": "string"
+    },
+    "InvalidImageText": {
+      "type": "string"
+    },
+    "WrongFileMessage": {
+      "type": "string"
+    },
+    "Maximum": {
+      "type": "string"
+    },
+    "Field": {
+      "type": "string"
+    },
+    "QueueBadge": {
+      "type": "string"
+    },
+    "QueueText": {
+      "type": "string"
+    }
+  }
 }

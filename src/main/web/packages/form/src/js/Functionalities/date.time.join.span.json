@@ -7,5 +7,23 @@
     "EndTime": "",
     "MsgInvalid": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+  "parameters": {
+    "Begin": {
+      "type": "string"
+    },
+    "BeginTime": {
+      "type": "string"
+    },
+    "End": {
+      "type": "string"
+    },
+    "EndTime": {
+      "type": "string"
+    },
+    "MsgInvalid": {
+      "type": "string",
+      "default": "The end datetime must be strictly after the begin datetime."
+    }
+  }
 }

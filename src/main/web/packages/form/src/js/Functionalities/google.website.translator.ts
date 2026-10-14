@@ -5,6 +5,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 
 // Provide basic layout for the injected widget as early as possible so that no visual jump occurs once the
@@ -198,6 +199,11 @@ export class Google_Website_Translator {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
+  @ParameterTypes({
+    AutoLoad: { type: "boolean", default: "false" },
+    Lang: { type: "string" },
+    Inline: { type: "boolean", default: "true" },
+  })
   public static functionality(
     @TYPE.PRE("string | boolean", "autoload :: inline")
     @TYPE.PRE("string", "lang")

@@ -58,6 +58,18 @@ interface Window {
         /** Stores the parameter that this **CodBi-Functionality** provides. */
         Parameter: { [key: string]: string };
         /**
+         * The per-parameter TYPE metadata (boolean/string/integer/number/enum), keyed by parameter name.
+         * Published by the build-time generator (`@ParameterTypes`) or the local API-doc manager; the
+         * designer renders a type-appropriate editor from it (checkbox, number box, dropdown, text). */
+        parameters?: {
+          [name: string]: {
+            type?: "string" | "integer" | "number" | "boolean" | "enum";
+            options?: string[];
+            default?: string;
+            description?: string;
+          };
+        };
+        /**
          * The FORMCYCLE widget class names this functionality is intended for (e.g. `XFieldSet`).
          * An empty/absent list means "any element" (fail-open). Populated by the build-time
          * generator (Tier A) or the local API-doc manager (Tier B). */

@@ -6,5 +6,23 @@
     "Target": "",
     "DateFormat": "",
     "Candidate": ""
+  },
+  "parameters": {
+    "Reference": {
+      "type": "string"
+    },
+    "Mode": {
+      "type": "enum",
+      "options": ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"]
+    },
+    "Target": {
+      "type": "string"
+    },
+    "DateFormat": {
+      "type": "string"
+    },
+    "Candidate": {
+      "type": "string"
+    }
   }
 }

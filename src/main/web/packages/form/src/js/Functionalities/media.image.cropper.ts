@@ -14,7 +14,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 import { OR } from "xdbc/src/DBC/OR.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link Media_Image_Cropper.functionality }.
@@ -49,6 +49,15 @@ export class Media_Image_Cropper {
    * @param toLoad Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
+  @ParameterTypes({
+    Container: { type: "string" },
+    Target: { type: "string" },
+    File: { type: "string" },
+    Updater: { type: "string" },
+    AspectRatio: { type: "number", default: "1000px" },
+    OutputWidth: { type: "number" },
+    CSSCropperHandle: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "container :: target :: file :: updater :: imageurl :: csscropperhandle")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "container")

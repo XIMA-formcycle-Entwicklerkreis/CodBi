@@ -15,7 +15,7 @@ import { OpenPLZ_Localities } from "../EPs/openplz.localities";
 import { removeDuplicates } from "./ldap.autocomplete";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { EQ } from "xdbc/src/DBC/EQ";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Elementplaceholder
 // #endregion CodBi
 // #endregion Imports
@@ -82,6 +82,18 @@ export class OpenPLZ_Autocomplete {
    *                                - ```Value;Locality;PLZ```:         Only allowed when both fields match. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype({ XTextField: { datatype: ["text", "plzDE"] } })
+  @ParameterTypes({
+    TargetData: { type: "enum", options: ["localities", "postalcodes", "streets"] },
+    Country: { type: "enum", options: ["de", "en", "at", "li", "ch"] },
+    CSSProposals: { type: "string" },
+    MsgNotKnown: { type: "string" },
+    Dependent: { type: "string" },
+    DependentPLZ: { type: "string" },
+    DependentLocality: { type: "string" },
+    FocusOnAutocomplete: { type: "string" },
+    AllowEmpty: { type: "boolean" },
+    AllowedValues: { type: "string" },
+  })
   public static functionality(
     @DEFINED.PRE("targetdata :: focusonautocomplete")
     @TYPE.PRE(

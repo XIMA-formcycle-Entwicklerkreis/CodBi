@@ -4,5 +4,13 @@
     "Destinations": "",
     "Sources": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+  "parameters": {
+    "Destinations": {
+      "type": "string"
+    },
+    "Sources": {
+      "type": "string"
+    }
+  }
 }

@@ -4,5 +4,16 @@
     "Path": "",
     "Property": "",
     "ToSet": ""
+  },
+  "parameters": {
+    "Path": {
+      "type": "string"
+    },
+    "Property": {
+      "type": "string"
+    },
+    "ToSet": {
+      "type": "string"
+    }
   }
 }

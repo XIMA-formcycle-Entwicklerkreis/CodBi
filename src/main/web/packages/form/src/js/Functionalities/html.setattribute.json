@@ -3,5 +3,13 @@
   "Parameter": {
     "Name": "",
     "ToSet": ""
+  },
+  "parameters": {
+    "Name": {
+      "type": "string"
+    },
+    "ToSet": {
+      "type": "string"
+    }
   }
 }

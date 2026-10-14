@@ -8,6 +8,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 // #endregion XDBC
 // #region CodBi
 import { CodBiError } from "../global-scope.js";
+import { ParameterTypes } from "codbi-common";
 // #endregion CodBi
 // #region Imports
 // #endregion Imports
@@ -37,6 +38,11 @@ export class Print_Remove {
    *                      when printed (defaults to **NOT SET**).
    *                      If set **ParentalLevel** will be set to "1" if it has not been set, since the
    *                      CodBi does not allow to remove the {@link HTMLElement } **toProcess**. */
+  @ParameterTypes({
+    ParentalLevel: { type: "integer" },
+    DocumentSelector: { type: "string" },
+    Invert: { type: "boolean" },
+  })
   public static functionality(
     @DEFINED.PRE("documentselector")
     @TYPE.PRE("string", "documentselector")

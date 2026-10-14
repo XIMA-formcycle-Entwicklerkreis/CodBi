@@ -5,5 +5,16 @@
     "Replacement": "",
     "Property": ""
   },
-  "supportedFormelementtypes": ["XTextField", "XTextArea"]
+  "supportedFormelementtypes": ["XTextField", "XTextArea"],
+  "parameters": {
+    "Placeholder": {
+      "type": "string"
+    },
+    "Replacement": {
+      "type": "string"
+    },
+    "Property": {
+      "type": "string"
+    }
+  }
 }

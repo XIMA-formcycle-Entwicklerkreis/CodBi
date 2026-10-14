@@ -23,5 +23,71 @@
     "AlertOnFinishText": "",
     "FilterResults": ""
   },
-  "supportedFormelementtypes": "XTextArea"
+  "supportedFormelementtypes": "XTextArea",
+  "parameters": {
+    "MaxPages": {
+      "type": "integer"
+    },
+    "Rotation": {
+      "type": "enum",
+      "options": ["90", "180", "270"]
+    },
+    "MaxPixelSize": {
+      "type": "integer"
+    },
+    "LLAMAbubble": {
+      "type": "string"
+    },
+    "UserBubble": {
+      "type": "string"
+    },
+    "WelcomeText": {
+      "type": "string"
+    },
+    "WaitingText": {
+      "type": "string"
+    },
+    "LowConfidenceText": {
+      "type": "string"
+    },
+    "RethinkButtonText": {
+      "type": "string"
+    },
+    "UncertainText": {
+      "type": "string"
+    },
+    "ShowUncertainTokens": {
+      "type": "string"
+    },
+    "VoiceHotkey": {
+      "type": "string"
+    },
+    "VoicePlaceholder": {
+      "type": "string"
+    },
+    "VoiceSendHotkey": {
+      "type": "string"
+    },
+    "Language": {
+      "type": "string"
+    },
+    "ResponseLanguage": {
+      "type": "string"
+    },
+    "Specialist": {
+      "type": "string"
+    },
+    "QueueBadge": {
+      "type": "string"
+    },
+    "QueueText": {
+      "type": "string"
+    },
+    "AlertOnFinishText": {
+      "type": "string"
+    },
+    "FilterResults": {
+      "type": "boolean"
+    }
+  }
 }

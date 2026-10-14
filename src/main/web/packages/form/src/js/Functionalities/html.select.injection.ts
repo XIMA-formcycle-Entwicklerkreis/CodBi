@@ -4,7 +4,7 @@ import { DBC } from "xdbc/src/DBC";
 import { DIFFERENT } from "xdbc/src/DBC/EQ/DIFFERENT";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -37,6 +37,14 @@ export class HTML_Select_Injection {
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XSelect")
+  @ParameterTypes({
+    Titles: { type: "string" },
+    Values: { type: "string" },
+    ReClean: { type: "boolean" },
+    TitleProperty: { type: "string" },
+    ValueProperty: { type: "string" },
+    TextProperty: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "textproperty")
     @TYPE.PRE("string | boolean", "reclean")

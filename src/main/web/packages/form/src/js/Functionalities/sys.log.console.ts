@@ -2,6 +2,7 @@
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { ParameterTypes } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -21,6 +22,9 @@ export class Sys_Log_Console {
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
+  @ParameterTypes({
+    DATA: { type: "string" },
+  })
   public static functionality(
     toLoad: { [key: string]: unknown },
 

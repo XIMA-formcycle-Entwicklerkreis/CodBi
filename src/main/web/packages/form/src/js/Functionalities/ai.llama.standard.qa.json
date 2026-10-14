@@ -22,5 +22,67 @@
     "Question": "",
     "QuestionRoot": ""
   },
-  "supportedFormelementtypes": "XUpload"
+  "supportedFormelementtypes": "XUpload",
+  "parameters": {
+    "MaxPages": {
+      "type": "integer"
+    },
+    "Rotation": {
+      "type": "string"
+    },
+    "MaxPixelSize": {
+      "type": "integer"
+    },
+    "AIHint": {
+      "type": "string"
+    },
+    "InternetAccess": {
+      "type": "boolean"
+    },
+    "Thinking": {
+      "type": "boolean"
+    },
+    "MaxThinkingTokens": {
+      "type": "number"
+    },
+    "Mode": {
+      "type": "string"
+    },
+    "PositiveResponse": {
+      "type": "string"
+    },
+    "CaseInsensitive": {
+      "type": "boolean"
+    },
+    "VerifyErrorText": {
+      "type": "string"
+    },
+    "VerifyCheckboxLabel": {
+      "type": "string"
+    },
+    "Location": {
+      "type": "string"
+    },
+    "ResponseLanguage": {
+      "type": "string"
+    },
+    "Specialist": {
+      "type": "string"
+    },
+    "QueueBadge": {
+      "type": "string"
+    },
+    "QueueText": {
+      "type": "string"
+    },
+    "FilterResults": {
+      "type": "boolean"
+    },
+    "Question": {
+      "type": "string"
+    },
+    "QuestionRoot": {
+      "type": "string"
+    }
+  }
 }

@@ -15,7 +15,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { OR } from "xdbc/src/DBC/OR";
 // #endregion XDBC
 import { formatWaitTime } from "../commons/format-wait-time";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 
 /**
@@ -95,6 +95,23 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @ParameterTypes({
+    Question: { type: "string" },
+    PositiveResponse: { type: "string" },
+    CaseInsensitive: { type: "boolean" },
+    VerifyErrorText: { type: "string" },
+    VerifyCheckboxLabel: { type: "string" },
+    InternetAccess: { type: "boolean" },
+    Thinking: { type: "boolean" },
+    MaxThinkingTokens: { type: "number" },
+    Language: { type: "string" },
+    ResponseLanguage: { type: "string" },
+    Specialist: { type: "string" },
+    QueueBadge: { type: "string" },
+    QueueText: { type: "string" },
+    FilterResults: { type: "boolean" },
+    QuestionRoot: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE(
       "string",

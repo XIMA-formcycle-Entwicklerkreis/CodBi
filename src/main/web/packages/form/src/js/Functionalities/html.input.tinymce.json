@@ -10,5 +10,31 @@
     "StripPort": "",
     "RenderToPdf": ""
   },
-  "supportedFormelementtypes": "XTextArea"
+  "supportedFormelementtypes": "XTextArea",
+  "parameters": {
+    "Plugins": {
+      "type": "string"
+    },
+    "Toolbar": {
+      "type": "string"
+    },
+    "ResourceURL": {
+      "type": "string"
+    },
+    "UploadURL": {
+      "type": "string"
+    },
+    "UploadImageURL": {
+      "type": "string"
+    },
+    "UploadFieldName": {
+      "type": "string"
+    },
+    "StripPort": {
+      "type": "boolean"
+    },
+    "RenderToPdf": {
+      "type": "boolean"
+    }
+  }
 }

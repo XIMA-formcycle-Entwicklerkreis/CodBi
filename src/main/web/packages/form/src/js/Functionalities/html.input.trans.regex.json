@@ -4,5 +4,13 @@
     "Extractor": "",
     "Replacements": ""
   },
-  "supportedFormelementtypes": ["XTextField", "XTextArea"]
+  "supportedFormelementtypes": ["XTextField", "XTextArea"],
+  "parameters": {
+    "Extractor": {
+      "type": "string"
+    },
+    "Replacements": {
+      "type": "string"
+    }
+  }
 }

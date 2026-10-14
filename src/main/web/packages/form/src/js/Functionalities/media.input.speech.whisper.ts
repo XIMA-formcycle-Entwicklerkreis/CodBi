@@ -12,7 +12,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region Commons
 import { convertToWav, preferredMimeType } from "../commons/whisper-utils";
 import { acquireWakeLock, releaseWakeLock } from "../commons/wake-lock";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Commons
 // #endregion Imports
 /**
@@ -74,6 +74,12 @@ export class Media_Input_Speech_Whisper {
    * @param toProcess Provided by the CodBi. Must be an `input type="text"` or `textarea`. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @ParameterTypes({
+    VoiceHotkey: { type: "string" },
+    Language: { type: "string" },
+    Placeholder: { type: "string" },
+    ShowHint: { type: "boolean" },
+  })
   public static functionality(
     @TYPE.PRE("string", "voicehotkey, language, placeholder")
     @TYPE.PRE("string | boolean", "showhint")

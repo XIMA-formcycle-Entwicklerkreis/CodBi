@@ -17,7 +17,7 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF
 import { CodBiError } from "../global-scope";
 import { formatWaitTime } from "../commons/format-wait-time";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 //endregion Imports
 /**
  * Provides the {@link AI.functionality }.
@@ -83,6 +83,22 @@ export class AI_OCR {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XUpload")
+  @ParameterTypes({
+    Mode: { type: "enum", options: ["Print", "Verify", "Extract Fields"] },
+    Pattern: { type: "string" },
+    Separator: { type: "string" },
+    MaxPages: { type: "integer" },
+    FieldPattern_: { type: "string" },
+    RegExFlags: { type: "string" },
+    Preprocess: { type: "boolean" },
+    ProcessingImageText: { type: "string" },
+    InvalidImageText: { type: "string" },
+    WrongFileMessage: { type: "string" },
+    Maximum: { type: "string" },
+    Field: { type: "string" },
+    QueueBadge: { type: "string" },
+    QueueText: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE(
       "string",

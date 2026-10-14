@@ -27,5 +27,87 @@
     "ScrollToTop": "",
     "Accordion": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+  "parameters": {
+    "Folded": {
+      "type": "boolean",
+      "default": "true"
+    },
+    "CSSHeaderHover": {
+      "type": "string"
+    },
+    "CSSHeaderActive": {
+      "type": "string"
+    },
+    "CSSHeaderFolded": {
+      "type": "string"
+    },
+    "CSSHeaderUnfolded": {
+      "type": "string"
+    },
+    "DCSSHeaderUnfolded": {
+      "type": "string"
+    },
+    "CSSAnimFadeINPanel": {
+      "type": "string"
+    },
+    "CSSAnimFadeINPanelDuration": {
+      "type": "string",
+      "default": "0s"
+    },
+    "CSSAnimFadeINPanelEasing": {
+      "type": "string",
+      "default": "ease-in-out"
+    },
+    "CSSAfterHeader": {
+      "type": "string"
+    },
+    "CSSBeforeHeader": {
+      "type": "string"
+    },
+    "CSSAfterHeaderContent": {
+      "type": "string"
+    },
+    "CSSBeforeHeaderContent": {
+      "type": "string"
+    },
+    "CSSAfterHeaderContentUnfolded": {
+      "type": "string"
+    },
+    "CSSBeforeHeaderContentUnfolded": {
+      "type": "string"
+    },
+    "CSSRequiredFieldsContent": {
+      "type": "string"
+    },
+    "CSSRequiredFields": {
+      "type": "string"
+    },
+    "AutoHeaderTitle": {
+      "type": "string"
+    },
+    "AutoHeaderTitleSupplementsSpacer": {
+      "type": "string"
+    },
+    "AutoHeaderLevel": {
+      "type": "number"
+    },
+    "ScrollBlock": {
+      "type": "string",
+      "default": "nearest"
+    },
+    "GenerateHeader": {
+      "type": "boolean",
+      "default": "false"
+    },
+    "Scroll": {
+      "type": "boolean"
+    },
+    "ScrollToTop": {
+      "type": "boolean"
+    },
+    "Accordion": {
+      "type": "string"
+    }
+  }
 }

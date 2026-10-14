@@ -1070,7 +1070,19 @@ export function enableLocalDocInterface(): void {
           }
 
           for (const functionality in response.detFunctionalities) {
-            window.CodbiPluginData.detFunctionalities[functionality] = response.detFunctionalities[functionality];
+            // Merge OVER the freshly restored built-in entry instead of replacing it wholesale, so the
+            // build-time metadata the stored doc does not carry — the parameter TYPE map (`parameters`)
+            // and the supported form-element types — survives. Otherwise a stored API-doc entry would
+            // strip `parameters` and turn every typed editor back into a plain text input.
+            const stored = response.detFunctionalities[functionality];
+            const builtin = window.CodbiPluginData.detFunctionalities[functionality];
+
+            window.CodbiPluginData.detFunctionalities[functionality] = {
+              ...builtin,
+              ...stored,
+              parameters: stored?.parameters ?? builtin?.parameters,
+              supportedFormelementtypes: stored?.supportedFormelementtypes ?? builtin?.supportedFormelementtypes,
+            };
 
             getJQuery().ajax({
               url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,

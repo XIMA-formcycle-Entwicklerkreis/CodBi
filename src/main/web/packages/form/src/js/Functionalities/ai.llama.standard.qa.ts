@@ -22,7 +22,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 // #endregion PDF.js
 import { formatWaitTime } from "../commons/format-wait-time";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link AI_LLAMA_STANDARD_QA.functionality }.
@@ -141,6 +141,28 @@ export class AI_LLAMA_STANDARD_QA {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XUpload")
+  @ParameterTypes({
+    MaxPages: { type: "integer" },
+    Rotation: { type: "string" },
+    MaxPixelSize: { type: "integer" },
+    AIHint: { type: "string" },
+    InternetAccess: { type: "boolean" },
+    Thinking: { type: "boolean" },
+    MaxThinkingTokens: { type: "number" },
+    Mode: { type: "string" },
+    PositiveResponse: { type: "string" },
+    CaseInsensitive: { type: "boolean" },
+    VerifyErrorText: { type: "string" },
+    VerifyCheckboxLabel: { type: "string" },
+    Location: { type: "string" },
+    ResponseLanguage: { type: "string" },
+    Specialist: { type: "string" },
+    QueueBadge: { type: "string" },
+    QueueText: { type: "string" },
+    FilterResults: { type: "boolean" },
+    Question: { type: "string" },
+    QuestionRoot: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE(
       "string",

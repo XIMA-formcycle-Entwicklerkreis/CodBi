@@ -5,5 +5,16 @@
     "CSSProposals": "",
     "URL": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+  "parameters": {
+    "Property": {
+      "type": "string"
+    },
+    "CSSProposals": {
+      "type": "string"
+    },
+    "URL": {
+      "type": "string"
+    }
+  }
 }

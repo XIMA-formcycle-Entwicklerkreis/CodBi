@@ -25,6 +25,9 @@ import {
   listFunctionalities,
   resolveFunctionalityEntry,
   functionalityParameters,
+  functionalityParameterTypes,
+  findParameterSpec,
+  type IFunctionalityParameterSpec,
   functionalityAppliesTo,
   parameterType,
   parameterLabel,
@@ -379,6 +382,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     let any = false;
     for (const id of this.selected) {
       const params = functionalityParameters(id);
+      const types = functionalityParameterTypes(id);
       const names = Object.keys(params);
       if (names.length === 0) {
         continue;
@@ -390,7 +394,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       fragment.appendChild(header);
       for (const name of names) {
         try {
-          fragment.appendChild(this.buildParamRow(element, name, params[name]));
+          fragment.appendChild(this.buildParamRow(element, name, params[name], findParameterSpec(types, name)));
         } catch (x) {
           console.error("[CodBi] Element: could not render parameter", id, name, x);
         }
@@ -406,7 +410,12 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   }
 
   /** Builds one parameter row: name + (checkbox | text input) + EP button. */
-  private buildParamRow(element: IItemLike | undefined, name: string, description: string): HTMLElement {
+  private buildParamRow(
+    element: IItemLike | undefined,
+    name: string,
+    description: string,
+    spec?: IFunctionalityParameterSpec,
+  ): HTMLElement {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:6px;margin:2px 0;";
 
@@ -416,13 +425,15 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     label.textContent = name;
 
     const currentValue = currentAttributeValueForItem(element, name);
-    const type = parameterType(description);
+    // The structured type wins; the legacy `{Type}`-in-description hint stays as a fallback.
+    const type = spec?.type ?? parameterType(description);
 
     const cell = document.createElement("span");
     cell.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;";
 
     let textInput: HTMLInputElement | undefined;
     let checkbox: HTMLInputElement | undefined;
+    let select: HTMLSelectElement | undefined;
 
     // Writes a parameter (and re-asserts `data-cb-func`) directly onto the selected element.
     const write = (value: string): void => {
@@ -437,7 +448,12 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       }
       if (!textInput) {
         textInput = document.createElement("input");
-        textInput.type = "text";
+        textInput.type = type === "integer" || type === "number" ? "number" : "text";
+        if (type === "integer") {
+          textInput.step = "1";
+        } else if (type === "number") {
+          textInput.step = "any";
+        }
         textInput.className = "codbi-func-config__value";
         textInput.style.flex = "1";
         textInput.addEventListener("change", () => {
@@ -478,6 +494,34 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       checkbox.checked = currentValue === "true" || currentValue === "1";
     };
 
+    const showSelect = (options: string[]): void => {
+      if (textInput) {
+        textInput.remove();
+        textInput = undefined;
+      }
+      if (checkbox) {
+        checkbox.remove();
+        checkbox = undefined;
+      }
+      if (!select) {
+        select = document.createElement("select");
+        select.className = "codbi-func-config__value";
+        select.style.flex = "1";
+        const blank = document.createElement("option");
+        blank.value = "";
+        select.appendChild(blank);
+        for (const option of options) {
+          const opt = document.createElement("option");
+          opt.value = option;
+          opt.textContent = option;
+          select.appendChild(opt);
+        }
+        select.addEventListener("change", () => write(select?.value ?? ""));
+        cell.insertBefore(select, epButton);
+      }
+      select.value = currentValue;
+    };
+
     const isBooleanParam = (): boolean => type === "boolean";
 
     // The EP button opens the flat EP listing + the EP builder; on a boolean it first flips to text.
@@ -507,6 +551,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         currentValue === "0")
     ) {
       showCheckbox();
+    } else if (type === "enum" && spec?.options && spec.options.length > 0) {
+      showSelect(spec.options);
     } else {
       showText(currentValue);
     }

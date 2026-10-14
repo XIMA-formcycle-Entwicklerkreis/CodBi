@@ -8,5 +8,25 @@
     "ValueProperty": "",
     "TextProperty": ""
   },
-  "supportedFormelementtypes": "XSelect"
+  "supportedFormelementtypes": "XSelect",
+  "parameters": {
+    "Titles": {
+      "type": "string"
+    },
+    "Values": {
+      "type": "string"
+    },
+    "ReClean": {
+      "type": "boolean"
+    },
+    "TitleProperty": {
+      "type": "string"
+    },
+    "ValueProperty": {
+      "type": "string"
+    },
+    "TextProperty": {
+      "type": "string"
+    }
+  }
 }

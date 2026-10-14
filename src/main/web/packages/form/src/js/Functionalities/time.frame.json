@@ -10,5 +10,19 @@
     "XTextField": {
       "datatype": "time"
     }
+  },
+  "parameters": {
+    "MaxField": {
+      "type": "string"
+    },
+    "MsgMinInvalid": {
+      "type": "string"
+    },
+    "MsgMaxInvalid": {
+      "type": "string"
+    },
+    "EqualityPermitted": {
+      "type": "boolean"
+    }
   }
 }

@@ -16,5 +16,39 @@
     "XTextField": {
       "datatype": ["text", "plzDE"]
     }
+  },
+  "parameters": {
+    "TargetData": {
+      "type": "enum",
+      "options": ["localities", "postalcodes", "streets"]
+    },
+    "Country": {
+      "type": "enum",
+      "options": ["de", "en", "at", "li", "ch"]
+    },
+    "CSSProposals": {
+      "type": "string"
+    },
+    "MsgNotKnown": {
+      "type": "string"
+    },
+    "Dependent": {
+      "type": "string"
+    },
+    "DependentPLZ": {
+      "type": "string"
+    },
+    "DependentLocality": {
+      "type": "string"
+    },
+    "FocusOnAutocomplete": {
+      "type": "string"
+    },
+    "AllowEmpty": {
+      "type": "boolean"
+    },
+    "AllowedValues": {
+      "type": "string"
+    }
   }
 }

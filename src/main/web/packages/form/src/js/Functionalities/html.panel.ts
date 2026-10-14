@@ -11,7 +11,7 @@ import { EQ } from "xdbc/src/DBC/EQ";
 import { UNDEFINED } from "xdbc/src/DBC/UNDEFINED";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Decodes whitespace escapes in the HTML.Panel header-title separator
@@ -147,6 +147,33 @@ export class HTML_Panel {
    *          a child of CSS-Class "CodBi_HTML_Panel_Header".*/
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
+  @ParameterTypes({
+    Folded: { type: "boolean", default: "true" },
+    CSSHeaderHover: { type: "string" },
+    CSSHeaderActive: { type: "string" },
+    CSSHeaderFolded: { type: "string" },
+    CSSHeaderUnfolded: { type: "string" },
+    DCSSHeaderUnfolded: { type: "string" },
+    CSSAnimFadeINPanel: { type: "string" },
+    CSSAnimFadeINPanelDuration: { type: "string", default: "0s" },
+    CSSAnimFadeINPanelEasing: { type: "string", default: "ease-in-out" },
+    CSSAfterHeader: { type: "string" },
+    CSSBeforeHeader: { type: "string" },
+    CSSAfterHeaderContent: { type: "string" },
+    CSSBeforeHeaderContent: { type: "string" },
+    CSSAfterHeaderContentUnfolded: { type: "string" },
+    CSSBeforeHeaderContentUnfolded: { type: "string" },
+    CSSRequiredFieldsContent: { type: "string" },
+    CSSRequiredFields: { type: "string" },
+    AutoHeaderTitle: { type: "string" },
+    AutoHeaderTitleSupplementsSpacer: { type: "string" },
+    AutoHeaderLevel: { type: "number" },
+    ScrollBlock: { type: "string", default: "nearest" },
+    GenerateHeader: { type: "boolean", default: "false" },
+    Scroll: { type: "boolean" },
+    ScrollToTop: { type: "boolean" },
+    Accordion: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "autoheadertitle :: autoheadertitlesupplementsspacer :: scrollblock")
     @TYPE.PRE("string | boolean", "folded :: generateheader :: scroll :: scrolltotop")

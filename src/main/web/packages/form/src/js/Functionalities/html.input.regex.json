@@ -9,5 +9,30 @@
     "ErrorPostfix": "",
     "ExposeExpression": ""
   },
-  "supportedFormelementtypes": "XTextField"
+  "supportedFormelementtypes": "XTextField",
+  "parameters": {
+    "Expression": {
+      "type": "string"
+    },
+    "KeyExpression": {
+      "type": "string"
+    },
+    "Flags": {
+      "type": "string",
+      "default": "g"
+    },
+    "KeyFlags": {
+      "type": "string",
+      "default": "g"
+    },
+    "ErrorPrefix": {
+      "type": "string"
+    },
+    "ErrorPostfix": {
+      "type": "string"
+    },
+    "ExposeExpression": {
+      "type": "boolean"
+    }
+  }
 }

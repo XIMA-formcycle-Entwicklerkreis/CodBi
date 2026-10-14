@@ -5,7 +5,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { OR } from "xdbc/src/DBC/OR";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -30,6 +30,9 @@ export class HTML_Panel_Accordion {
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.*/
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
+  @ParameterTypes({
+    Accordion: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "accordion")
     @DEFINED.PRE("accordion", "Is the data-cb-Accordion not defined?")

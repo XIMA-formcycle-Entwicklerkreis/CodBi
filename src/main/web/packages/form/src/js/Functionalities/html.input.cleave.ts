@@ -9,7 +9,7 @@ import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -37,6 +37,14 @@ export class HTML_Input_Cleave {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextField")
+  @ParameterTypes({
+    Config: { type: "string" },
+    Date: { type: "string" },
+    DateMin: { type: "string" },
+    DateMax: { type: "string" },
+    Delimiter: { type: "string" },
+    DatePattern: { type: "string" },
+  })
   public static functionality(
     toLoad: { [key: string]: unknown },
 

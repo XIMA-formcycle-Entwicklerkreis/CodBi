@@ -3,5 +3,10 @@
   "Parameter": {
     "Accordion": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+  "parameters": {
+    "Accordion": {
+      "type": "string"
+    }
+  }
 }

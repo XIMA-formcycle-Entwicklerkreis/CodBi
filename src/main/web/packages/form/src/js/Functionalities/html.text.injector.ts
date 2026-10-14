@@ -8,7 +8,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX.js";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 
 // Prevent raw placeholder text from being displayed before replacement.
@@ -42,6 +42,11 @@ export class HTML_Text_Injector {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @ParameterTypes({
+    Placeholder: { type: "string" },
+    Replacement: { type: "string" },
+    Property: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "placeholder")
     @DEFINED.PRE("replacement")

@@ -15,7 +15,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { formatWaitTime } from "../commons/format-wait-time";
 import { acquireWakeLock, releaseWakeLock } from "../commons/wake-lock";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 
 /**
@@ -82,6 +82,20 @@ export class AI_LLAMA_STANDARD_TXTQA {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @ParameterTypes({
+    AIHint: { type: "string" },
+    useinternet: { type: "boolean" },
+    debounce: { type: "integer" },
+    inferencedelay: { type: "integer" },
+    language: { type: "string" },
+    Location: { type: "boolean" },
+    ResponseLanguage: { type: "string" },
+    Specialist: { type: "string" },
+    QueueBadge: { type: "string" },
+    QueueText: { type: "string" },
+    FilterResults: { type: "boolean" },
+    QuestionRoot: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "aihint, language, responselanguage, specialist, queuebadge, queuetext")
     @TYPE.PRE("string | boolean", "useinternet, location")

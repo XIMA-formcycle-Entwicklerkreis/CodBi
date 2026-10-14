@@ -4,6 +4,7 @@ import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { ParameterTypes } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -24,6 +25,10 @@ export class HTML_SETAttribute {
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
+  @ParameterTypes({
+    Name: { type: "string" },
+    ToSet: { type: "string" },
+  })
   public static functionality(
     @REGEX.PRE(REGEX.stdExp.htmlAttributeName, "name")
     @TYPE.PRE("string", "toset")

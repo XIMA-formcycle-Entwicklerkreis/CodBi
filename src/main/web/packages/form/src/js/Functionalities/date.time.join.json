@@ -10,5 +10,20 @@
     "XTextField": {
       "datatype": "time"
     }
+  },
+  "parameters": {
+    "DateField": {
+      "type": "string"
+    },
+    "TimeField": {
+      "type": "string"
+    },
+    "ToMillis": {
+      "type": "boolean",
+      "default": "false"
+    },
+    "Divisor": {
+      "type": "number"
+    }
   }
 }

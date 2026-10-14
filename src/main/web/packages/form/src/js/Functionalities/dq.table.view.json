@@ -10,5 +10,31 @@
     "Centered": "",
     "ExcludeColumns": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible"],
+  "parameters": {
+    "Columns": {
+      "type": "string"
+    },
+    "DataQuery": {
+      "type": "string"
+    },
+    "CSS": {
+      "type": "string"
+    },
+    "FileName": {
+      "type": "string"
+    },
+    "SheetName": {
+      "type": "string"
+    },
+    "ExportButton": {
+      "type": "string"
+    },
+    "Centered": {
+      "type": "string"
+    },
+    "ExcludeColumns": {
+      "type": "string"
+    }
+  }
 }

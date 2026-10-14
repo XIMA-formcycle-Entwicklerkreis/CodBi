@@ -7,5 +7,24 @@
     "Separator": "",
     "ShowBlacklist": ""
   },
-  "supportedFormelementtypes": "XTextField"
+  "supportedFormelementtypes": "XTextField",
+  "parameters": {
+    "List": {
+      "type": "string"
+    },
+    "Prefix": {
+      "type": "string"
+    },
+    "Postfix": {
+      "type": "string"
+    },
+    "Separator": {
+      "type": "string",
+      "default": ","
+    },
+    "ShowBlacklist": {
+      "type": "boolean",
+      "default": "false"
+    }
+  }
 }

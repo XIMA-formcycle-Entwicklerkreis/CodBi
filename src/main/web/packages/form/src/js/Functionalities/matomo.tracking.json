@@ -4,5 +4,16 @@
     "SiteID": "",
     "URL": "",
     "ImageURL": ""
+  },
+  "parameters": {
+    "SiteID": {
+      "type": "integer"
+    },
+    "URL": {
+      "type": "string"
+    },
+    "ImageURL": {
+      "type": "string"
+    }
   }
 }

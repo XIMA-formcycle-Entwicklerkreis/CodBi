@@ -223,6 +223,8 @@ const BADGE_CSS = `
 .codbi-func-table--holistic .codbi-func-addoption:hover td{background:#d1fae5}
 .codbi-func-input{min-width:0;max-width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:3px;background:transparent;padding:0 3px;margin:0;font:inherit;color:#1f2937;pointer-events:auto}
 .codbi-func-input:focus{outline:none;border-color:#c96a00;background:#fff}
+.codbi-func-input--bool{width:auto;min-width:0;height:auto;margin:0;vertical-align:middle;accent-color:#ff8c00;cursor:pointer}
+.codbi-func-input--enum{min-height:16px;cursor:pointer;background:#fff;border-color:#e7c9a3;padding:0 2px}
 .codbi-func-actions{width:1%;white-space:nowrap;text-align:center}
 .codbi-func-delete{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;padding:0;margin:0;border:0;border-radius:3px;background:transparent;color:#b91c1c;cursor:pointer;pointer-events:auto}
 .codbi-func-delete:hover{background:#fee2e2}
@@ -235,7 +237,13 @@ const BADGE_CSS = `
 .codbi-func-item__params--max .codbi-func-table{width:100%}
 .codbi-func-item__params--max .codbi-func-value{width:100%}
 .codbi-func-item__params--max .codbi-func-input{flex:1 1 auto;width:auto;min-width:0}
-.codbi-func-preview-switch{position:absolute;top:4px;right:4px;z-index:30;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:999px;box-shadow:0 1px 3px rgba(15,23,42,.28);padding:3px 7px;cursor:pointer;pointer-events:auto;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;user-select:none}
+.codbi-func-preview-switch{position:absolute;top:4px;right:4px;z-index:30;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:999px;box-shadow:0 1px 3px rgba(15,23,42,.28);padding:3px 7px;cursor:pointer;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .15s ease,visibility .15s ease;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;user-select:none}
+/* The preview switch is hidden by default so it does not clutter every form element. It appears only
+   while its element (the anchor cell that directly owns it) is hovered, while it is switched ON, or
+   when it holds keyboard focus — the latter two keep it clickable to turn a running preview off. */
+*:hover>.codbi-func-preview-switch,
+.codbi-func-preview-switch--on,
+.codbi-func-preview-switch:focus-visible{opacity:1;visibility:visible;pointer-events:auto}
 .codbi-func-preview-switch__icon{display:inline-flex;align-items:center;justify-content:center;color:currentColor}
 .codbi-func-preview-switch__input{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
 .codbi-func-preview-switch__track{position:relative;flex:0 0 auto;width:26px;height:14px;border-radius:999px;background:#cbd5e1;transition:background .15s}
@@ -324,10 +332,27 @@ interface IAttributeEntry {
   value?: unknown;
 }
 
+/** The type of a functionality parameter (mirrors `codbi-common`'s `TParameterType`). */
+type TParamType = "string" | "integer" | "number" | "boolean" | "enum";
+
+/** The designer-side view of ONE functionality parameter's type metadata. */
+interface IParamSpec {
+  /** The parameter's type. Absent/unknown means `"string"`. */
+  type?: TParamType;
+  /** For `type: "enum"`: the allowed, fixed set of values. */
+  options?: string[];
+  /** The parameter's default value (as a string). */
+  default?: string;
+  /** A short description of the parameter. */
+  description?: string;
+}
+
 /** Structural view of one CodBi functionality definition (`window.CodbiPluginData.detFunctionalities`). */
 interface IFunctionalityDef {
   Description?: string;
   Parameter?: Record<string, string>;
+  /** Per-parameter type metadata (`@ParameterTypes`, published by the build-time generator). */
+  parameters?: Record<string, IParamSpec>;
 }
 
 /** One functionality to display on a badge, with the `data-cb-*` parameters set on the element. */
@@ -454,15 +479,6 @@ function restorePendingParamFocus(badge: HTMLElement): void {
         }
       }
       badge.classList.add("codbi-elem-badge--focus-active");
-      console.info(
-        "[CodBi][DBG] restore-focus attr=%s openFuncSubBadge=%j itemOpen=%s badgeFocus=%s",
-        name,
-        openFuncSubBadge,
-        params?.parentElement?.className ?? "",
-        badge.classList.contains("codbi-elem-badge--focus-active"),
-      );
-    } else {
-      console.info("[CodBi][DBG] restore-focus attr=%s NOT FOUND (row not rendered yet)", name);
     }
   } catch {
     /* the row may not have been rendered — clear the hint below */
@@ -619,19 +635,6 @@ function writablePropertyBags(item: IMarkerItemLike): TItemProperties[] {
  * AttributesEditor reads/writes) so the change is reflected in the element's config attribute table.
  */
 function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): boolean {
-  // DEBUG: log every attribute write with the target item, so we can see whether the data-cb-*
-  // are ever written onto the Functionality WIDGET item instead of only the CONTAINED child.
-  try {
-    console.info(
-      "[CodBi] DEBUG write attr=%s onto class=%s id=%s val=%s",
-      name,
-      String(item.className ?? ""),
-      item.getId?.() ?? "",
-      value,
-    );
-  } catch {
-    /* debug only */
-  }
   const bags = writablePropertyBags(item);
   if (bags.length === 0) {
     return false;
@@ -886,6 +889,8 @@ interface IParamTableSection {
   params: Array<{ name: string; value: string }>;
   /** The full list of available parameter attribute names (`data-cb-xyz`) for this functionality. */
   available: string[];
+  /** The functionality key whose type metadata (`parameters`) this group's params belong to. */
+  funcKey?: string;
 }
 
 /**
@@ -933,37 +938,19 @@ const HOLISTIC_STANDARD_PREFIX = "Holistic.";
 function activeHolisticConfigs(): IActiveHolisticConfig[] {
   const standards = standardsData();
   if (!standards) {
-    console.warn(
-      "[CodBi][DBG][holistic] standardsData() returned undefined — detStandards not loaded in window.CodbiPluginData",
-    );
     return [];
   }
   const holisticIds = Object.keys(standards).filter((id) => id.startsWith(HOLISTIC_STANDARD_PREFIX));
-  console.info(
-    "[CodBi][DBG][holistic] detStandards has %d entry/entries; Holistic.* ids = %O",
-    Object.keys(standards).length,
-    holisticIds,
-  );
   const result: IActiveHolisticConfig[] = [];
   for (const id of holisticIds) {
     const def = standards[id];
     const active = Boolean(def?.Active);
     const hasTargets = Boolean(def?.targets);
     const skippedGlobal = hasTargets && GLOBAL_HOLISTIC_TARGETS.has((def?.targets ?? "").trim());
-    console.info(
-      "[CodBi][DBG][holistic] config %s: Active=%s targets=%s skippedGlobalTarget=%s",
-      id,
-      active,
-      JSON.stringify(def?.targets ?? ""),
-      skippedGlobal,
-    );
     if (!active || !hasTargets || skippedGlobal) {
       continue;
     }
     result.push({ id, def: def as IStandardConfigDef });
-  }
-  if (result.length === 0) {
-    console.warn("[CodBi][DBG][holistic] NO active, non-global holistic config found — green badges will not render");
   }
   return result;
 }
@@ -1024,43 +1011,20 @@ function holisticTargetsAnchor(anchor: HTMLElement, targets: string): boolean {
  */
 function holisticConfigsFor(anchor: HTMLElement | null): IActiveHolisticConfig[] {
   if (!anchor) {
-    console.warn("[CodBi][DBG][holistic] holisticConfigsFor(anchor=null)");
     return [];
   }
-  console.info(
-    "[CodBi][DBG][holistic] anchor: tag=%s id=%s class=%s data-cb-func=%s isFormInput=%s outerHTML=%s",
-    anchor.tagName,
-    anchor.id,
-    anchor.className,
-    anchor.getAttribute("data-cb-func") ?? "",
-    ["INPUT", "TEXTAREA", "SELECT", "FIELDSET"].includes(anchor.tagName),
-    anchor.outerHTML.length > 220 ? `${anchor.outerHTML.slice(0, 220)}…` : anchor.outerHTML,
-  );
   const actives = activeHolisticConfigs();
   const matched: IActiveHolisticConfig[] = [];
   for (const config of actives) {
     let matchResult = false;
-    let matchError = "";
     try {
       matchResult = holisticTargetsAnchor(anchor, config.def.targets ?? "");
-    } catch (e) {
-      matchError = String(e);
+    } catch {
+      matchResult = false;
     }
-    console.info(
-      "[CodBi][DBG][holistic]   match %s => %s targets=%s%s",
-      config.id,
-      matchResult,
-      JSON.stringify(config.def.targets ?? ""),
-      matchError ? ` ERROR=${matchError}` : "",
-    );
     if (matchResult) {
       matched.push(config);
     }
-  }
-  if (matched.length === 0) {
-    console.warn(
-      "[CodBi][DBG][holistic] anchor did NOT match any active holistic config — check whether the targets selector matches the ANCHOR element (a wrapper, not the inner <input>).",
-    );
   }
   return matched;
 }
@@ -1090,7 +1054,7 @@ function buildHolisticSections(id: string, def: IStandardConfigDef, item: IMarke
       params.push({ name: attrName, value });
     }
   }
-  return [{ title: `${id} · ${funcName}`, params, available }];
+  return [{ title: `${id} · ${funcName}`, params, available, funcKey: funcName }];
 }
 
 /**
@@ -1109,6 +1073,69 @@ function availableParameterNames(funcName: string): string[] {
 /** Strip the `data-cb-` prefix so a parameter attribute shows without a redundant `data-cb-` label. */
 function paramLabel(attrName: string): string {
   return attrName.toLowerCase().startsWith(CB_PARAM_PREFIX) ? attrName.slice(CB_PARAM_PREFIX.length) : attrName;
+}
+
+/**
+ * Resolves the published type metadata (`detFunctionalities[*].parameters`) of one parameter, matched
+ * case-insensitively by its bare name (without the `data-cb-` prefix). Returns `undefined` when the
+ * functionality declares no type, in which case the caller falls back to a plain text input.
+ */
+/** Parses the legacy `{Type}` hint out of a parameter description (the older manager shape). */
+function parameterSpecFromDescription(description: string | undefined): IParamSpec | undefined {
+  const hint = /\{\s*([A-Za-z]+)\s*\}/.exec(String(description ?? ""))?.[1]?.toLowerCase();
+  if (hint === "boolean" || hint === "integer" || hint === "number") {
+    return { type: hint };
+  }
+  return undefined;
+}
+
+function parameterSpecFor(funcKey: string | undefined, attrName: string): IParamSpec | undefined {
+  if (!funcKey) {
+    return undefined;
+  }
+  const data = functionalityData();
+  if (!data) {
+    return undefined;
+  }
+  // Case-insensitive entry resolution (the registry keys may use the original casing).
+  const wanted = funcKey.toLowerCase();
+  let entry: IFunctionalityDef | undefined;
+  for (const key of Object.keys(data)) {
+    if (key.toLowerCase() === wanted) {
+      entry = data[key];
+      break;
+    }
+  }
+  if (!entry) {
+    return undefined;
+  }
+  const bare = paramLabel(attrName).toLowerCase();
+  // Prefer the structured `parameters` TYPE map.
+  const params = entry.parameters;
+  if (params) {
+    for (const key of Object.keys(params)) {
+      if (key.toLowerCase() === bare) {
+        return params[key];
+      }
+    }
+  }
+  // Fallback: the legacy `{Type}` hint carried in the parameter description (used by the config
+  // editors), so the badge stays consistent even when the structured `parameters` map is absent.
+  const descriptions = entry.Parameter;
+  if (descriptions) {
+    for (const key of Object.keys(descriptions)) {
+      if (key.toLowerCase() === bare) {
+        return parameterSpecFromDescription(descriptions[key]);
+      }
+    }
+  }
+  return undefined;
+}
+
+/** @returns whether a persisted `data-cb-*` value counts as a checked boolean (`true`/`1`/`yes`/`on`). */
+function isTruthyParam(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
 }
 
 /** Reads the value of a `data-cb-*` parameter attribute from the current item ("" when unset). */
@@ -1141,7 +1168,7 @@ function buildCssClassSections(cssClass: string, item: IMarkerItemLike): IParamT
         params.push({ name: attrName, value });
       }
     }
-    return { title: funcName, params, available };
+    return { title: funcName, params, available, funcKey: funcName };
   });
 }
 
@@ -2424,8 +2451,11 @@ function buildParamTable(
   head.appendChild(headRow);
   table.appendChild(head);
 
-  const addRow = (row: HTMLTableRowElement): void => {
+  const addRow = (row: HTMLTableRowElement, section: IParamTableSection): void => {
     const attrName = row.dataset.param ?? "";
+    const value = row.dataset.value ?? "";
+    const spec = parameterSpecFor(section.funcKey, attrName);
+    const type = spec?.type ?? "string";
     // Column 1 — the (fixed) parameter name.
     const name = doc.createElement("th");
     name.scope = "row";
@@ -2434,47 +2464,92 @@ function buildParamTable(
     const valueCell = doc.createElement("td");
     const valueWrap = doc.createElement("span");
     valueWrap.className = "codbi-func-value";
-    const input = doc.createElement("input");
-    input.type = "text";
-    input.className = "codbi-func-input";
-    input.value = row.dataset.value ?? "";
-    // Let the input claim enough width for the whole value (a stylesheet width can still cap it).
-    input.size = Math.min(Math.max((row.dataset.value ?? "").length + 1, 8), 200);
-    input.title = attrName;
-    isolateControl(input);
-    input.addEventListener("change", () => {
-      setFuncAttribute(resolve(), attrName, input.value);
-    });
-    input.addEventListener("keydown", (event) => {
-      // #region Alt+E → open the EP builder for this attribute value.
-      if (event.altKey && event.key.toLowerCase() === "e") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        event.stopPropagation();
+    // Attaches the ALT+E EP-builder shortcut + Enter-commit behaviour to a text-like control.
+    const bindTextShortcuts = (input: HTMLInputElement): void => {
+      input.addEventListener("change", () => {
+        setFuncAttribute(resolve(), attrName, input.value);
+      });
+      input.addEventListener("keydown", (event) => {
+        // #region Alt+E → open the EP builder for this attribute value.
+        if (event.altKey && event.key.toLowerCase() === "e") {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          event.stopPropagation();
 
-        openEPBuilder({
-          // Render into the DESIGNER document (not the canvas iframe) so the popup snaps to the
-          // designer window's edges, exactly like the Form Assistant dialog.
-          document: window.document,
-          anchor,
-          value: input.value,
-          listEPs: listElementPlaceholders,
-          onApply: (value) => {
-            input.value = value;
-            setFuncAttribute(resolve(), attrName, value);
-            input.blur();
-          },
-        });
+          openEPBuilder({
+            // Render into the DESIGNER document (not the canvas iframe) so the popup snaps to the
+            // designer window's edges, exactly like the Form Assistant dialog.
+            document: window.document,
+            anchor,
+            value: input.value,
+            listEPs: listElementPlaceholders,
+            onApply: (applied) => {
+              input.value = applied;
+              setFuncAttribute(resolve(), attrName, applied);
+              input.blur();
+            },
+          });
 
-        return;
+          return;
+        }
+        // #endregion Alt+E → open the EP builder for this attribute value.
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          input.blur(); // Commits the value (fires `change`).
+        }
+      });
+    };
+    // Render the value control that matches the parameter's published type (see `parameterSpecFor`).
+    let control: HTMLElement;
+    if (type === "boolean") {
+      const checkbox = doc.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "codbi-func-input codbi-func-input--bool";
+      checkbox.checked = isTruthyParam(value);
+      checkbox.title = attrName;
+      isolateControl(checkbox);
+      checkbox.addEventListener("change", () => {
+        setFuncAttribute(resolve(), attrName, checkbox.checked ? "true" : "false");
+      });
+      control = checkbox;
+    } else if (type === "enum" && spec?.options && spec.options.length > 0) {
+      const select = doc.createElement("select");
+      select.className = "codbi-func-input codbi-func-input--enum";
+      select.title = attrName;
+      const blank = doc.createElement("option");
+      blank.value = "";
+      select.appendChild(blank);
+      for (const option of spec.options) {
+        const opt = doc.createElement("option");
+        opt.value = option;
+        opt.textContent = option;
+        select.appendChild(opt);
       }
-      // #endregion Alt+E → open the EP builder for this attribute value.
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        input.blur(); // Commits the value (fires `change`).
+      select.value = value;
+      isolateControl(select);
+      select.addEventListener("change", () => {
+        setFuncAttribute(resolve(), attrName, select.value);
+      });
+      control = select;
+    } else {
+      const input = doc.createElement("input");
+      input.type = type === "integer" || type === "number" ? "number" : "text";
+      if (type === "integer") {
+        input.step = "1";
+      } else if (type === "number") {
+        input.step = "any";
+      } else {
+        // Let the text input claim enough width for the whole value (a stylesheet width can still cap it).
+        input.size = Math.min(Math.max(value.length + 1, 8), 200);
       }
-    });
+      input.className = "codbi-func-input";
+      input.value = value;
+      input.title = attrName;
+      isolateControl(input);
+      bindTextShortcuts(input);
+      control = input;
+    }
     // Maximize the whole popup (toggles between element width and the full available viewport).
     const maximize = doc.createElement("button");
     maximize.type = "button";
@@ -2489,7 +2564,7 @@ function buildParamTable(
       popup.dataset.codbiMax = next ? "1" : "0";
       applyFuncPopupWidth(subBadge, popup, anchor, next);
     });
-    valueWrap.append(input, maximize);
+    valueWrap.append(control, maximize);
     valueCell.appendChild(valueWrap);
     // Column 3 — the trash button that removes the parameter.
     const actionsCell = doc.createElement("td");
@@ -2530,7 +2605,7 @@ function buildParamTable(
       const row = doc.createElement("tr");
       row.dataset.param = param.name;
       row.dataset.value = param.value;
-      addRow(row);
+      addRow(row, section);
       body.appendChild(row);
     }
     // "Add parameter" dropdown: the functionality's available params not yet present here. This is a
@@ -2591,15 +2666,6 @@ function buildParamTable(
             // `badge.replaceChildren`) the freshly-built value input is re-focused again and the
             // popup is re-expanded. Without this, the rebuild leaves the popup collapsed at icon size.
             pendingAddedParam = attrName;
-            // DEBUG: which sub-badge is tracked as open when a parameter is being added — if this is
-            // null on the 2nd+ add, that is why the rebuild collapses the table.
-            console.info(
-              "[CodBi][DBG] add-param click attr=%s pending=%s openFuncSubBadge=%j missingLeft=%d",
-              attrName,
-              pendingAddedParam,
-              openFuncSubBadge,
-              missing.filter((n) => !present.has(n.toLowerCase())).length,
-            );
             if (setFuncAttribute(target, attrName, "")) {
               present.add(attrName.toLowerCase());
               // Add the new parameter row IN PLACE and focus its value input. Because the whole
@@ -2608,7 +2674,7 @@ function buildParamTable(
               const row = doc.createElement("tr");
               row.dataset.param = attrName;
               row.dataset.value = "";
-              addRow(row);
+              addRow(row, section);
               body.insertBefore(row, addRowEl);
               const input = row.querySelector<HTMLInputElement>("input.codbi-func-input");
               input?.focus();
@@ -2708,6 +2774,7 @@ function buildFuncBadgeInner(
         title: func.name,
         params: func.params,
         available: availableParameterNames(func.name),
+        funcKey: func.name,
       };
       const params = doc.createElement("div");
       params.className = "codbi-func-item__params";
@@ -2737,7 +2804,6 @@ function buildFuncBadgeInner(
       // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
       if (openFuncSubBadge === func.name) {
         item.classList.add("codbi-func-item--open");
-        console.info("[CodBi][DBG] rebuild reopens FUNC sub-badge %j", func.name);
       }
       params.appendChild(buildParamTable(doc, [section], resolve, anchor, item, params, "func", badge));
       list.appendChild(item);
@@ -2774,7 +2840,6 @@ function buildFuncBadgeInner(
       // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
       if (openFuncSubBadge === cssClass) {
         item.classList.add("codbi-css-item--open");
-        console.info("[CodBi][DBG] rebuild reopens CSS sub-badge %j", cssClass);
       }
       params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "css", badge));
       list.appendChild(item);
@@ -2833,14 +2898,6 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   // The active holistic configurations whose `targets` selector resolves to this element (green
   // sub-badges). Re-evaluated on every refresh so toggling a holistic config Active re-marks widgets.
   const holistic = holisticConfigsFor(anchor);
-  console.info(
-    "[CodBi][DBG][mark] ensureFuncBadge id=%s anchor=%s: funcs=%d css=%d holistic=%s",
-    id,
-    anchor.tagName,
-    funcs.length,
-    cssClasses.length,
-    holistic.map((c) => c.id).join(",") || "(none)",
-  );
   // Fold in the holistic config ids AND the `data-cb-*` parameters their `FUNC`s can carry, so
   // toggling a config Active or editing a parameter via a GREEN sub-badge re-renders the badge.
   const signature = `${funcSignature(funcs, cssClasses, item)}\u0006${holistic
@@ -2953,8 +3010,6 @@ function refreshBadges(): void {
     const liveMirrors = new Set<string>();
     const liveFuncs = new Set<string>();
     const livePreview = new Set<string>();
-    let mirrors = 0;
-    let functions = 0;
     for (const item of Object.values(items)) {
       const isMirror = isMirrorItem(item);
       const anchor = anchorFor(item);
@@ -2967,19 +3022,6 @@ function refreshBadges(): void {
       // (green sub-badge) — any of these earns the CodBi badge on the element.
       const isFunc = cbFunc || css || hol;
       const itemId = item.getId?.() ?? "";
-      if (anchor && (cbFunc || css || hol || isMirror)) {
-        console.info(
-          "[CodBi][DBG][mark] item=%s (%s) anchor=%s: isMirror=%s cbFunc=%s css=%s hol=%s -> isFunc=%s",
-          itemId,
-          item.constructor?.name ?? item.className ?? "?",
-          anchor.tagName,
-          isMirror,
-          cbFunc,
-          css,
-          hol,
-          isFunc,
-        );
-      }
       // In preview mode we ALSO need to reach plain elements (fields, fieldsets, containers, pages)
       // so they get their own preview switch — so don't bail out on non-widget items in that mode.
       if (!isMirror && !isFunc && !elementPreview) {
@@ -2993,7 +3035,6 @@ function refreshBadges(): void {
       }
       const id = item.getId?.() ?? "";
       if (isMirror) {
-        mirrors += 1;
         if (id) {
           liveMirrors.add(id);
         }
@@ -3007,7 +3048,6 @@ function refreshBadges(): void {
         }
       }
       if (isFunc) {
-        functions += 1;
         if (id) {
           liveFuncs.add(id);
         }
@@ -3061,14 +3101,6 @@ function refreshBadges(): void {
       removeAllBadges();
       removeAllFuncBadges();
     }
-    console.log(
-      "[CodBi] Element markers: %d mirror(s), %d badge(s), %d function element(s), %d function badge(s) (enabled=%s)",
-      mirrors,
-      badges.size,
-      functions,
-      funcBadges.size,
-      enabled,
-    );
   } finally {
     refreshing = false;
   }
@@ -3142,19 +3174,13 @@ export function enableCodbiElementMarkers(): void {
         console.error(`[CodBi] Element markers: failed to register the '${event}' callback`, x);
       }
     }
-    // Dedicated `items-created` hook: it also LOGS the created items, so a refused/unresolved drop
-    // (the designer never creates the item) can be told apart from a mere rendering problem.
+    // Dedicated `items-created` hook; the `return new Set()` below is essential (see the comment).
     try {
       (
         Callbacks["items-created"] as unknown as {
-          add(listener: (ids: Set<string>, items: Record<string, { className?: string | null }>) => unknown): void;
+          add(listener: () => unknown): void;
         }
-      ).add((ids, items) => {
-        console.log(
-          "[CodBi] Element markers: items-created ids=%o classes=%o",
-          Array.from(ids ?? []),
-          Object.values(items ?? {}).map((item) => item?.className),
-        );
+      ).add(() => {
         scheduleRefresh();
         // CRITICAL: the `items-created` event is declared to RETURN a `Set<string>` (the ids the
         // designer should draw). The designer does `fire(...).reduce(...)` over the listeners'
@@ -3177,7 +3203,6 @@ export function enableCodbiElementMarkers(): void {
       if (typeof detail?.showLabels === "boolean") {
         showLabels = detail.showLabels;
       }
-      console.log("[CodBi] Element markers: switch state =", switchEnabled, "showLabels =", showLabels);
       scheduleRefresh();
     });
 
@@ -3190,7 +3215,6 @@ export function enableCodbiElementMarkers(): void {
     // Initial pass once the designer had a chance to render its first form.
     scheduleRefresh();
     window.setTimeout(refreshBadges, 400);
-    console.log("[CodBi] Element markers enabled (ALT+V toggles the mirror mode)");
   } catch (x) {
     console.error("[CodBi] Element markers: initialization failed", x);
   }

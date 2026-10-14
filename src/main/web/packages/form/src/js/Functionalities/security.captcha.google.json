@@ -6,5 +6,19 @@
     "DataCallbackCode": "",
     "Script": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+  "parameters": {
+    "SiteKey": {
+      "type": "string"
+    },
+    "DataCallback": {
+      "type": "string"
+    },
+    "DataCallbackCode": {
+      "type": "string"
+    },
+    "Script": {
+      "type": "string"
+    }
+  }
 }

@@ -23,7 +23,7 @@ import { CodBiError, generateUUID } from "../global-scope";
 //region Commons
 import { convertToWav, preferredMimeType } from "../commons/whisper-utils";
 import { formatWaitTime } from "../commons/format-wait-time";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 //endregion Commons
 //endregion Imports
 /**
@@ -134,6 +134,29 @@ export class AI_LLAMA_CHAT {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextArea")
+  @ParameterTypes({
+    MaxPages: { type: "integer" },
+    Rotation: { type: "enum", options: ["90", "180", "270"] },
+    MaxPixelSize: { type: "integer" },
+    LLAMAbubble: { type: "string" },
+    UserBubble: { type: "string" },
+    WelcomeText: { type: "string" },
+    WaitingText: { type: "string" },
+    LowConfidenceText: { type: "string" },
+    RethinkButtonText: { type: "string" },
+    UncertainText: { type: "string" },
+    ShowUncertainTokens: { type: "string" },
+    VoiceHotkey: { type: "string" },
+    VoicePlaceholder: { type: "string" },
+    VoiceSendHotkey: { type: "string" },
+    Language: { type: "string" },
+    ResponseLanguage: { type: "string" },
+    Specialist: { type: "string" },
+    QueueBadge: { type: "string" },
+    QueueText: { type: "string" },
+    AlertOnFinishText: { type: "string" },
+    FilterResults: { type: "boolean" },
+  })
   public static functionality(
     @TYPE.PRE(
       "string",

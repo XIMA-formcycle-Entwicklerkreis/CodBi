@@ -3,6 +3,7 @@
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { ParameterTypes } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -52,6 +53,12 @@ export class HTML_CSS {
    *                  provided **CSS**.
    *  - Destination:  The selector pointing to the "CSS"-Destination. */
   @DBC.ParamvalueProvider
+  @ParameterTypes({
+    CSS: { type: "string" },
+    Replacements: { type: "string" },
+    Darkmode: { type: "string" },
+    Destination: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "destination") toLoad: { [key: string]: string | Array<string> },
     toProcess: Element,

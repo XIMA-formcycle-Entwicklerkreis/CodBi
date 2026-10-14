@@ -10,6 +10,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { CodBi, CodBiError } from "../global-scope";
+import { ParameterTypes } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link OnChange_Conditional.functionality }.
@@ -52,6 +53,13 @@ export class OnChange_Conditional {
    * @throws  A {@link CodBiError } a "DateFormat" is specified and the tagged {@link HTMLInputElement }'S value
    *          couldn't be converted to a {@link Date } by {@link formatDate }. */
   @DBC.ParamvalueProvider
+  @ParameterTypes({
+    Reference: { type: "string" },
+    Mode: { type: "enum", options: ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"] },
+    Target: { type: "string" },
+    DateFormat: { type: "string" },
+    Candidate: { type: "string" },
+  })
   public static functionality(
     @TYPE.PRE("string", "mode :: target :: dateformat :: candidate")
     @REGEX.PRE(/^(GTEQ|GT|LTEQ|LT|EQ|NEQ)$/i, "mode")

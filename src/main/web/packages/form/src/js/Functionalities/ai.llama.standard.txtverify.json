@@ -17,5 +17,52 @@
     "FilterResults": "",
     "QuestionRoot": ""
   },
-  "supportedFormelementtypes": ["XTextField", "XTextArea"]
+  "supportedFormelementtypes": ["XTextField", "XTextArea"],
+  "parameters": {
+    "Question": {
+      "type": "string"
+    },
+    "PositiveResponse": {
+      "type": "string"
+    },
+    "CaseInsensitive": {
+      "type": "boolean"
+    },
+    "VerifyErrorText": {
+      "type": "string"
+    },
+    "VerifyCheckboxLabel": {
+      "type": "string"
+    },
+    "InternetAccess": {
+      "type": "boolean"
+    },
+    "Thinking": {
+      "type": "boolean"
+    },
+    "MaxThinkingTokens": {
+      "type": "number"
+    },
+    "Language": {
+      "type": "string"
+    },
+    "ResponseLanguage": {
+      "type": "string"
+    },
+    "Specialist": {
+      "type": "string"
+    },
+    "QueueBadge": {
+      "type": "string"
+    },
+    "QueueText": {
+      "type": "string"
+    },
+    "FilterResults": {
+      "type": "boolean"
+    },
+    "QuestionRoot": {
+      "type": "string"
+    }
+  }
 }

@@ -5,7 +5,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { EQ } from "xdbc/src/DBC/EQ";
 // #endregion XDBC
 import { HTML_Input_Transformer } from "./html.input.transformer";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Input_Transformer.functionality } along with the {@link HTML_Input_Trans_Capital.transformer }.
@@ -54,6 +54,11 @@ export class HTML_Input_Trans_NTW extends HTML_Input_Transformer {
    * @param toLoad    As provided bny the **CodBi**.
    * @param toProcess As provided bny the **CodBi**. */
   @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @ParameterTypes({
+    NumberWords: { type: "string" },
+    PreFix: { type: "string" },
+    PostFix: { type: "string" },
+  })
   public static override functionality(
     @TYPE.PRE("string", "prefix, postfix")
     @INSTANCE.PRE(Array<string>, "numberwords")

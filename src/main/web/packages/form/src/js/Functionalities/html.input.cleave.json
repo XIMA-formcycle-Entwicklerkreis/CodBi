@@ -8,5 +8,25 @@
     "Delimiter": "",
     "DatePattern": ""
   },
-  "supportedFormelementtypes": "XTextField"
+  "supportedFormelementtypes": "XTextField",
+  "parameters": {
+    "Config": {
+      "type": "string"
+    },
+    "Date": {
+      "type": "string"
+    },
+    "DateMin": {
+      "type": "string"
+    },
+    "DateMax": {
+      "type": "string"
+    },
+    "Delimiter": {
+      "type": "string"
+    },
+    "DatePattern": {
+      "type": "string"
+    }
+  }
 }

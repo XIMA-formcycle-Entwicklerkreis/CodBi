@@ -6,5 +6,19 @@
     "CSSHoverNavButtons": "",
     "CSSBlockedNavButton": ""
   },
-  "supportedFormelementtypes": ["XContainer", "XContainerInvisible"]
+  "supportedFormelementtypes": ["XContainer", "XContainerInvisible"],
+  "parameters": {
+    "Preview": {
+      "type": "boolean"
+    },
+    "CSSNavButtons": {
+      "type": "string"
+    },
+    "CSSHoverNavButtons": {
+      "type": "string"
+    },
+    "CSSBlockedNavButton": {
+      "type": "string"
+    }
+  }
 }

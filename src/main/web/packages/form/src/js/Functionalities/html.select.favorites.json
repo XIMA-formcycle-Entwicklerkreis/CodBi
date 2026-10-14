@@ -6,5 +6,19 @@
     "Favorites": "",
     "Divider": ""
   },
-  "supportedFormelementtypes": "XSelect"
+  "supportedFormelementtypes": "XSelect",
+  "parameters": {
+    "DividerTarget": {
+      "type": "string"
+    },
+    "InitialElement": {
+      "type": "string"
+    },
+    "Favorites": {
+      "type": "string"
+    },
+    "Divider": {
+      "type": "string"
+    }
+  }
 }

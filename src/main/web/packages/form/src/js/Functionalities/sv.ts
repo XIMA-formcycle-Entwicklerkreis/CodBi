@@ -4,7 +4,7 @@ import { DBC } from "xdbc/src/DBC";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
-import { SupportedFormelementtype } from "codbi-common";
+import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
  * Provides the {@link SV.functionality }.
@@ -36,6 +36,10 @@ export class SV {
    * @throws A {@link CodBiError } if "Destinations" and "Sources" don't contain the same amount of entries. */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
+  @ParameterTypes({
+    Destinations: { type: "string" },
+    Sources: { type: "string" },
+  })
   public static functionality(
     @DEFINED.PRE("destinations")
     @DEFINED.PRE("sources")

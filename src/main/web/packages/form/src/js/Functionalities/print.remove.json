@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_print.remove.Print_Remove.html#functionality",
+  "Summary": {
+    "en": "Hides the tagged element (or a selected ancestor) when the form is printed.",
+    "de": "Blendet das markierte Element (oder einen ausgewählten Vorfahren) beim Drucken des Formulars aus.",
+    "it": "Nasconde l'elemento contrassegnato (o un antenato selezionato) quando il modulo viene stampato."
+  },
   "Parameter": {
     "ParentalLevel": "The number of elements to climb up the parentElement-Tree to get to the element to remove.",
     "DocumentSelector": "The CSS-Selector specifying the element to remove. This parameter takes precedence over ParentalLevel.",

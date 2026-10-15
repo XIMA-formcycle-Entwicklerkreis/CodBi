@@ -53,3 +53,30 @@ export function localizedParameterDescription(spec: ILocalizedParameterSpec | un
   }
   return "";
 }
+
+/**
+ * Resolves the short (one-sentence) description of a functionality for the currently active designer
+ * language, falling back to the base/English string when no localized variant exists. Use this wherever
+ * a functionality summary is shown to the user (e.g. the config panel's functionality group-header
+ * tooltip).
+ *
+ * The `Summary` is either a plain string or a per-language map (e.g. `{ en, de, it }`), mirroring the
+ * Element-Placeholder `Summary` shape.
+ *
+ * @param summary The functionality's raw `Summary` value (may be `undefined`).
+ * @returns The localized summary, or an empty string when none is available. */
+export function localizedFunctionalitySummary(summary: string | Record<string, string> | undefined): string {
+  if (summary === undefined) {
+    return "";
+  }
+  if (typeof summary === "string") {
+    return summary.trim();
+  }
+  const lang = getDesignerLanguage().toLowerCase();
+  // The base (English) fallback is read through a typed view: accessing `.en` directly on the index
+  // signature would violate `noPropertyAccessFromIndexSignature`.
+  const base = (summary as { en?: string }).en;
+  // Computed access with a variable (not a literal) keeps the map lookup while satisfying the linter.
+  const localized = summary[lang] ?? summary[lang.slice(0, 2)] ?? base;
+  return String(localized ?? "").trim();
+}

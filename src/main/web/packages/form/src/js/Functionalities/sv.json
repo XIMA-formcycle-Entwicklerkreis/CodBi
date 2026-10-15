@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_sv.SV.html#functionality",
+  "Summary": {
+    "en": "Copies the values of URL parameters into CodBi global variables.",
+    "de": "Kopiert die Werte von URL-Parametern in CodBi-Globalvariablen.",
+    "it": "Copia i valori dei parametri URL nelle variabili globali CodBi."
+  },
   "Parameter": {
     "Destinations": "The name(s) of the global variable(s) to set (a single string or an array of strings).",
     "Sources": "The name(s) of the URL-parameter(s) to read (a single string or an array of strings). Must contain the same amount of entries as Destinations; the i-th destination is set to the value of the i-th source."

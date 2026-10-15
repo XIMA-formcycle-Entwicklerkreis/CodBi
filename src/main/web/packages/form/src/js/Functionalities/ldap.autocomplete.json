@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_ldap.autocomplete.LDAP_Autocomplete.html#functionality",
+  "Summary": {
+    "en": "Autocompletes a text field with matches from an LDAP directory search.",
+    "de": "Vervollständigt ein Textfeld automatisch mit Treffern aus einer LDAP-Verzeichnissuche.",
+    "it": "Completa automaticamente un campo di testo con i risultati di una ricerca nella directory LDAP."
+  },
   "Parameter": {
     "Property": "The LDAP-Property that shall be autocompleted.",
     "CSSProposals": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",

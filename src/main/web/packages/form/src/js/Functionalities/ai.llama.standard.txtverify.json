@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_ai.llama.standard.txtverify.AI_LLAMA_STANDARD_TXTVERIFY.html#functionality",
+  "Summary": {
+    "en": "Verifies a text field's value against a question using a local AI.",
+    "de": "Prüft den Wert eines Textfelds anhand einer Frage mit einer lokalen KI.",
+    "it": "Verifica il valore di un campo di testo rispetto a una domanda tramite un'IA locale."
+  },
   "Parameter": {
     "Question": "Verification question. Supports <[this]> and <[CSSClass]> placeholders. Overridden by the data-cb-Question attribute if present.",
     "PositiveResponse": "The single word the AI must reply with to signal validity. Comparison is case-insensitive by default. Default: 'yes'.",

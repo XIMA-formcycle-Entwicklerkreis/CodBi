@@ -1082,6 +1082,8 @@ export function enableLocalDocInterface(): void {
               ...stored,
               parameters: stored?.parameters ?? builtin?.parameters,
               supportedFormelementtypes: stored?.supportedFormelementtypes ?? builtin?.supportedFormelementtypes,
+              // The stored API-doc entry does not carry the short description, so keep the build-time one.
+              Summary: stored?.Summary ?? builtin?.Summary,
             };
 
             getJQuery().ajax({

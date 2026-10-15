@@ -54,6 +54,10 @@ interface Window {
       [key: string]: {
         /** Stores the either the URL to or the actual HTML of the documentation. */
         Description: string;
+        /**
+         * The short (one-sentence) description of the functionality, shown as the tooltip of the
+         * parameter functionality group header in the config panel (string or per-language map). */
+        Summary?: string | { [lang: string]: string };
         /** Stores the parameter that this **CodBi-Functionality** provides. */
         Parameter: { [key: string]: string };
         /**

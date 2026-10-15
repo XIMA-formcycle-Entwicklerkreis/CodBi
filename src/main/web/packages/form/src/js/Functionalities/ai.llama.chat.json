@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html#functionality",
+  "Summary": {
+    "en": "Embeds a local-AI chat widget into the tagged container (requires a configured LLAMA server).",
+    "de": "Bettet ein Chat-Widget der lokalen KI in den markierten Container ein (erfordert einen konfigurierten LLAMA-Server).",
+    "it": "Integra un widget di chat dell'IA locale nel contenitore contrassegnato (richiede un server LLAMA configurato)."
+  },
   "Parameter": {
     "MaxPages": "Maximum number of PDF pages to process (default: 5). Set to 0 for no limit.",
     "Rotation": "Image rotation in degrees (90, 180 or 270). 0 or unset means the rotation is unknown.",

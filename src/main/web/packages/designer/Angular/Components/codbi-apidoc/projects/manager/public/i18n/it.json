@@ -209,5 +209,17 @@
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_phone": "Standard configuration lato server che applica la formattazione di input basata su Cleave ai campi numero di telefono (datatype=\"phone\"). Il server la attiva automaticamente in base ai tipi di campo presenti nel modulo.",
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_plz": "Standard configuration lato server che applica la formattazione di input basata su Cleave ai campi codice postale tedesco (datatype=\"plzDE\"). Il server la attiva automaticamente in base ai tipi di campo presenti nel modulo.",
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_time": "Standard configuration lato server che applica la formattazione di input basata su Cleave ai campi ora (datatype=\"time\"). Il server la attiva automaticamente in base ai tipi di campo presenti nel modulo.",
+  "RP.FormElements.FilterPlaceholder": "Filtra le classi widget...",
+  "RP.FormElements.Empty": "Nessuna classe widget corrispondente.",
+  "RP.FormElements.AnyHint": "Nessuna selezione = la funzionalità si applica a qualsiasi elemento del modulo.",
+  "RP.Accordion.Captions.Summary": "Breve descrizione",
+  "RP.Summary.EN": "Inglese",
+  "RP.Summary.DE": "Tedesco",
+  "RP.Summary.IT": "Italiano",
+  "RP.Summary.Placeholder": "Una breve frase, mostrata come tooltip sull'intestazione del gruppo di parametri...",
+  "RP.Summary.Add": "Aggiungi lingua",
+  "RP.Summary.AddPlaceholder": "Codice lingua, es. fr o pt-BR...",
+  "RP.Summary.Remove": "Rimuovi questa lingua",
+  "RP.Summary.Hint": "Mostrata nel designer del modulo come tooltip sull'intestazione del gruppo di parametri della funzionalità. Lasciare vuoto per usare la descrizione breve integrata.",
   "codbi.chat.ack": "✅ Istruzione eseguita."
 }

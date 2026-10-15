@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.text.mapper.HTML_Text_Mapper.html#functionality",
+  "Summary": {
+    "en": "Fills [(property)] placeholders in a text template from an object or an array of objects.",
+    "de": "Füllt [(Eigenschaft)]-Platzhalter in einer Textvorlage aus einem Objekt oder einem Array von Objekten.",
+    "it": "Riempie i segnaposto [(proprietà)] in un modello di testo da un oggetto o un array di oggetti."
+  },
   "Parameter": {
     "Replacements": "The object containing the properties which's values will be used to replace the placeholders. If it is an array the string containing the placeholders will be replicated for each entry, allowing it to be used as a template.",
     "Property": "The property of the tagged element that contains the string to replace the placeholders in.",

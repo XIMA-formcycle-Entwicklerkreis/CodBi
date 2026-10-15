@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.text.injector.HTML_Text_Injector.html#functionality",
+  "Summary": {
+    "en": "Injects a dynamic value into a text field, textarea or span by replacing a placeholder.",
+    "de": "Fügt einen dynamischen Wert in ein Textfeld, eine Textarea oder ein Span ein, indem ein Platzhalter ersetzt wird.",
+    "it": "Inietta un valore dinamico in un campo di testo, una textarea o uno span sostituendo un segnaposto."
+  },
   "Parameter": {
     "Placeholder": "Specifies the string that shall be replaced within the tagged element's Property. Standard-value is \"[[INJECTOR_REPLACEMENT]]\".",
     "Replacement": "The string to replace all occurrences of the specified Placeholder with, or to append at the end of the string contained in the tagged element's Property.",

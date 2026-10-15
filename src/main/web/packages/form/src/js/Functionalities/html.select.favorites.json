@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.select.favorites.HTML_Select_Favorites.html#functionality",
+  "Summary": {
+    "en": "Rearranges and pre-selects the options of a select element (favorites, divider, default).",
+    "de": "Ordnet die Optionen eines Select-Elements neu an und wählt sie vor (Favoriten, Trenner, Standard).",
+    "it": "Riordina e preseleziona le opzioni di un elemento select (preferiti, separatore, predefinito)."
+  },
   "Parameter": {
     "DividerTarget": "Specifies the option to select when the divider option is selected.",
     "InitialElement": "Specifies the option that shall be selected when the form is loaded.",

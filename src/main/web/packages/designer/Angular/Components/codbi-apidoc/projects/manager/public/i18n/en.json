@@ -219,5 +219,17 @@
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_phone": "Server-side standard configuration that applies Cleave-based input formatting to phone number fields (datatype=\"phone\"). The server activates it automatically based on the field datatypes present in the form.",
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_plz": "Server-side standard configuration that applies Cleave-based input formatting to German postal code fields (datatype=\"plzDE\"). The server activates it automatically based on the field datatypes present in the form.",
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_time": "Server-side standard configuration that applies Cleave-based input formatting to time fields (datatype=\"time\"). The server activates it automatically based on the field datatypes present in the form.",
+  "RP.FormElements.FilterPlaceholder": "Filter widget classes...",
+  "RP.FormElements.Empty": "No matching widget class.",
+  "RP.FormElements.AnyHint": "No selection = the functionality applies to any form element.",
+  "RP.Accordion.Captions.Summary": "Short description",
+  "RP.Summary.EN": "English",
+  "RP.Summary.DE": "German",
+  "RP.Summary.IT": "Italian",
+  "RP.Summary.Placeholder": "One short sentence shown as the tooltip on the functionality's parameter group header...",
+  "RP.Summary.Add": "Add language",
+  "RP.Summary.AddPlaceholder": "Language code, e.g. fr or pt-BR...",
+  "RP.Summary.Remove": "Remove this language",
+  "RP.Summary.Hint": "Shown as a tooltip on the functionality's parameter group header in the form designer. Leave empty to fall back to the built-in summary.",
   "codbi.chat.ack": "✅ Instruction applied."
 }

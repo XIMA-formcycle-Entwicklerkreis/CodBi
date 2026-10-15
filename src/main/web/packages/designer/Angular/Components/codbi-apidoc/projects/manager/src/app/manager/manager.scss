@@ -387,6 +387,198 @@
     box-sizing: border-box;
   }
 
+  .CodBi_Parameter_Type_Select {
+    // Sized to the widest option ("boolean", 7 chars) plus room for the dropdown arrow & padding.
+    width: 8ch;
+    max-width: 100%;
+    box-sizing: border-box;
+    border: 2px solid darkorange;
+    border-radius: .5em;
+    color: darkorange;
+    padding: 1px 4px;
+  }
+
+  // #region Form element types (functionality applicability listing)
+  .CodBi_FormElements {
+    display: flex;
+    flex-direction: column;
+    gap: .5em;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .CodBi_FormElements__Filter {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .CodBi_FormElements__Grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25em .75em;
+    width: 100%;
+    max-height: 14em;
+    overflow-y: auto;
+    padding: .5em;
+    box-sizing: border-box;
+    border: 1px solid rgba(0, 0, 0, .15);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .6);
+  }
+
+  .CodBi_FormElements__Item {
+    display: inline-flex;
+    align-items: center;
+    gap: .35em;
+    padding: .1em .35em;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color .2s ease, transform .15s ease, color .15s ease;
+  }
+
+  .CodBi_FormElements__Item:hover {
+    background-color: rgba(255, 140, 0, .15);
+    transform: translateY(-1px);
+  }
+
+  .CodBi_FormElements__Item:active {
+    transform: scale(.96);
+  }
+
+  .CodBi_FormElements__Item--selected {
+    background-color: rgba(255, 140, 0, .2);
+    font-weight: 600;
+  }
+
+  /* Stylish, darkorange checkbox: darkorange border with a darkorange check mark drawn as an inline
+     SVG (no icon font needed). Both the box and the label animate on hover and on :active. */
+  .CodBi_FormElements__Item input[type = "checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    border: 2px solid darkorange;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .85);
+    cursor: pointer;
+    transition: box-shadow .15s ease, transform .15s ease, background-color .15s ease;
+  }
+
+  .CodBi_FormElements__Item input[type = "checkbox"]:checked {
+    background-color: rgba(255, 140, 0, .12);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23ff8c00'><path d='M6 11.2 2.8 8l-1 1L6 13.2 14.2 5l-1-1z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 12px 12px;
+  }
+
+  .CodBi_FormElements__Item:hover input[type = "checkbox"] {
+    box-shadow: 0 0 0 3px rgba(255, 140, 0, .25);
+    transform: scale(1.12);
+  }
+
+  .CodBi_FormElements__Item:active input[type = "checkbox"] {
+    transform: scale(.9);
+  }
+
+  .CodBi_FormElements__Empty {
+    color: #6b7280;
+    font-style: italic;
+  }
+
+  .CodBi_FormElements__Hint {
+    color: #6b7280;
+    font-size: .85em;
+    font-style: italic;
+  }
+
+  // #region Short description (functionalities)
+  .CodBi_Summary_Area {
+    display: flex;
+    flex-direction: column;
+    gap: .25em;
+    width: 100%;
+    box-sizing: border-box;
+    padding: .5em 0;
+  }
+
+  .CodBi_Summary_Area__Row {
+    display: flex;
+    flex-direction: column;
+    gap: .15em;
+  }
+
+  .CodBi_Summary_Area__Lang {
+    display: flex;
+    align-items: center;
+    gap: .35em;
+    font-weight: bold;
+    color: #1e79ee;
+    margin: .5em 0 .25em 0;
+  }
+
+  .CodBi_Summary_Area__Remove {
+    border: none;
+    background: transparent;
+    color: #b91c1c;
+    cursor: pointer;
+    font-size: 1.1em;
+    line-height: 1;
+    padding: 0 .15em;
+  }
+
+  .CodBi_Summary_Area__Remove:hover {
+    color: #ef4444;
+  }
+
+  .CodBi_Summary_Area__Add {
+    display: flex;
+    gap: .5em;
+    width: 100%;
+    margin-top: .5em;
+    box-sizing: border-box;
+  }
+
+  .CodBi_Summary_Area__AddInput {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .CodBi_Summary_Area__AddButton {
+    flex: 0 0 auto;
+    cursor: pointer;
+  }
+
+  .CodBi_Summary_Area__AddButton:disabled {
+    cursor: default;
+    opacity: .6;
+  }
+
+  .CodBi_Summary_Area textarea {
+    width: 100%;
+    min-height: 3.5em;
+    max-width: 100%;
+    box-sizing: border-box;
+    color: darkorange;
+    font-size: 1.05em;
+    resize: vertical;
+  }
+
+  .CodBi_Summary_Area__Hint {
+    color: #6b7280;
+    font-size: .85em;
+    font-style: italic;
+  }
+
+  // #endregion Short description
+
+  // #endregion Form element types
+
   p-tab,
   .p-tab {
     border-color: darkorange;

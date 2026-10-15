@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_time.frame.Time_Frame.html#functionality",
+  "Summary": {
+    "en": "Validates a time range so the minimum time cannot be after the maximum time.",
+    "de": "Validiert einen Zeitbereich, sodass die Mindestzeit nicht nach der Höchstzeit liegt.",
+    "it": "Convalida un intervallo di orari affinché l'orario minimo non sia successivo a quello massimo."
+  },
   "Parameter": {
     "MaxField": "CSS selector selecting the input element that takes the maximum time.",
     "MsgMinInvalid": "The error message shown when the minimum field's value is after the one in the maximum field.",

@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_media.multipleupload.Media_MultipleUpload.html#functionality",
+  "Summary": {
+    "en": "Allows an upload field to accept several files, with an optional maximum and messages.",
+    "de": "Ermöglicht einem Upload-Feld, mehrere Dateien zu akzeptieren, mit optionalem Maximum und Meldungen.",
+    "it": "Consente a un campo di upload di accettare più file, con un massimo opzionale e messaggi."
+  },
   "Parameter": {
     "Maximum": "The number of files that may be uploaded.",
     "PrefixTooMany": "The message that is displayed before the Maximum if too many files were selected.",

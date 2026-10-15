@@ -712,10 +712,12 @@
 }
 
 /* Parameter group header: an inline darkorange badge with white text, shown above the value rows of
-   each selected functionality. */
+   each selected functionality. It carries the functionality's short description as a `title` tooltip,
+   so a regular cursor (not the text-selection caret) is used. */
 .codbi-func-config__param-group {
   display: inline-block;
   align-self: flex-start;
+  cursor: default;
   margin: 6px 0 4px;
   padding: 2px 10px;
   font-size: 1.01em;

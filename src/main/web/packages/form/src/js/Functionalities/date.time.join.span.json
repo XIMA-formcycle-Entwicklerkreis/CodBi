@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_date.time.join.span.Date_Time_Join_Span.html#functionality",
+  "Summary": {
+    "en": "Joins a begin date/time pair and an end date/time pair into a start and an end value.",
+    "de": "Verbindet ein Anfangs-Datum/-Zeit-Paar und ein End-Datum/-Zeit-Paar zu einem Start- und einem Endwert.",
+    "it": "Unisce una coppia data/ora iniziale e una finale in un valore di inizio e uno di fine."
+  },
   "Parameter": {
     "Begin": "Optional CSS selector selecting the input that provides the begin date. Takes precedence over the CodBi_Date_Time_Join_Span_Begin CSS class.",
     "BeginTime": "Optional CSS selector selecting the input that provides the begin time. Takes precedence over the CodBi_Date_Time_Join_Span_Begin_Time CSS class.",

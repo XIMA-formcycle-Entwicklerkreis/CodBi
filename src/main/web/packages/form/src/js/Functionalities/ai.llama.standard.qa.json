@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_ai.llama.standard.qa.AI_LLAMA_STANDARD_QA.html#functionality",
+  "Summary": {
+    "en": "Lets a local AI answer questions about the document (image/PDF) uploaded to an XUpload.",
+    "de": "Lässt eine lokale KI Fragen zum in einem XUpload hochgeladenen Dokument (Bild/PDF) beantworten.",
+    "it": "Consente a un'IA locale di rispondere a domande sul documento (immagine/PDF) caricato in un XUpload."
+  },
   "Parameter": {
     "MaxPages": "Optional number limiting how many pages from a PDF are processed and sent to the AI. 0 processes all pages. Default: 5.",
     "Rotation": "Optional image rotation applied to all files: either '90', '180' or '270'. Useful for multi-file uploads or PDFs with multiple images.",

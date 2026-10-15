@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_ai.ocr.AI_OCR.html#functionality",
+  "Summary": {
+    "en": "Extracts text from uploaded images or PDFs of an XUpload via OCR.",
+    "de": "Extrahiert Text aus hochgeladenen Bildern oder PDFs eines XUpload per OCR.",
+    "it": "Estrae il testo da immagini o PDF caricati di un XUpload tramite OCR."
+  },
   "Parameter": {
     "Mode": "Either Print, Verify or Extract Fields.",
     "Pattern": "The regular expression used to extract substrings from the scanned text or to verify that the scanned text matches the pattern.",

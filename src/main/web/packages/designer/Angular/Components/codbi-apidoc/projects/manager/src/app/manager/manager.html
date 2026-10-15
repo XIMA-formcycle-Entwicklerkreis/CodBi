@@ -264,21 +264,69 @@
 
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
-                                                    [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? currentlySelectedFunctionalityData.Parameter : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
+                                                    [ngTemplateOutletContext]   = "{
+                                                        data      : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? currentlySelectedFunctionalityData.Parameter : [] : [],
+                                                        showType  : true }"></ng-container></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value = "Summary">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Summary" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <div class = "CodBi_Summary_Area">
+                                        <div class = "CodBi_Summary_Area__Row"
+                                             *ngFor = "let row of summaryRows; trackBy: trackSummaryRow">
+                                            <label class = "CodBi_Summary_Area__Lang"
+                                                   [attr.for] = "'CodBi_LocalAPIDoc_RightPanel_Summary_' + row.lang">
+                                                <span>{{ summaryLanguageLabel( row.lang ) }}</span>
+                                                <button *ngIf = "!summaryBaseLanguages.includes( row.lang )"
+                                                        type    = "button"
+                                                        class   = "CodBi_Summary_Area__Remove"
+                                                        [title] = "'RP.Summary.Remove' | transloco"
+                                                        (click) = "removeSummaryLanguage( row.lang )">&#215;</button></label>
+                                            <textarea [id]       = "'CodBi_LocalAPIDoc_RightPanel_Summary_' + row.lang"
+                                                      [ngModel]  = "row.text"
+                                                      (ngModelChange) = "onSummaryChange( row.lang, $event )"
+                                                      [attr.placeholder] = "'RP.Summary.Placeholder' | transloco"></textarea></div>
+
+                                        <div class = "CodBi_Summary_Area__Add">
+                                            <input type = "text"
+                                                   class = "CodBi_Summary_Area__AddInput"
+                                                   [ngModel] = "newSummaryLanguage"
+                                                   (ngModelChange) = "newSummaryLanguage = $event"
+                                                   (keydown.enter) = "addSummaryLanguage()"
+                                                   [attr.placeholder] = "'RP.Summary.AddPlaceholder' | transloco">
+                                            <button type = "button"
+                                                    class = "CodBi_Summary_Area__AddButton"
+                                                    [disabled] = "newSummaryLanguage.trim() === ''"
+                                                    (click) = "addSummaryLanguage()">{{ "RP.Summary.Add" | transloco }}</button></div>
+
+                                        <div class = "CodBi_Summary_Area__Hint">{{"RP.Summary.Hint" | transloco }}</div></div></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value = "FormElements">
                                 <p-accordion-header>Form element types</p-accordion-header>
 
                                 <p-accordion-content>
-                                    <div>
-                                        <label for = "CodBi_LocalAPIDoc_RightPanel_FormElements">Allowed FORMCYCLE widget classes (multi-select, empty = any)</label>
-                                        <select id            = "CodBi_LocalAPIDoc_RightPanel_FormElements"
-                                                class        = "CodBi_FormElements"
-                                                multiple
-                                                [ngModel]    = "selectedFormElementTypes"
-                                                (ngModelChange) = "onFormElementTypesChange( $event )">
-                                            <option *ngFor = "let type of formElementTypeOptions" [value] = "type">{{ type }}</option>
-                                        </select></div></p-accordion-content></p-accordion-panel>
+                                    <div class = "CodBi_FormElements">
+                                        <input type             = "text"
+                                               class            = "CodBi_FormElements__Filter"
+                                               [ngModel]        = "formElementTypeFilter"
+                                               (ngModelChange)  = "onFormElementTypeFilterChange( $event )"
+                                               [attr.placeholder] = "'RP.FormElements.FilterPlaceholder' | transloco">
+
+                                        <div class = "CodBi_FormElements__Grid">
+                                            <label class = "CodBi_FormElements__Item"
+                                                   *ngFor = "let type of formElementTypesList; trackBy: trackFormElementType"
+                                                   [class.CodBi_FormElements__Item--selected] = "isFormElementTypeSelected( type )">
+                                                <input type    = "checkbox"
+                                                       [checked] = "isFormElementTypeSelected( type )"
+                                                       (change)  = "onFormElementTypeToggle( type, $event )">
+                                                <span>{{ type }}</span></label>
+
+                                            <div class  = "CodBi_FormElements__Empty"
+                                                 *ngIf  = "formElementTypesList.length === 0">{{ "RP.FormElements.Empty" | transloco }}</div>
+                                        </div>
+
+                                        <div class = "CodBi_FormElements__Hint">{{ "RP.FormElements.AnyHint" | transloco }}</div></div></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value = "Notes">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
@@ -354,8 +402,9 @@
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
                                                     [ngTemplateOutletContext]   = "{
-                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? toDescriptiveArray( currentlySelectedFunctionalityData.Parameter ) : [] : [],
-                                                        isEP    : true }"></ng-container></p-accordion-content></p-accordion-panel>
+                                                        data      : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? toDescriptiveArray( currentlySelectedFunctionalityData.Parameter ) : [] : [],
+                                                        isEP      : true,
+                                                        showType  : true }"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value = "Notes">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
@@ -518,9 +567,10 @@
 <!-- #endregion Dialogues -->
 <!-- #endregion Templates -->
 <ng-template #tplParameter
-                let-data    = "data"
-                let-toAdd   = "toAdd"
-                let-isEP    = "isEP">
+                let-data      = "data"
+                let-toAdd     = "toAdd"
+                let-isEP      = "isEP"
+                let-showType  = "showType">
     <p-table    [value] = "data"
 
                 editMode    = "row"
@@ -532,7 +582,7 @@
                 <th style="width:22%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
                 <th style="width:26%">{{"Input.Parameter.Description" | transloco }}</th>
                 <th style="width:42%">{{"Input.Parameter.Prompt" | transloco }}</th>
-                <th *ngIf = "isEP" style="width:10%">{{"Input.Parameter.Type" | transloco }}</th></tr></ng-template>
+                <th *ngIf = "showType" style="width:10%">{{"Input.Parameter.Type" | transloco }}</th></tr></ng-template>
 
                 <ng-template   #body
 
@@ -587,12 +637,12 @@
                                                             [(ngModel)]     = "parameter.Prompt"></textarea></ng-template>
 
                                 <ng-template #output >{{ parameter.Prompt }}</ng-template></p-cellEditor></td>
-                                    <td *ngIf = "isEP">
+                                    <td *ngIf = "showType">
                                         <p-cellEditor>
                                             <ng-template #input >
                                                 <select [(ngModel)]       = "parameter.Type"
                                                         [attr.placeholder] = "'Input.Parameter.phType' | transloco"
-                                                        style              = "width : 100% ; padding : 1px 4px ;">
+                                                        class              = "CodBi_Parameter_Type_Select">
                                                     <option *ngFor = "let parameterType of parameterTypes" [value] = "parameterType">{{ parameterType }}</option></select></ng-template>
 
                                             <ng-template #output >{{ parameter.Type }}</ng-template></p-cellEditor></td>

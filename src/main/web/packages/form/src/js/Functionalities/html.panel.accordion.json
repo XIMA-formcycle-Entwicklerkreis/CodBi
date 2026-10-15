@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.panel.accordion.HTML_Panel_Accordion.html#functionality",
+  "Summary": {
+    "en": "Groups several HTML.Panel panels into an accordion where only one panel is open at a time.",
+    "de": "Gruppiert mehrere HTML.Panel-Panels zu einem Akkordeon, bei dem nur ein Panel gleichzeitig geöffnet ist.",
+    "it": "Raggruppa più pannelli HTML.Panel in una fisarmonica in cui è aperto un solo pannello alla volta."
+  },
   "Parameter": {
     "Accordion": "The name of the set all panels within the tagged element shall belong to. If no name is defined, nothing happens."
   },

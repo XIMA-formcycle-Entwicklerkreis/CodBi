@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_onchange.conditional.OnChange_Conditional.html#functionality",
+  "Summary": {
+    "en": "Applies a functionality to an element only while a comparison between two fields is satisfied.",
+    "de": "Wendet eine Funktionalität nur auf ein Element an, solange ein Vergleich zwischen zwei Feldern erfüllt ist.",
+    "it": "Applica una funzionalità a un elemento solo quando è soddisfatto un confronto tra due campi."
+  },
   "Parameter": {
     "Reference": "The value the tagged input's value shall be compared with.",
     "Mode": "Defines the mode of comparison to apply onto the tagged input's value and the reference value. Available modes are GTE (greater than or equal), GT (greater than), LTE (lower than or equal), LT (lower than), EQ (equal) & NEQ (not equal).",

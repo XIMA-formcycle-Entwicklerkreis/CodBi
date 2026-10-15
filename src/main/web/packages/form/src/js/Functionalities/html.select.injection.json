@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.select.injection.HTML_Select_Injection.html#functionality",
+  "Summary": {
+    "en": "Populates a select element with dynamically generated options.",
+    "de": "Befüllt ein Select-Element mit dynamisch erzeugten Optionen.",
+    "it": "Popola un elemento select con opzioni generate dinamicamente."
+  },
   "Parameter": {
     "Titles": "The optional title-attributes that shall be set on the generated option elements.",
     "Values": "The innerHTMLs of the generated option elements shall have.",

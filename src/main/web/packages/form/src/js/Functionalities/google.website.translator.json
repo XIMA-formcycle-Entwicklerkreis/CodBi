@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_google.website.translator.Google_Website_Translator.html#functionality",
+  "Summary": {
+    "en": "Embeds Google's Website Translator language dropdown into the tagged element.",
+    "de": "Bettet das Sprach-Dropdown des Google-Website-Übersetzers in das markierte Element ein.",
+    "it": "Integra il menu a discesa delle lingue di Google Website Translator nell'elemento contrassegnato."
+  },
   "Parameter": {
     "AutoLoad": "Whether the Google translation script shall be loaded immediately (defaults to FALSE, i.e. only loaded once the tagged element is visible).",
     "Lang": "The ISO-639 language code to use as the initial language of the dropdown (defaults to the browser's/preferred language or 'en').",

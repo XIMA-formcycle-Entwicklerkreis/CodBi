@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.input.trans.regex.HTML_Input_Trans_RegEx.html#functionality",
+  "Summary": {
+    "en": "Replaces the parts of the input value matched by a regular expression.",
+    "de": "Ersetzt die Teile des Eingabewerts, die einem regulären Ausdruck entsprechen.",
+    "it": "Sostituisce le parti del valore di input corrispondenti a un'espressione regolare."
+  },
   "Parameter": {
     "Extractor": "The string representing the regular expression to extract the values to be replaced.",
     "Replacements": "The string representing the replacement value."

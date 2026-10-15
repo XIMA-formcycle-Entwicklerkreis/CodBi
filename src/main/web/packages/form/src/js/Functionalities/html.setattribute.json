@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.setattribute.HTML_SETAttribute.html#functionality",
+  "Summary": {
+    "en": "Sets one or more HTML attributes on the tagged element.",
+    "de": "Setzt ein oder mehrere HTML-Attribute auf dem markierten Element.",
+    "it": "Imposta uno o più attributi HTML sull'elemento contrassegnato."
+  },
   "Parameter": {
     "Name": "The name of the attribute to set.",
     "ToSet": "The string to set the attribute to."

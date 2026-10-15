@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_dq.table.view.DQ_Table_View.html#functionality",
+  "Summary": {
+    "en": "Renders the result of a Datasource query as an HTML table with an optional Excel export.",
+    "de": "Stellt das Ergebnis einer Datasource-Abfrage als HTML-Tabelle mit optionalem Excel-Export dar.",
+    "it": "Visualizza il risultato di una query Datasource come tabella HTML con esportazione Excel opzionale."
+  },
   "Parameter": {
     "Columns": "REQUIRED - A CSV defining the columns to show. Each column is 'label;datacolumn;jsonFlag' with an optional fourth entry ';width', e.g. 'Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30'.",
     "DataQuery": "REQUIRED - The name of the Datasource-Query on the Formcycle server whose result shall be displayed.",

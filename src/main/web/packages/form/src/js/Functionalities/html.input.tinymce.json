@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.input.tinymce.HTML_Input_TinyMCE.html#functionality",
+  "Summary": {
+    "en": "Turns a textarea into a rich-text editor powered by TinyMCE.",
+    "de": "Verwandelt eine Textarea in einen Rich-Text-Editor auf Basis von TinyMCE.",
+    "it": "Trasforma una textarea in un editor di testo formattato basato su TinyMCE."
+  },
   "Parameter": {
     "Plugins": "A CSV of TinyMCE plugin names to load (e.g. 'advlist, autolink, lists, link, image, table, code').",
     "Toolbar": "The toolbar configuration string defining which buttons and groups to display (e.g. 'undo redo | blocks | bold italic forecolor | bullist numlist | table | code').",

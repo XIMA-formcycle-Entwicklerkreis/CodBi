@@ -21,7 +21,7 @@ import {
 import { setItemAttributeValue } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { containedElementItem, syncSelectedFunctionalityChild } from "./FunctionalityChildItems.js";
-import { i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
+import { i18n as i18nTyped, localizedFunctionalitySummary, localizedParameterDescription } from "./i18n.js";
 import { ensureCodbiBranding } from "./MirrorSelect.js";
 // #endregion Imports
 
@@ -195,6 +195,17 @@ export interface IFunctionalityParameterSpec {
   descriptionDe?: string;
   /** The parameter's localized description in Italian (`it`). */
   descriptionIt?: string;
+}
+
+/**
+ * The short (one-sentence) description of a functionality, localized to the current designer language,
+ * or an empty string when the functionality declares none. Reads the `Summary` field of the
+ * `detFunctionalities` entry (a plain string or a per-language map), mirroring the EP `Summary`.
+ *
+ * @param id The functionality id (matched case-insensitively). */
+export function functionalitySummary(id: string): string {
+  const entry = resolveFunctionalityEntry(id) as { Summary?: string | Record<string, string> } | undefined;
+  return localizedFunctionalitySummary(entry?.Summary);
 }
 
 /**
@@ -731,8 +742,16 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       }
       any = true;
       const header = document.createElement("div");
-      header.style.cssText = "font-weight:600;margin:6px 0 2px;";
+      // `cursor:default` keeps the group header from showing the text-selection caret the surrounding
+      // editor/label styling would otherwise apply (the header is not editable).
+      header.style.cssText = "font-weight:600;margin:6px 0 2px;cursor:default;";
       header.textContent = id;
+      // Hovering the group header shows the functionality's short description (localized), analogous to
+      // the per-parameter rows' description tooltips.
+      const summary = functionalitySummary(id);
+      if (summary) {
+        header.title = summary;
+      }
       fragment.appendChild(header);
       for (const name of names) {
         try {

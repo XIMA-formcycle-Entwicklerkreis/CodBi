@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.panel.HTML_Panel.html#functionality",
+  "Summary": {
+    "en": "Turns the tagged container into a collapsible, optionally auto-titled panel.",
+    "de": "Verwandelt den markierten Container in ein einklappbares Panel mit optional automatischem Titel.",
+    "it": "Trasforma il contenitore contrassegnato in un pannello comprimibile con titolo automatico opzionale."
+  },
   "Parameter": {
     "Folded": "States whether this panel is folded (TRUE) or unfolded (everything else) when it is loaded (defaults to TRUE).",
     "CSSHeaderHover": "The optional header's CSS:hover (defaults to { scale : 1.1 ;}).",

@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_ai.llama.standard.txtqa.AI_LLAMA_STANDARD_TXTQA.html#functionality",
+  "Summary": {
+    "en": "Lets a local AI answer questions from the values of tagged source text fields.",
+    "de": "Lässt eine lokale KI Fragen aus den Werten markierter Quell-Textfelder beantworten.",
+    "it": "Consente a un'IA locale di rispondere a domande dai valori dei campi di testo sorgente contrassegnati."
+  },
   "Parameter": {
     "AIHint": "Text shown inside AI-populated fields until the user edits the value. Default: '✨ AI-Generated'. Set empty to disable.",
     "useinternet": "If set to true, enables Brave Search internet access. Default: false.",

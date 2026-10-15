@@ -1,4 +1,9 @@
 {
   "Description": "/classes/Functionalities_html.input.noautocomplete.HTML_Input_NoAutocomplete.html#functionality",
+  "Summary": {
+    "en": "Disables the browser autocomplete for the tagged input.",
+    "de": "Deaktiviert die Browser-Autovervollständigung für das markierte Eingabefeld.",
+    "it": "Disattiva il completamento automatico del browser per l'input contrassegnato."
+  },
   "supportedFormelementtypes": "XTextField"
 }

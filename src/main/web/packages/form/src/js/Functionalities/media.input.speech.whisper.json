@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_media.input.speech.whisper.Media_Input_Speech_Whisper.html#functionality",
+  "Summary": {
+    "en": "Enables speech-to-text dictation via a self-hosted Whisper model (GDPR-compliant).",
+    "de": "Aktiviert Sprache-zu-Text-Diktat über ein selbst gehostetes Whisper-Modell (DSGVO-konform).",
+    "it": "Abilita la dettatura vocale tramite un modello Whisper self-hosted (conforme al GDPR)."
+  },
   "Parameter": {
     "VoiceHotkey": "Keyboard shortcut to toggle recording. Default: Alt+A.",
     "Language": "Two-letter language code for Whisper (e.g. de, en, fr). If omitted, Whisper auto-detects the language.",

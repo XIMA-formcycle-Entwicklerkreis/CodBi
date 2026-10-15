@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_matomo.tracking.Matomo_Tracking.html#functionality",
+  "Summary": {
+    "en": "Adds Matomo (Piwik) analytics tracking to the form.",
+    "de": "Fügt dem Formular Matomo-(Piwik-)Tracking hinzu.",
+    "it": "Aggiunge il tracciamento analitico Matomo (Piwik) al modulo."
+  },
   "Parameter": {
     "SiteID": "The ID of the Matomo-Project-Site that shall be used for tracking.",
     "URL": "The URL of the Matomo-Server that shall track the tagged form.",

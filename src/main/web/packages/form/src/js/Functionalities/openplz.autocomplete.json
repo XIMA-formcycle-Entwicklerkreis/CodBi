@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_openplz.autocomplete.OpenPLZ_Autocomplete.html#functionality",
+  "Summary": {
+    "en": "Autocompletes address fields (postal code, locality, street, house number) via the OpenPLZ API.",
+    "de": "Vervollständigt Adressfelder (PLZ, Ort, Straße, Hausnummer) automatisch über die OpenPLZ-API.",
+    "it": "Completa automaticamente i campi dell'indirizzo (CAP, località, via, civico) tramite l'API OpenPLZ."
+  },
   "Parameter": {
     "TargetData": "What type of data shall be received by the target (Localities, PostalCode, or Streets).",
     "Country": "The optional country to retrieve the data of (if not provided either the country specified in the CodBi's Configuration OpenPLZ_Country will be used or, if not specified, de).",

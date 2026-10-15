@@ -217,5 +217,17 @@
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_phone": "Serverseitige Standardkonfiguration, die Cleave-basierte Eingabeformatierung auf Telefonnummernfelder anwendet (Datentyp=\"phone\"). Der Server aktiviert sie automatisch anhand der im Formular vorhandenen Felddatentypen.",
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_plz": "Serverseitige Standardkonfiguration, die Cleave-basierte Eingabeformatierung auf deutsche Postleitzahlenfelder anwendet (Datentyp=\"plzDE\"). Der Server aktiviert sie automatisch anhand der im Formular vorhandenen Felddatentypen.",
   "pm.desc.codbi.standard_configurations.system_standard_configurations.holistic_cleave_time": "Serverseitige Standardkonfiguration, die Cleave-basierte Eingabeformatierung auf Zeitfelder anwendet (Datentyp=\"time\"). Der Server aktiviert sie automatisch anhand der im Formular vorhandenen Felddatentypen.",
+  "RP.FormElements.FilterPlaceholder": "Widget-Klassen filtern...",
+  "RP.FormElements.Empty": "Keine passende Widget-Klasse.",
+  "RP.FormElements.AnyHint": "Keine Auswahl = die Funktionalität gilt für beliebige Formularelemente.",
+  "RP.Accordion.Captions.Summary": "Kurzbeschreibung",
+  "RP.Summary.EN": "Englisch",
+  "RP.Summary.DE": "Deutsch",
+  "RP.Summary.IT": "Italienisch",
+  "RP.Summary.Placeholder": "Ein kurzer Satz, angezeigt als Tooltip am Parameter-Gruppenkopf...",
+  "RP.Summary.Add": "Sprache hinzufügen",
+  "RP.Summary.AddPlaceholder": "Sprachcode, z. B. fr oder pt-BR...",
+  "RP.Summary.Remove": "Diese Sprache entfernen",
+  "RP.Summary.Hint": "Wird im Formular-Designer als Tooltip am Parameter-Gruppenkopf der Funktionalität angezeigt. Leer lassen, um auf die integrierte Kurzbeschreibung zurückzufallen.",
   "codbi.chat.ack": "✅ Anweisung ausgeführt."
 }

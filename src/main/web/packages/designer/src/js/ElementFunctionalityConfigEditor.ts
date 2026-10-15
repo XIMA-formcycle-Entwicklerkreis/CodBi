@@ -25,6 +25,7 @@ import {
   listFunctionalities,
   resolveFunctionalityEntry,
   functionalityParameters,
+  functionalitySummary,
   functionalityParameterTypes,
   findParameterSpec,
   type IFunctionalityParameterSpec,
@@ -468,6 +469,13 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       const header = document.createElement("div");
       header.className = "codbi-func-config__param-group";
       header.textContent = originalCaseKey(id) !== "" ? originalCaseKey(id) : id;
+      // Hovering the group header shows the functionality's short description (localized), analogous to
+      // the per-parameter rows' description tooltips. The `cursor:default` on
+      // `.codbi-func-config__param-group` (see frame.css) suppresses the text-selection caret.
+      const summary = functionalitySummary(id);
+      if (summary) {
+        header.title = summary;
+      }
       fragment.appendChild(header);
       for (const name of names) {
         try {

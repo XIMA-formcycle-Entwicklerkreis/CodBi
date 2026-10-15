@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.input.blacklist.HTML_Input_Blacklist.html#functionality",
+  "Summary": {
+    "en": "Rejects input values that are on a configurable blacklist.",
+    "de": "Lehnt Eingabewerte ab, die auf einer konfigurierbaren Blacklist stehen.",
+    "it": "Rifiuta i valori di input presenti in una blacklist configurabile."
+  },
   "Parameter": {
     "List": "A string CSV of forbidden values.",
     "Prefix": "The string to show before listing all the values in List when displaying an error message.",

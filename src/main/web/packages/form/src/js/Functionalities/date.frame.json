@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_date.frame.Date_Frame.html#functionality",
+  "Summary": {
+    "en": "Validates a date range so the minimum date cannot be after the maximum date.",
+    "de": "Validiert einen Datumsbereich, sodass das Mindestdatum nicht nach dem Höchstdatum liegt.",
+    "it": "Convalida un intervallo di date affinché la data minima non sia successiva a quella massima."
+  },
   "Parameter": {
     "MaxField": "CSS selector selecting the input element that takes the maximum date.",
     "MsgMinInvalid": "The error message shown when the minimum field's value is after the one in the maximum field.",

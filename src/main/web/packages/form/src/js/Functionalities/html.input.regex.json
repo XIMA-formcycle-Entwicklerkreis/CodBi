@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.input.regex.HTML_Input_REGEX.html#functionality",
+  "Summary": {
+    "en": "Validates the field value and/or the individual keystrokes against regular expressions.",
+    "de": "Validiert den Feldwert und/oder die einzelnen Tastenanschläge anhand regulärer Ausdrücke.",
+    "it": "Convalida il valore del campo e/o i singoli tasti tramite espressioni regolari."
+  },
   "Parameter": {
     "Expression": "The regular expression the value of the field has to comply to. Use '°' instead of '^' to mark the beginning of the input string or a negation.",
     "KeyExpression": "The regular expression the individual keystrokes have to comply to.",

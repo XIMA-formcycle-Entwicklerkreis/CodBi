@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_date.noweekends.Date_NoWeekends.html#functionality",
+  "Summary": {
+    "en": "Rejects weekend dates in a date field and shows an optional error message.",
+    "de": "Lehnt Wochenenddaten in einem Datumsfeld ab und zeigt eine optionale Fehlermeldung an.",
+    "it": "Rifiuta le date del fine settimana in un campo data e mostra un messaggio di errore opzionale."
+  },
   "Parameter": {
     "MsgNoWeekends": "The optional error message shown when a weekend date is entered."
   },

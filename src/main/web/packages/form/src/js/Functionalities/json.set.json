@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_json.set.JSON_SET.html#functionality",
+  "Summary": {
+    "en": "Stores a JSON-serialized value (from another element or object) into a hidden field.",
+    "de": "Speichert einen JSON-serialisierten Wert (aus einem anderen Element oder Objekt) in einem versteckten Feld.",
+    "it": "Memorizza un valore serializzato in JSON (da un altro elemento o oggetto) in un campo nascosto."
+  },
   "Parameter": {
     "Path": "The dotted path leading to the object, starting from the tagged element, which's Property is to be set.",
     "Property": "The name of the property to set.",

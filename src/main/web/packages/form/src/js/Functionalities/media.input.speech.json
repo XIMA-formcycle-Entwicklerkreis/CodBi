@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_media.input.speech.MEDIA_INPUT_SPEECH.html#functionality",
+  "Summary": {
+    "en": "Enables speech-to-text dictation in a text field via the Web Speech API.",
+    "de": "Aktiviert Sprache-zu-Text-Diktat in einem Textfeld über die Web-Speech-API.",
+    "it": "Abilita la dettatura vocale in un campo di testo tramite la Web Speech API."
+  },
   "Parameter": {
     "VoiceHotkey": "Keyboard shortcut to toggle recording. Default: Alt+A.",
     "Language": "BCP-47 language tag for recognition (e.g. de-DE, en-US). If omitted, the browser's default language is used.",

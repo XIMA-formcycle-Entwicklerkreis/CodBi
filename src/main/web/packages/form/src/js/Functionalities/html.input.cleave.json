@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.input.cleave.HTML_Input_Cleave.html#functionality",
+  "Summary": {
+    "en": "Applies input masking and formatting (dates, phone numbers, credit cards, …) via Cleave.js.",
+    "de": "Wendet Eingabemaskierung und -formatierung (Datum, Telefonnummern, Kreditkarten, …) über Cleave.js an.",
+    "it": "Applica mascheramento e formattazione dell'input (date, numeri di telefono, carte di credito, …) tramite Cleave.js."
+  },
   "Parameter": {
     "Config": "The Cleave options to set instead of the other shorthand parameters.",
     "Date": "Whether to enable Cleave's date masking.",

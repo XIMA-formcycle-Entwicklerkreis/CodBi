@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_security.captcha.google.Security_Captcha_Google.html#functionality",
+  "Summary": {
+    "en": "Adds a Google reCAPTCHA check to protect the form from bots.",
+    "de": "Fügt eine Google-reCAPTCHA-Prüfung hinzu, um das Formular vor Bots zu schützen.",
+    "it": "Aggiunge una verifica Google reCAPTCHA per proteggere il modulo dai bot."
+  },
   "Parameter": {
     "SiteKey": "The sitekey received from https://developers.google.com/recaptcha.",
     "DataCallback": "The optional global callback method for when the captcha provides a result.",

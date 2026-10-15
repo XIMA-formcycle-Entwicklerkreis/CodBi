@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.input.trans.ntw.HTML_Input_Trans_NTW.html#functionality",
+  "Summary": {
+    "en": "Turns a number into its word representation, digit by digit.",
+    "de": "Wandelt eine Zahl Ziffer für Ziffer in ihre Wortdarstellung um.",
+    "it": "Converte un numero nella sua rappresentazione a parole, cifra per cifra."
+  },
   "Parameter": {
     "NumberWords": "The array of strings representing the word for each digit from 0 to 9. The index of the string in the array corresponds to the digit it represents.",
     "PreFix": "The string that shall be prepended to the transformed result.",

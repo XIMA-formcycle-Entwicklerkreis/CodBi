@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_ldap.autocomplete.set.LDAP_Autocomplete_Set.html#functionality",
+  "Summary": {
+    "en": "Fills several fields of a container from a selected LDAP directory match.",
+    "de": "Füllt mehrere Felder eines Containers aus einem ausgewählten LDAP-Verzeichnistreffer.",
+    "it": "Compila più campi di un contenitore da un risultato selezionato della directory LDAP."
+  },
   "Parameter": {
     "Property": "The LDAP-Property used by the autocompleting inputs within the tagged container to look-up the match.",
     "CSSProposals": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",

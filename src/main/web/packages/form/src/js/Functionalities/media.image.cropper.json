@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_media.image.cropper.Media_Image_Cropper.html#functionality",
+  "Summary": {
+    "en": "Adds an interactive crop dialog for images before they are uploaded.",
+    "de": "Fügt vor dem Hochladen einen interaktiven Zuschneide-Dialog für Bilder hinzu.",
+    "it": "Aggiunge una finestra interattiva di ritaglio per le immagini prima del caricamento."
+  },
   "Parameter": {
     "Container": "The CSS-Selector of the div that shall contain the Cropper-UI.",
     "Target": "The CSS-Selector of the image element that will contain the cropped image after clicking the Updater.",

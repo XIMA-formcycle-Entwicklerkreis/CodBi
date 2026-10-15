@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.input.trans.capital.HTML_Input_Trans_Capital.html#functionality",
+  "Summary": {
+    "en": "Transforms the typed input into capitalized words.",
+    "de": "Wandelt die eingegebene Eingabe in großgeschriebene Wörter um.",
+    "it": "Trasforma l'input digitato in parole con iniziali maiuscole."
+  },
   "Parameter": {},
   "supportedFormelementtypes": ["XTextField", "XTextArea"]
 }

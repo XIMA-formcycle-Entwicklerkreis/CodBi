@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_form.navigator.Form_Navigator.html#functionality",
+  "Summary": {
+    "en": "Adds a navigation bar (progress or breadcrumb) for multi-page forms.",
+    "de": "Fügt eine Navigationsleiste (Fortschritt oder Breadcrumb) für mehrseitige Formulare hinzu.",
+    "it": "Aggiunge una barra di navigazione (avanzamento o breadcrumb) per i moduli multipagina."
+  },
   "Parameter": {
     "Preview": "Whether the navigator permits switching to every page even if it wasn't visited before (TRUE) or not (FALSE). Defaults to FALSE.",
     "CSSNavButtons": "Additional CSS applied to the navigator's navigation buttons.",

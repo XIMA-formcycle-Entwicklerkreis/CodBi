@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_html.css.HTML_CSS.html#functionality",
+  "Summary": {
+    "en": "Injects custom CSS into the page, with optional placeholder and dark-mode replacements.",
+    "de": "Fügt benutzerdefiniertes CSS in die Seite ein, mit optionalen Platzhalter- und Darkmode-Ersetzungen.",
+    "it": "Inietta CSS personalizzato nella pagina, con sostituzioni opzionali di segnaposto e dark mode."
+  },
   "Parameter": {
     "CSS": "The CSS to inject.",
     "Replacements": "An array of two-element strings separated by '|'. The first part is the placeholder found in the CSS, the second the string it shall be replaced with.",

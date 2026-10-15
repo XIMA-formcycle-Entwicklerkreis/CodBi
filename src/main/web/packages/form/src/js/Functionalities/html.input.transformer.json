@@ -1,4 +1,9 @@
 {
   "Description": "/classes/Functionalities_html.input.transformer.HTML_Input_Transformer.html#functionality",
+  "Summary": {
+    "en": "Base functionality that applies a value transformer to a text input (used by the transformer variants).",
+    "de": "Basisfunktionalität, die einen Wert-Transformer auf ein Textfeld anwendet (von den Transformer-Varianten genutzt).",
+    "it": "Funzionalità di base che applica un trasformatore di valore a un campo di testo (usata dalle varianti transformer)."
+  },
   "supportedFormelementtypes": ["XTextField", "XTextArea"]
 }

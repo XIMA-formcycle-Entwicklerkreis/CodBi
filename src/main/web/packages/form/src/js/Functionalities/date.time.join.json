@@ -1,5 +1,10 @@
 {
   "Description": "/classes/Functionalities_date.time.join.Date_Time_Join.html#functionality",
+  "Summary": {
+    "en": "Joins the date of a date field with the time of a time field into a single value.",
+    "de": "Verbindet das Datum eines Datumsfelds mit der Uhrzeit eines Zeitfelds zu einem Wert.",
+    "it": "Unisce la data di un campo data con l'ora di un campo ora in un unico valore."
+  },
   "Parameter": {
     "DateField": "Optional CSS selector selecting the input that provides the date. Takes precedence over the CodBi_Date_Time_Join_Date CSS class.",
     "TimeField": "Optional CSS selector selecting the input that provides the time. Takes precedence over the CodBi_Date_Time_Join_Time CSS class.",

@@ -149,6 +149,11 @@ interface TreeNodeData {
    * e.g. `XFieldSet, XContainer`). Empty/absent ⇒ "any element". Only meaningful for functionalities.
    */
   formElements?: string;
+  /**
+   * The short (one-sentence) description of the element, per designer language (e.g. `{ en, de, it }`).
+   * Only meaningful for functionalities: it is shown as the tooltip of the functionality's parameter
+   * group header in the config panel. A plain string is treated as the English/base value. */
+  Summary?: string | I18nSummary;
   /** The detailed prompts of the element's parameters (name → prompt). */
   ParameterPrompts?: { [key: string]: string };
   /** The detailed prompts of the element's global variables (name → prompt). */
@@ -170,6 +175,8 @@ interface InputDataItem {
    * The FORMCYCLE widget class names a **Functionality** may be applied to (either a CSV string or an
    * array). Empty/absent ⇒ "any element". */
   formElements?: string | string[];
+  /** The short (one-sentence) description of the element (a plain string or a per-language map). */
+  Summary?: string | I18nSummary;
   /** Stores the JS-Code for that CodBi-Element. */
   Code: string | undefined;
   /** The element's condensed prompt (transmitted to the AI as a compact/condensed prompt). */
@@ -184,6 +191,16 @@ interface InputDataItem {
   ClassPrompts?: { [key: string]: string };
   /** The typed signature of an **E**lement-**P**laceholder's parameters (index → datatype). */
   Signature?: ApiSignature;
+}
+/**
+ * A short-description map keyed by designer language (e.g. `{ en, de, it }`). The known languages are
+ * declared explicitly so dot access remains valid under `noPropertyAccessFromIndexSignature`.
+ */
+interface I18nSummary {
+  en?: string;
+  de?: string;
+  it?: string;
+  [lang: string]: string | undefined;
 }
 /** Defines a contract for {@link object }s that represent local API Documentation to be merged to already existing one. */
 interface APIDocJSON {
@@ -1358,6 +1375,12 @@ export class Manager implements AfterViewInit {
       result.globals = nodeData.globals && nodeData.globals.length !== 0 ? this.arrayToObject(nodeData.globals) : [];
       result.ParameterPrompts = this.arrayToPromptObject(nodeData.Parameter);
       result.GlobalPrompts = this.arrayToPromptObject(nodeData.globals);
+      result.Summary = this.normalizeSummary(nodeData.Summary);
+      // #region Persist the (typed) parameter metadata for the designer's config panel.
+      if (type === "Functionality") {
+        result.parameters = this.parametersToTypeMeta(nodeData.Parameter);
+      }
+      // #endregion Persist the (typed) parameter metadata for the designer's config panel.
       // #region Persist the (typed) Element-Placeholder parameter signature for the EP builder.
       if (type === "Elementplaceholder") {
         result.Signature = this.parametersToSignature(nodeData.Parameter);
@@ -1779,6 +1802,24 @@ export class Manager implements AfterViewInit {
     return { params, returnType: "any", source: "manager" };
   }
   /**
+   * Builds the per-parameter TYPE metadata (`parameters`) persisted alongside a CodBi-Functionality's
+   * parameters. Mirrors the Element-Placeholder `Signature` channel so the designer's config panel can
+   * render a type-appropriate editor per parameter (checkbox, number box, dropdown, text). Empty
+   * (or `{}`) when no parameter declares a datatype.
+   *
+   * @param toConvert The {@link ApiParameter } array to scan.
+   *
+   * @returns The **name → { type }** map to persist. */
+  parametersToTypeMeta(toConvert: ApiParameter[] | undefined): { [name: string]: { type: string } } {
+    const result: { [name: string]: { type: string } } = {};
+    for (const element of toConvert ?? []) {
+      if (element?.Name && element.Type && element.Type !== "") {
+        result[element.Name] = { type: element.Type };
+      }
+    }
+    return result;
+  }
+  /**
    * Folds a persisted **E**lement-**P**laceholder {@link ApiSignature } back onto the parameter rows so
    * the manager shows the stored datatypes.
    *
@@ -1807,6 +1848,25 @@ export class Manager implements AfterViewInit {
         if ((param.Description === undefined || param.Description === "") && spec.description) {
           param.Description = spec.description;
         }
+      }
+    }
+  }
+  /**
+   * Folds a persisted `parameters` type metadata (`{ name → { type } }`) back onto the parameter
+   * rows so the manager shows the stored datatypes — mirroring {@link applySignatureToParameters }
+   * for CodBi-Functionalities (whose names are the parameter names rather than numeric indexes).
+   *
+   * @param params     The parameter rows to enrich.
+   * @param typeMeta   The persisted per-parameter type metadata, if any. */
+  applyTypeMetaToParameters(params: ApiParameter[], typeMeta: { [name: string]: { type?: string } } | undefined): void {
+    if (!typeMeta) {
+      return;
+    }
+
+    for (const param of params) {
+      const meta = typeMeta[param.Name];
+      if (meta?.type) {
+        param.Type = meta.type;
       }
     }
   }
@@ -2134,6 +2194,9 @@ export class Manager implements AfterViewInit {
     for (const node of toExtractFrom) {
       result[`${base ? `${base.toLowerCase()}.` : ""}${node.label.toLowerCase()}`] = {
         Description: node.data ? node.data.Description.replace(/'/g, "") : "",
+        // The short description (per-language map); `undefined` when empty so it never overrides a
+        // built-in summary upstream.
+        Summary: this.normalizeSummary(node.data?.Summary),
         Parameter: node.data?.Parameter ? this.arrayToObject(node.data.Parameter) : [],
         globals: node.data?.globals ? this.arrayToObject(node.data.globals) : [],
         classes: node.data?.classes ? this.arrayToObject(node.data.classes) : [],
@@ -2658,6 +2721,9 @@ export class Manager implements AfterViewInit {
    * Initializes the view further by setting the watermark, registering the close dialog and the import
    * file selection handler. */
   ngAfterViewInit() {
+    // Fetch the installed FORMCYCLE widget classes (core + plugins) once, so the functionality's
+    // "Form element types" listing can offer every type (see `fetchInstalledFormElementTypes`).
+    this.fetchInstalledFormElementTypes();
     getJQuery().ajax({
       url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
       type: "GET",
@@ -3045,6 +3111,7 @@ export class Manager implements AfterViewInit {
               if (window.CodbiPluginData.detFunctionalities[key] === undefined) {
                 window.CodbiPluginData.detFunctionalities[key] = {
                   Description: parsedData.detFunctionalities[key].Description,
+                  Summary: this.normalizeSummary(parsedData.detFunctionalities[key].Summary),
                   Parameter: parsedData.detFunctionalities[key].Parameter as { [name: string]: string },
                   formElements: Array.isArray(parsedData.detFunctionalities[key].formElements)
                     ? parsedData.detFunctionalities[key].formElements
@@ -3239,6 +3306,14 @@ export class Manager implements AfterViewInit {
     "XHeader",
     "XFooter",
   ];
+  /** Widget classes reported by the server (`CodBi_Mirror` → `action=widgets`): the core widgets plus
+   *  every plugin-provided widget (e.g. `XMirror`, `XCaptcha`, `XFormula`). Empty until the fetch
+   *  resolves. */
+  protected installedFormElementTypes: string[] = [];
+  /** Guards {@link fetchInstalledFormElementTypes } against duplicate requests. */
+  private installedFormElementTypesRequested = false;
+  /** The current filter query of the widget-class listing. */
+  protected formElementTypeFilter = "";
   /**
    * The raw `formElements` CSV that {@link cachedFormElementTypes } was derived from. Used to keep
    * {@link selectedFormElementTypes } returning a STABLE array reference. */
@@ -3274,20 +3349,267 @@ export class Manager implements AfterViewInit {
     return this.cachedFormElementTypes;
   }
   /**
-   * Persists the chosen widget classes as a CSV string on
-   * {@link currentFunctionalityData.formElements}, so the existing
-   * export/import path (`String(...).split(/[,\s]+/)`) keeps working. Empty = any element.
+   * The SORTED, FILTERED widget classes rendered as checkboxes: the core list merged with the
+   * server-reported list ({@link installedFormElementTypes }) and the currently selected ones (so a
+   * class stored in the CSV but absent from every list stays visible). Recomputed on access — safe
+   * here because the template only iterates it (with a `trackBy`); the caution about fresh arrays
+   * applies to `[ngModel]` bindings, not `*ngFor`. */
+  protected get formElementTypesList(): string[] {
+    const merged = new Set<string>();
+    const add = (value: string | undefined | null): void => {
+      const type = String(value ?? "").trim();
+      if (type !== "" && type.toLowerCase() !== "xfunctionality") {
+        merged.add(type);
+      }
+    };
+    this.formElementTypeOptions.forEach(add);
+    this.installedFormElementTypes.forEach(add);
+    this.selectedFormElementTypes.forEach(add);
+    const all = Array.from(merged).sort((a, b) => a.localeCompare(b));
+    const query = this.formElementTypeFilter.trim().toLowerCase();
+    return query === "" ? all : all.filter((type) => type.toLowerCase().includes(query));
+  }
+  /**
+   * `trackBy` for the checkbox `*ngFor` (stable identity by the widget class name).
    *
-   * @param selected The widget class names selected in the dropdown. */
-  protected onFormElementTypesChange(selected: string[]) {
+   * @param _index The row index (unused).
+   * @param type   The widget class name.
+   *
+   * @returns The identity key. */
+  protected trackFormElementType(_index: number, type: string): string {
+    return type;
+  }
+  /**
+   * @param type The widget class name.
+   *
+   * @returns whether the widget class is currently selected for the node. */
+  protected isFormElementTypeSelected(type: string): boolean {
+    const wanted = type.toLowerCase();
+    return this.selectedFormElementTypes.some((entry) => entry.toLowerCase() === wanted);
+  }
+  /**
+   * Applies a new filter query to the widget-class listing.
+   *
+   * @param query The new filter string. */
+  protected onFormElementTypeFilterChange(query: string): void {
+    this.formElementTypeFilter = query ?? "";
+  }
+  /**
+   * Toggles one widget class in/out of the selection.
+   *
+   * @param type  The widget class name.
+   * @param event The checkbox change event. */
+  protected onFormElementTypeToggle(type: string, event: Event): void {
+    const checked = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).checked;
+    const wanted = type.toLowerCase();
+    const next = this.selectedFormElementTypes.filter((entry) => entry.toLowerCase() !== wanted);
+    if (checked) {
+      next.push(type);
+    }
+    this.setFormElementTypes(next);
+  }
+  /**
+   * Persists the selected widget classes as a CSV string on
+   * {@link currentlySelectedFunctionalityData }`.formElements` (empty/absent ⇒ "any element"), so the
+   * existing export/import path (`String(...).split(/[,\s]+/)`) keeps working.
+   *
+   * @param selected The widget class names to persist. */
+  private setFormElementTypes(selected: string[]): void {
     if (this.currentlySelectedFunctionalityData === undefined) {
       return;
     }
-    this.currentlySelectedFunctionalityData.formElements =
-      Array.isArray(selected) && selected.length > 0 ? selected.join(", ") : undefined;
+    const cleaned = Array.from(new Set(selected.map((entry) => entry.trim()).filter((entry) => entry !== "")));
+    this.currentlySelectedFunctionalityData.formElements = cleaned.length > 0 ? cleaned.join(", ") : undefined;
     this.synchronized = false;
   }
+  /**
+   * Fetches the FORMCYCLE widget classes installed on this system (the core widgets plus every
+   * plugin-provided widget) from the `CodBi_Mirror` servlet (`action=widgets`) and merges them into
+   * {@link formElementTypesList }. Runs at most once; failure is non-fatal (the core list remains). */
+  protected fetchInstalledFormElementTypes(): void {
+    if (this.installedFormElementTypesRequested) {
+      return;
+    }
+    this.installedFormElementTypesRequested = true;
+    try {
+      const base =
+        this.baseurl && this.baseurl !== ""
+          ? this.baseurl
+          : `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+      const url = `${base}plugin?name=CodBi_Mirror&action=widgets`;
+      getJQuery()
+        .ajax({ url, type: "GET", dataType: "json" })
+        .done((data: unknown) => {
+          if (Array.isArray(data)) {
+            this.installedFormElementTypes = data
+              .map((entry) => String(entry))
+              .filter((entry) => entry !== "" && entry !== "XFunctionality");
+            this.cdr.markForCheck();
+          }
+        })
+        .fail(() => {
+          /* keep the core list */
+        });
+    } catch {
+      /* keep the core list */
+    }
+  }
   // #endregion Form element types
+  // #region Short description
+  /** The languages always offered in the short-description editor. */
+  protected readonly summaryBaseLanguages: string[] = ["en", "de", "it"];
+  /** Additional languages the user added in this session (beyond the base ones and the stored ones). */
+  protected extraSummaryLanguages: string[] = [];
+  /** The model of the "add language" input. */
+  protected newSummaryLanguage = "";
+  /** Cached `*ngFor` rows of the short-description editor. */
+  private summaryRowsCache: { lang: string; text: string }[] = [];
+  /** The signature {@link summaryRowsCache } was computed from (stable-array guard). */
+  private summaryRowsSignature = "";
+
+  /**
+   * @returns the short-description map (e.g. `{ en, de, it, fr }`) of the currently selected node,
+   * normalized to a fresh object (a legacy plain string is treated as the English/base value). */
+  private get summaryMap(): I18nSummary {
+    const raw = this.currentlySelectedFunctionalityData?.Summary;
+    if (raw === undefined || raw === null) {
+      return {};
+    }
+    if (typeof raw === "string") {
+      return { en: raw };
+    }
+    return { ...raw };
+  }
+  /**
+   * The editable short-description rows: one per base language (en/de/it), per language already stored
+   * in the node's `Summary` map and per language added in this session — so descriptions can be authored
+   * in ANY language. Cached so the `*ngFor` receives a stable array (recomputed only when the
+   * underlying languages/texts actually change). */
+  protected get summaryRows(): { lang: string; text: string }[] {
+    const map = this.summaryMap;
+    const languages = Array.from(
+      new Set([...this.summaryBaseLanguages, ...this.extraSummaryLanguages, ...Object.keys(map)]),
+    );
+    const signature = JSON.stringify(languages.map((lang) => [lang, map[lang] ?? ""]));
+    if (signature !== this.summaryRowsSignature) {
+      this.summaryRowsSignature = signature;
+      this.summaryRowsCache = languages.map((lang) => ({ lang, text: map[lang] ?? "" }));
+    }
+    return this.summaryRowsCache;
+  }
+  /**
+   * `trackBy` for the short-description `*ngFor` (stable identity by the language code).
+   *
+   * @param _index The row index (unused).
+   * @param row    The row.
+   *
+   * @returns The language code. */
+  protected trackSummaryRow(_index: number, row: { lang: string }): string {
+    return row.lang;
+  }
+  /**
+   * @param lang The language code (e.g. `en`, `de`, `fr`).
+   *
+   * @returns the display label of the language (localized for the known base languages). */
+  protected summaryLanguageLabel(lang: string): string {
+    switch (lang.toLowerCase()) {
+      case "en":
+        return this.translocoService.translate("RP.Summary.EN");
+      case "de":
+        return this.translocoService.translate("RP.Summary.DE");
+      case "it":
+        return this.translocoService.translate("RP.Summary.IT");
+      default:
+        return lang.toUpperCase();
+    }
+  }
+  /**
+   * Persists the text of one language row.
+   *
+   * @param lang  The language code.
+   * @param value The new text. */
+  protected onSummaryChange(lang: string, value: string): void {
+    this.setSummaryLanguage(lang, value);
+  }
+  /** Adds the language currently typed in the "add language" input (e.g. `fr` or `pt-BR`). */
+  protected addSummaryLanguage(): void {
+    const lang = (this.newSummaryLanguage ?? "").trim().toLowerCase();
+    if (!/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/.test(lang)) {
+      return;
+    }
+    if (!this.summaryBaseLanguages.includes(lang) && !this.extraSummaryLanguages.includes(lang)) {
+      this.extraSummaryLanguages.push(lang);
+    }
+    this.newSummaryLanguage = "";
+    // Invalidate the cached rows so the new language appears immediately.
+    this.summaryRowsSignature = "";
+  }
+  /**
+   * Removes a user-added language row (and clears its value).
+   *
+   * @param lang The language code to remove. */
+  protected removeSummaryLanguage(lang: string): void {
+    if (this.summaryBaseLanguages.includes(lang)) {
+      return;
+    }
+    this.extraSummaryLanguages = this.extraSummaryLanguages.filter((entry) => entry !== lang);
+    this.setSummaryLanguage(lang, "");
+    this.summaryRowsSignature = "";
+  }
+  /**
+   * Stores (or, when blank, clears) one language's short description on the current node and marks the
+   * documentation as not synchronized.
+   *
+   * @param lang  The language key (e.g. `en`, `de`, `fr`).
+   * @param value The new text. */
+  private setSummaryLanguage(lang: string, value: string): void {
+    if (this.currentlySelectedFunctionalityData === undefined) {
+      return;
+    }
+    const key = String(lang ?? "")
+      .trim()
+      .toLowerCase();
+    if (key === "") {
+      return;
+    }
+    const map = this.summaryMap;
+    const text = String(value ?? "");
+    if (text.trim() === "") {
+      delete map[key];
+    } else {
+      map[key] = text;
+    }
+    this.currentlySelectedFunctionalityData.Summary = Object.keys(map).length > 0 ? map : undefined;
+    this.synchronized = false;
+  }
+  /**
+   * Normalizes a raw `Summary` value (a plain string or a per-language map) to an {@link I18nSummary }
+   * map, dropping blank entries.
+   *
+   * @param value The raw value.
+   *
+   * @returns The normalized map, or **undefined** when nothing is set. */
+  private normalizeSummary(value: unknown): I18nSummary | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    if (typeof value === "string") {
+      const text = value.trim();
+      return text === "" ? undefined : { en: text };
+    }
+    if (typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const out: I18nSummary = {};
+    for (const [lang, text] of Object.entries(value as Record<string, unknown>)) {
+      const trimmed = String(text ?? "").trim();
+      if (trimmed !== "") {
+        out[lang] = trimmed;
+      }
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  // #endregion Short description
   // #region Description
   /** Stores an {@link ElementRef } to the description {@link TinyMCE } fpr functionalities. */
   @ViewChild("CodBi_LocalAPIDoc_Functionalities_Description")
@@ -3469,6 +3791,8 @@ export class Manager implements AfterViewInit {
   protected populateNodePrompts(nodeData: TreeNodeData, segment: { [key: string]: unknown }): void {
     nodeData.CondensedPrompt = (segment["CondensedPrompt"] as string) ?? "";
     nodeData.DetailedPrompt = (segment["DetailedPrompt"] as string) ?? "";
+    // The short description (a plain string or a per-language map), normalized onto the node data.
+    nodeData.Summary = this.normalizeSummary((segment as { Summary?: unknown }).Summary);
 
     const parameterPrompts = (segment["ParameterPrompts"] ?? {}) as { [name: string]: string };
     for (const param of nodeData.Parameter ?? []) {
@@ -3541,6 +3865,7 @@ export class Manager implements AfterViewInit {
       GlobalPrompts?: { [key: string]: string };
       ClassPrompts?: { [key: string]: string };
       Signature?: ApiSignature;
+      parameters?: { [name: string]: { type?: string } };
     };
   }): TreeNode[] {
     const root: TreeNode[] = [];
@@ -3584,6 +3909,10 @@ export class Manager implements AfterViewInit {
             this.applySignatureToParameters(
               existingNode.data.Parameter as unknown as ApiParameter[],
               toConvert[key].Signature,
+            );
+            this.applyTypeMetaToParameters(
+              existingNode.data.Parameter as unknown as ApiParameter[],
+              toConvert[key].parameters,
             );
             for (const gKey in toConvert[key].globals) {
               DEFINED.tsCheck<Array<unknown>>(existingNode.data.globals).push({
@@ -3649,6 +3978,10 @@ export class Manager implements AfterViewInit {
             this.applySignatureToParameters(
               newNode.data.Parameter as unknown as ApiParameter[],
               toConvert[key].Signature,
+            );
+            this.applyTypeMetaToParameters(
+              newNode.data.Parameter as unknown as ApiParameter[],
+              toConvert[key].parameters,
             );
             for (const gKey in toConvert[key].globals) {
               DEFINED.tsCheck<Array<unknown>>(newNode.data.globals).push({

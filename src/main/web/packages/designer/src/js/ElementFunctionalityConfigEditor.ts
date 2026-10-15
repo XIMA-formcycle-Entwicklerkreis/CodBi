@@ -307,13 +307,21 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       this.selected.push(key);
     } else if (!on) {
       this.selected = this.selected.filter((entry) => entry !== key);
+    }
+    // Persist (and re-render) FIRST, so the `funcs` / `data-cb-func` reflect the reduced selection
+    // BEFORE any pruning. `persistFunctionalities` fires the `set-property` callback, and the pruning
+    // below runs `removeFuncAttribute` which can nudge the designer into re-valuing this very property
+    // editor (`setValue`) via the attributes editor sync — if that happened while the property still
+    // held the OLD selection, the removed functionality would be re-added and the checkbox would stay
+    // checked. Persisting first guarantees a re-valuation reads the already-reduced selection.
+    this.persistFunctionalities();
+    this.renderFunctionalityList();
+    if (!on) {
       // Removing a functionality also removes the element's `data-cb-<param>` attributes for the
       // parameters that belonged to it — but only when no OTHER still-active functionality needs the
       // same parameter (see {@link pruneRemovedFunctionalityParams}).
       this.pruneRemovedFunctionalityParams(key);
     }
-    this.persistFunctionalities();
-    this.renderFunctionalityList();
   }
 
   /**

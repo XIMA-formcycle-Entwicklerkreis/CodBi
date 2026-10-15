@@ -1,24 +1,36 @@
 {
   "Description": "/classes/Functionalities_media.input.speech.MEDIA_INPUT_SPEECH.html#functionality",
   "Parameter": {
-    "VoiceHotkey": "",
-    "Language": "",
-    "Placeholder": "",
-    "ShowHint": ""
+    "VoiceHotkey": "Keyboard shortcut to toggle recording. Default: Alt+A.",
+    "Language": "BCP-47 language tag for recognition (e.g. de-DE, en-US). If omitted, the browser's default language is used.",
+    "Placeholder": "Custom placeholder text for the field. Default: the hotkey combo prefixed with a microphone emoji. Only shown when ShowHint is true.",
+    "ShowHint": "If set to true, shows the hotkey hint as placeholder text. Default: false."
   },
   "supportedFormelementtypes": ["XTextField", "XTextArea"],
   "parameters": {
     "VoiceHotkey": {
-      "type": "string"
+      "type": "string",
+      "description": "Keyboard shortcut to toggle recording. Default: Alt+A.",
+      "descriptionDe": "Tastenkürzel zum Umschalten der Aufnahme. Standard: Alt+A.",
+      "descriptionIt": "Scorciatoia da tastiera per attivare la registrazione. Predefinito: Alt+A."
     },
     "Language": {
-      "type": "string"
+      "type": "string",
+      "description": "BCP-47 language tag for recognition (e.g. de-DE, en-US). If omitted, the browser's default language is used.",
+      "descriptionDe": "BCP-47-Sprachkennzeichen für die Erkennung (z. B. de-DE, en-US). Wenn weggelassen, wird die Standardsprache des Browsers verwendet.",
+      "descriptionIt": "Tag lingua BCP-47 per il riconoscimento (es. de-DE, en-US). Se omesso, viene usata la lingua predefinita del browser."
     },
     "Placeholder": {
-      "type": "string"
+      "type": "string",
+      "description": "Custom placeholder text for the field. Default: the hotkey combo prefixed with a microphone emoji. Only shown when ShowHint is true.",
+      "descriptionDe": "Benutzerdefinierter Platzhaltertext für das Feld. Standard: die Tastenkombination mit einem Mikrofon-Emoji als Präfix. Wird nur angezeigt, wenn ShowHint true ist.",
+      "descriptionIt": "Testo segnaposto personalizzato per il campo. Predefinito: la combinazione di hotkey con prefisso un'emoji microfono. Mostrato solo se ShowHint è true."
     },
     "ShowHint": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to true, shows the hotkey hint as placeholder text. Default: false.",
+      "descriptionDe": "Wenn auf true gesetzt, wird der Tastenkürzel-Hinweis als Platzhaltertext angezeigt. Standard: false.",
+      "descriptionIt": "Se impostato su true, mostra il suggerimento dell'hotkey come testo segnaposto. Predefinito: false."
     }
   }
 }

@@ -1,20 +1,29 @@
 {
   "Description": "/classes/Functionalities_ldap.autocomplete.set.LDAP_Autocomplete_Set.html#functionality",
   "Parameter": {
-    "Property": "",
-    "CSSProposals": "",
-    "URL": ""
+    "Property": "The LDAP-Property used by the autocompleting inputs within the tagged container to look-up the match.",
+    "CSSProposals": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+    "URL": "The URL of the Formcycle predefined LDAP-Query to use."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "Property": {
-      "type": "string"
+      "type": "string",
+      "description": "The LDAP-Property used by the autocompleting inputs within the tagged container to look-up the match.",
+      "descriptionDe": "Die LDAP-Eigenschaft, die von den automatisch vervollständigenden Eingaben innerhalb des markierten Containers verwendet wird, um die Übereinstimmung zu suchen.",
+      "descriptionIt": "La proprietà LDAP usata dagli input a completamento automatico all'interno del contenitore marcato per trovare la corrispondenza."
     },
     "CSSProposals": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+      "descriptionDe": "Der CSS-Stil für das Vorschlags-Select-Element, das erscheint, wenn es mehrere Übereinstimmungen gibt.",
+      "descriptionIt": "Lo stile CSS per l'elemento Select dei suggerimenti che appare quando ci sono più corrispondenze."
     },
     "URL": {
-      "type": "string"
+      "type": "string",
+      "description": "The URL of the Formcycle predefined LDAP-Query to use.",
+      "descriptionDe": "Die URL der vordefinierten Formcycle-LDAP-Abfrage, die verwendet werden soll.",
+      "descriptionIt": "L'URL della query LDAP predefinita di Formcycle da usare."
     }
   }
 }

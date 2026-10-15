@@ -21,7 +21,8 @@ import {
 import { setItemAttributeValue } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { containedElementItem, syncSelectedFunctionalityChild } from "./FunctionalityChildItems.js";
-import { i18n as i18nTyped } from "./i18n.js";
+import { i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
+import { ensureCodbiBranding } from "./MirrorSelect.js";
 // #endregion Imports
 
 /**
@@ -184,6 +185,16 @@ export interface IFunctionalityParameterSpec {
   type?: "string" | "integer" | "number" | "boolean" | "enum";
   options?: string[];
   default?: string;
+  /**
+   * A short human readable description of the parameter (the base/English locale). When present this
+   * is shown (e.g. as a tooltip) in the functionality config panel and takes precedence over the
+   * legacy {@link Parameter}-map description.
+   */
+  description?: string;
+  /** The parameter's localized description in German (`de`). */
+  descriptionDe?: string;
+  /** The parameter's localized description in Italian (`it`). */
+  descriptionIt?: string;
 }
 
 /**
@@ -515,19 +526,15 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     this.root.className = "codbi-func-config";
     this.root.style.cssText = "display:flex;flex-direction:column;gap:10px;";
 
-    // #region 1. Functionality picker (list with an INLINE filter + a "+" button).
+    // #region 1. Functionality picker (list with an INLINE filter + checkboxes). The "+" button that
+    // used to sit in the header was removed as useless: the checkbox list below adds/removes
+    // functionalities directly.
     const funcSection = document.createElement("div");
     funcSection.className = "codbi-func-config__section";
-    const funcHeader = document.createElement("div");
-    funcHeader.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px;";
+    // The list label sits ABOVE the checkbox list (block level, left aligned, bold).
     const funcTitle = document.createElement("strong");
+    funcTitle.className = "codbi-func-config__title";
     funcTitle.textContent = i18n("designer.widget.functionality.funcs");
-    const addButton = document.createElement("button");
-    addButton.type = "button";
-    addButton.className = "codbi-func-config__add";
-    addButton.title = i18n("designer.widget.functionality.addFunc");
-    addButton.textContent = "+";
-    funcHeader.append(funcTitle, addButton);
     // The listing box CONTAINS the filter input (top) and the option rows below it.
     this.funcList = document.createElement("div");
     this.funcList.className = "codbi-func-config__funclist";
@@ -543,25 +550,18 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       this.funcQuery = funcFilter.value;
       this.renderFunctionalityList();
     });
-    addButton.addEventListener("click", () => {
-      this.funcQuery = "";
-      funcFilter.value = "";
-      this.renderFunctionalityList();
-      funcFilter.focus();
-    });
     this.funcFilter = funcFilter;
     this.funcOptions = document.createElement("div");
     this.funcList.append(funcFilter, this.funcOptions);
-    funcSection.append(funcHeader, this.funcList);
+    funcSection.append(funcTitle, this.funcList);
     // #endregion 1. Functionality picker.
 
     // #region 2. Contained element TYPE selector (a new element of the chosen type is created).
     const elemSection = document.createElement("div");
     elemSection.className = "codbi-func-config__section";
     const elemTitle = document.createElement("strong");
+    elemTitle.className = "codbi-func-config__title";
     elemTitle.textContent = i18n("designer.widget.functionality.element");
-    elemTitle.style.display = "block";
-    elemTitle.style.marginBottom = "6px";
     const elemSelect = document.createElement("select");
     elemSelect.className = "codbi-func-config__element";
     elemSelect.style.cssText = "width:100%;";
@@ -588,9 +588,8 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     const paramSection = document.createElement("div");
     paramSection.className = "codbi-func-config__section";
     const paramTitle = document.createElement("strong");
+    paramTitle.className = "codbi-func-config__title";
     paramTitle.textContent = i18n("designer.widget.functionality.parameters");
-    paramTitle.style.display = "block";
-    paramTitle.style.marginBottom = "6px";
     this.paramsHost = document.createElement("div");
     this.paramsHost.className = "codbi-func-config__params";
     paramSection.append(paramTitle, this.paramsHost);
@@ -759,10 +758,15 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
 
     const label = document.createElement("label");
     label.style.cssText = "flex:1;";
-    label.title = parameterLabel(description);
+    label.title = localizedParameterDescription(spec) || parameterLabel(description);
     label.textContent = name;
 
-    const currentValue = this.currentAttributeValue(name);
+    // The parameter key is stored BARE (e.g. `Unit`), but it lives in the contained element's config
+    // attribute table as `data-cb-<key>` (e.g. `data-cb-Unit`). Both the read and the write below must
+    // use the FULL prefixed attribute name so the value lands in (and is read from) the persisted
+    // attribute, otherwise the config panel and the badge/runtime would target different attributes.
+    const attrName = `data-cb-${name}`;
+    const currentValue = this.currentAttributeValue(attrName);
     // The structured type wins; the legacy `{Type}`-in-description hint stays as a fallback.
     const type = spec?.type ?? parameterType(description);
 
@@ -784,7 +788,9 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     const write = (value: string): void => {
       const child = containedElementItem();
       if (child) {
-        setItemAttributeValue(child as never, name, value);
+        // Uses the FULL `data-cb-<key>` attribute name (see `attrName` above) so it matches the
+        // persisted attribute table entry.
+        setItemAttributeValue(child as never, attrName, value);
         setItemAttributeValue(child as never, CB_FUNC_ATTRIBUTE, this.selected.join(","));
       }
     };
@@ -804,6 +810,9 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
         }
         textInput.className = "codbi-func-config__value";
         textInput.style.flex = "1";
+        // Hovering the value field reveals the ALT+E EP-manager shortcut (the "ƒ" button to its right
+        // opens the same editor), mirroring the hint on the CodBi marker badge's parameter rows.
+        textInput.title = `${name} — ${i18n("designer.widget.functionality.altE")}`;
         textInput.addEventListener("change", () => {
           write(textInput?.value ?? "");
           // Clearing the text restores the checkbox for boolean parameters.
@@ -876,7 +885,9 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     const epButton = document.createElement("button");
     epButton.type = "button";
     epButton.className = "codbi-func-config__ep";
-    epButton.title = "EP";
+    // The tooltip also names the ALT+E shortcut (same wording as the value field's own hint), so
+    // hovering the "ƒ" button reveals that pressing ALT+E opens the EP builder for this parameter.
+    epButton.title = `${name} — ${i18n("designer.widget.functionality.altE")}`;
     epButton.textContent = "ƒ";
     epButton.style.cssText = "min-width:24px;";
     epButton.addEventListener("click", () => {
@@ -975,6 +986,9 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
  */
 export function registerCustomFunctionalityProperties(): void {
   try {
+    // Publishes the CodBi logo URL so the panel CSS can paint the CodBi watermark (`--codbi-logo-url`).
+    ensureCodbiBranding();
+
     // Fetch the installed widget types once (merged into the contained-element type selector).
     fetchInstalledWidgetTypes();
 

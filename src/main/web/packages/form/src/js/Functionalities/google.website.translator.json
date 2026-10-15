@@ -1,22 +1,31 @@
 {
   "Description": "/classes/Functionalities_google.website.translator.Google_Website_Translator.html#functionality",
   "Parameter": {
-    "AutoLoad": "FALSE",
-    "Lang": "",
-    "Inline": "TRUE"
+    "AutoLoad": "Whether the Google translation script shall be loaded immediately (defaults to FALSE, i.e. only loaded once the tagged element is visible).",
+    "Lang": "The ISO-639 language code to use as the initial language of the dropdown (defaults to the browser's/preferred language or 'en').",
+    "Inline": "Whether the widget shall be shown inline within the tagged element (defaults to TRUE). When FALSE, the widget is appended on its own line."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "AutoLoad": {
       "type": "boolean",
-      "default": "false"
+      "default": "false",
+      "description": "Whether the Google translation script shall be loaded immediately (defaults to FALSE, i.e. only loaded once the tagged element is visible).",
+      "descriptionDe": "Ob das Google-Übersetzungsskript sofort geladen werden soll (Standard: FALSCH, d. h. nur geladen, sobald das markierte Element sichtbar ist).",
+      "descriptionIt": "Se lo script di traduzione di Google debba essere caricato immediatamente (predefinito: FALSE, cioè caricato solo quando l'elemento marcato è visibile)."
     },
     "Lang": {
-      "type": "string"
+      "type": "string",
+      "description": "The ISO-639 language code to use as the initial language of the dropdown (defaults to the browser's/preferred language or 'en').",
+      "descriptionDe": "Der ISO-639-Sprachcode, der als Ausgangssprache der Dropdownliste verwendet wird (Standard: die Browsersprache bzw. bevorzugte Sprache oder 'en').",
+      "descriptionIt": "Il codice lingua ISO-639 da usare come lingua iniziale del menu a tendina (predefinito: la lingua del browser/preferita o 'en')."
     },
     "Inline": {
       "type": "boolean",
-      "default": "true"
+      "default": "true",
+      "description": "Whether the widget shall be shown inline within the tagged element (defaults to TRUE). When FALSE, the widget is appended on its own line.",
+      "descriptionDe": "Ob das Widget inline innerhalb des markierten Elements angezeigt werden soll (Standard: WAHR). Bei FALSCH wird das Widget in einer eigenen Zeile angehängt.",
+      "descriptionIt": "Se il widget debba essere mostrato inline all'interno dell'elemento marcato (predefinito: TRUE). Quando FALSE, il widget viene aggiunto su una riga separata."
     }
   }
 }

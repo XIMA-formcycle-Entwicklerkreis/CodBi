@@ -1,88 +1,148 @@
 {
   "Description": "/classes/Functionalities_ai.llama.standard.qa.AI_LLAMA_STANDARD_QA.html#functionality",
   "Parameter": {
-    "MaxPages": "",
-    "Rotation": "",
-    "MaxPixelSize": "",
-    "AIHint": "",
-    "InternetAccess": "",
-    "Thinking": "",
-    "MaxThinkingTokens": "",
-    "Mode": "",
-    "PositiveResponse": "",
-    "CaseInsensitive": "",
-    "VerifyErrorText": "",
-    "VerifyCheckboxLabel": "",
-    "Location": "",
-    "ResponseLanguage": "",
-    "Specialist": "",
-    "QueueBadge": "",
-    "QueueText": "",
-    "FilterResults": "",
-    "Question": "",
-    "QuestionRoot": ""
+    "MaxPages": "Optional number limiting how many pages from a PDF are processed and sent to the AI. 0 processes all pages. Default: 5.",
+    "Rotation": "Optional image rotation applied to all files: either '90', '180' or '270'. Useful for multi-file uploads or PDFs with multiple images.",
+    "MaxPixelSize": "Maximum total pixel budget (width x height). Larger images are downscaled client-side preserving aspect ratio. Default: 3211264. Set to 0 to disable downscaling.",
+    "AIHint": "Text shown inside AI-populated fields until the user edits the value. Default: '✨ AI-Generated'. Set empty to disable.",
+    "InternetAccess": "If set to true, enables Brave Search internet access for this instance. Default: false.",
+    "Thinking": "If set to true, enables thinking mode using a dedicated thinking model for deeper reasoning. Default: false.",
+    "MaxThinkingTokens": "Maximum token budget for thinking inference. In verify mode defaults to 512. Has no effect when Thinking is false.",
+    "Mode": "If set to 'verify', the upload field may have a data-cb-Question attribute; the AI answer must be the positive response for the file to be accepted.",
+    "PositiveResponse": "The expected positive answer from the AI in verify mode. Comparison is case-insensitive by default. Default: 'yes'.",
+    "CaseInsensitive": "If true (default), the AI answer is lowercased before comparing with PositiveResponse.",
+    "VerifyErrorText": "Error message shown when the file does not pass verification. Default: 'The file does not meet the verification criteria.'",
+    "VerifyCheckboxLabel": "Label for the manual verification checkbox shown when verification fails.",
+    "Location": "If set to true, enables geolocation access so the user's coordinates are sent to the AI. Default: false.",
+    "ResponseLanguage": "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). Forces the AI to respond in this language, skipping auto-detection.",
+    "Specialist": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+    "QueueBadge": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    "QueueText": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    "FilterResults": "If set to 'true', enables PII filtering on Brave Search queries for this instance.",
+    "Question": "The question to ask the AI about the uploaded document. May reference fields/symbols.",
+    "QuestionRoot": "Optional CSS selector specifying an alternate root element from which to search for question elements."
   },
   "supportedFormelementtypes": "XUpload",
   "parameters": {
     "MaxPages": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Optional number limiting how many pages from a PDF are processed and sent to the AI. 0 processes all pages. Default: 5.",
+      "descriptionDe": "Optionale Zahl, die begrenzt, wie viele Seiten aus einer PDF verarbeitet und an die KI gesendet werden. 0 verarbeitet alle Seiten. Standard: 5.",
+      "descriptionIt": "Numero opzionale che limita quante pagine di un PDF vengono elaborate e inviate all'AI. 0 elabora tutte le pagine. Predefinito: 5."
     },
     "Rotation": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional image rotation applied to all files: either '90', '180' or '270'. Useful for multi-file uploads or PDFs with multiple images.",
+      "descriptionDe": "Optionale Bilddrehung, die auf alle Dateien angewendet wird: '90', '180' oder '270'. Nützlich für Multi-Datei-Uploads oder PDFs mit mehreren Bildern.",
+      "descriptionIt": "Rotazione immagine opzionale applicata a tutti i file: '90', '180' o '270'. Utile per caricamenti multi-file o PDF con più immagini."
     },
     "MaxPixelSize": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Maximum total pixel budget (width x height). Larger images are downscaled client-side preserving aspect ratio. Default: 3211264. Set to 0 to disable downscaling.",
+      "descriptionDe": "Maximales Gesamtpixelbudget (Breite × Höhe). Größere Bilder werden clientseitig unter Beibehaltung des Seitenverhältnisses verkleinert. Standard: 3211264. 0 deaktiviert die Verkleinerung.",
+      "descriptionIt": "Budget pixel totale massimo (larghezza × altezza). Le immagini più grandi vengono ridimensionate lato client mantenendo le proporzioni. Predefinito: 3211264. 0 disabilita il ridimensionamento."
     },
     "AIHint": {
-      "type": "string"
+      "type": "string",
+      "description": "Text shown inside AI-populated fields until the user edits the value. Default: '✨ AI-Generated'. Set empty to disable.",
+      "descriptionDe": "Text, der in KI-befüllten Feldern angezeigt wird, bis der Benutzer den Wert bearbeitet. Standard: '✨ KI-generiert'. Leer setzen zum Deaktivieren.",
+      "descriptionIt": "Testo mostrato nei campi compilati dall'AI finché l'utente non modifica il valore. Predefinito: '✨ Generato da AI'. Vuoto per disabilitare."
     },
     "InternetAccess": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to true, enables Brave Search internet access for this instance. Default: false.",
+      "descriptionDe": "Wenn auf true gesetzt, wird Brave-Search-Internetzugriff für diese Instanz aktiviert. Standard: false.",
+      "descriptionIt": "Se impostato su true, abilita l'accesso internet di Brave Search per questa istanza. Predefinito: false."
     },
     "Thinking": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to true, enables thinking mode using a dedicated thinking model for deeper reasoning. Default: false.",
+      "descriptionDe": "Wenn auf true gesetzt, wird der Denkmodus mithilfe eines dedizierten Denkmodells für tiefere Argumentation aktiviert. Standard: false.",
+      "descriptionIt": "Se impostato su true, abilita la modalità di ragionamento usando un modello dedicato per un'analisi più approfondita. Predefinito: false."
     },
     "MaxThinkingTokens": {
-      "type": "number"
+      "type": "number",
+      "description": "Maximum token budget for thinking inference. In verify mode defaults to 512. Has no effect when Thinking is false.",
+      "descriptionDe": "Maximales Tokenbudget für Denk-Inferenz. Im Verify-Modus Standard 512. Keine Wirkung, wenn Thinking false ist.",
+      "descriptionIt": "Budget token massimo per l'inferenza di ragionamento. In modalità verify il valore predefinito è 512. Nessun effetto se Thinking è false."
     },
     "Mode": {
-      "type": "string"
+      "type": "string",
+      "description": "If set to 'verify', the upload field may have a data-cb-Question attribute; the AI answer must be the positive response for the file to be accepted.",
+      "descriptionDe": "Wenn auf 'verify' gesetzt, kann das Upload-Feld ein data-cb-Question-Attribut haben; die KI-Antwort muss die positive Antwort sein, damit die Datei akzeptiert wird.",
+      "descriptionIt": "Se impostato su 'verify', il campo di caricamento può avere un attributo data-cb-Question; la risposta AI deve essere quella positiva affinché il file venga accettato."
     },
     "PositiveResponse": {
-      "type": "string"
+      "type": "string",
+      "description": "The expected positive answer from the AI in verify mode. Comparison is case-insensitive by default. Default: 'yes'.",
+      "descriptionDe": "Die erwartete positive Antwort der KI im Verify-Modus. Der Vergleich ist standardmäßig case-insensitiv. Standard: 'yes'.",
+      "descriptionIt": "La risposta positiva attesa dall'AI in modalità verify. Il confronto è senza distinzione tra maiuscole e minuscole per impostazione predefinita. Predefinito: 'yes'."
     },
     "CaseInsensitive": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If true (default), the AI answer is lowercased before comparing with PositiveResponse.",
+      "descriptionDe": "Wenn true (Standard), wird die KI-Antwort vor dem Vergleich mit PositiveResponse in Kleinbuchstaben umgewandelt.",
+      "descriptionIt": "Se true (predefinito), la risposta AI viene convertita in minuscolo prima del confronto con PositiveResponse."
     },
     "VerifyErrorText": {
-      "type": "string"
+      "type": "string",
+      "description": "Error message shown when the file does not pass verification. Default: 'The file does not meet the verification criteria.'",
+      "descriptionDe": "Fehlermeldung, die angezeigt wird, wenn die Datei die Verifizierung nicht besteht. Standard: 'Die Datei erfüllt die Verifizierungskriterien nicht.'",
+      "descriptionIt": "Messaggio di errore mostrato quando il file non supera la verifica. Predefinito: 'Il file non soddisfa i criteri di verifica.'"
     },
     "VerifyCheckboxLabel": {
-      "type": "string"
+      "type": "string",
+      "description": "Label for the manual verification checkbox shown when verification fails.",
+      "descriptionDe": "Label für das manuelle Verifizierungskontrollkästchen, das angezeigt wird, wenn die Verifizierung fehlschlägt.",
+      "descriptionIt": "Etichetta per la casella di verifica manuale mostrata quando la verifica fallisce."
     },
     "Location": {
-      "type": "string"
+      "type": "string",
+      "description": "If set to true, enables geolocation access so the user's coordinates are sent to the AI. Default: false.",
+      "descriptionDe": "Wenn auf true gesetzt, wird der Geolokalisierungszugriff aktiviert, sodass die Koordinaten des Benutzers an die KI gesendet werden. Standard: false.",
+      "descriptionIt": "Se impostato su true, abilita l'accesso alla geolocalizzazione così le coordinate dell'utente vengono inviate all'AI. Predefinito: false."
     },
     "ResponseLanguage": {
-      "type": "string"
+      "type": "string",
+      "description": "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). Forces the AI to respond in this language, skipping auto-detection.",
+      "descriptionDe": "Zweistelliger ISO-639-1-Code (z. B. 'de', 'fr'). Erzwingt, dass die KI in dieser Sprache antwortet, und überspringt die Auto-Erkennung.",
+      "descriptionIt": "Codice ISO 639-1 di due lettere (es. 'de', 'fr'). Obbliga l'AI a rispondere in questa lingua, saltando il rilevamento automatico."
     },
     "Specialist": {
-      "type": "string"
+      "type": "string",
+      "description": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+      "descriptionDe": "Name eines Spezialistenmodells, das über eine AI_LLAMA_STD_SPECIALIST_XXX-Plugin-Eigenschaft registriert ist. Leitet Anfragen an den Server dieses Spezialisten weiter.",
+      "descriptionIt": "Nome di un modello specialista registrato tramite una proprietà plugin AI_LLAMA_STD_SPECIALIST_XXX. Instrada le richieste al server di quello specialista."
     },
     "QueueBadge": {
-      "type": "string"
+      "type": "string",
+      "description": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird während des Wartens auf die Inferenz ein Abzeichen mit der aktuellen Warteschlangenposition angezeigt.",
+      "descriptionIt": "Se impostato su 'true', mostra un badge con la posizione corrente in coda mentre si attende l'inferenza."
     },
     "QueueText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+      "descriptionDe": "Text, der nach der Warteschlangenpositionsnummer im Abzeichen angehängt wird (z. B. 'in Warteschlange' zeigt '3 in Warteschlange'). Standard: leer.",
+      "descriptionIt": "Testo aggiunto dopo il numero di posizione in coda nel badge (es. 'in coda' mostra '3 in coda'). Predefinito: vuoto."
     },
     "FilterResults": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', enables PII filtering on Brave Search queries for this instance.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird die PII-Filterung bei Brave-Search-Abfragen für diese Instanz aktiviert.",
+      "descriptionIt": "Se impostato su 'true', abilita il filtraggio PII sulle query di Brave Search per questa istanza."
     },
     "Question": {
-      "type": "string"
+      "type": "string",
+      "description": "The question to ask the AI about the uploaded document. May reference fields/symbols.",
+      "descriptionDe": "Die Frage an die KI über das hochgeladene Dokument. Kann auf Felder/Symbole verweisen.",
+      "descriptionIt": "La domanda da porre all'AI sul documento caricato. Può fare riferimento a campi/simboli."
     },
     "QuestionRoot": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector specifying an alternate root element from which to search for question elements.",
+      "descriptionDe": "Optionaler CSS-Selektor, der ein alternatives Wurzelelement angibt, von dem aus nach Fragenelementen gesucht wird.",
+      "descriptionIt": "Selettore CSS opzionale che specifica un elemento radice alternativo da cui cercare gli elementi della domanda."
     }
   }
 }

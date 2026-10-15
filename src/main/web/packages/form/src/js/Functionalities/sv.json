@@ -1,16 +1,22 @@
 {
   "Description": "/classes/Functionalities_sv.SV.html#functionality",
   "Parameter": {
-    "Destinations": "",
-    "Sources": ""
+    "Destinations": "The name(s) of the global variable(s) to set (a single string or an array of strings).",
+    "Sources": "The name(s) of the URL-parameter(s) to read (a single string or an array of strings). Must contain the same amount of entries as Destinations; the i-th destination is set to the value of the i-th source."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "Destinations": {
-      "type": "string"
+      "type": "string",
+      "description": "The name(s) of the global variable(s) to set (a single string or an array of strings).",
+      "descriptionDe": "Die Namen der globalen Variablen, die gesetzt werden sollen (eine einzelne Zeichenfolge oder ein Array von Zeichenfolgen).",
+      "descriptionIt": "I nomi delle variabili globali da impostare (una singola stringa o un array di stringhe)."
     },
     "Sources": {
-      "type": "string"
+      "type": "string",
+      "description": "The name(s) of the URL-parameter(s) to read (a single string or an array of strings). Must contain the same amount of entries as Destinations; the i-th destination is set to the value of the i-th source.",
+      "descriptionDe": "Die Namen der URL-Parameter, die gelesen werden sollen (eine einzelne Zeichenfolge oder ein Array von Zeichenfolgen). Muss die gleiche Anzahl von Einträgen wie Destinations enthalten; das i-te Ziel wird auf den Wert der i-ten Quelle gesetzt.",
+      "descriptionIt": "I nomi dei parametri URL da leggere (una singola stringa o un array di stringhe). Deve contenere lo stesso numero di voci di Destinations; la i-esima destinazione viene impostata sul valore della i-esima sorgente."
     }
   }
 }

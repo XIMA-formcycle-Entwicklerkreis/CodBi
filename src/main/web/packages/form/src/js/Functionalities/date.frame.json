@@ -1,10 +1,10 @@
 {
   "Description": "/classes/Functionalities_date.frame.Date_Frame.html#functionality",
   "Parameter": {
-    "MaxField": "",
-    "MsgMinInvalid": "",
-    "MsgMaxInvalid": "",
-    "EqualityPermitted": ""
+    "MaxField": "CSS selector selecting the input element that takes the maximum date.",
+    "MsgMinInvalid": "The error message shown when the minimum field's value is after the one in the maximum field.",
+    "MsgMaxInvalid": "The error message shown when the maximum field's value is before the one in the minimum field.",
+    "EqualityPermitted": "Whether equality between the minimum and maximum dates is allowed."
   },
   "supportedFormelementtypes": {
     "XTextField": {
@@ -13,16 +13,28 @@
   },
   "parameters": {
     "MaxField": {
-      "type": "string"
+      "type": "string",
+      "description": "CSS selector selecting the input element that takes the maximum date.",
+      "descriptionDe": "CSS-Selektor, der das Eingabeelement auswählt, das das maximale Datum übernimmt.",
+      "descriptionIt": "Selettore CSS che seleziona l'elemento di input che riceve la data massima."
     },
     "MsgMinInvalid": {
-      "type": "string"
+      "type": "string",
+      "description": "The error message shown when the minimum field's value is after the one in the maximum field.",
+      "descriptionDe": "Die Fehlermeldung, die angezeigt wird, wenn der Wert des Mindestfelds nach dem des Höchstfelds liegt.",
+      "descriptionIt": "Il messaggio di errore mostrato quando il valore del campo minimo è successivo a quello del campo massimo."
     },
     "MsgMaxInvalid": {
-      "type": "string"
+      "type": "string",
+      "description": "The error message shown when the maximum field's value is before the one in the minimum field.",
+      "descriptionDe": "Die Fehlermeldung, die angezeigt wird, wenn der Wert des Höchstfelds vor dem des Mindestfelds liegt.",
+      "descriptionIt": "Il messaggio di errore mostrato quando il valore del campo massimo è precedente a quello del campo minimo."
     },
     "EqualityPermitted": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Whether equality between the minimum and maximum dates is allowed.",
+      "descriptionDe": "Ob Gleichheit zwischen Mindest- und Höchstdatum erlaubt ist.",
+      "descriptionIt": "Se è consentita l'uguaglianza tra le date minima e massima."
     }
   }
 }

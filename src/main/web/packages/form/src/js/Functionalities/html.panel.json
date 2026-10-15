@@ -1,113 +1,188 @@
 {
   "Description": "/classes/Functionalities_html.panel.HTML_Panel.html#functionality",
   "Parameter": {
-    "Folded": "",
-    "CSSHeaderHover": "",
-    "CSSHeaderActive": "",
-    "CSSHeaderFolded": "",
-    "CSSHeaderUnfolded": "",
-    "DCSSHeaderUnfolded": "",
-    "CSSAnimFadeINPanel": "",
-    "CSSAnimFadeINPanelDuration": "",
-    "CSSAnimFadeINPanelEasing": "",
-    "CSSAfterHeader": "",
-    "CSSBeforeHeader": "",
-    "CSSAfterHeaderContent": "",
-    "CSSBeforeHeaderContent": "",
-    "CSSAfterHeaderContentUnfolded": "",
-    "CSSBeforeHeaderContentUnfolded": "",
-    "CSSRequiredFieldsContent": "",
-    "CSSRequiredFields": "",
-    "AutoHeaderTitle": "",
-    "AutoHeaderTitleSupplementsSpacer": "",
-    "AutoHeaderLevel": "",
-    "ScrollBlock": "",
-    "GenerateHeader": "",
-    "Scroll": "",
-    "ScrollToTop": "",
-    "Accordion": ""
+    "Folded": "States whether this panel is folded (TRUE) or unfolded (everything else) when it is loaded (defaults to TRUE).",
+    "CSSHeaderHover": "The optional header's CSS:hover (defaults to { scale : 1.1 ;}).",
+    "CSSHeaderActive": "The optional header's CSS:active (defaults to { scale : .9 ;}).",
+    "CSSHeaderFolded": "The optional CSS to be applied onto the header when the panel is FOLDED. Without it a panel that is (or starts) folded would lose the header look set via CSSHeaderUnfolded.",
+    "CSSHeaderUnfolded": "The optional CSS to be applied onto the header when the panel is unfolded.",
+    "DCSSHeaderUnfolded": "The optional Darkmode CSS to be applied onto the header when the panel is unfolded.",
+    "CSSAnimFadeINPanel": "The optional animation to be applied onto the panel whenever the panel is unfolded.",
+    "CSSAnimFadeINPanelDuration": "The optional animation's duration that is applied onto the panel whenever the panel is unfolded (defaults to 0s).",
+    "CSSAnimFadeINPanelEasing": "The optional animation's easing function that is applied onto the panel whenever the panel is unfolded (defaults to \"ease-in-out\").",
+    "CSSAfterHeader": "The CSS:after to be applied onto the header when the panel is folded.",
+    "CSSBeforeHeader": "The CSS:before to be applied onto the header when the panel is folded (will be overwritten when required fields are contained by the panel).",
+    "CSSAfterHeaderContent": "The CSS:after content to be applied onto the header when the panel is folded.",
+    "CSSBeforeHeaderContent": "The CSS:before content to be applied onto the header when the panel is folded (will be overwritten when required fields are contained by the panel).",
+    "CSSAfterHeaderContentUnfolded": "The CSS:after content to be applied onto the header when the panel is unfolded.",
+    "CSSBeforeHeaderContentUnfolded": "The CSS:after content to be applied onto the header when the panel is unfolded (will be overwritten when required fields are contained by the panel).",
+    "CSSRequiredFieldsContent": "The CSS:before content to be applied onto the header if it contains a validation sensitive field.",
+    "CSSRequiredFields": "The CSS:before to be applied onto the header if it contains a validation sensitive field.",
+    "AutoHeaderTitle": "The string the automatically generated header shall display.",
+    "AutoHeaderTitleSupplementsSpacer": "The string separating the actual title from the strings that're supplemented (values of inputs tagged with the CSS-Class CodBi_HTML_Panel_AutoHeaderTitle_Supplement). Encode surrounding spaces as %20 or \\s.",
+    "AutoHeaderLevel": "Which level of enclosing heading the AutoHeaderTitle shall have, e.g. to get a h1 enclosure the value has to be 1.",
+    "ScrollBlock": "Defines the logical position to scroll to when the panel is unfolded (start, center, end, nearest). Defaults to \"nearest\".",
+    "GenerateHeader": "States whether a header shall be automatically generated. Defaults to FALSE.",
+    "Scroll": "States whether the view shall be scrolled when the panel unfolds. Default is FALSE.",
+    "ScrollToTop": "States whether a round scroll-to-top button shall be displayed at the bottom-right of the unfolded panel. Possible values: \"true\" (always visible), \"auto\" (visible only when the panel's content is taller than 1.5x the viewport height), or \"false\" (hidden). Defaults to AUTO.",
+    "Accordion": "If set, this panel becomes part of an accordion. All panels sharing the same accordion name will be folded when one of them is unfolded."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "Folded": {
       "type": "boolean",
-      "default": "true"
+      "default": "true",
+      "description": "States whether this panel is folded (TRUE) or unfolded (everything else) when it is loaded (defaults to TRUE).",
+      "descriptionDe": "Gibt an, ob dieses Panel beim Laden eingeklappt (WAHR) oder aufgeklappt (alles andere) ist (Standard: WAHR).",
+      "descriptionIt": "Indica se questo pannello è ripiegato (TRUE) o aperto (qualunque altro valore) quando viene caricato (predefinito: TRUE)."
     },
     "CSSHeaderHover": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional header's CSS:hover (defaults to { scale : 1.1 ;}).",
+      "descriptionDe": "Das optionale CSS:hover des Headers (Standard: { scale : 1.1 ;}).",
+      "descriptionIt": "Il CSS:hover opzionale dell'header (predefinito: { scale : 1.1 ;})."
     },
     "CSSHeaderActive": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional header's CSS:active (defaults to { scale : .9 ;}).",
+      "descriptionDe": "Das optionale CSS:active des Headers (Standard: { scale : .9 ;}).",
+      "descriptionIt": "Il CSS:active opzionale dell'header (predefinito: { scale : .9 ;})."
     },
     "CSSHeaderFolded": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional CSS to be applied onto the header when the panel is FOLDED. Without it a panel that is (or starts) folded would lose the header look set via CSSHeaderUnfolded.",
+      "descriptionDe": "Das optionale CSS, das auf den Header angewendet wird, wenn das Panel EINGEKLAPPT ist. Ohne dieses würde ein eingeklapptes (oder startend eingeklapptes) Panel das über CSSHeaderUnfolded gesetzte Header-Look verlieren.",
+      "descriptionIt": "Il CSS opzionale da applicare all'header quando il pannello è RIPIEGATO. Senza di esso, un pannello ripiegato (o che inizia ripiegato) perderebbe l'aspetto dell'header impostato tramite CSSHeaderUnfolded."
     },
     "CSSHeaderUnfolded": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional CSS to be applied onto the header when the panel is unfolded.",
+      "descriptionDe": "Das optionale CSS, das auf den Header angewendet wird, wenn das Panel aufgeklappt ist.",
+      "descriptionIt": "Il CSS opzionale da applicare all'header quando il pannello è aperto."
     },
     "DCSSHeaderUnfolded": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional Darkmode CSS to be applied onto the header when the panel is unfolded.",
+      "descriptionDe": "Das optionale Darkmode-CSS, das auf den Header angewendet wird, wenn das Panel aufgeklappt ist.",
+      "descriptionIt": "Il CSS Darkmode opzionale da applicare all'header quando il pannello è aperto."
     },
     "CSSAnimFadeINPanel": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional animation to be applied onto the panel whenever the panel is unfolded.",
+      "descriptionDe": "Die optionale Animation, die auf das Panel angewendet wird, wenn das Panel aufgeklappt wird.",
+      "descriptionIt": "L'animazione opzionale da applicare al pannello quando viene aperto."
     },
     "CSSAnimFadeINPanelDuration": {
       "type": "string",
-      "default": "0s"
+      "default": "0s",
+      "description": "The optional animation's duration that is applied onto the panel whenever the panel is unfolded (defaults to 0s).",
+      "descriptionDe": "Die optionale Dauer der Animation, die auf das Panel angewendet wird, wenn das Panel aufgeklappt wird (Standard: 0s).",
+      "descriptionIt": "La durata opzionale dell'animazione applicata al pannello quando viene aperto (predefinito: 0s)."
     },
     "CSSAnimFadeINPanelEasing": {
       "type": "string",
-      "default": "ease-in-out"
+      "default": "ease-in-out",
+      "description": "The optional animation's easing function that is applied onto the panel whenever the panel is unfolded (defaults to \"ease-in-out\").",
+      "descriptionDe": "Die optionale Easing-Funktion der Animation, die auf das Panel angewendet wird, wenn das Panel aufgeklappt wird (Standard: \"ease-in-out\").",
+      "descriptionIt": "La funzione di easing opzionale dell'animazione applicata al pannello quando viene aperto (predefinito: \"ease-in-out\")."
     },
     "CSSAfterHeader": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:after to be applied onto the header when the panel is folded.",
+      "descriptionDe": "Das CSS:after, das auf den Header angewendet wird, wenn das Panel eingeklappt ist.",
+      "descriptionIt": "Il CSS:after da applicare all'header quando il pannello è ripiegato."
     },
     "CSSBeforeHeader": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:before to be applied onto the header when the panel is folded (will be overwritten when required fields are contained by the panel).",
+      "descriptionDe": "Das CSS:before, das auf den Header angewendet wird, wenn das Panel eingeklappt ist (wird überschrieben, wenn Pflichtfelder im Panel enthalten sind).",
+      "descriptionIt": "Il CSS:before da applicare all'header quando il pannello è ripiegato (verrà sovrascritto quando il pannello contiene campi obbligatori)."
     },
     "CSSAfterHeaderContent": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:after content to be applied onto the header when the panel is folded.",
+      "descriptionDe": "Der CSS:after-Inhalt, der auf den Header angewendet wird, wenn das Panel eingeklappt ist.",
+      "descriptionIt": "Il contenuto CSS:after da applicare all'header quando il pannello è ripiegato."
     },
     "CSSBeforeHeaderContent": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:before content to be applied onto the header when the panel is folded (will be overwritten when required fields are contained by the panel).",
+      "descriptionDe": "Der CSS:before-Inhalt, der auf den Header angewendet wird, wenn das Panel eingeklappt ist (wird überschrieben, wenn Pflichtfelder im Panel enthalten sind).",
+      "descriptionIt": "Il contenuto CSS:before da applicare all'header quando il pannello è ripiegato (verrà sovrascritto quando il pannello contiene campi obbligatori)."
     },
     "CSSAfterHeaderContentUnfolded": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:after content to be applied onto the header when the panel is unfolded.",
+      "descriptionDe": "Der CSS:after-Inhalt, der auf den Header angewendet wird, wenn das Panel aufgeklappt ist.",
+      "descriptionIt": "Il contenuto CSS:after da applicare all'header quando il pannello è aperto."
     },
     "CSSBeforeHeaderContentUnfolded": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:after content to be applied onto the header when the panel is unfolded (will be overwritten when required fields are contained by the panel).",
+      "descriptionDe": "Der CSS:before-Inhalt, der auf den Header angewendet wird, wenn das Panel aufgeklappt ist (wird überschrieben, wenn Pflichtfelder im Panel enthalten sind).",
+      "descriptionIt": "Il contenuto CSS:before da applicare all'header quando il pannello è aperto (verrà sovrascritto quando il pannello contiene campi obbligatori)."
     },
     "CSSRequiredFieldsContent": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:before content to be applied onto the header if it contains a validation sensitive field.",
+      "descriptionDe": "Der CSS:before-Inhalt, der auf den Header angewendet wird, wenn er ein validierungssensitives Feld enthält.",
+      "descriptionIt": "Il contenuto CSS:before da applicare all'header se contiene un campo sensibile alla validazione."
     },
     "CSSRequiredFields": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS:before to be applied onto the header if it contains a validation sensitive field.",
+      "descriptionDe": "Das CSS:before, das auf den Header angewendet wird, wenn er ein validierungssensitives Feld enthält.",
+      "descriptionIt": "Il CSS:before da applicare all'header se contiene un campo sensibile alla validazione."
     },
     "AutoHeaderTitle": {
-      "type": "string"
+      "type": "string",
+      "description": "The string the automatically generated header shall display.",
+      "descriptionDe": "Die Zeichenfolge, die der automatisch generierte Header anzeigen soll.",
+      "descriptionIt": "La stringa che l'header generato automaticamente deve visualizzare."
     },
     "AutoHeaderTitleSupplementsSpacer": {
-      "type": "string"
+      "type": "string",
+      "description": "The string separating the actual title from the strings that're supplemented (values of inputs tagged with the CSS-Class CodBi_HTML_Panel_AutoHeaderTitle_Supplement). Encode surrounding spaces as %20 or \\s.",
+      "descriptionDe": "Die Zeichenfolge, die den tatsächlichen Titel von den ergänzten Zeichenfolgen trennt (Werte von Eingaben mit der CSS-Klasse CodBi_HTML_Panel_AutoHeaderTitle_Supplement). Umgebende Leerzeichen als %20 oder \\s kodieren.",
+      "descriptionIt": "La stringa che separa il titolo effettivo dalle stringhe supplementari (valori degli input marcati con la classe CSS CodBi_HTML_Panel_AutoHeaderTitle_Supplement). Codifica gli spazi circostanti come %20 o \\s."
     },
     "AutoHeaderLevel": {
-      "type": "number"
+      "type": "number",
+      "description": "Which level of enclosing heading the AutoHeaderTitle shall have, e.g. to get a h1 enclosure the value has to be 1.",
+      "descriptionDe": "Welche Ebene der umschließenden Überschrift der AutoHeaderTitle haben soll, z. B. muss der Wert 1 sein, um eine h1-Umhüllung zu erhalten.",
+      "descriptionIt": "Quale livello di intestazione circostante deve avere l'AutoHeaderTitle, es. per ottenere un contenitore h1 il valore deve essere 1."
     },
     "ScrollBlock": {
       "type": "string",
-      "default": "nearest"
+      "default": "nearest",
+      "description": "Defines the logical position to scroll to when the panel is unfolded (start, center, end, nearest). Defaults to \"nearest\".",
+      "descriptionDe": "Definiert die logische Position, zu der beim Aufklappen des Panels gescrollt wird (start, center, end, nearest). Standard: \"nearest\".",
+      "descriptionIt": "Definisce la posizione logica a cui scorrere quando il pannello viene aperto (start, center, end, nearest). Predefinito: \"nearest\"."
     },
     "GenerateHeader": {
       "type": "boolean",
-      "default": "false"
+      "default": "false",
+      "description": "States whether a header shall be automatically generated. Defaults to FALSE.",
+      "descriptionDe": "Gibt an, ob automatisch ein Header generiert werden soll. Standard: FALSCH.",
+      "descriptionIt": "Indica se un'header deve essere generato automaticamente. Predefinito: FALSE."
     },
     "Scroll": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "States whether the view shall be scrolled when the panel unfolds. Default is FALSE.",
+      "descriptionDe": "Gibt an, ob die Ansicht gescrollt werden soll, wenn sich das Panel aufklappt. Standard: FALSCH.",
+      "descriptionIt": "Indica se la vista deve essere scorsa quando il pannello si apre. Predefinito: FALSE."
     },
     "ScrollToTop": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "States whether a round scroll-to-top button shall be displayed at the bottom-right of the unfolded panel. Possible values: \"true\" (always visible), \"auto\" (visible only when the panel's content is taller than 1.5x the viewport height), or \"false\" (hidden). Defaults to AUTO.",
+      "descriptionDe": "Gibt an, ob eine runde Scroll-nach-oben-Schaltfläche unten rechts im aufgeklappten Panel angezeigt werden soll. Mögliche Werte: \"true\" (immer sichtbar), \"auto\" (nur sichtbar, wenn der Panelinhalt höher als das 1,5-fache der Viewport-Höhe ist) oder \"false\" (verborgen). Standard: AUTO.",
+      "descriptionIt": "Indica se mostrare un pulsante circolare di scorrimento verso l'alto in basso a destra del pannello aperto. Valori possibili: \"true\" (sempre visibile), \"auto\" (visibile solo quando il contenuto del pannello è più alto di 1,5 volte l'altezza del viewport), o \"false\" (nascosto). Predefinito: AUTO."
     },
     "Accordion": {
-      "type": "string"
+      "type": "string",
+      "description": "If set, this panel becomes part of an accordion. All panels sharing the same accordion name will be folded when one of them is unfolded.",
+      "descriptionDe": "Wenn gesetzt, wird dieses Panel Teil eines Akkordeons. Alle Panels mit demselben Akkordeonnamen werden eingeklappt, wenn eines davon aufgeklappt wird.",
+      "descriptionIt": "Se impostato, questo pannello diventa parte di un accordion. Tutti i pannelli con lo stesso nome accordion verranno ripiegati quando uno di essi viene aperto."
     }
   }
 }

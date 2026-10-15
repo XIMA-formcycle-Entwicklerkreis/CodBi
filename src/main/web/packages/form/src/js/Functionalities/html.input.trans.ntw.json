@@ -1,20 +1,29 @@
 {
   "Description": "/classes/Functionalities_html.input.trans.ntw.HTML_Input_Trans_NTW.html#functionality",
   "Parameter": {
-    "NumberWords": "",
-    "PreFix": "",
-    "PostFix": ""
+    "NumberWords": "The array of strings representing the word for each digit from 0 to 9. The index of the string in the array corresponds to the digit it represents.",
+    "PreFix": "The string that shall be prepended to the transformed result.",
+    "PostFix": "The string that shall be appended to the transformed result."
   },
   "supportedFormelementtypes": ["XTextField", "XTextArea"],
   "parameters": {
     "NumberWords": {
-      "type": "string"
+      "type": "string",
+      "description": "The array of strings representing the word for each digit from 0 to 9. The index of the string in the array corresponds to the digit it represents.",
+      "descriptionDe": "Das Array von Zeichenfolgen, die das Wort für jede Ziffer von 0 bis 9 darstellen. Der Index der Zeichenfolge im Array entspricht der Ziffer, die es darstellt.",
+      "descriptionIt": "L'array di stringhe che rappresentano la parola per ogni cifra da 0 a 9. L'indice della stringa nell'array corrisponde alla cifra che rappresenta."
     },
     "PreFix": {
-      "type": "string"
+      "type": "string",
+      "description": "The string that shall be prepended to the transformed result.",
+      "descriptionDe": "Die Zeichenfolge, die dem transformierten Ergebnis vorangestellt werden soll.",
+      "descriptionIt": "La stringa che deve essere anteposta al risultato trasformato."
     },
     "PostFix": {
-      "type": "string"
+      "type": "string",
+      "description": "The string that shall be appended to the transformed result.",
+      "descriptionDe": "Die Zeichenfolge, die dem transformierten Ergebnis angehängt werden soll.",
+      "descriptionIt": "La stringa che deve essere aggiunta al risultato trasformato."
     }
   }
 }

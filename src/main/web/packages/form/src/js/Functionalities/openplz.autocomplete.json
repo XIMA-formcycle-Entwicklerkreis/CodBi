@@ -1,16 +1,16 @@
 {
   "Description": "/classes/Functionalities_openplz.autocomplete.OpenPLZ_Autocomplete.html#functionality",
   "Parameter": {
-    "TargetData": "",
-    "Country": "",
-    "CSSProposals": "",
-    "MsgNotKnown": "",
-    "Dependent": "",
-    "DependentPLZ": "",
-    "DependentLocality": "",
-    "FocusOnAutocomplete": "",
-    "AllowEmpty": "",
-    "AllowedValues": ""
+    "TargetData": "What type of data shall be received by the target (Localities, PostalCode, or Streets).",
+    "Country": "The optional country to retrieve the data of (if not provided either the country specified in the CodBi's Configuration OpenPLZ_Country will be used or, if not specified, de).",
+    "CSSProposals": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+    "MsgNotKnown": "The message to show when trying to set a value that can't be found in OpenPLZ.",
+    "Dependent": "The CSS-Selector of the field whose value restricts the search results. Prefer DependentPLZ / DependentLocality for streets.",
+    "DependentPLZ": "The CSS-Selector of the field that restricts the search of streets by its value resembling a postal-code, only if DependentLocality is undefined.",
+    "DependentLocality": "The CSS-Selector of the field that restricts the search of streets by its value resembling a locality (overwrites DependentPLZ).",
+    "FocusOnAutocomplete": "The CSS-Selector of the field to focus when an autocomplete has occurred.",
+    "AllowEmpty": "If set to true an empty input value won't trigger an error message.",
+    "AllowedValues": "A CSV of additional values that are also accepted without requiring an OpenPLZ match (bypasses the not known validation). Use semicolons to optionally restrict a value to a specific dependent locality and/or PLZ."
   },
   "supportedFormelementtypes": {
     "XTextField": {
@@ -20,35 +20,65 @@
   "parameters": {
     "TargetData": {
       "type": "enum",
-      "options": ["localities", "postalcodes", "streets"]
+      "options": ["localities", "postalcodes", "streets"],
+      "description": "What type of data shall be received by the target (Localities, PostalCode, or Streets).",
+      "descriptionDe": "Welche Art von Daten vom Ziel empfangen werden soll (Localities, PostalCode oder Streets).",
+      "descriptionIt": "Quale tipo di dati deve ricevere il target (Localities, PostalCode o Streets)."
     },
     "Country": {
       "type": "enum",
-      "options": ["de", "en", "at", "li", "ch"]
+      "options": ["de", "en", "at", "li", "ch"],
+      "description": "The optional country to retrieve the data of (if not provided either the country specified in the CodBi's Configuration OpenPLZ_Country will be used or, if not specified, de).",
+      "descriptionDe": "Das optionale Land, aus dem die Daten abgerufen werden sollen (wenn nicht angegeben, wird entweder das in der CodBi-Konfiguration OpenPLZ_Country angegebene Land verwendet oder, wenn nicht angegeben, de).",
+      "descriptionIt": "Il paese opzionale da cui recuperare i dati (se non fornito, verrà usato il paese specificato nella configurazione OpenPLZ_Country di CodBi o, se non specificato, de)."
     },
     "CSSProposals": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+      "descriptionDe": "Der CSS-Stil für das Vorschlags-Select-Element, das erscheint, wenn es mehrere Übereinstimmungen gibt.",
+      "descriptionIt": "Lo stile CSS per l'elemento Select dei suggerimenti che appare quando ci sono più corrispondenze."
     },
     "MsgNotKnown": {
-      "type": "string"
+      "type": "string",
+      "description": "The message to show when trying to set a value that can't be found in OpenPLZ.",
+      "descriptionDe": "Die Meldung, die angezeigt wird, wenn versucht wird, einen Wert zu setzen, der in OpenPLZ nicht gefunden werden kann.",
+      "descriptionIt": "Il messaggio da mostrare quando si tenta di impostare un valore che non può essere trovato in OpenPLZ."
     },
     "Dependent": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector of the field whose value restricts the search results. Prefer DependentPLZ / DependentLocality for streets.",
+      "descriptionDe": "Der CSS-Selektor des Felds, dessen Wert die Suchergebnisse einschränkt. Für Straßen DependentPLZ / DependentLocality bevorzugen.",
+      "descriptionIt": "Il selettore CSS del campo il cui valore limita i risultati di ricerca. Preferire DependentPLZ / DependentLocality per le strade."
     },
     "DependentPLZ": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector of the field that restricts the search of streets by its value resembling a postal-code, only if DependentLocality is undefined.",
+      "descriptionDe": "Der CSS-Selektor des Felds, das die Suche nach Straßen anhand seines Werts, der einer Postleitzahl ähnelt, einschränkt, nur wenn DependentLocality undefined ist.",
+      "descriptionIt": "Il selettore CSS del campo che limita la ricerca delle strade in base al suo valore simile a un codice postale, solo se DependentLocality è undefined."
     },
     "DependentLocality": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector of the field that restricts the search of streets by its value resembling a locality (overwrites DependentPLZ).",
+      "descriptionDe": "Der CSS-Selektor des Felds, das die Suche nach Straßen anhand seines Werts, der einer Ortschaft ähnelt, einschränkt (überschreibt DependentPLZ).",
+      "descriptionIt": "Il selettore CSS del campo che limita la ricerca delle strade in base al suo valore simile a una località (sovrascrive DependentPLZ)."
     },
     "FocusOnAutocomplete": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector of the field to focus when an autocomplete has occurred.",
+      "descriptionDe": "Der CSS-Selektor des Felds, das fokussiert werden soll, wenn eine automatische Vervollständigung stattgefunden hat.",
+      "descriptionIt": "Il selettore CSS del campo su cui focalizzare quando si è verificato un autocomplete."
     },
     "AllowEmpty": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to true an empty input value won't trigger an error message.",
+      "descriptionDe": "Wenn auf true gesetzt, löst ein leerer Eingabewert keine Fehlermeldung aus.",
+      "descriptionIt": "Se impostato su true, un valore di input vuoto non attiva un messaggio di errore."
     },
     "AllowedValues": {
-      "type": "string"
+      "type": "string",
+      "description": "A CSV of additional values that are also accepted without requiring an OpenPLZ match (bypasses the not known validation). Use semicolons to optionally restrict a value to a specific dependent locality and/or PLZ.",
+      "descriptionDe": "Eine CSV zusätzlicher Werte, die ebenfalls ohne einen OpenPLZ-Abgleich akzeptiert werden (umgeht die 'nicht bekannt'-Validierung). Verwenden Sie Semikolons, um einen Wert optional auf eine bestimmte abhängige Ortschaft und/oder PLZ einzuschränken.",
+      "descriptionIt": "Un CSV di valori aggiuntivi accettati anche senza una corrispondenza OpenPLZ (bypassa la validazione 'non noto'). Usa i punti e virgola per limitare facoltativamente un valore a una specifica località dipendente e/o PLZ."
     }
   }
 }

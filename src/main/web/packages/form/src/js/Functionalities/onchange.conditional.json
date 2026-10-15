@@ -1,28 +1,43 @@
 {
   "Description": "/classes/Functionalities_onchange.conditional.OnChange_Conditional.html#functionality",
   "Parameter": {
-    "Reference": "",
-    "Mode": "",
-    "Target": "",
-    "DateFormat": "",
-    "Candidate": ""
+    "Reference": "The value the tagged input's value shall be compared with.",
+    "Mode": "Defines the mode of comparison to apply onto the tagged input's value and the reference value. Available modes are GTE (greater than or equal), GT (greater than), LTE (lower than or equal), LT (lower than), EQ (equal) & NEQ (not equal).",
+    "Target": "The element where to apply one of the specified functionalities depending on whether the given condition is fulfilled or not, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
+    "DateFormat": "An optional string specifying the format the candidate is of. If not undefined it triggers the transformation of the tagged field's value into a Date prior to comparing it with the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the Date constructor.",
+    "Candidate": "The element where to get the value to be compared, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory."
   },
   "parameters": {
     "Reference": {
-      "type": "string"
+      "type": "string",
+      "description": "The value the tagged input's value shall be compared with.",
+      "descriptionDe": "Der Wert, mit dem der Wert des markierten Eingabefelds verglichen werden soll.",
+      "descriptionIt": "Il valore con cui deve essere confrontato il valore dell'input marcato."
     },
     "Mode": {
       "type": "enum",
-      "options": ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"]
+      "options": ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"],
+      "description": "Defines the mode of comparison to apply onto the tagged input's value and the reference value. Available modes are GTE (greater than or equal), GT (greater than), LTE (lower than or equal), LT (lower than), EQ (equal) & NEQ (not equal).",
+      "descriptionDe": "Definiert den Vergleichsmodus, der auf den Wert des markierten Eingabefelds und den Referenzwert angewendet werden soll. Verfügbare Modi sind GTE (größer oder gleich), GT (größer), LTE (kleiner oder gleich), LT (kleiner), EQ (gleich) & NEQ (ungleich).",
+      "descriptionIt": "Definisce la modalità di confronto da applicare al valore dell'input marcato e al valore di riferimento. Le modalità disponibili sono GTE (maggiore o uguale), GT (maggiore), LTE (minore o uguale), LT (minore), EQ (uguale) e NEQ (non uguale)."
     },
     "Target": {
-      "type": "string"
+      "type": "string",
+      "description": "The element where to apply one of the specified functionalities depending on whether the given condition is fulfilled or not, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
+      "descriptionDe": "Das Element, auf das eine der angegebenen Funktionalitäten angewendet werden soll, je nachdem, ob die Bedingung erfüllt ist oder nicht, oder ein CSS-Selektor. Für die Arbeit in einem repetitiven Container ist ein CSS-Selektor zwingend erforderlich.",
+      "descriptionIt": "L'elemento a cui applicare una delle funzionalità specificate a seconda che la condizione sia soddisfatta o no, oppure un selettore CSS. Per funzionare in un contenitore ripetitivo è obbligatorio un selettore CSS."
     },
     "DateFormat": {
-      "type": "string"
+      "type": "string",
+      "description": "An optional string specifying the format the candidate is of. If not undefined it triggers the transformation of the tagged field's value into a Date prior to comparing it with the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the Date constructor.",
+      "descriptionDe": "Eine optionale Zeichenfolge, die das Format des Kandidaten angibt. Wenn nicht undefined, löst es die Umwandlung des Werts des markierten Felds in ein Datum aus, bevor er mit der Referenz verglichen wird. Wenn nicht angegeben, wird das Format als MM/DD/YYYY oder ein vom Date-Konstruktor parsebares Format angenommen.",
+      "descriptionIt": "Una stringa opzionale che specifica il formato del candidato. Se non è undefined, attiva la trasformazione del valore del campo marcato in una Date prima di confrontarlo con il riferimento. Se non specificato, si presume il formato MM/DD/YYYY o un formato parsabile dal costruttore Date."
     },
     "Candidate": {
-      "type": "string"
+      "type": "string",
+      "description": "The element where to get the value to be compared, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
+      "descriptionDe": "Das Element, aus dem der zu vergleichende Wert stammt, oder ein CSS-Selektor. Für die Arbeit in einem repetitiven Container ist ein CSS-Selektor zwingend erforderlich.",
+      "descriptionIt": "L'elemento da cui ottenere il valore da confrontare, oppure un selettore CSS. Per funzionare in un contenitore ripetitivo è obbligatorio un selettore CSS."
     }
   }
 }

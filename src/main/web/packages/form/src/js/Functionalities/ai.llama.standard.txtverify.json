@@ -1,68 +1,113 @@
 {
   "Description": "/classes/Functionalities_ai.llama.standard.txtverify.AI_LLAMA_STANDARD_TXTVERIFY.html#functionality",
   "Parameter": {
-    "Question": "",
-    "PositiveResponse": "",
-    "CaseInsensitive": "",
-    "VerifyErrorText": "",
-    "VerifyCheckboxLabel": "",
-    "InternetAccess": "",
-    "Thinking": "",
-    "MaxThinkingTokens": "",
-    "Language": "",
-    "ResponseLanguage": "",
-    "Specialist": "",
-    "QueueBadge": "",
-    "QueueText": "",
-    "FilterResults": "",
-    "QuestionRoot": ""
+    "Question": "Verification question. Supports <[this]> and <[CSSClass]> placeholders. Overridden by the data-cb-Question attribute if present.",
+    "PositiveResponse": "The single word the AI must reply with to signal validity. Comparison is case-insensitive by default. Default: 'yes'.",
+    "CaseInsensitive": "If true (default), the AI answer is lowercased before comparison. Set to 'false' for exact (case-sensitive) matching.",
+    "VerifyErrorText": "Fallback error message used only when the AI returns an empty answer. Default: 'The entered text does not meet the verification criteria.'",
+    "VerifyCheckboxLabel": "Label for the manual override checkbox shown on failure.",
+    "InternetAccess": "If 'true', enables Brave Search internet access. Default: false.",
+    "Thinking": "If 'true', enables thinking mode. Default: false.",
+    "MaxThinkingTokens": "Token budget for thinking. Defaults to 512 when Thinking is enabled.",
+    "Language": "Full language name (e.g. 'German', 'Deutsch') appended as 'Answer in {Language}.' to the reply instruction sent to the AI.",
+    "ResponseLanguage": "Two-letter ISO 639-1 code (e.g. 'de', 'fr') to force the AI response language.",
+    "Specialist": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property.",
+    "QueueBadge": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    "QueueText": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    "FilterResults": "If set to 'true', enables PII filtering on Brave Search queries for this instance.",
+    "QuestionRoot": "Optional CSS selector specifying an alternate root element from which to search for elements referenced by <[CSSClass]> placeholders."
   },
   "supportedFormelementtypes": ["XTextField", "XTextArea"],
   "parameters": {
     "Question": {
-      "type": "string"
+      "type": "string",
+      "description": "Verification question. Supports <[this]> and <[CSSClass]> placeholders. Overridden by the data-cb-Question attribute if present.",
+      "descriptionDe": "Verifizierungsfrage. Unterstützt <[this]>- und <[CSSClass]>-Platzhalter. Wird durch das data-cb-Question-Attribut überschrieben, falls vorhanden.",
+      "descriptionIt": "Domanda di verifica. Supporta i segnaposto <[this]> e <[CSSClass]>. Sovrascritta dall'attributo data-cb-Question se presente."
     },
     "PositiveResponse": {
-      "type": "string"
+      "type": "string",
+      "description": "The single word the AI must reply with to signal validity. Comparison is case-insensitive by default. Default: 'yes'.",
+      "descriptionDe": "Das einzelne Wort, mit dem die KI antworten muss, um Gültigkeit zu signalisieren. Der Vergleich ist standardmäßig case-insensitiv. Standard: 'yes'.",
+      "descriptionIt": "L'unica parola con cui l'AI deve rispondere per segnalare la validità. Il confronto è senza distinzione tra maiuscole e minuscole per impostazione predefinita. Predefinito: 'yes'."
     },
     "CaseInsensitive": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If true (default), the AI answer is lowercased before comparison. Set to 'false' for exact (case-sensitive) matching.",
+      "descriptionDe": "Wenn true (Standard), wird die KI-Antwort vor dem Vergleich in Kleinbuchstaben umgewandelt. Auf 'false' setzen für exaktes (case-sensitives) Matching.",
+      "descriptionIt": "Se true (predefinito), la risposta AI viene convertita in minuscolo prima del confronto. Impostare su 'false' per un confronto esatto (case-sensitive)."
     },
     "VerifyErrorText": {
-      "type": "string"
+      "type": "string",
+      "description": "Fallback error message used only when the AI returns an empty answer. Default: 'The entered text does not meet the verification criteria.'",
+      "descriptionDe": "Fallback-Fehlermeldung, die nur verwendet wird, wenn die KI eine leere Antwort zurückgibt. Standard: 'Der eingegebene Text erfüllt die Verifizierungskriterien nicht.'",
+      "descriptionIt": "Messaggio di errore di fallback utilizzato solo quando l'AI restituisce una risposta vuota. Predefinito: 'Il testo inserito non soddisfa i criteri di verifica.'"
     },
     "VerifyCheckboxLabel": {
-      "type": "string"
+      "type": "string",
+      "description": "Label for the manual override checkbox shown on failure.",
+      "descriptionDe": "Label für das manuelle Überschreibungskontrollkästchen, das bei einem Fehler angezeigt wird.",
+      "descriptionIt": "Etichetta per la casella di override manuale mostrata in caso di errore."
     },
     "InternetAccess": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If 'true', enables Brave Search internet access. Default: false.",
+      "descriptionDe": "Wenn 'true', wird der Brave-Search-Internetzugriff aktiviert. Standard: false.",
+      "descriptionIt": "Se 'true', abilita l'accesso internet di Brave Search. Predefinito: false."
     },
     "Thinking": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If 'true', enables thinking mode. Default: false.",
+      "descriptionDe": "Wenn 'true', wird der Denkmodus aktiviert. Standard: false.",
+      "descriptionIt": "Se 'true', abilita la modalità di ragionamento. Predefinito: false."
     },
     "MaxThinkingTokens": {
-      "type": "number"
+      "type": "number",
+      "description": "Token budget for thinking. Defaults to 512 when Thinking is enabled.",
+      "descriptionDe": "Tokenbudget für das Denken. Standard 512, wenn Thinking aktiviert ist.",
+      "descriptionIt": "Budget token per il ragionamento. Il valore predefinito è 512 quando Thinking è abilitato."
     },
     "Language": {
-      "type": "string"
+      "type": "string",
+      "description": "Full language name (e.g. 'German', 'Deutsch') appended as 'Answer in {Language}.' to the reply instruction sent to the AI.",
+      "descriptionDe": "Voller Sprachname (z. B. 'Deutsch', 'Deutsch') wird als 'Antworte in {Language}.' an die an die KI gesendete Antwortanweisung angehängt.",
+      "descriptionIt": "Nome completo della lingua (es. 'Tedesco', 'Deutsch') aggiunto come 'Rispondi in {Language}.' all'istruzione di risposta inviata all'AI."
     },
     "ResponseLanguage": {
-      "type": "string"
+      "type": "string",
+      "description": "Two-letter ISO 639-1 code (e.g. 'de', 'fr') to force the AI response language.",
+      "descriptionDe": "Zweistelliger ISO-639-1-Code (z. B. 'de', 'fr') zur Erzwingung der KI-Antwortsprache.",
+      "descriptionIt": "Codice ISO 639-1 di due lettere (es. 'de', 'fr') per imporre la lingua di risposta dell'AI."
     },
     "Specialist": {
-      "type": "string"
+      "type": "string",
+      "description": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property.",
+      "descriptionDe": "Name eines Spezialistenmodells, das über eine AI_LLAMA_STD_SPECIALIST_XXX-Plugin-Eigenschaft registriert ist.",
+      "descriptionIt": "Nome di un modello specialista registrato tramite una proprietà plugin AI_LLAMA_STD_SPECIALIST_XXX."
     },
     "QueueBadge": {
-      "type": "string"
+      "type": "string",
+      "description": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird während des Wartens auf die Inferenz ein Abzeichen mit der aktuellen Warteschlangenposition angezeigt.",
+      "descriptionIt": "Se impostato su 'true', mostra un badge con la posizione corrente in coda mentre si attende l'inferenza."
     },
     "QueueText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+      "descriptionDe": "Text, der nach der Warteschlangenpositionsnummer im Abzeichen angehängt wird (z. B. 'in Warteschlange' zeigt '3 in Warteschlange'). Standard: leer.",
+      "descriptionIt": "Testo aggiunto dopo il numero di posizione in coda nel badge (es. 'in coda' mostra '3 in coda'). Predefinito: vuoto."
     },
     "FilterResults": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', enables PII filtering on Brave Search queries for this instance.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird die PII-Filterung bei Brave-Search-Abfragen für diese Instanz aktiviert.",
+      "descriptionIt": "Se impostato su 'true', abilita il filtraggio PII sulle query di Brave Search per questa istanza."
     },
     "QuestionRoot": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector specifying an alternate root element from which to search for elements referenced by <[CSSClass]> placeholders.",
+      "descriptionDe": "Optionaler CSS-Selektor, der ein alternatives Wurzelelement angibt, von dem aus nach Elementen gesucht wird, auf die <[CSSClass]>-Platzhalter verweisen.",
+      "descriptionIt": "Selettore CSS opzionale che specifica un elemento radice alternativo da cui cercare gli elementi referenziati dai segnaposto <[CSSClass]>."
     }
   }
 }

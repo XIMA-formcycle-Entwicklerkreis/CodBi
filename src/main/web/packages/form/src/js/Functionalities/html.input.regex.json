@@ -1,38 +1,59 @@
 {
   "Description": "/classes/Functionalities_html.input.regex.HTML_Input_REGEX.html#functionality",
   "Parameter": {
-    "Expression": "",
-    "KeyExpression": "",
-    "Flags": "",
-    "KeyFlags": "",
-    "ErrorPrefix": "",
-    "ErrorPostfix": "",
-    "ExposeExpression": ""
+    "Expression": "The regular expression the value of the field has to comply to. Use '°' instead of '^' to mark the beginning of the input string or a negation.",
+    "KeyExpression": "The regular expression the individual keystrokes have to comply to.",
+    "Flags": "The regular expression flags used to create the Expression (defaults to 'g').",
+    "KeyFlags": "The regular expression flags used to create the KeyExpression (defaults to 'g').",
+    "ErrorPrefix": "The first part of the error message displayed prior to the Expression.",
+    "ErrorPostfix": "The final part of the error message displayed after the Expression.",
+    "ExposeExpression": "Will expose the Expression within the error message if set to TRUE (case insensitive)."
   },
   "supportedFormelementtypes": "XTextField",
   "parameters": {
     "Expression": {
-      "type": "string"
+      "type": "string",
+      "description": "The regular expression the value of the field has to comply to. Use '°' instead of '^' to mark the beginning of the input string or a negation.",
+      "descriptionDe": "Der reguläre Ausdruck, dem der Wert des Felds entsprechen muss. Verwenden Sie '°' statt '^', um den Anfang der Eingabezeichenfolge oder eine Negation zu markieren.",
+      "descriptionIt": "L'espressione regolare a cui il valore del campo deve conformarsi. Usa '°' invece di '^' per marcare l'inizio della stringa di input o una negazione."
     },
     "KeyExpression": {
-      "type": "string"
+      "type": "string",
+      "description": "The regular expression the individual keystrokes have to comply to.",
+      "descriptionDe": "Der reguläre Ausdruck, dem die einzelnen Tastenanschläge entsprechen müssen.",
+      "descriptionIt": "L'espressione regolare a cui i singoli tasti devono conformarsi."
     },
     "Flags": {
       "type": "string",
-      "default": "g"
+      "default": "g",
+      "description": "The regular expression flags used to create the Expression (defaults to 'g').",
+      "descriptionDe": "Die regulären Ausdrucks-Flags, die zum Erstellen des Expression verwendet werden (Standard: 'g').",
+      "descriptionIt": "I flag dell'espressione regolare usati per creare l'Expression (predefinito: 'g')."
     },
     "KeyFlags": {
       "type": "string",
-      "default": "g"
+      "default": "g",
+      "description": "The regular expression flags used to create the KeyExpression (defaults to 'g').",
+      "descriptionDe": "Die regulären Ausdrucks-Flags, die zum Erstellen des KeyExpression verwendet werden (Standard: 'g').",
+      "descriptionIt": "I flag dell'espressione regolare usati per creare il KeyExpression (predefinito: 'g')."
     },
     "ErrorPrefix": {
-      "type": "string"
+      "type": "string",
+      "description": "The first part of the error message displayed prior to the Expression.",
+      "descriptionDe": "Der erste Teil der Fehlermeldung, der vor dem Expression angezeigt wird.",
+      "descriptionIt": "La prima parte del messaggio di errore visualizzato prima dell'Expression."
     },
     "ErrorPostfix": {
-      "type": "string"
+      "type": "string",
+      "description": "The final part of the error message displayed after the Expression.",
+      "descriptionDe": "Der letzte Teil der Fehlermeldung, der nach dem Expression angezeigt wird.",
+      "descriptionIt": "La parte finale del messaggio di errore visualizzato dopo l'Expression."
     },
     "ExposeExpression": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Will expose the Expression within the error message if set to TRUE (case insensitive).",
+      "descriptionDe": "Zeigt den Expression innerhalb der Fehlermeldung an, wenn auf TRUE gesetzt (case-insensitiv).",
+      "descriptionIt": "Espone l'Expression nel messaggio di errore se impostato su TRUE (senza distinzione tra maiuscole e minuscole)."
     }
   }
 }

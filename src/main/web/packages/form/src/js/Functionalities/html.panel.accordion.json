@@ -1,12 +1,15 @@
 {
   "Description": "/classes/Functionalities_html.panel.accordion.HTML_Panel_Accordion.html#functionality",
   "Parameter": {
-    "Accordion": ""
+    "Accordion": "The name of the set all panels within the tagged element shall belong to. If no name is defined, nothing happens."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "Accordion": {
-      "type": "string"
+      "type": "string",
+      "description": "The name of the set all panels within the tagged element shall belong to. If no name is defined, nothing happens.",
+      "descriptionDe": "Der Name des Sets, dem alle Panels innerhalb des markierten Elements angehören sollen. Wenn kein Name definiert ist, passiert nichts.",
+      "descriptionIt": "Il nome del set a cui devono appartenere tutti i pannelli all'interno dell'elemento marcato. Se non viene definito alcun nome, non succede nulla."
     }
   }
 }

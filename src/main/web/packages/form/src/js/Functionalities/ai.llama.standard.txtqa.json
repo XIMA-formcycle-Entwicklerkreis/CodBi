@@ -1,56 +1,92 @@
 {
   "Description": "/classes/Functionalities_ai.llama.standard.txtqa.AI_LLAMA_STANDARD_TXTQA.html#functionality",
   "Parameter": {
-    "AIHint": "",
-    "useinternet": "",
-    "debounce": "",
-    "inferencedelay": "",
-    "language": "",
-    "Location": "",
-    "ResponseLanguage": "",
-    "Specialist": "",
-    "QueueBadge": "",
-    "QueueText": "",
-    "FilterResults": "",
-    "QuestionRoot": ""
+    "AIHint": "Text shown inside AI-populated fields until the user edits the value. Default: '✨ AI-Generated'. Set empty to disable.",
+    "useinternet": "If set to true, enables Brave Search internet access. Default: false.",
+    "debounce": "Debounce delay in milliseconds before sending the request after the last change event. Default: 500.",
+    "inferencedelay": "Maximum seconds to wait for all source fields to be filled before starting inference anyway. Default: 5.",
+    "language": "Language for the AI response (e.g. 'German', 'English'). Appends 'Answer in {language}.' to each question.",
+    "Location": "If set to true, enables geolocation access. The user's coordinates are sent to the AI for location-aware answers. Default: false.",
+    "ResponseLanguage": "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). Forces the AI to respond in this language, skipping auto-detection.",
+    "Specialist": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+    "QueueBadge": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    "QueueText": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    "FilterResults": "If set to 'true', enables PII filtering on Brave Search queries for this instance.",
+    "QuestionRoot": "Optional CSS selector specifying an alternate root element from which to search for question and source elements."
   },
   "supportedFormelementtypes": ["XTextField", "XTextArea"],
   "parameters": {
     "AIHint": {
-      "type": "string"
+      "type": "string",
+      "description": "Text shown inside AI-populated fields until the user edits the value. Default: '✨ AI-Generated'. Set empty to disable.",
+      "descriptionDe": "Text, der in KI-befüllten Feldern angezeigt wird, bis der Benutzer den Wert bearbeitet. Standard: '✨ KI-generiert'. Leer setzen zum Deaktivieren.",
+      "descriptionIt": "Testo mostrato nei campi compilati dall'AI finché l'utente non modifica il valore. Predefinito: '✨ Generato da AI'. Vuoto per disabilitare."
     },
     "useinternet": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to true, enables Brave Search internet access. Default: false.",
+      "descriptionDe": "Wenn auf true gesetzt, wird Brave-Search-Internetzugriff aktiviert. Standard: false.",
+      "descriptionIt": "Se impostato su true, abilita l'accesso internet di Brave Search. Predefinito: false."
     },
     "debounce": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Debounce delay in milliseconds before sending the request after the last change event. Default: 500.",
+      "descriptionDe": "Entprellverzögerung in Millisekunden vor dem Senden der Anfrage nach dem letzten Änderungsereignis. Standard: 500.",
+      "descriptionIt": "Ritardo di debounce in millisecondi prima di inviare la richiesta dopo l'ultimo evento di modifica. Predefinito: 500."
     },
     "inferencedelay": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Maximum seconds to wait for all source fields to be filled before starting inference anyway. Default: 5.",
+      "descriptionDe": "Maximale Sekunden, die auf das Auffüllen aller Quellfelder gewartet wird, bevor die Inferenz trotzdem gestartet wird. Standard: 5.",
+      "descriptionIt": "Secondi massimi di attesa per il riempimento di tutti i campi sorgente prima di iniziare comunque l'inferenza. Predefinito: 5."
     },
     "language": {
-      "type": "string"
+      "type": "string",
+      "description": "Language for the AI response (e.g. 'German', 'English'). Appends 'Answer in {language}.' to each question.",
+      "descriptionDe": "Sprache für die KI-Antwort (z. B. 'Deutsch', 'Englisch'). Hängt 'Antworte in {language}.' an jede Frage an.",
+      "descriptionIt": "Lingua per la risposta AI (es. 'Tedesco', 'Italiano'). Aggiunge 'Rispondi in {language}.' a ogni domanda."
     },
     "Location": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to true, enables geolocation access. The user's coordinates are sent to the AI for location-aware answers. Default: false.",
+      "descriptionDe": "Wenn auf true gesetzt, wird der Geolokalisierungszugriff aktiviert. Die Koordinaten des Benutzers werden für ortsabhängige Antworten an die KI gesendet. Standard: false.",
+      "descriptionIt": "Se impostato su true, abilita l'accesso alla geolocalizzazione. Le coordinate dell'utente vengono inviate all'AI per risposte basate sulla posizione. Predefinito: false."
     },
     "ResponseLanguage": {
-      "type": "string"
+      "type": "string",
+      "description": "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). Forces the AI to respond in this language, skipping auto-detection.",
+      "descriptionDe": "Zweistelliger ISO-639-1-Code (z. B. 'de', 'fr'). Erzwingt, dass die KI in dieser Sprache antwortet, und überspringt die Auto-Erkennung.",
+      "descriptionIt": "Codice ISO 639-1 di due lettere (es. 'de', 'fr'). Obbliga l'AI a rispondere in questa lingua, saltando il rilevamento automatico."
     },
     "Specialist": {
-      "type": "string"
+      "type": "string",
+      "description": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+      "descriptionDe": "Name eines Spezialistenmodells, das über eine AI_LLAMA_STD_SPECIALIST_XXX-Plugin-Eigenschaft registriert ist. Leitet Anfragen an den Server dieses Spezialisten weiter.",
+      "descriptionIt": "Nome di un modello specialista registrato tramite una proprietà plugin AI_LLAMA_STD_SPECIALIST_XXX. Instrada le richieste al server di quello specialista."
     },
     "QueueBadge": {
-      "type": "string"
+      "type": "string",
+      "description": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird während des Wartens auf die Inferenz ein Abzeichen mit der aktuellen Warteschlangenposition angezeigt.",
+      "descriptionIt": "Se impostato su 'true', mostra un badge con la posizione corrente in coda mentre si attende l'inferenza."
     },
     "QueueText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+      "descriptionDe": "Text, der nach der Warteschlangenpositionsnummer im Abzeichen angehängt wird (z. B. 'in Warteschlange' zeigt '3 in Warteschlange'). Standard: leer.",
+      "descriptionIt": "Testo aggiunto dopo il numero di posizione in coda nel badge (es. 'in coda' mostra '3 in coda'). Predefinito: vuoto."
     },
     "FilterResults": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', enables PII filtering on Brave Search queries for this instance.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird die PII-Filterung bei Brave-Search-Abfragen für diese Instanz aktiviert.",
+      "descriptionIt": "Se impostato su 'true', abilita il filtraggio PII sulle query di Brave Search per questa istanza."
     },
     "QuestionRoot": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector specifying an alternate root element from which to search for question and source elements.",
+      "descriptionDe": "Optionaler CSS-Selektor, der ein alternatives Wurzelelement angibt, von dem aus nach Frage- und Quellenelementen gesucht wird.",
+      "descriptionIt": "Selettore CSS opzionale che specifica un elemento radice alternativo da cui cercare gli elementi di domanda e sorgente."
     }
   }
 }

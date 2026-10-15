@@ -434,6 +434,12 @@ export interface EPBuilderOptions {
   listEPs: () => Array<string>;
   /** Invoked when the user applies the built value. */
   onApply: (value: string) => void;
+  /**
+   * Invoked when the popup is closed WITHOUT applying (the Cancel button, the Escape key, or a
+   * programmatic close that did not call {@link onApply}). Lets callers restore the original control —
+   * e.g. revert a boolean parameter that was temporarily shown as a text input for the EP build.
+   */
+  onCancel?: () => void;
 }
 
 /** The handle returned by {@link openEPBuilder}. */
@@ -1227,6 +1233,9 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   panel.appendChild(foot);
   // #endregion Foot
 
+  /** Set once the user applies a value, so a later close is not treated as a cancel. */
+  let applied = false;
+
   /** Closes the popup (idempotent). */
   const close = (): void => {
     if (disposed) {
@@ -1236,6 +1245,12 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     disposed = true;
     overlay.remove();
     doc.removeEventListener("keydown", onKeydown, true);
+    // Closing without ever applying means the user cancelled (Cancel button, Escape, programmatic
+    // close) — let the caller restore the original control, e.g. revert a boolean parameter that was
+    // temporarily switched to a text input for the EP build.
+    if (!applied) {
+      options.onCancel?.();
+    }
   };
 
   const onKeydown = (event: KeyboardEvent): void => {
@@ -1250,6 +1265,7 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   apply.addEventListener("click", () => {
     // CodBi treats parameter values case-insensitively, so pass them lowercased — the builder's
     // inputs keep the user's original casing, only the applied value is normalised.
+    applied = true;
     options.onApply(serializeEPValue(root, true));
     close();
   });

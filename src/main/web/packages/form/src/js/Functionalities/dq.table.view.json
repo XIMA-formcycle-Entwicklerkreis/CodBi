@@ -1,40 +1,64 @@
 {
   "Description": "/classes/Functionalities_dq.table.view.DQ_Table_View.html#functionality",
   "Parameter": {
-    "Columns": "",
-    "DataQuery": "",
-    "CSS": "",
-    "FileName": "",
-    "SheetName": "",
-    "ExportButton": "",
-    "Centered": "",
-    "ExcludeColumns": ""
+    "Columns": "REQUIRED - A CSV defining the columns to show. Each column is 'label;datacolumn;jsonFlag' with an optional fourth entry ';width', e.g. 'Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30'.",
+    "DataQuery": "REQUIRED - The name of the Datasource-Query on the Formcycle server whose result shall be displayed.",
+    "CSS": "Optional string of one or more (space separated) CSS classes to apply to both the tagged container and the injected table.",
+    "FileName": "The name of the exported Excel file without extension (the extension is always .xlsx). Defaults to 'Export'.",
+    "SheetName": "The name of the worksheet within the exported Excel file. Defaults to 'sheet1'.",
+    "ExportButton": "Optional CSS selector of an existing button/anchor that triggers the export. When omitted, the Excel export is not available.",
+    "Centered": "Whether the content of the table cells is centered. Defaults to true; set to false/0/no to keep cells left-aligned.",
+    "ExcludeColumns": "Optional CSV of column names (matched against label or datacolumn) that shall be excluded from the Excel export (they remain visible in the table)."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible"],
   "parameters": {
     "Columns": {
-      "type": "string"
+      "type": "string",
+      "description": "REQUIRED - A CSV defining the columns to show. Each column is 'label;datacolumn;jsonFlag' with an optional fourth entry ';width'.",
+      "descriptionDe": "ERFORDERLICH - Eine CSV, die die anzuzeigenden Spalten definiert. Jede Spalte ist 'label;datacolumn;jsonFlag' mit einem optionalen vierten Eintrag ';width'.",
+      "descriptionIt": "OBBLIGATORIO - Un CSV che definisce le colonne da mostrare. Ogni colonna è 'label;datacolumn;jsonFlag' con un quarto elemento opzionale ';width'."
     },
     "DataQuery": {
-      "type": "string"
+      "type": "string",
+      "description": "REQUIRED - The name of the Datasource-Query on the Formcycle server whose result shall be displayed.",
+      "descriptionDe": "ERFORDERLICH - Der Name der Datasource-Abfrage auf dem Formcycle-Server, deren Ergebnis angezeigt werden soll.",
+      "descriptionIt": "OBBLIGATORIO - Il nome della query Datasource sul server Formcycle di cui visualizzare il risultato."
     },
     "CSS": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional string of one or more (space separated) CSS classes to apply to both the tagged container and the injected table.",
+      "descriptionDe": "Optionale Zeichenfolge einer oder mehrerer (durch Leerzeichen getrennter) CSS-Klassen, die sowohl auf den markierten Container als auch auf die eingefügte Tabelle angewendet werden.",
+      "descriptionIt": "Stringa opzionale di una o più classi CSS (separate da spazi) da applicare sia al contenitore marcato sia alla tabella iniettata."
     },
     "FileName": {
-      "type": "string"
+      "type": "string",
+      "description": "The name of the exported Excel file without extension (the extension is always .xlsx). Defaults to 'Export'.",
+      "descriptionDe": "Der Name der exportierten Excel-Datei ohne Erweiterung (die Erweiterung ist immer .xlsx). Standard: 'Export'.",
+      "descriptionIt": "Il nome del file Excel esportato senza estensione (l'estensione è sempre .xlsx). Predefinito: 'Export'."
     },
     "SheetName": {
-      "type": "string"
+      "type": "string",
+      "description": "The name of the worksheet within the exported Excel file. Defaults to 'sheet1'.",
+      "descriptionDe": "Der Name des Arbeitsblatts innerhalb der exportierten Excel-Datei. Standard: 'sheet1'.",
+      "descriptionIt": "Il nome del foglio di lavoro all'interno del file Excel esportato. Predefinito: 'sheet1'."
     },
     "ExportButton": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector of an existing button/anchor that triggers the export. When omitted, the Excel export is not available.",
+      "descriptionDe": "Optionaler CSS-Selektor eines vorhandenen Buttons/Ankers, der den Export auslöst. Wenn weggelassen, ist der Excel-Export nicht verfügbar.",
+      "descriptionIt": "Selettore CSS opzionale di un pulsante/ancora esistente che attiva l'esportazione. Se omesso, l'esportazione Excel non è disponibile."
     },
     "Centered": {
-      "type": "string"
+      "type": "string",
+      "description": "Whether the content of the table cells is centered. Defaults to true; set to false/0/no to keep cells left-aligned.",
+      "descriptionDe": "Ob der Inhalt der Tabellenzellen zentriert ist. Standard: true; auf false/0/no setzen, um die Zellen linksbündig zu lassen.",
+      "descriptionIt": "Se il contenuto delle celle della tabella è centrato. Predefinito: true; impostare false/0/no per mantenere le celle allineate a sinistra."
     },
     "ExcludeColumns": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSV of column names (matched against label or datacolumn) that shall be excluded from the Excel export (they remain visible in the table).",
+      "descriptionDe": "Optionale CSV von Spaltennamen (abgeglichen gegen Label oder Datacolumn), die vom Excel-Export ausgeschlossen werden sollen (sie bleiben in der Tabelle sichtbar).",
+      "descriptionIt": "CSV opzionale di nomi di colonne (abbinati a label o datacolumn) da escludere dall'esportazione Excel (restano visibili nella tabella)."
     }
   }
 }

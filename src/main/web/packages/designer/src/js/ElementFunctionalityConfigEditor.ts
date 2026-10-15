@@ -12,7 +12,7 @@ import {
   registerCustomProperty,
 } from "@de-xima/fc-form-designer";
 import { Constants } from "codbi-common";
-import { setItemAttributeValue } from "./CodbiElementMarkers.js";
+import { setItemAttributeValue, removeFuncAttribute } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
@@ -33,7 +33,8 @@ import {
   parameterLabel,
   currentAttributeValueForItem,
 } from "./FunctionalityConfigEditor.js";
-import { i18n as i18nTyped } from "./i18n.js";
+import { i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
+import { ensureCodbiBranding } from "./MirrorSelect.js";
 // #endregion Imports
 
 /**
@@ -42,6 +43,33 @@ import { i18n as i18nTyped } from "./i18n.js";
  * added keys in every (stale) build artifact; the cast is a harmless no-op once refreshed.
  */
 const kI18n = i18nTyped as unknown as (key: string) => string;
+
+/**
+ * Computes which `data-cb-<param>` attributes should be removed from an element when the
+ * functionality `removedId` is deactivated, given the still-active functionalities `remainingIds`.
+ *
+ * A removed functionality's parameter is dropped ONLY when no other still-active functionality also
+ * declares the same parameter (comparison is case-insensitive). Parameters shared with a remaining
+ * functionality are kept so that remaining functionality keeps working. Pure — no DOM / persistence
+ * side effects, so it can be unit-tested in isolation.
+ *
+ * @param removedId    The functionality id that was just removed.
+ * @param remainingIds The functionality ids that remain active (e.g. `this.selected` after removal).
+ * @returns The full `data-cb-<param>` attribute names to remove (e.g. `data-cb-Unit`).
+ */
+export function paramsToRemoveForRemovedFunctionality(removedId: string, remainingIds: string[]): string[] {
+  // The parameters still needed by the remaining active functionalities.
+  const stillNeeded = new Set<string>();
+  for (const id of remainingIds) {
+    for (const name of Object.keys(functionalityParameters(id))) {
+      stillNeeded.add(name.toLowerCase());
+    }
+  }
+  // Only the removed functionality's parameters that no remaining functionality needs are dropped.
+  return Object.keys(functionalityParameters(removedId))
+    .filter((name) => !stillNeeded.has(name.toLowerCase()))
+    .map((name) => `data-cb-${name}`);
+}
 
 /** Editor type for the per-element CodBi functionality configurator (any form element). */
 export const ElementFunctionalityConfigType =
@@ -105,6 +133,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private showInapplicable = false;
   /** The current filter query for the functionality picker. */
   private funcQuery = "";
+  /** The current filter query for the second (non-applicable) functionality listing. */
+  private allQuery = "";
 
   constructor(config: TEditorCfg<IElementFunctionalityConfigDescriptor>) {
     super(config, "", "text");
@@ -114,27 +144,18 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.root.className = "codbi-func-config";
     this.root.style.cssText = "display:flex;flex-direction:column;gap:10px;";
 
-    // #region 1. Functionality picker (list with an INLINE filter + a "+" button).
+    // #region 1. Functionality picker (list with an INLINE filter + checkboxes). The "+" button that
+    // used to sit in the header was removed as useless: the checkbox list below adds/removes
+    // functionalities directly.
     const funcSection = document.createElement("div");
     funcSection.className = "codbi-func-config__section";
-    const funcHeader = document.createElement("div");
-    funcHeader.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px;";
-    const funcTitle = document.createElement("strong");
-    funcTitle.textContent = kI18n("designer.widget.functionality.funcs");
-    const addButton = document.createElement("button");
-    addButton.type = "button";
-    addButton.className = "codbi-func-config__add";
-    addButton.title = kI18n("designer.widget.functionality.addFunc");
-    addButton.textContent = "+";
-    // The toggle for the SECOND (non-applicable) functionality list. It is ALWAYS visible; the list it
-    // controls stays hidden until the user clicks it.
+    // The toggle for the SECOND (non-applicable) functionality list. It is ALWAYS visible but placed
+    // BELOW the list(s); the list it controls stays hidden until the user clicks it.
     const allToggleButton = document.createElement("button");
     allToggleButton.type = "button";
     allToggleButton.className = "codbi-func-config__show-all";
-    allToggleButton.style.cssText = "margin-left:auto;font-size:11px;white-space:nowrap;";
     allToggleButton.setAttribute("aria-expanded", "false");
     allToggleButton.addEventListener("click", () => this.toggleInapplicableList());
-    funcHeader.append(funcTitle, addButton, allToggleButton);
     // The listing box CONTAINS the filter input (top) and the option rows below it.
     const funcList = document.createElement("div");
     funcList.className = "codbi-func-config__funclist";
@@ -149,31 +170,32 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       this.funcQuery = funcFilter.value;
       this.renderFunctionalityList();
     });
-    addButton.addEventListener("click", () => {
-      this.funcQuery = "";
-      funcFilter.value = "";
-      this.renderFunctionalityList();
-      funcFilter.focus();
-    });
     const funcOptions = document.createElement("div");
     funcOptions.className = "codbi-func-config__options";
     funcList.append(funcFilter, funcOptions);
     // The SECOND list: functionalities NOT applicable to the currently selected element. It is hidden
-    // until the user clicks the toggle above. It exists so a functionality whose applicability is not
+    // until the user clicks the show-all toggle (placed BELOW the list). It exists so a functionality whose applicability is not
     // (yet) declared for this element — e.g. a future plugin-provided widget type that IS in fact
     // compatible — can still be applied deliberately.
     const funcAllList = document.createElement("div");
     funcAllList.className = "codbi-func-config__funclist codbi-func-config__funclist--all";
     funcAllList.style.cssText =
       "max-height:220px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;display:none;margin-top:6px;";
-    const funcAllTitle = document.createElement("div");
-    funcAllTitle.className = "codbi-func-config__funclist-title";
-    funcAllTitle.style.cssText = "font-size:11px;color:#6b7280;margin:0 0 4px;";
-    funcAllTitle.textContent = kI18n("designer.widget.functionality.inapplicable");
+    const allFuncFilter = document.createElement("input");
+    allFuncFilter.type = "text";
+    allFuncFilter.className = "codbi-func-config__filter";
+    allFuncFilter.placeholder = kI18n("designer.widget.functionality.filterFuncs");
+    allFuncFilter.value = this.allQuery;
+    allFuncFilter.style.cssText = "width:100%;box-sizing:border-box;margin:0 0 4px;";
+    allFuncFilter.addEventListener("input", () => {
+      this.allQuery = allFuncFilter.value;
+      this.renderFunctionalityList();
+    });
     const funcOptionsAll = document.createElement("div");
     funcOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
-    funcAllList.append(funcAllTitle, funcOptionsAll);
-    funcSection.append(funcHeader, funcList, funcAllList);
+    funcAllList.append(allFuncFilter, funcOptionsAll);
+    // The non-applicable listing sits BELOW the show-all button that reveals it.
+    funcSection.append(funcList, allToggleButton, funcAllList);
     this.funcFilter = funcFilter;
     this.funcOptions = funcOptions;
     this.funcAllList = funcAllList;
@@ -185,9 +207,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const paramSection = document.createElement("div");
     paramSection.className = "codbi-func-config__section";
     const paramTitle = document.createElement("strong");
+    paramTitle.className = "codbi-func-config__title";
     paramTitle.textContent = kI18n("designer.widget.functionality.parameters");
-    paramTitle.style.display = "block";
-    paramTitle.style.marginBottom = "6px";
     this.paramsHost = document.createElement("div");
     this.paramsHost.className = "codbi-func-config__params";
     paramSection.append(paramTitle, this.paramsHost);
@@ -286,9 +307,32 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       this.selected.push(key);
     } else if (!on) {
       this.selected = this.selected.filter((entry) => entry !== key);
+      // Removing a functionality also removes the element's `data-cb-<param>` attributes for the
+      // parameters that belonged to it — but only when no OTHER still-active functionality needs the
+      // same parameter (see {@link pruneRemovedFunctionalityParams}).
+      this.pruneRemovedFunctionalityParams(key);
     }
     this.persistFunctionalities();
     this.renderFunctionalityList();
+  }
+
+  /**
+   * Removes this element's `data-cb-<param>` attributes for the parameters declared by the just
+   * removed functionality (`removedId`) — but ONLY when no other still-active functionality (in
+   * `this.selected`) also declares the same parameter. Parameters shared with another functionality
+   * that remains active are kept, so that remaining functionality keeps working. Delegates the
+   * decision (which attributes to drop) to the pure {@link paramsToRemoveForRemovedFunctionality}.
+   */
+  private pruneRemovedFunctionalityParams(removedId: string): void {
+    const item = this.targetElement();
+    if (!item) {
+      return;
+    }
+    for (const attrName of paramsToRemoveForRemovedFunctionality(removedId, this.selected)) {
+      // `removeFuncAttribute` matches both the prefixed and the bare attribute name, and is a no-op
+      // when the attribute is not actually set on the element.
+      removeFuncAttribute(item as never, attrName);
+    }
   }
 
   /**
@@ -302,6 +346,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
    */
   private renderFunctionalityList(): void {
     const query = this.funcQuery.trim().toLowerCase();
+    const allQuery = this.allQuery.trim().toLowerCase();
     const available = listFunctionalities();
     const target = this.applicabilityElement();
     const mainFragment = document.createDocumentFragment();
@@ -312,9 +357,12 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       // Applicable = applicable to THIS element's widget type and, where the functionality declares
       // them (via `@SupportedFormelementtype`), property constraints such as `datatype`.
       const applicable = isSelected || functionalityAppliesTo(id, target);
-      // When filtering, keep matches; without a query everything shows. Selected entries are never
-      // hidden by a filter mismatch.
-      const matches = query.length === 0 || id.toLowerCase().includes(query) || isSelected;
+      // Each listing has its OWN inline filter. Selected entries are never hidden by a filter
+      // mismatch so a selection cannot silently disappear.
+      const matches =
+        (applicable
+          ? query.length === 0 || id.toLowerCase().includes(query)
+          : allQuery.length === 0 || id.toLowerCase().includes(allQuery)) || isSelected;
       if (!matches) {
         continue;
       }
@@ -389,7 +437,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       }
       any = true;
       const header = document.createElement("div");
-      header.style.cssText = "font-weight:600;margin:6px 0 2px;";
+      header.className = "codbi-func-config__param-group";
       header.textContent = originalCaseKey(id) !== "" ? originalCaseKey(id) : id;
       fragment.appendChild(header);
       for (const name of names) {
@@ -417,27 +465,40 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     spec?: IFunctionalityParameterSpec,
   ): HTMLElement {
     const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:6px;margin:2px 0;";
+    row.className = "codbi-func-config__param-row";
+    // Layout is delegated to the `.codbi-func-config__param-row` CSS (an aligned grid with a fixed
+    // label column) so every value field of every parameter group lines up on the same column.
 
     const label = document.createElement("label");
-    label.style.cssText = "flex:1;";
-    label.title = parameterLabel(description);
+    label.className = "codbi-func-config__param-label";
+    // `display: block` + `min-width: 0` + wrapping lets long labels break inside the fixed label
+    // column instead of pushing the value controls out of the panel's visible area.
+    label.style.cssText = "display:block;min-width:0;overflow-wrap:anywhere;word-break:break-word;";
+    // Hovering the parameter name shows a short description. The structured `parameters[*].description`
+    // wins; the legacy `Parameter`-map description (after stripping any {Type} hint) is the fallback.
+    label.title = localizedParameterDescription(spec) || parameterLabel(description) || name;
     label.textContent = name;
 
-    const currentValue = currentAttributeValueForItem(element, name);
+    // The parameter key is stored BARE (e.g. `Unit`), but it lives in the element config's attribute
+    // table as `data-cb-<key>` (e.g. `data-cb-Unit`). Both the read and the write below must use the
+    // FULL prefixed attribute name so the value lands in (and is read from) the persisted attribute,
+    // otherwise the config panel and the badge/runtime would target different attributes.
+    const attrName = `data-cb-${name}`;
+    const currentValue = currentAttributeValueForItem(element, attrName);
     // The structured type wins; the legacy `{Type}`-in-description hint stays as a fallback.
     const type = spec?.type ?? parameterType(description);
 
     const cell = document.createElement("span");
-    cell.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;";
+    cell.style.cssText = "display:flex;align-items:center;gap:4px;flex:1 1 auto;min-width:0;";
 
     let textInput: HTMLInputElement | undefined;
     let checkbox: HTMLInputElement | undefined;
     let select: HTMLSelectElement | undefined;
 
-    // Writes a parameter (and re-asserts `data-cb-func`) directly onto the selected element.
+    // Writes a parameter (and re-asserts `data-cb-func`) directly onto the selected element. Uses the
+    // FULL `data-cb-<key>` attribute name (see `attrName` above) so it matches the persisted attribute.
     const write = (value: string): void => {
-      this.writeAttribute(name, value);
+      this.writeAttribute(attrName, value);
       this.writeAttribute(CB_FUNC_ATTRIBUTE, this.selected.join(","));
     };
 
@@ -445,6 +506,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       if (checkbox) {
         checkbox.remove();
         checkbox = undefined;
+      }
+      if (select) {
+        select.remove();
+        select = undefined;
       }
       if (!textInput) {
         textInput = document.createElement("input");
@@ -458,10 +523,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         textInput.style.flex = "1";
         textInput.addEventListener("change", () => {
           write(textInput?.value ?? "");
-          // Clearing the text restores the checkbox for boolean parameters.
-          if (isBooleanParam() && (textInput?.value ?? "").trim() === "") {
-            showCheckbox();
-          }
+          // If the text is emptied (e.g. all characters removed), revert to the ORIGINAL control.
+          revertIfEmpty();
         });
         textInput.addEventListener("keydown", (event) => {
           if (event.altKey && event.key.toLowerCase() === "e") {
@@ -524,6 +587,26 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
 
     const isBooleanParam = (): boolean => type === "boolean";
 
+    // Restores the ORIGINAL control for a parameter type that was temporarily switched to a text
+    // input: a boolean back to its checkbox, an enum back to its select. Pure string parameters have
+    // no other control to go back to and simply stay a text input.
+    const revertToOriginal = (): void => {
+      if (isBooleanParam()) {
+        showCheckbox();
+      } else if (type === "enum" && spec?.options && spec.options.length > 0) {
+        showSelect(spec.options);
+      }
+    };
+
+    // When the (temporary) text input holds no value — the EP builder was applied without a result,
+    // or the user removed all characters — restore the ORIGINAL control for the parameter type.
+    const revertIfEmpty = (): void => {
+      if ((textInput?.value ?? "").trim() !== "") {
+        return;
+      }
+      revertToOriginal();
+    };
+
     // The EP button opens the flat EP listing + the EP builder; on a boolean it first flips to text.
     const epButton = document.createElement("button");
     epButton.type = "button";
@@ -535,7 +618,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       // Triggering the builder on a checkbox converts it into a text input (per spec).
       showText(currentValue);
       if (textInput) {
-        this.openBuilder(textInput, write);
+        // on applied: revert if nothing was generated; on cancel (no EP picked): always restore the
+        // original boolean/enum control instead of leaving a dead text input behind.
+        this.openBuilder(textInput, write, revertIfEmpty, revertToOriginal);
       }
     });
     // The EP button must already be a child of the cell before showText/showCheckbox insert the
@@ -562,7 +647,12 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   }
 
   /** Opens the EP builder / flat listing for one parameter value input and applies the result. */
-  private openBuilder(input: HTMLInputElement, write: (value: string) => void): void {
+  private openBuilder(
+    input: HTMLInputElement,
+    write: (value: string) => void,
+    onApplied?: () => void,
+    onCancel?: () => void,
+  ): void {
     try {
       openEPBuilder({
         document: window.document,
@@ -580,7 +670,12 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         onApply: (value: string) => {
           input.value = value;
           write(value);
+          // Let the row restore its original input type when the builder applied nothing.
+          onApplied?.();
         },
+        // Closing the builder WITHOUT applying (Cancel / Escape) means no EP was generated — restore
+        // the original control (a boolean back to its checkbox, an enum back to its select).
+        onCancel: onCancel,
       });
     } catch (x) {
       console.error("[CodBi] Element: could not open the EP builder", x);
@@ -614,6 +709,9 @@ function originalCaseKey(id: string): string {
  */
 export function registerElementFunctionalityProperties(): void {
   try {
+    // Publishes the CodBi logo URL so the panel CSS can paint the CodBi watermark (`--codbi-logo-url`).
+    ensureCodbiBranding();
+
     registerCustomCategory(
       {
         id: ELEMENT_FUNCTIONALITY_CATEGORY_ID,
@@ -637,7 +735,8 @@ export function registerElementFunctionalityProperties(): void {
       editor: ElementFunctionalityConfigType,
       cat: ELEMENT_FUNCTIONALITY_CATEGORY_ID,
       property: ELEMENT_FUNCS_PROPERTY,
-      label: kI18n("designer.element.property.funcs.label"),
+      // No left-hand property label ("Funktionalitäten"): the panel is self-explanatory.
+      label: "",
     } satisfies IElementFunctionalityConfigDescriptor);
   } catch (x) {
     console.error("[CodBi] Failed to register the per-element CodBi properties", x);

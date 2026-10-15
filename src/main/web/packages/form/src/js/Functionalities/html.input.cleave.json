@@ -1,32 +1,50 @@
 {
   "Description": "/classes/Functionalities_html.input.cleave.HTML_Input_Cleave.html#functionality",
   "Parameter": {
-    "Config": "",
-    "Date": "",
-    "DateMin": "",
-    "DateMax": "",
-    "Delimiter": "",
-    "DatePattern": ""
+    "Config": "The Cleave options to set instead of the other shorthand parameters.",
+    "Date": "Whether to enable Cleave's date masking.",
+    "DateMin": "The minimum date allowed, in American format with dashes (YYYY-MM-DD).",
+    "DateMax": "The maximum date allowed, in American format with dashes (YYYY-MM-DD).",
+    "Delimiter": "The delimiter used in the formatted value (e.g. '.', '/', '-').",
+    "DatePattern": "The date pattern (e.g. 'd-m-Y') used by the date mask."
   },
   "supportedFormelementtypes": "XTextField",
   "parameters": {
     "Config": {
-      "type": "string"
+      "type": "string",
+      "description": "The Cleave options to set instead of the other shorthand parameters.",
+      "descriptionDe": "Die Cleave-Optionen, die anstelle der anderen Kurzparameter gesetzt werden sollen.",
+      "descriptionIt": "Le opzioni Cleave da impostare al posto degli altri parametri abbreviati."
     },
     "Date": {
-      "type": "string"
+      "type": "string",
+      "description": "Whether to enable Cleave's date masking.",
+      "descriptionDe": "Ob Cleaves Datumsmaskierung aktiviert werden soll.",
+      "descriptionIt": "Se abilitare la mascheratura delle date di Cleave."
     },
     "DateMin": {
-      "type": "string"
+      "type": "string",
+      "description": "The minimum date allowed, in American format with dashes (YYYY-MM-DD).",
+      "descriptionDe": "Das erlaubte Mindestdatum im amerikanischen Format mit Bindestrichen (YYYY-MM-DD).",
+      "descriptionIt": "La data minima consentita, in formato americano con trattini (YYYY-MM-DD)."
     },
     "DateMax": {
-      "type": "string"
+      "type": "string",
+      "description": "The maximum date allowed, in American format with dashes (YYYY-MM-DD).",
+      "descriptionDe": "Das erlaubte Höchstdatum im amerikanischen Format mit Bindestrichen (YYYY-MM-DD).",
+      "descriptionIt": "La data massima consentita, in formato americano con trattini (YYYY-MM-DD)."
     },
     "Delimiter": {
-      "type": "string"
+      "type": "string",
+      "description": "The delimiter used in the formatted value (e.g. '.', '/', '-').",
+      "descriptionDe": "Das Trennzeichen, das im formatierten Wert verwendet wird (z. B. '.', '/', '-').",
+      "descriptionIt": "Il separatore usato nel valore formattato (es. '.', '/', '-')."
     },
     "DatePattern": {
-      "type": "string"
+      "type": "string",
+      "description": "The date pattern (e.g. 'd-m-Y') used by the date mask.",
+      "descriptionDe": "Das Datumsmuster (z. B. 'd-m-Y'), das von der Datumsmaske verwendet wird.",
+      "descriptionIt": "Il pattern della data (es. 'd-m-Y') usato dalla maschera data."
     }
   }
 }

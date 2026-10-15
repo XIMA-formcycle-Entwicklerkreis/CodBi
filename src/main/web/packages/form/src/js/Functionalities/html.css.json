@@ -1,23 +1,35 @@
 {
   "Description": "/classes/Functionalities_html.css.HTML_CSS.html#functionality",
   "Parameter": {
-    "CSS": "",
-    "Replacements": "",
-    "Darkmode": "",
-    "Destination": ""
+    "CSS": "The CSS to inject.",
+    "Replacements": "An array of two-element strings separated by '|'. The first part is the placeholder found in the CSS, the second the string it shall be replaced with.",
+    "Darkmode": "The Darkmode replacements that replace all placeholders ending with '_DM' in the provided CSS.",
+    "Destination": "The selector pointing to the CSS destination."
   },
   "parameters": {
     "CSS": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS to inject.",
+      "descriptionDe": "Das zu injizierende CSS.",
+      "descriptionIt": "Il CSS da iniettare."
     },
     "Replacements": {
-      "type": "string"
+      "type": "string",
+      "description": "An array of two-element strings separated by '|'. The first part is the placeholder found in the CSS, the second the string it shall be replaced with.",
+      "descriptionDe": "Ein Array von zweiteiligen Zeichenfolgen, getrennt durch '|'. Der erste Teil ist der im CSS gefundene Platzhalter, der zweite die Zeichenfolge, durch die er ersetzt werden soll.",
+      "descriptionIt": "Un array di stringhe a due elementi separate da '|'. La prima parte è il segnaposto trovato nel CSS, la seconda la stringa con cui deve essere sostituito."
     },
     "Darkmode": {
-      "type": "string"
+      "type": "string",
+      "description": "The Darkmode replacements that replace all placeholders ending with '_DM' in the provided CSS.",
+      "descriptionDe": "Die Darkmode-Ersetzungen, die alle Platzhalter ersetzen, die im bereitgestellten CSS mit '_DM' enden.",
+      "descriptionIt": "Le sostituzioni Darkmode che sostituiscono tutti i segnaposto che terminano con '_DM' nel CSS fornito."
     },
     "Destination": {
-      "type": "string"
+      "type": "string",
+      "description": "The selector pointing to the CSS destination.",
+      "descriptionDe": "Der Selektor, der auf das CSS-Ziel verweist.",
+      "descriptionIt": "Il selettore che punta alla destinazione CSS."
     }
   }
 }

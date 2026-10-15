@@ -1,40 +1,64 @@
 {
   "Description": "/classes/Functionalities_html.input.tinymce.HTML_Input_TinyMCE.html#functionality",
   "Parameter": {
-    "Plugins": "",
-    "Toolbar": "",
-    "ResourceURL": "",
-    "UploadURL": "",
-    "UploadImageURL": "",
-    "UploadFieldName": "",
-    "StripPort": "",
-    "RenderToPdf": ""
+    "Plugins": "A CSV of TinyMCE plugin names to load (e.g. 'advlist, autolink, lists, link, image, table, code').",
+    "Toolbar": "The toolbar configuration string defining which buttons and groups to display (e.g. 'undo redo | blocks | bold italic forecolor | bullist numlist | table | code').",
+    "ResourceURL": "The base URL where the TinyMCE distribution is served (must contain tinymce.min.js, skins/, icons/, models/ and plugins/ subdirectories).",
+    "UploadURL": "The server endpoint URL for file uploads (e.g. TTBoard_UPLOAD?uid=). Used by the codbiuploadfile toolbar button.",
+    "UploadImageURL": "The server endpoint URL for image uploads. Falls back to UploadURL if not set.",
+    "UploadFieldName": "The name of the form field for the uploaded file (default: fileToUpload).",
+    "StripPort": "If set to 'true', the port number (e.g. :444) is removed from the URL returned by the upload server before inserting it into the editor.",
+    "RenderToPdf": "If set to 'true', a print-listener is registered that replaces the document body with the plain-text content of this editor when the form is printed/exported to PDF."
   },
   "supportedFormelementtypes": "XTextArea",
   "parameters": {
     "Plugins": {
-      "type": "string"
+      "type": "string",
+      "description": "A CSV of TinyMCE plugin names to load (e.g. 'advlist, autolink, lists, link, image, table, code').",
+      "descriptionDe": "Eine CSV der zu ladenden TinyMCE-Plugin-Namen (z. B. 'advlist, autolink, lists, link, image, table, code').",
+      "descriptionIt": "Un CSV dei nomi dei plugin TinyMCE da caricare (es. 'advlist, autolink, lists, link, image, table, code')."
     },
     "Toolbar": {
-      "type": "string"
+      "type": "string",
+      "description": "The toolbar configuration string defining which buttons and groups to display (e.g. 'undo redo | blocks | bold italic forecolor | bullist numlist | table | code').",
+      "descriptionDe": "Die Toolbar-Konfigurationszeichenfolge, die definiert, welche Buttons und Gruppen angezeigt werden (z. B. 'undo redo | blocks | bold italic forecolor | bullist numlist | table | code').",
+      "descriptionIt": "La stringa di configurazione della toolbar che definisce quali pulsanti e gruppi mostrare (es. 'undo redo | blocks | bold italic forecolor | bullist numlist | table | code')."
     },
     "ResourceURL": {
-      "type": "string"
+      "type": "string",
+      "description": "The base URL where the TinyMCE distribution is served (must contain tinymce.min.js, skins/, icons/, models/ and plugins/ subdirectories).",
+      "descriptionDe": "Die Basis-URL, unter der die TinyMCE-Distribution bereitgestellt wird (muss tinymce.min.js, skins/, icons/, models/ und plugins/-Unterverzeichnisse enthalten).",
+      "descriptionIt": "L'URL di base in cui viene servita la distribuzione TinyMCE (deve contenere tinymce.min.js e le sottodirectory skins/, icons/, models/ e plugins/)."
     },
     "UploadURL": {
-      "type": "string"
+      "type": "string",
+      "description": "The server endpoint URL for file uploads (e.g. TTBoard_UPLOAD?uid=). Used by the codbiuploadfile toolbar button.",
+      "descriptionDe": "Die Server-Endpunkt-URL für Datei-Uploads (z. B. TTBoard_UPLOAD?uid=). Wird vom Toolbar-Button codbiuploadfile verwendet.",
+      "descriptionIt": "L'URL dell'endpoint del server per i caricamenti di file (es. TTBoard_UPLOAD?uid=). Usata dal pulsante toolbar codbiuploadfile."
     },
     "UploadImageURL": {
-      "type": "string"
+      "type": "string",
+      "description": "The server endpoint URL for image uploads. Falls back to UploadURL if not set.",
+      "descriptionDe": "Die Server-Endpunkt-URL für Bild-Uploads. Fällt auf UploadURL zurück, wenn nicht gesetzt.",
+      "descriptionIt": "L'URL dell'endpoint del server per i caricamenti di immagini. Torna a UploadURL se non impostata."
     },
     "UploadFieldName": {
-      "type": "string"
+      "type": "string",
+      "description": "The name of the form field for the uploaded file (default: fileToUpload).",
+      "descriptionDe": "Der Name des Formularfelds für die hochgeladene Datei (Standard: fileToUpload).",
+      "descriptionIt": "Il nome del campo del modulo per il file caricato (predefinito: fileToUpload)."
     },
     "StripPort": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', the port number (e.g. :444) is removed from the URL returned by the upload server before inserting it into the editor.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird die Portnummer (z. B. :444) aus der vom Upload-Server zurückgegebenen URL entfernt, bevor sie in den Editor eingefügt wird.",
+      "descriptionIt": "Se impostato su 'true', il numero di porta (es. :444) viene rimosso dall'URL restituita dal server di upload prima di inserirla nell'editor."
     },
     "RenderToPdf": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', a print-listener is registered that replaces the document body with the plain-text content of this editor when the form is printed/exported to PDF.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird ein Druck-Listener registriert, der den Dokumentkörper beim Drucken/Exportieren in PDF durch den Klartextinhalt dieses Editors ersetzt.",
+      "descriptionIt": "Se impostato su 'true', viene registrato un listener di stampa che sostituisce il corpo del documento con il contenuto di testo semplice di questo editor quando il modulo viene stampato/esportato in PDF."
     }
   }
 }

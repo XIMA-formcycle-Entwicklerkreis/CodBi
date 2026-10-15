@@ -1,65 +1,107 @@
 {
   "Description": "/classes/Functionalities_ai.ocr.AI_OCR.html#functionality",
   "Parameter": {
-    "Mode": "",
-    "Pattern": "",
-    "Separator": "",
-    "MaxPages": "",
-    "FieldPattern_": "",
-    "RegExFlags": "",
-    "Preprocess": "",
-    "ProcessingImageText": "",
-    "InvalidImageText": "",
-    "WrongFileMessage": "",
-    "Maximum": "",
-    "Field": "",
-    "QueueBadge": "",
-    "QueueText": ""
+    "Mode": "Either Print, Verify or Extract Fields.",
+    "Pattern": "The regular expression used to extract substrings from the scanned text or to verify that the scanned text matches the pattern.",
+    "Separator": "If Mode is Extract Fields, this defines the separator for the results of multiple files. Default is a comma.",
+    "MaxPages": "Maximum number of PDF pages to process (default: 5). Set to 0 for no limit. Only applies to PDFs.",
+    "FieldPattern_": "For each field that receives an extracted substring in Extract Fields mode, a Pattern_<field> parameter defines the regex to use.",
+    "RegExFlags": "Optional regex flags applied to all patterns (e.g. 'i' case-insensitive, 'm' multiline, 's' dotall). Multiple flags can be combined.",
+    "Preprocess": "Whether to enable image preprocessing before OCR (grayscale, adaptive binarization, noise reduction). Default: false.",
+    "ProcessingImageText": "The text appended to the label of the input while the images are processed.",
+    "InvalidImageText": "The text displayed if one or more images do not comply with the specified Pattern in Verify mode.",
+    "WrongFileMessage": "The text displayed for the manual verification checkbox label in Verify mode.",
+    "Maximum": "The number of files that may be uploaded. If exceeded, processing aborts and a warning is logged.",
+    "Field": "The field name matched to data-cb-Field to receive extracted text in Extract Fields / Print mode.",
+    "QueueBadge": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    "QueueText": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty."
   },
   "supportedFormelementtypes": "XUpload",
   "parameters": {
     "Mode": {
       "type": "enum",
-      "options": ["Print", "Verify", "Extract Fields"]
+      "options": ["Print", "Verify", "Extract Fields"],
+      "description": "Either Print, Verify or Extract Fields.",
+      "descriptionDe": "Entweder Print, Verify oder Extract Fields.",
+      "descriptionIt": "Una delle modalità: Print, Verify o Extract Fields."
     },
     "Pattern": {
-      "type": "string"
+      "type": "string",
+      "description": "The regular expression used to extract substrings from the scanned text or to verify that the scanned text matches the pattern.",
+      "descriptionDe": "Der reguläre Ausdruck zum Extrahieren von Teilzeichenfolgen aus dem gescannten Text oder zum Verifizieren, dass der gescannte Text dem Muster entspricht.",
+      "descriptionIt": "L'espressione regolare usata per estrarre sottostringhe dal testo scansionato o per verificare che il testo scansionato corrisponda al pattern."
     },
     "Separator": {
-      "type": "string"
+      "type": "string",
+      "description": "If Mode is Extract Fields, this defines the separator for the results of multiple files. Default is a comma.",
+      "descriptionDe": "Wenn Mode Extract Fields ist, definiert dies das Trennzeichen für die Ergebnisse mehrerer Dateien. Standard ist ein Komma.",
+      "descriptionIt": "Se Mode è Extract Fields, definisce il separatore per i risultati di più file. Il valore predefinito è una virgola."
     },
     "MaxPages": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Maximum number of PDF pages to process (default: 5). Set to 0 for no limit. Only applies to PDFs.",
+      "descriptionDe": "Maximale Anzahl zu verarbeitender PDF-Seiten (Standard: 5). 0 deaktiviert das Limit. Gilt nur für PDFs.",
+      "descriptionIt": "Numero massimo di pagine PDF da elaborare (predefinito: 5). 0 disabilita il limite. Si applica solo ai PDF."
     },
     "FieldPattern_": {
-      "type": "string"
+      "type": "string",
+      "description": "For each field that receives an extracted substring in Extract Fields mode, a Pattern_<field> parameter defines the regex to use.",
+      "descriptionDe": "Für jedes Feld, das im Extract-Fields-Modus eine extrahierte Teilzeichenfolge erhält, definiert ein Pattern_<field>-Parameter den zu verwendenden regulären Ausdruck.",
+      "descriptionIt": "Per ogni campo che riceve una sottostringa estratta in modalità Extract Fields, un parametro Pattern_<field> definisce l'espressione regolare da usare."
     },
     "RegExFlags": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional regex flags applied to all patterns (e.g. 'i' case-insensitive, 'm' multiline, 's' dotall). Multiple flags can be combined.",
+      "descriptionDe": "Optionale Regex-Flags, die auf alle Muster angewendet werden (z. B. 'i' case-insensitiv, 'm' multiline, 's' dotall). Mehrere Flags können kombiniert werden.",
+      "descriptionIt": "Flag regex opzionali applicati a tutti i pattern (es. 'i' senza distinzione maiuscole/minuscole, 'm' multilinea, 's' dotall). Più flag possono essere combinati."
     },
     "Preprocess": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Whether to enable image preprocessing before OCR (grayscale, adaptive binarization, noise reduction). Default: false.",
+      "descriptionDe": "Ob die Bildvorverarbeitung vor der OCR aktiviert werden soll (Graustufen, adaptive Binarisierung, Rauschunterdrückung). Standard: false.",
+      "descriptionIt": "Se abilitare la pre-elaborazione delle immagini prima dell'OCR (scala di grigi, binarizzazione adattiva, riduzione del rumore). Predefinito: false."
     },
     "ProcessingImageText": {
-      "type": "string"
+      "type": "string",
+      "description": "The text appended to the label of the input while the images are processed.",
+      "descriptionDe": "Der Text, der dem Label des Eingabefelds angehängt wird, während die Bilder verarbeitet werden.",
+      "descriptionIt": "Il testo aggiunto all'etichetta dell'input mentre le immagini vengono elaborate."
     },
     "InvalidImageText": {
-      "type": "string"
+      "type": "string",
+      "description": "The text displayed if one or more images do not comply with the specified Pattern in Verify mode.",
+      "descriptionDe": "Der Text, der angezeigt wird, wenn eines oder mehrere Bilder im Verify-Modus nicht dem angegebenen Muster entsprechen.",
+      "descriptionIt": "Il testo visualizzato se una o più immagini non sono conformi al pattern specificato in modalità Verify."
     },
     "WrongFileMessage": {
-      "type": "string"
+      "type": "string",
+      "description": "The text displayed for the manual verification checkbox label in Verify mode.",
+      "descriptionDe": "Der Text, der für das Label des manuellen Verifizierungskontrollkästchens im Verify-Modus angezeigt wird.",
+      "descriptionIt": "Il testo visualizzato per l'etichetta della casella di verifica manuale in modalità Verify."
     },
     "Maximum": {
-      "type": "string"
+      "type": "string",
+      "description": "The number of files that may be uploaded. If exceeded, processing aborts and a warning is logged.",
+      "descriptionDe": "Die Anzahl der Dateien, die hochgeladen werden dürfen. Wenn überschritten, wird die Verarbeitung abgebrochen und eine Warnung protokolliert.",
+      "descriptionIt": "Il numero di file che possono essere caricati. Se superato, l'elaborazione si interrompe e viene registrato un avviso."
     },
     "Field": {
-      "type": "string"
+      "type": "string",
+      "description": "The field name matched to data-cb-Field to receive extracted text in Extract Fields / Print mode.",
+      "descriptionDe": "Der Feldname, der mit data-cb-Field abgeglichen wird, um extrahierten Text im Extract-Fields-/Print-Modus zu empfangen.",
+      "descriptionIt": "Il nome del campo abbinato a data-cb-Field per ricevere il testo estratto in modalità Extract Fields / Print."
     },
     "QueueBadge": {
-      "type": "string"
+      "type": "string",
+      "description": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird während des Wartens auf die Inferenz ein Abzeichen mit der aktuellen Warteschlangenposition angezeigt.",
+      "descriptionIt": "Se impostato su 'true', mostra un badge con la posizione corrente in coda mentre si attende l'inferenza."
     },
     "QueueText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+      "descriptionDe": "Text, der nach der Warteschlangenpositionsnummer im Abzeichen angehängt wird (z. B. 'in Warteschlange' zeigt '3 in Warteschlange'). Standard: leer.",
+      "descriptionIt": "Testo aggiunto dopo il numero di posizione in coda nel badge (es. 'in coda' mostra '3 in coda'). Predefinito: vuoto."
     }
   }
 }

@@ -1,15 +1,21 @@
 {
   "Description": "/classes/Functionalities_html.setattribute.HTML_SETAttribute.html#functionality",
   "Parameter": {
-    "Name": "",
-    "ToSet": ""
+    "Name": "The name of the attribute to set.",
+    "ToSet": "The string to set the attribute to."
   },
   "parameters": {
     "Name": {
-      "type": "string"
+      "type": "string",
+      "description": "The name of the attribute to set.",
+      "descriptionDe": "Der Name des zu setzenden Attributs.",
+      "descriptionIt": "Il nome dell'attributo da impostare."
     },
     "ToSet": {
-      "type": "string"
+      "type": "string",
+      "description": "The string to set the attribute to.",
+      "descriptionDe": "Die Zeichenfolge, auf die das Attribut gesetzt werden soll.",
+      "descriptionIt": "La stringa a cui impostare l'attributo."
     }
   }
 }

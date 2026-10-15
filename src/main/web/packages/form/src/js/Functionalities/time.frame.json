@@ -1,10 +1,10 @@
 {
   "Description": "/classes/Functionalities_time.frame.Time_Frame.html#functionality",
   "Parameter": {
-    "MaxField": "",
-    "MsgMinInvalid": "",
-    "MsgMaxInvalid": "",
-    "EqualityPermitted": ""
+    "MaxField": "CSS selector selecting the input element that takes the maximum time.",
+    "MsgMinInvalid": "The error message shown when the minimum field's value is after the one in the maximum field.",
+    "MsgMaxInvalid": "The error message shown when the maximum field's value is before the one in the minimum field.",
+    "EqualityPermitted": "Whether the same start and end time is permitted."
   },
   "supportedFormelementtypes": {
     "XTextField": {
@@ -13,16 +13,28 @@
   },
   "parameters": {
     "MaxField": {
-      "type": "string"
+      "type": "string",
+      "description": "CSS selector selecting the input element that takes the maximum time.",
+      "descriptionDe": "CSS-Selektor, der das Eingabeelement auswählt, das die maximale Uhrzeit übernimmt.",
+      "descriptionIt": "Selettore CSS che seleziona l'elemento di input che riceve l'ora massima."
     },
     "MsgMinInvalid": {
-      "type": "string"
+      "type": "string",
+      "description": "The error message shown when the minimum field's value is after the one in the maximum field.",
+      "descriptionDe": "Die Fehlermeldung, die angezeigt wird, wenn der Wert des Mindestfelds nach dem des Höchstfelds liegt.",
+      "descriptionIt": "Il messaggio di errore mostrato quando il valore del campo minimo è successivo a quello del campo massimo."
     },
     "MsgMaxInvalid": {
-      "type": "string"
+      "type": "string",
+      "description": "The error message shown when the maximum field's value is before the one in the minimum field.",
+      "descriptionDe": "Die Fehlermeldung, die angezeigt wird, wenn der Wert des Höchstfelds vor dem des Mindestfelds liegt.",
+      "descriptionIt": "Il messaggio di errore mostrato quando il valore del campo massimo è precedente a quello del campo minimo."
     },
     "EqualityPermitted": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Whether the same start and end time is permitted.",
+      "descriptionDe": "Ob dieselbe Start- und Endzeit erlaubt ist.",
+      "descriptionIt": "Se sono consentiti gli stessi orari di inizio e fine."
     }
   }
 }

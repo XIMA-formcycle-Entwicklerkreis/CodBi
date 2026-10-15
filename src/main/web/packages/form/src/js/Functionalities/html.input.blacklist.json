@@ -1,30 +1,45 @@
 {
   "Description": "/classes/Functionalities_html.input.blacklist.HTML_Input_Blacklist.html#functionality",
   "Parameter": {
-    "List": "",
-    "Prefix": "",
-    "Postfix": "",
-    "Separator": "",
-    "ShowBlacklist": ""
+    "List": "A string CSV of forbidden values.",
+    "Prefix": "The string to show before listing all the values in List when displaying an error message.",
+    "Postfix": "The string to show after List when displaying an error message.",
+    "Separator": "The string shown in between each element of the List when displaying an error message. Defaults to ', '.",
+    "ShowBlacklist": "Whether to show the List in the error message or not (true/false). Defaults to false."
   },
   "supportedFormelementtypes": "XTextField",
   "parameters": {
     "List": {
-      "type": "string"
+      "type": "string",
+      "description": "A string CSV of forbidden values.",
+      "descriptionDe": "Eine CSV-Zeichenfolge verbotener Werte.",
+      "descriptionIt": "Una stringa CSV di valori vietati."
     },
     "Prefix": {
-      "type": "string"
+      "type": "string",
+      "description": "The string to show before listing all the values in List when displaying an error message.",
+      "descriptionDe": "Die Zeichenfolge, die vor der Auflistung aller Werte in List angezeigt wird, wenn eine Fehlermeldung angezeigt wird.",
+      "descriptionIt": "La stringa da mostrare prima di elencare tutti i valori in List quando viene visualizzato un messaggio di errore."
     },
     "Postfix": {
-      "type": "string"
+      "type": "string",
+      "description": "The string to show after List when displaying an error message.",
+      "descriptionDe": "Die Zeichenfolge, die nach List angezeigt wird, wenn eine Fehlermeldung angezeigt wird.",
+      "descriptionIt": "La stringa da mostrare dopo List quando viene visualizzato un messaggio di errore."
     },
     "Separator": {
       "type": "string",
-      "default": ","
+      "default": ",",
+      "description": "The string shown in between each element of the List when displaying an error message. Defaults to ', '.",
+      "descriptionDe": "Die Zeichenfolge, die zwischen jedem Element der List angezeigt wird, wenn eine Fehlermeldung angezeigt wird. Standard: ', '.",
+      "descriptionIt": "La stringa mostrata tra ogni elemento della List quando viene visualizzato un messaggio di errore. Predefinito: ', '."
     },
     "ShowBlacklist": {
       "type": "boolean",
-      "default": "false"
+      "default": "false",
+      "description": "Whether to show the List in the error message or not (true/false). Defaults to false.",
+      "descriptionDe": "Ob die List in der Fehlermeldung angezeigt werden soll oder nicht (true/false). Standard: false.",
+      "descriptionIt": "Se mostrare la List nel messaggio di errore o no (true/false). Predefinito: false."
     }
   }
 }

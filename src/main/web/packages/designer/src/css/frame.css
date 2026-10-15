@@ -16,7 +16,12 @@
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   font-size: 13px;
   color: #374151;
 }
@@ -51,7 +56,9 @@
 .codbi-mirror-dd__button:focus-visible {
   outline: none;
   border-color: darkorange;
-  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.32), 0 3px 10px rgba(15, 23, 42, 0.18);
+  box-shadow:
+    0 0 0 2px rgba(255, 140, 0, 0.32),
+    0 3px 10px rgba(15, 23, 42, 0.18);
 }
 
 .codbi-mirror-dd__button:disabled {
@@ -216,7 +223,12 @@
   color: #374151;
   border: 1px solid darkorange;
   border-radius: 6px;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   font-size: 12px;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.3);
   pointer-events: auto;
@@ -461,7 +473,9 @@
   background: #cbd5e1;
   border: 1px solid #94a3b8;
   border-radius: 8px;
-  transition: background 0.18s ease, border-color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .codbi-switch__thumb {
@@ -488,4 +502,263 @@
 
 .codbi-switch__input:focus-visible + .codbi-switch__track {
   box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.4);
+}
+
+/* ── CodBi functionality config panel ─────────────────────────────────────────
+   Styling for the `.codbi-func-config` panel rendered by `FunctionalityConfigEditor.ts`
+   and `ElementFunctionalityConfigEditor.ts`. Matches the CodBi form-assistant look
+   (darkorange) and uses the CodBi logo as a centred watermark, like the Mirror
+   widget settings panel. The function list and the input fields stay translucent so
+   the watermark shows through. The logo URL is the `--codbi-logo-url` CSS variable
+   published by `ensureCodbiBranding()`. */
+
+.codbi-func-config {
+  position: relative;
+  text-align: left;
+}
+
+/* Centred CodBi watermark, behind the real content. */
+.codbi-func-config::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 120px;
+  height: 120px;
+  background: var(--codbi-logo-url, none) no-repeat center / contain;
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Keep the actual content above the watermark. */
+.codbi-func-config > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Section label (functionality list / element / parameters): above the content, left, bold. */
+.codbi-func-config__title {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 700;
+  text-align: left;
+}
+
+/* Functionality listing: translucent so the watermark shows through. */
+.codbi-func-config__funclist {
+  background: rgba(255, 255, 255, 0.45);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+/* Darkorange border, warm glow on hover. */
+.codbi-func-config__funclist {
+  border-color: darkorange !important;
+}
+.codbi-func-config__funclist:hover {
+  border-color: darkorange !important;
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.35);
+}
+
+/* Darkorange scrollbars for BOTH functionality listings (declared + non-declared share the
+   `funclist` class) — matching the form assistant's change-log tree (transparent track/corner). */
+.codbi-func-config__funclist {
+  scrollbar-color: #ff9f40 transparent;
+  scrollbar-width: thin;
+}
+.codbi-func-config__funclist::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.codbi-func-config__funclist::-webkit-scrollbar-track {
+  background: transparent;
+}
+.codbi-func-config__funclist::-webkit-scrollbar-thumb {
+  background: #ff9f40;
+  border-radius: 5px;
+}
+.codbi-func-config__funclist::-webkit-scrollbar-thumb:hover {
+  background: #ffb266;
+}
+.codbi-func-config__funclist::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Hovering a functionality row turns the text darkorange, matching the checkbox glow — the same
+   class is used for BOTH the declared and the non-declared listing. */
+.codbi-func-config__option:hover span {
+  color: darkorange;
+}
+
+/* Inline filter box inside the listing — translucent to show the watermark. */
+.codbi-func-config__filter {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid #d0d5dd;
+  border-left: 3px solid darkorange;
+  border-radius: 4px;
+}
+
+/* The "show all / hide all" toggle. Placed below the list (see the TS), darkorange-bordered,
+   with a smooth transition on hover and a pressed effect on :active. The margin (auto sides) keeps a
+   clear gap between the (normal) functionality listing and this button AND centres it horizontally. */
+.codbi-func-config__show-all {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px auto 0;
+  padding: 3px 9px;
+  font-size: 11px;
+  /* When the panel is too slim, let the label text wrap instead of overflowing off-screen. */
+  white-space: normal;
+  text-align: center;
+  word-break: break-word;
+  color: darkorange;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid darkorange;
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.12s ease;
+}
+.codbi-func-config__show-all:hover {
+  color: #fff;
+  background: darkorange;
+  box-shadow: 0 2px 6px rgba(255, 140, 0, 0.4);
+  transform: translateY(-1px);
+}
+.codbi-func-config__show-all:active {
+  background: #c96a00;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.3);
+  transform: translateY(1px) scale(0.98);
+}
+
+/* The EP-builder launcher to the right of each parameter value field: a darkorange, rounded,
+   transparent button with darkorange text. On hover it glows with a soft darkorange halo,
+   animated over 0.25s. */
+.codbi-func-config__ep {
+  border-color: darkorange;
+  border-style: solid;
+  border-radius: 0.5em;
+  color: darkorange;
+  background-color: transparent;
+  padding: 0.25em;
+  transition: box-shadow 0.25s ease;
+}
+.codbi-func-config__ep:hover {
+  box-shadow: 0 0 0.5em darkorange;
+}
+
+/* Parameter value inputs — kept aligned with their rows. The darkorange border is intentionally
+   subtle by default (a neutral grey) and only becomes the warm brand colour once the field is
+   hovered, activated or focused; on focus a soft black glow (0 0 .25em) and an enlarged bottom
+   border are added, all animated over 0.25s. */
+.codbi-func-config__value {
+  box-sizing: border-box;
+  min-width: 0;
+  align-self: center;
+  border: 1px solid #d0d5dd;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    border-bottom-width 0.25s ease;
+}
+.codbi-func-config__value:hover,
+.codbi-func-config__value:active,
+.codbi-func-config__value:focus {
+  border-color: darkorange;
+}
+.codbi-func-config__value:focus {
+  border-bottom-width: 3px;
+  box-shadow: 0 0 0.25em black;
+  outline: none;
+}
+
+/* One parameter row: an aligned grid with a FIXED-WIDTH label column, so every value field of every
+   parameter group starts on the same column (and is therefore vertically aligned), regardless of how
+   long a label is. Long labels wrap inside their fixed column. */
+.codbi-func-config__param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  margin: 4px 0;
+}
+
+/* Parameter value inputs (text/number) and selects: transparent background so the CodBi watermark
+   shows through; the label text turns darkorange to echo the border whenever the field is hovered,
+   activated or focused. */
+.codbi-func-config__value[type="text"],
+.codbi-func-config__value[type="number"] {
+  background: transparent;
+  padding: 3px 6px;
+}
+
+/* The parameter label turns darkorange when its value field is hovered/active/focused (the label is
+   a sibling of the cell that holds the input, so the row's :has() bridges them). Covers text/number/
+   select inputs AND the boolean checkbox. */
+.codbi-func-config__param-row:has(.codbi-func-config__value:hover) .codbi-func-config__param-label,
+.codbi-func-config__param-row:has(.codbi-func-config__value:active) .codbi-func-config__param-label,
+.codbi-func-config__param-row:has(.codbi-func-config__value:focus) .codbi-func-config__param-label,
+.codbi-func-config__param-row:has(.codbi-func-config__bool:hover) .codbi-func-config__param-label,
+.codbi-func-config__param-row:has(.codbi-func-config__bool:active) .codbi-func-config__param-label,
+.codbi-func-config__param-row:has(.codbi-func-config__bool:focus) .codbi-func-config__param-label {
+  color: darkorange;
+}
+
+/* Parameter group header: an inline darkorange badge with white text, shown above the value rows of
+   each selected functionality. */
+.codbi-func-config__param-group {
+  display: inline-block;
+  align-self: flex-start;
+  margin: 6px 0 4px;
+  padding: 2px 10px;
+  font-size: 1.01em;
+  font-weight: 800;
+  line-height: 1.5;
+  color: #fff;
+  background: darkorange;
+  box-shadow: 0 0 0.5em darkorange;
+  border-radius: 999px;
+  text-align: left;
+}
+
+/* Checkboxes in the functionality list (and the boolean parameters): darkorange border with a
+   stylish, darkorange-filled check. */
+.codbi-func-config__option input[type="checkbox"],
+.codbi-func-config__bool {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  align-self: center;
+  border: 2px solid darkorange;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  vertical-align: middle;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.codbi-func-config__option input[type="checkbox"]:hover,
+.codbi-func-config__bool:hover {
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.25);
+}
+.codbi-func-config__option input[type="checkbox"]:checked,
+.codbi-func-config__bool:checked {
+  background-color: darkorange;
+  border-color: darkorange;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23fff'><path d='M6 11.2 2.8 8l-1 1L6 13.2 14.2 5l-1-1z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
 }

@@ -1,37 +1,58 @@
 {
   "Description": "/classes/Functionalities_media.image.cropper.Media_Image_Cropper.html#functionality",
   "Parameter": {
-    "Container": "",
-    "Target": "",
-    "File": "",
-    "Updater": "",
-    "AspectRatio": "",
-    "OutputWidth": "",
-    "CSSCropperHandle": ""
+    "Container": "The CSS-Selector of the div that shall contain the Cropper-UI.",
+    "Target": "The CSS-Selector of the image element that will contain the cropped image after clicking the Updater.",
+    "File": "The CSS-Selector of the file input where to select the image to crop.",
+    "Updater": "The CSS-Selector specifying the button that, on click, will cause an update of the Target.",
+    "AspectRatio": "The optional cropper's aspect-ratio to retain (e.g. 16 / 9 or 4 / 3). Setting this value will make the cropper non-resizable.",
+    "OutputWidth": "The width in pixels for the canvas where the cropped area shall be reflected. If provided as a string the minimum value is 100. Defaults to 1000px.",
+    "CSSCropperHandle": "The CSS that shall be applied on each cropper-handle (defaults to background-color: darkorange)."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "Container": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector of the div that shall contain the Cropper-UI.",
+      "descriptionDe": "Der CSS-Selektor des div, das die Cropper-Benutzeroberfläche enthalten soll.",
+      "descriptionIt": "Il selettore CSS del div che deve contenere l'interfaccia Cropper."
     },
     "Target": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector of the image element that will contain the cropped image after clicking the Updater.",
+      "descriptionDe": "Der CSS-Selektor des Bildelements, das das zugeschnittene Bild enthält, nachdem der Updater angeklickt wurde.",
+      "descriptionIt": "Il selettore CSS dell'elemento immagine che conterrà l'immagine ritagliata dopo il clic su Updater."
     },
     "File": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector of the file input where to select the image to crop.",
+      "descriptionDe": "Der CSS-Selektor des Datei-Eingabefelds, in dem das zu zuschneidende Bild ausgewählt wird.",
+      "descriptionIt": "Il selettore CSS dell'input file in cui selezionare l'immagine da ritagliare."
     },
     "Updater": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector specifying the button that, on click, will cause an update of the Target.",
+      "descriptionDe": "Der CSS-Selektor, der den Button angibt, der beim Klick ein Update des Target bewirkt.",
+      "descriptionIt": "Il selettore CSS che specifica il pulsante che, al clic, causa un aggiornamento del Target."
     },
     "AspectRatio": {
       "type": "number",
-      "default": "1000px"
+      "default": "1000px",
+      "description": "The optional cropper's aspect-ratio to retain (e.g. 16 / 9 or 4 / 3). Setting this value will make the cropper non-resizable.",
+      "descriptionDe": "Das optionale Seitenverhältnis des Croppers, das beibehalten werden soll (z. B. 16 / 9 oder 4 / 3). Das Setzen dieses Werts macht den Cropper nicht veränderbar in der Größe.",
+      "descriptionIt": "Il rapporto d'aspetto opzionale del cropper da mantenere (es. 16 / 9 o 4 / 3). L'impostazione di questo valore rende il cropper non ridimensionabile."
     },
     "OutputWidth": {
-      "type": "number"
+      "type": "number",
+      "description": "The width in pixels for the canvas where the cropped area shall be reflected. If provided as a string the minimum value is 100. Defaults to 1000px.",
+      "descriptionDe": "Die Breite in Pixeln für die Leinwand, auf der der zugeschnittene Bereich widergespiegelt werden soll. Als Zeichenfolge angegeben beträgt der Mindestwert 100. Standard: 1000px.",
+      "descriptionIt": "La larghezza in pixel per la canvas in cui deve essere riflessa l'area ritagliata. Se fornita come stringa, il valore minimo è 100. Predefinito: 1000px."
     },
     "CSSCropperHandle": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS that shall be applied on each cropper-handle (defaults to background-color: darkorange).",
+      "descriptionDe": "Das CSS, das auf jeden Cropper-Griff angewendet werden soll (Standard: background-color: darkorange).",
+      "descriptionIt": "Il CSS da applicare su ciascuna maniglia del cropper (predefinito: background-color: darkorange)."
     }
   }
 }

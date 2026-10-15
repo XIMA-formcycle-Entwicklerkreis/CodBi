@@ -1,19 +1,28 @@
 {
   "Description": "/classes/Functionalities_matomo.tracking.Matomo_Tracking.html#functionality",
   "Parameter": {
-    "SiteID": "",
-    "URL": "",
-    "ImageURL": ""
+    "SiteID": "The ID of the Matomo-Project-Site that shall be used for tracking.",
+    "URL": "The URL of the Matomo-Server that shall track the tagged form.",
+    "ImageURL": "The URL of the Matomo image to use for tracking."
   },
   "parameters": {
     "SiteID": {
-      "type": "integer"
+      "type": "integer",
+      "description": "The ID of the Matomo-Project-Site that shall be used for tracking.",
+      "descriptionDe": "Die ID der Matomo-Projekt-Site, die für das Tracking verwendet werden soll.",
+      "descriptionIt": "L'ID del sito del progetto Matomo da usare per il tracciamento."
     },
     "URL": {
-      "type": "string"
+      "type": "string",
+      "description": "The URL of the Matomo-Server that shall track the tagged form.",
+      "descriptionDe": "Die URL des Matomo-Servers, der das markierte Formular verfolgen soll.",
+      "descriptionIt": "L'URL del server Matomo che deve tracciare il modulo marcato."
     },
     "ImageURL": {
-      "type": "string"
+      "type": "string",
+      "description": "The URL of the Matomo image to use for tracking.",
+      "descriptionDe": "Die URL des Matomo-Bilds, das für das Tracking verwendet werden soll.",
+      "descriptionIt": "L'URL dell'immagine Matomo da usare per il tracciamento."
     }
   }
 }

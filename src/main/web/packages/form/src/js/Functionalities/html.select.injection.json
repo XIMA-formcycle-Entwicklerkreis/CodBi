@@ -1,32 +1,50 @@
 {
   "Description": "/classes/Functionalities_html.select.injection.HTML_Select_Injection.html#functionality",
   "Parameter": {
-    "Titles": "",
-    "Values": "",
-    "ReClean": "",
-    "TitleProperty": "",
-    "ValueProperty": "",
-    "TextProperty": ""
+    "Titles": "The optional title-attributes that shall be set on the generated option elements.",
+    "Values": "The innerHTMLs of the generated option elements shall have.",
+    "ReClean": "An optional boolean specifying whether to clean the select element prior to populating it.",
+    "TitleProperty": "The optional property to retrieve from the array passed to the Values to use it as the actual title.",
+    "ValueProperty": "The optional property to retrieve from the array passed to the Values to use it as the actual value.",
+    "TextProperty": "The optional property to retrieve from the array passed to the Values to use it as the actual seen text in the selection (if not specified but ValueProperty is, the ValueProperty will be used for the text)."
   },
   "supportedFormelementtypes": "XSelect",
   "parameters": {
     "Titles": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional title-attributes that shall be set on the generated option elements.",
+      "descriptionDe": "Die optionalen Titel-Attribute, die auf den generierten Option-Elementen gesetzt werden sollen.",
+      "descriptionIt": "Gli attributi title opzionali che devono essere impostati sugli elementi option generati."
     },
     "Values": {
-      "type": "string"
+      "type": "string",
+      "description": "The innerHTMLs of the generated option elements shall have.",
+      "descriptionDe": "Die innerHTMLs, die die generierten Option-Elemente haben sollen.",
+      "descriptionIt": "I innerHTML che devono avere gli elementi option generati."
     },
     "ReClean": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "An optional boolean specifying whether to clean the select element prior to populating it.",
+      "descriptionDe": "Ein optionaler Boolescher Wert, der angibt, ob das Select-Element vor dem Befüllen bereinigt werden soll.",
+      "descriptionIt": "Un booleano opzionale che specifica se pulire l'elemento select prima di popolarlo."
     },
     "TitleProperty": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional property to retrieve from the array passed to the Values to use it as the actual title.",
+      "descriptionDe": "Die optionale Eigenschaft, die aus dem an Values übergebenen Array abgerufen werden soll, um sie als tatsächlichen Titel zu verwenden.",
+      "descriptionIt": "La proprietà opzionale da recuperare dall'array passato a Values per usarla come titolo effettivo."
     },
     "ValueProperty": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional property to retrieve from the array passed to the Values to use it as the actual value.",
+      "descriptionDe": "Die optionale Eigenschaft, die aus dem an Values übergebenen Array abgerufen werden soll, um sie als tatsächlichen Wert zu verwenden.",
+      "descriptionIt": "La proprietà opzionale da recuperare dall'array passato a Values per usarla come valore effettivo."
     },
     "TextProperty": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional property to retrieve from the array passed to the Values to use it as the actual seen text in the selection (if not specified but ValueProperty is, the ValueProperty will be used for the text).",
+      "descriptionDe": "Die optionale Eigenschaft, die aus dem an Values übergebenen Array abgerufen werden soll, um sie als tatsächlich sichtbaren Text in der Auswahl zu verwenden (wenn nicht angegeben, aber ValueProperty angegeben, wird die ValueProperty für den Text verwendet).",
+      "descriptionIt": "La proprietà opzionale da recuperare dall'array passato a Values per usarla come testo effettivamente visibile nella selezione (se non specificata ma ValueProperty lo è, per il testo verrà usata la ValueProperty)."
     }
   }
 }

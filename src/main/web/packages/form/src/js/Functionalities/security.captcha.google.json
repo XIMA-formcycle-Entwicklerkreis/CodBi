@@ -1,24 +1,36 @@
 {
   "Description": "/classes/Functionalities_security.captcha.google.Security_Captcha_Google.html#functionality",
   "Parameter": {
-    "SiteKey": "",
-    "DataCallback": "",
-    "DataCallbackCode": "",
-    "Script": ""
+    "SiteKey": "The sitekey received from https://developers.google.com/recaptcha.",
+    "DataCallback": "The optional global callback method for when the captcha provides a result.",
+    "DataCallbackCode": "Optional code to be executed when the captcha provides a result.",
+    "Script": "The Google ReCaptcha script's address."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "SiteKey": {
-      "type": "string"
+      "type": "string",
+      "description": "The sitekey received from https://developers.google.com/recaptcha.",
+      "descriptionDe": "Der Site-Key, der von https://developers.google.com/recaptcha empfangen wurde.",
+      "descriptionIt": "La sitekey ricevuta da https://developers.google.com/recaptcha."
     },
     "DataCallback": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional global callback method for when the captcha provides a result.",
+      "descriptionDe": "Die optionale globale Callback-Methode, falls das Captcha ein Ergebnis liefert.",
+      "descriptionIt": "Il metodo callback globale opzionale per quando il captcha fornisce un risultato."
     },
     "DataCallbackCode": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional code to be executed when the captcha provides a result.",
+      "descriptionDe": "Optionaler Code, der ausgeführt werden soll, wenn das Captcha ein Ergebnis liefert.",
+      "descriptionIt": "Codice opzionale da eseguire quando il captcha fornisce un risultato."
     },
     "Script": {
-      "type": "string"
+      "type": "string",
+      "description": "The Google ReCaptcha script's address.",
+      "descriptionDe": "Die Adresse des Google-ReCaptcha-Skripts.",
+      "descriptionIt": "L'indirizzo dello script Google ReCaptcha."
     }
   }
 }

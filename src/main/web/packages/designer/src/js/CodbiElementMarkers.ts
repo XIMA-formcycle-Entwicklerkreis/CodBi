@@ -4,7 +4,7 @@ import { Constants } from "codbi-common";
 import { MARK_ELEMENTS_CHANGED_EVENT } from "./CodbiSwitchEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { mirrorElementOptions, mirrorFormOptions } from "./MirrorSelect.js";
-import { i18n } from "./i18n.js";
+import { i18n, localizedParameterDescription } from "./i18n.js";
 // #endregion Imports
 
 /**
@@ -137,7 +137,13 @@ const BADGE_CSS = `
 *:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty){border-color:#c96a00;background:#fff7ed}
 *:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty) .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
 .codbi-elem-badge--open .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
-.codbi-elem-marked{box-shadow:0 0 0 2px darkorange,0 0 10px 2px rgba(255,140,0,.6);border-radius:3px}
+/* The marked (highlight) frame. The visible rounded border + darkorange glow are drawn by a
+   ::after OVERLAY (on top of the element) rather than by the element itself: form-designer
+   content cells fill themselves with child wrappers whose own rectangular background would cover
+   the element's rounded corners, and their overflow would clip an outer glow. The overlay is
+   always roundrect and sits above every child, so the highlight is readable on any element. */
+.codbi-elem-marked{position:relative!important;overflow:visible!important;z-index:2}
+.codbi-elem-marked::after{content:"";position:absolute;inset:-2px;pointer-events:none;box-sizing:border-box;border:2px solid darkorange;border-radius:10px;box-shadow:0 0 0 1px rgba(255,140,0,.30),0 0 10px 3px rgba(255,140,0,.55);z-index:9999}
 .codbi-mirror-icon{background-image:url("${MIRROR_ICON_URL}");background-repeat:no-repeat;background-position:center;background-size:contain}
 .codbi-mirror-icon svg{display:none}
 .codbi-elem-badge--funcs{overflow:visible}
@@ -223,12 +229,14 @@ const BADGE_CSS = `
 .codbi-func-table--holistic .codbi-func-addoption:hover td{background:#d1fae5}
 .codbi-func-input{min-width:0;max-width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:3px;background:transparent;padding:0 3px;margin:0;font:inherit;color:#1f2937;pointer-events:auto}
 .codbi-func-input:focus{outline:none;border-color:#c96a00;background:#fff}
-.codbi-func-input--bool{width:auto;min-width:0;height:auto;margin:0;vertical-align:middle;accent-color:#ff8c00;cursor:pointer}
+.codbi-func-bool{flex:0 0 auto;vertical-align:middle;cursor:pointer}
 .codbi-func-input--enum{min-height:16px;cursor:pointer;background:#fff;border-color:#e7c9a3;padding:0 2px}
 .codbi-func-actions{width:1%;white-space:nowrap;text-align:center}
 .codbi-func-delete{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;padding:0;margin:0;border:0;border-radius:3px;background:transparent;color:#b91c1c;cursor:pointer;pointer-events:auto}
 .codbi-func-delete:hover{background:#fee2e2}
 .codbi-func-delete svg{display:block;width:12px;height:12px}
+.codbi-func-ep{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;padding:0;margin:0 0 0 2px;border:1px solid #c96a00;border-radius:3px;background:transparent;color:#c96a00;font-size:12px;font-weight:700;line-height:1;cursor:pointer;pointer-events:auto}
+.codbi-func-ep:hover{background:#fff7ed}
 .codbi-func-value{display:inline-flex;align-items:center;gap:2px;max-width:100%}
 .codbi-func-maximize{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;padding:0;margin:0;border:0;border-radius:3px;background:transparent;color:#2563eb;cursor:pointer;pointer-events:auto}
 .codbi-func-maximize:hover{background:#dbeafe}
@@ -343,8 +351,12 @@ interface IParamSpec {
   options?: string[];
   /** The parameter's default value (as a string). */
   default?: string;
-  /** A short description of the parameter. */
+  /** A short description of the parameter (the base/English locale). */
   description?: string;
+  /** The parameter's description in German (`de`). */
+  descriptionDe?: string;
+  /** The parameter's description in Italian (`it`). */
+  descriptionIt?: string;
 }
 
 /** Structural view of one CodBi functionality definition (`window.CodbiPluginData.detFunctionalities`). */
@@ -707,22 +719,34 @@ export function setSelectedItemAttributeValue(name: string, value: string): bool
 /**
  * Removes one `data-cb-*` attribute (name and value) from the item's property bags and nudges the
  * persist differ.
+ *
+ * The parameter may be handed to us with or without the `data-cb-` prefix (the stored attribute can
+ * use either convention depending on how it was written), so we match on BOTH the raw name and its
+ * prefixed/unprefixed counterpart. Otherwise a name mismatch would silently leave the attribute in
+ * the bag while still reporting success — exactly the "remove icon does nothing" symptom.
+ *
+ * Exported so the per-element CodBi config editor can drop a functionality's parameters when that
+ * functionality is removed.
  */
-function removeFuncAttribute(item: IMarkerItemLike, name: string): boolean {
+export function removeFuncAttribute(item: IMarkerItemLike, name: string): boolean {
   const bags = writablePropertyBags(item);
   if (bags.length === 0) {
     return false;
   }
-  const wanted = name.toLowerCase();
+  // Cover both storage conventions: the attribute may exist as `Unit` (bare) while the badge hands us
+  // `data-cb-Unit` (prefixed) or vice-versa, so we remove whichever variant is actually stored.
+  const prefixed = name.toLowerCase().startsWith(CB_PARAM_PREFIX) ? name : `${CB_PARAM_PREFIX}${name}`;
+  const bare = name.toLowerCase().startsWith(CB_PARAM_PREFIX) ? name.slice(CB_PARAM_PREFIX.length) : name;
+  const candidates = new Set<string>([prefixed.toLowerCase(), bare.toLowerCase()]);
   for (const props of bags) {
-    const attrs: IAttributeEntry[] = Array.isArray(props.attributes)
-      ? (props.attributes as IAttributeEntry[]).filter(
-          (a) =>
-            String(a?.text ?? "")
-              .trim()
-              .toLowerCase() !== wanted,
-        )
-      : [];
+    const attrs: IAttributeEntry[] = (
+      Array.isArray(props.attributes) ? (props.attributes as IAttributeEntry[]) : []
+    ).filter((a) => {
+      const text = String(a?.text ?? "")
+        .trim()
+        .toLowerCase();
+      return !candidates.has(text);
+    });
     props.attributes = attrs;
   }
   notifyAttributeChange();
@@ -1477,6 +1501,13 @@ function hidePreviewChrome(doc: Document): void {
     '[id="previewForm:previewToolsDial"]',
     '[id*="previewToolsDial"]',
     '[id="previewForm:previewToolsButton"]',
+    // The platform preview's floating speed-dial menu (the round "⋯" launcher + its pop-up menu).
+    // It is fixed/overlaid, so the sibling-hiding in `clipPreviewToElement` never removes it and it
+    // would otherwise float on top of / beside the clipped element.
+    ".ui-speeddial",
+    ".xm-form-preview__speed-dial",
+    '[class*="speeddial"]',
+    '[class*="speed-dial"]',
   ];
   const hideIn = (d: Document): void => {
     for (const selector of selectors) {
@@ -1719,6 +1750,9 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     if (!cdoc || !cdoc.body) {
       return false;
     }
+    // Remove the platform preview chrome up front — the preview-tools dial AND the floating speed-dial
+    // menu — so they never render inside the clipped element preview.
+    hidePreviewChrome(cdoc);
     const el = elementRef ? findPreviewElement(cdoc, elementRef) : null;
     const owner = el?.ownerDocument;
     if (!el || !owner || !owner.body) {
@@ -2447,6 +2481,21 @@ function buildParamTable(
   headValue.textContent = i18n("designer.marker.table.value");
   const headActions = doc.createElement("th");
   headActions.className = "codbi-func-actions";
+  // ONE maximize button for the whole popup, anchored at the table's top-right corner.
+  const maximizeButton = doc.createElement("button");
+  maximizeButton.type = "button";
+  maximizeButton.className = "codbi-func-maximize";
+  maximizeButton.title = i18n("designer.marker.table.maximize");
+  maximizeButton.setAttribute("aria-label", i18n("designer.marker.table.maximize"));
+  maximizeButton.innerHTML = MAXIMIZE_ICON_SVG;
+  isolateControl(maximizeButton);
+  maximizeButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    const next = popup.dataset.codbiMax !== "1";
+    popup.dataset.codbiMax = next ? "1" : "0";
+    applyFuncPopupWidth(subBadge, popup, anchor, next);
+  });
+  headActions.appendChild(maximizeButton);
   headRow.append(headName, headValue, headActions);
   head.appendChild(headRow);
   table.appendChild(head);
@@ -2456,16 +2505,42 @@ function buildParamTable(
     const value = row.dataset.value ?? "";
     const spec = parameterSpecFor(section.funcKey, attrName);
     const type = spec?.type ?? "string";
-    // Column 1 — the (fixed) parameter name.
+    // Column 1 — the (fixed) parameter name. Hovering it shows the parameter's description, localized
+    // to the current designer language (the structured `parameters[*].description{De,It}` channel,
+    // falling back to the legacy `Parameter`-map hint), so the badge exposes the same tooltip as the
+    // config panel.
     const name = doc.createElement("th");
     name.scope = "row";
     name.textContent = paramLabel(attrName);
-    // Column 2 — the editable value, followed by the maximize button at its right end.
+    const paramDescription = localizedParameterDescription(spec);
+    if (paramDescription) {
+      name.title = paramDescription;
+    }
+    // Column 2 — the editable value.
     const valueCell = doc.createElement("td");
     const valueWrap = doc.createElement("span");
     valueWrap.className = "codbi-func-value";
+    // Opens the EP builder for an attribute value input. Shared by the ALT+E shortcut and the
+    // "ƒ" EP-manager button in the actions cell, so both stay in sync. The composed value is
+    // written back through the SAME path as a manual edit.
+    let openEpFor: (() => void) | undefined;
     // Attaches the ALT+E EP-builder shortcut + Enter-commit behaviour to a text-like control.
     const bindTextShortcuts = (input: HTMLInputElement): void => {
+      openEpFor = (): void => {
+        openEPBuilder({
+          // Render into the DESIGNER document (not the canvas iframe) so the popup snaps to the
+          // designer window's edges, exactly like the Form Assistant dialog.
+          document: window.document,
+          anchor,
+          value: input.value,
+          listEPs: listElementPlaceholders,
+          onApply: (applied) => {
+            input.value = applied;
+            setFuncAttribute(resolve(), attrName, applied);
+            input.blur();
+          },
+        });
+      };
       input.addEventListener("change", () => {
         setFuncAttribute(resolve(), attrName, input.value);
       });
@@ -2475,21 +2550,7 @@ function buildParamTable(
           event.preventDefault();
           event.stopImmediatePropagation();
           event.stopPropagation();
-
-          openEPBuilder({
-            // Render into the DESIGNER document (not the canvas iframe) so the popup snaps to the
-            // designer window's edges, exactly like the Form Assistant dialog.
-            document: window.document,
-            anchor,
-            value: input.value,
-            listEPs: listElementPlaceholders,
-            onApply: (applied) => {
-              input.value = applied;
-              setFuncAttribute(resolve(), attrName, applied);
-              input.blur();
-            },
-          });
-
+          openEpFor?.();
           return;
         }
         // #endregion Alt+E → open the EP builder for this attribute value.
@@ -2503,16 +2564,62 @@ function buildParamTable(
     // Render the value control that matches the parameter's published type (see `parameterSpecFor`).
     let control: HTMLElement;
     if (type === "boolean") {
-      const checkbox = doc.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.className = "codbi-func-input codbi-func-input--bool";
-      checkbox.checked = isTruthyParam(value);
-      checkbox.title = attrName;
-      isolateControl(checkbox);
-      checkbox.addEventListener("change", () => {
-        setFuncAttribute(resolve(), attrName, checkbox.checked ? "true" : "false");
+      // A self-drawn toggle — a styled <span>, NOT an <input type="checkbox"> — so the canvas /
+      // framework CSS (which resets/paints checkboxes) cannot hide it. The appearance is set as
+      // INLINE styles, which win over any stylesheet rule (except `!important`).
+      const toggle = doc.createElement("span");
+      toggle.className = "codbi-func-bool";
+      toggle.setAttribute("role", "checkbox");
+      toggle.tabIndex = 0;
+      toggle.title = attrName;
+      toggle.style.cssText =
+        "flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;box-sizing:border-box;border:1px solid #c96a00;border-radius:3px;background:#fff;color:#fff;font-size:11px;font-weight:700;line-height:1;cursor:pointer;user-select:none;vertical-align:middle;";
+      const applyState = (on: boolean): void => {
+        toggle.setAttribute("aria-checked", on ? "true" : "false");
+        toggle.textContent = on ? "\u2713" : "";
+        toggle.style.background = on ? "#ff8c00" : "#fff";
+        toggle.style.borderColor = on ? "#ff8c00" : "#c96a00";
+      };
+      applyState(isTruthyParam(value));
+      const flip = (): void => {
+        const on = toggle.getAttribute("aria-checked") !== "true";
+        applyState(on);
+        setFuncAttribute(resolve(), attrName, on ? "true" : "false");
+      };
+      isolateControl(toggle);
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        flip();
       });
-      control = checkbox;
+      toggle.addEventListener("keydown", (event) => {
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          flip();
+        }
+      });
+      control = toggle;
+      // TEMPORARY diagnostic: confirm the toggle is in the document and actually painted.
+      queueMicrotask(() => {
+        try {
+          const view = doc.defaultView;
+          const cs = view ? view.getComputedStyle(toggle) : null;
+          const rect = toggle.getBoundingClientRect();
+          console.info(
+            "[CodBi][DBG][bool] attr=%s connected=%s rect=%dx%d display=%s bg=%s border=%s visibility=%s opacity=%s",
+            attrName,
+            toggle.isConnected,
+            rect.width,
+            rect.height,
+            cs?.display ?? "",
+            cs?.backgroundColor ?? "",
+            cs?.borderTopColor ?? "",
+            cs?.visibility ?? "",
+            cs?.opacity ?? "",
+          );
+        } catch (error) {
+          console.warn("[CodBi][DBG][bool] diagnostic failed", error);
+        }
+      });
     } else if (type === "enum" && spec?.options && spec.options.length > 0) {
       const select = doc.createElement("select");
       select.className = "codbi-func-input codbi-func-input--enum";
@@ -2545,26 +2652,14 @@ function buildParamTable(
       }
       input.className = "codbi-func-input";
       input.value = value;
-      input.title = attrName;
+      // Hovering the value field also hints at the ALT+E EP-manager shortcut (discoverable next to
+      // the "ƒ" button at the right of the row, mirroring the form element's config parameter rows).
+      input.title = `${attrName} — ${i18n("designer.marker.table.altE")}`;
       isolateControl(input);
       bindTextShortcuts(input);
       control = input;
     }
-    // Maximize the whole popup (toggles between element width and the full available viewport).
-    const maximize = doc.createElement("button");
-    maximize.type = "button";
-    maximize.className = "codbi-func-maximize";
-    maximize.title = i18n("designer.marker.table.maximize");
-    maximize.setAttribute("aria-label", i18n("designer.marker.table.maximize"));
-    maximize.innerHTML = MAXIMIZE_ICON_SVG;
-    isolateControl(maximize);
-    maximize.addEventListener("click", (event) => {
-      event.preventDefault();
-      const next = popup.dataset.codbiMax !== "1";
-      popup.dataset.codbiMax = next ? "1" : "0";
-      applyFuncPopupWidth(subBadge, popup, anchor, next);
-    });
-    valueWrap.append(control, maximize);
+    valueWrap.append(control);
     valueCell.appendChild(valueWrap);
     // Column 3 — the trash button that removes the parameter.
     const actionsCell = doc.createElement("td");
@@ -2584,6 +2679,28 @@ function buildParamTable(
       }
     });
     actionsCell.appendChild(remove);
+    // The EP-manager button, right of the trash icon: opens the EP builder for this attribute's
+    // value, exactly like the "ƒ" icon next to the form element's config parameter values. Only
+    // rows with a text/number value input expose it (boolean toggles and enum selects have no
+    // free-text value to compose).
+    if (openEpFor) {
+      const ep = doc.createElement("button");
+      ep.type = "button";
+      ep.className = "codbi-func-ep";
+      // The tooltip also names the ALT+E shortcut (the same way the value input's own hint does), so
+      // hovering the "ƒ" button itself reveals that pressing ALT+E opens the EP manager.
+      ep.title = `${i18n("designer.marker.table.ep")} (${i18n("designer.marker.table.altE")})`;
+      ep.setAttribute("aria-label", i18n("designer.marker.table.ep"));
+      ep.textContent = "ƒ";
+      isolateControl(ep);
+      ep.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        event.stopPropagation();
+        openEpFor?.();
+      });
+      actionsCell.appendChild(ep);
+    }
     row.append(name, valueCell, actionsCell);
   };
 
@@ -2653,7 +2770,14 @@ function buildParamTable(
           optRow.dataset.param = attrName;
           const optCell = doc.createElement("td");
           optCell.colSpan = 3;
-          optCell.textContent = `\u2192 ${paramLabel(attrName)}`;
+          optCell.textContent = paramLabel(attrName);
+          // Same localized description tooltip as the (already-present) parameter rows, so hovering an
+          // available parameter in the "add" dropdown also shows its description.
+          const optionSpec = parameterSpecFor(section.funcKey, attrName);
+          const optionDescription = localizedParameterDescription(optionSpec);
+          if (optionDescription) {
+            optCell.title = optionDescription;
+          }
           optRow.appendChild(optCell);
           isolateControl(optRow);
           optRow.addEventListener("click", (event) => {

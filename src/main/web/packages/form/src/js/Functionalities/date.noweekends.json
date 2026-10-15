@@ -1,7 +1,7 @@
 {
   "Description": "/classes/Functionalities_date.noweekends.Date_NoWeekends.html#functionality",
   "Parameter": {
-    "MsgNoWeekends": ""
+    "MsgNoWeekends": "The optional error message shown when a weekend date is entered."
   },
   "supportedFormelementtypes": {
     "XTextField": {
@@ -10,7 +10,10 @@
   },
   "parameters": {
     "MsgNoWeekends": {
-      "type": "string"
+      "type": "string",
+      "description": "The optional error message shown when a weekend date is entered.",
+      "descriptionDe": "Die optionale Fehlermeldung, die angezeigt wird, wenn ein Wochenenddatum eingegeben wird.",
+      "descriptionIt": "Il messaggio di errore opzionale mostrato quando viene inserita una data del fine settimana."
     }
   }
 }

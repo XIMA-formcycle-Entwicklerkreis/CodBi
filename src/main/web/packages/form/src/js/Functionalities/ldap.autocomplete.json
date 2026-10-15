@@ -1,24 +1,36 @@
 {
   "Description": "/classes/Functionalities_ldap.autocomplete.LDAP_Autocomplete.html#functionality",
   "Parameter": {
-    "Property": "",
-    "CSSProposals": "",
-    "URL": "",
-    "MsgNotInLDAP": ""
+    "Property": "The LDAP-Property that shall be autocompleted.",
+    "CSSProposals": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+    "URL": "The URL of the Formcycle predefined LDAP-Query to use.",
+    "MsgNotInLDAP": "The message to display when the entered value is not found in the LDAP."
   },
   "supportedFormelementtypes": "XTextField",
   "parameters": {
     "Property": {
-      "type": "string"
+      "type": "string",
+      "description": "The LDAP-Property that shall be autocompleted.",
+      "descriptionDe": "Die LDAP-Eigenschaft, die automatisch vervollständigt werden soll.",
+      "descriptionIt": "La proprietà LDAP che deve essere completata automaticamente."
     },
     "CSSProposals": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+      "descriptionDe": "Der CSS-Stil für das Vorschlags-Select-Element, das erscheint, wenn es mehrere Übereinstimmungen gibt.",
+      "descriptionIt": "Lo stile CSS per l'elemento Select dei suggerimenti che appare quando ci sono più corrispondenze."
     },
     "URL": {
-      "type": "string"
+      "type": "string",
+      "description": "The URL of the Formcycle predefined LDAP-Query to use.",
+      "descriptionDe": "Die URL der vordefinierten Formcycle-LDAP-Abfrage, die verwendet werden soll.",
+      "descriptionIt": "L'URL della query LDAP predefinita di Formcycle da usare."
     },
     "MsgNotInLDAP": {
-      "type": "string"
+      "type": "string",
+      "description": "The message to display when the entered value is not found in the LDAP.",
+      "descriptionDe": "Die Meldung, die angezeigt wird, wenn der eingegebene Wert nicht im LDAP gefunden wird.",
+      "descriptionIt": "Il messaggio da visualizzare quando il valore inserito non viene trovato nel LDAP."
     }
   }
 }

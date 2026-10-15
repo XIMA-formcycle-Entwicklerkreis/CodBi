@@ -1,24 +1,36 @@
 {
   "Description": "/classes/Functionalities_html.select.favorites.HTML_Select_Favorites.html#functionality",
   "Parameter": {
-    "DividerTarget": "",
-    "InitialElement": "",
-    "Favorites": "",
-    "Divider": ""
+    "DividerTarget": "Specifies the option to select when the divider option is selected.",
+    "InitialElement": "Specifies the option that shall be selected when the form is loaded.",
+    "Favorites": "Specifies the options that shall be shown before all other ones.",
+    "Divider": "Specifies the divider's text-content."
   },
   "supportedFormelementtypes": "XSelect",
   "parameters": {
     "DividerTarget": {
-      "type": "string"
+      "type": "string",
+      "description": "Specifies the option to select when the divider option is selected.",
+      "descriptionDe": "Gibt die Option an, die ausgewählt werden soll, wenn die Trennoption ausgewählt wird.",
+      "descriptionIt": "Specifica l'opzione da selezionare quando viene selezionata l'opzione divisore."
     },
     "InitialElement": {
-      "type": "string"
+      "type": "string",
+      "description": "Specifies the option that shall be selected when the form is loaded.",
+      "descriptionDe": "Gibt die Option an, die beim Laden des Formulars ausgewählt werden soll.",
+      "descriptionIt": "Specifica l'opzione che deve essere selezionata quando il modulo viene caricato."
     },
     "Favorites": {
-      "type": "string"
+      "type": "string",
+      "description": "Specifies the options that shall be shown before all other ones.",
+      "descriptionDe": "Gibt die Optionen an, die vor allen anderen angezeigt werden sollen.",
+      "descriptionIt": "Specifica le opzioni che devono essere mostrate prima di tutte le altre."
     },
     "Divider": {
-      "type": "string"
+      "type": "string",
+      "description": "Specifies the divider's text-content.",
+      "descriptionDe": "Gibt den Textinhalt des Trennzeichens an.",
+      "descriptionIt": "Specifica il contenuto di testo del divisore."
     }
   }
 }

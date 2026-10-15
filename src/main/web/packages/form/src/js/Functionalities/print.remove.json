@@ -1,19 +1,28 @@
 {
   "Description": "/classes/Functionalities_print.remove.Print_Remove.html#functionality",
   "Parameter": {
-    "ParentalLevel": "",
-    "DocumentSelector": "",
-    "Invert": ""
+    "ParentalLevel": "The number of elements to climb up the parentElement-Tree to get to the element to remove.",
+    "DocumentSelector": "The CSS-Selector specifying the element to remove. This parameter takes precedence over ParentalLevel.",
+    "Invert": "Specifies whether this functionality shall be inverted, e.g. the element will be removed in the form but shown when printed (defaults to NOT SET). If set ParentalLevel will be set to \"1\" if it has not been set."
   },
   "parameters": {
     "ParentalLevel": {
-      "type": "integer"
+      "type": "integer",
+      "description": "The number of elements to climb up the parentElement-Tree to get to the element to remove.",
+      "descriptionDe": "Die Anzahl der Elemente, die im parentElement-Baum nach oben gegangen werden, um zu dem zu entfernenden Element zu gelangen.",
+      "descriptionIt": "Il numero di elementi da risalire nell'albero parentElement per raggiungere l'elemento da rimuovere."
     },
     "DocumentSelector": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Selector specifying the element to remove. This parameter takes precedence over ParentalLevel.",
+      "descriptionDe": "Der CSS-Selektor, der das zu entfernende Element angibt. Dieser Parameter hat Vorrang vor ParentalLevel.",
+      "descriptionIt": "Il selettore CSS che specifica l'elemento da rimuovere. Questo parametro ha precedenza su ParentalLevel."
     },
     "Invert": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Specifies whether this functionality shall be inverted, e.g. the element will be removed in the form but shown when printed (defaults to NOT SET). If set ParentalLevel will be set to \"1\" if it has not been set.",
+      "descriptionDe": "Gibt an, ob diese Funktionalität invertiert werden soll, z. B. wird das Element im Formular entfernt, aber beim Drucken angezeigt (Standard: NICHT GESETZT). Wenn gesetzt, wird ParentalLevel auf \"1\" gesetzt, wenn es nicht gesetzt wurde.",
+      "descriptionIt": "Specifica se questa funzionalità debba essere invertita, es. l'elemento verrà rimosso nel modulo ma mostrato in stampa (predefinito: NON IMPOSTATO). Se impostato, ParentalLevel verrà impostato su \"1\" se non è stato impostato."
     }
   }
 }

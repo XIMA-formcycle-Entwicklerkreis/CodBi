@@ -1,24 +1,36 @@
 {
   "Description": "/classes/Functionalities_media.input.speech.whisper.Media_Input_Speech_Whisper.html#functionality",
   "Parameter": {
-    "VoiceHotkey": "",
-    "Language": "",
-    "Placeholder": "",
-    "ShowHint": ""
+    "VoiceHotkey": "Keyboard shortcut to toggle recording. Default: Alt+A.",
+    "Language": "Two-letter language code for Whisper (e.g. de, en, fr). If omitted, Whisper auto-detects the language.",
+    "Placeholder": "Custom placeholder text for the field. Only shown when ShowHint is true.",
+    "ShowHint": "If set to true, shows the hotkey hint as placeholder text. Default: false."
   },
   "supportedFormelementtypes": ["XTextField", "XTextArea"],
   "parameters": {
     "VoiceHotkey": {
-      "type": "string"
+      "type": "string",
+      "description": "Keyboard shortcut to toggle recording. Default: Alt+A.",
+      "descriptionDe": "Tastenkürzel zum Umschalten der Aufnahme. Standard: Alt+A.",
+      "descriptionIt": "Scorciatoia da tastiera per attivare la registrazione. Predefinito: Alt+A."
     },
     "Language": {
-      "type": "string"
+      "type": "string",
+      "description": "Two-letter language code for Whisper (e.g. de, en, fr). If omitted, Whisper auto-detects the language.",
+      "descriptionDe": "Zweistelliger Sprachcode für Whisper (z. B. de, en, fr). Wenn weggelassen, erkennt Whisper die Sprache automatisch.",
+      "descriptionIt": "Codice lingua di due lettere per Whisper (es. de, en, fr). Se omesso, Whisper rileva automaticamente la lingua."
     },
     "Placeholder": {
-      "type": "string"
+      "type": "string",
+      "description": "Custom placeholder text for the field. Only shown when ShowHint is true.",
+      "descriptionDe": "Benutzerdefinierter Platzhaltertext für das Feld. Wird nur angezeigt, wenn ShowHint true ist.",
+      "descriptionIt": "Testo segnaposto personalizzato per il campo. Mostrato solo se ShowHint è true."
     },
     "ShowHint": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to true, shows the hotkey hint as placeholder text. Default: false.",
+      "descriptionDe": "Wenn auf true gesetzt, wird der Tastenkürzel-Hinweis als Platzhaltertext angezeigt. Standard: false.",
+      "descriptionIt": "Se impostato su true, mostra il suggerimento dell'hotkey come testo segnaposto. Predefinito: false."
     }
   }
 }

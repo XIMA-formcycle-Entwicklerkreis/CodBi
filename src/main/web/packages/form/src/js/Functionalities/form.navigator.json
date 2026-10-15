@@ -1,24 +1,36 @@
 {
   "Description": "/classes/Functionalities_form.navigator.Form_Navigator.html#functionality",
   "Parameter": {
-    "Preview": "",
-    "CSSNavButtons": "",
-    "CSSHoverNavButtons": "",
-    "CSSBlockedNavButton": ""
+    "Preview": "Whether the navigator permits switching to every page even if it wasn't visited before (TRUE) or not (FALSE). Defaults to FALSE.",
+    "CSSNavButtons": "Additional CSS applied to the navigator's navigation buttons.",
+    "CSSHoverNavButtons": "Additional CSS applied to the navigator's navigation buttons when hovering them.",
+    "CSSBlockedNavButton": "Additional CSS applied to the navigator's navigation buttons that are blocked for any reason."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible"],
   "parameters": {
     "Preview": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Whether the navigator permits switching to every page even if it wasn't visited before (TRUE) or not (FALSE). Defaults to FALSE.",
+      "descriptionDe": "Ob der Navigator das Wechseln zu jeder Seite erlaubt, auch wenn sie vorher nicht besucht wurde (WAHR) oder nicht (FALSCH). Standard: FALSCH.",
+      "descriptionIt": "Se il navigatore consente di passare a ogni pagina anche se non è stata visitata prima (TRUE) o no (FALSE). Predefinito: FALSE."
     },
     "CSSNavButtons": {
-      "type": "string"
+      "type": "string",
+      "description": "Additional CSS applied to the navigator's navigation buttons.",
+      "descriptionDe": "Zusätzliches CSS, das auf die Navigationsbuttons des Navigators angewendet wird.",
+      "descriptionIt": "CSS aggiuntivo applicato ai pulsanti di navigazione del navigatore."
     },
     "CSSHoverNavButtons": {
-      "type": "string"
+      "type": "string",
+      "description": "Additional CSS applied to the navigator's navigation buttons when hovering them.",
+      "descriptionDe": "Zusätzliches CSS, das auf die Navigationsbuttons des Navigators beim Überfahren angewendet wird.",
+      "descriptionIt": "CSS aggiuntivo applicato ai pulsanti di navigazione del navigatore al passaggio del mouse."
     },
     "CSSBlockedNavButton": {
-      "type": "string"
+      "type": "string",
+      "description": "Additional CSS applied to the navigator's navigation buttons that are blocked for any reason.",
+      "descriptionDe": "Zusätzliches CSS, das auf die Navigationsbuttons des Navigators angewendet wird, die aus irgendeinem Grund blockiert sind.",
+      "descriptionIt": "CSS aggiuntivo applicato ai pulsanti di navigazione del navigatore che sono bloccati per qualsiasi motivo."
     }
   }
 }

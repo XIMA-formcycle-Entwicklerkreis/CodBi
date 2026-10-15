@@ -1,29 +1,44 @@
 {
   "Description": "/classes/Functionalities_date.time.join.span.Date_Time_Join_Span.html#functionality",
   "Parameter": {
-    "Begin": "",
-    "BeginTime": "",
-    "End": "",
-    "EndTime": "",
-    "MsgInvalid": ""
+    "Begin": "Optional CSS selector selecting the input that provides the begin date. Takes precedence over the CodBi_Date_Time_Join_Span_Begin CSS class.",
+    "BeginTime": "Optional CSS selector selecting the input that provides the begin time. Takes precedence over the CodBi_Date_Time_Join_Span_Begin_Time CSS class.",
+    "End": "Optional CSS selector selecting the input that provides the end date. Takes precedence over the CodBi_Date_Time_Join_Span_End CSS class.",
+    "EndTime": "Optional CSS selector selecting the input that provides the end time. Takes precedence over the CodBi_Date_Time_Join_Span_End_Time CSS class.",
+    "MsgInvalid": "The optional error message shown when the joined end datetime is lower than or equal to the joined begin datetime (defaults to a standard message)."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
   "parameters": {
     "Begin": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector selecting the input that provides the begin date. Takes precedence over the CodBi_Date_Time_Join_Span_Begin CSS class.",
+      "descriptionDe": "Optionaler CSS-Selektor, der das Eingabefeld auswählt, das das Anfangsdatum bereitstellt. Hat Vorrang vor der CSS-Klasse CodBi_Date_Time_Join_Span_Begin.",
+      "descriptionIt": "Selettore CSS opzionale che seleziona l'input che fornisce la data di inizio. Ha precedenza sulla classe CSS CodBi_Date_Time_Join_Span_Begin."
     },
     "BeginTime": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector selecting the input that provides the begin time. Takes precedence over the CodBi_Date_Time_Join_Span_Begin_Time CSS class.",
+      "descriptionDe": "Optionaler CSS-Selektor, der das Eingabefeld auswählt, das die Anfangszeit bereitstellt. Hat Vorrang vor der CSS-Klasse CodBi_Date_Time_Join_Span_Begin_Time.",
+      "descriptionIt": "Selettore CSS opzionale che seleziona l'input che fornisce l'ora di inizio. Ha precedenza sulla classe CSS CodBi_Date_Time_Join_Span_Begin_Time."
     },
     "End": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector selecting the input that provides the end date. Takes precedence over the CodBi_Date_Time_Join_Span_End CSS class.",
+      "descriptionDe": "Optionaler CSS-Selektor, der das Eingabefeld auswählt, das das Enddatum bereitstellt. Hat Vorrang vor der CSS-Klasse CodBi_Date_Time_Join_Span_End.",
+      "descriptionIt": "Selettore CSS opzionale che seleziona l'input che fornisce la data di fine. Ha precedenza sulla classe CSS CodBi_Date_Time_Join_Span_End."
     },
     "EndTime": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector selecting the input that provides the end time. Takes precedence over the CodBi_Date_Time_Join_Span_End_Time CSS class.",
+      "descriptionDe": "Optionaler CSS-Selektor, der das Eingabefeld auswählt, das die Endzeit bereitstellt. Hat Vorrang vor der CSS-Klasse CodBi_Date_Time_Join_Span_End_Time.",
+      "descriptionIt": "Selettore CSS opzionale che seleziona l'input che fornisce l'ora di fine. Ha precedenza sulla classe CSS CodBi_Date_Time_Join_Span_End_Time."
     },
     "MsgInvalid": {
       "type": "string",
-      "default": "The end datetime must be strictly after the begin datetime."
+      "default": "The end datetime must be strictly after the begin datetime.",
+      "description": "The optional error message shown when the joined end datetime is lower than or equal to the joined begin datetime (defaults to a standard message).",
+      "descriptionDe": "Die optionale Fehlermeldung, die angezeigt wird, wenn das verbundene Enddatum/-zeit kleiner oder gleich dem verbundenen Anfangsdatum/-zeit ist (Standard: eine Standardmeldung).",
+      "descriptionIt": "Il messaggio di errore opzionale mostrato quando la data/ora di fine combinata è inferiore o uguale alla data/ora di inizio combinata (predefinito: un messaggio standard)."
     }
   }
 }

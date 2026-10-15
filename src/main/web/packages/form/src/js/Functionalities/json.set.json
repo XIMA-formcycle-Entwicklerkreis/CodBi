@@ -1,19 +1,28 @@
 {
   "Description": "/classes/Functionalities_json.set.JSON_SET.html#functionality",
   "Parameter": {
-    "Path": "",
-    "Property": "",
-    "ToSet": ""
+    "Path": "The dotted path leading to the object, starting from the tagged element, which's Property is to be set.",
+    "Property": "The name of the property to set.",
+    "ToSet": "The object to set the Property to."
   },
   "parameters": {
     "Path": {
-      "type": "string"
+      "type": "string",
+      "description": "The dotted path leading to the object, starting from the tagged element, which's Property is to be set.",
+      "descriptionDe": "Der gepunktete Pfad, der zum Objekt führt, beginnend beim markierten Element, dessen Property gesetzt werden soll.",
+      "descriptionIt": "Il percorso punteggiato che porta all'oggetto, a partire dall'elemento marcato, la cui Property deve essere impostata."
     },
     "Property": {
-      "type": "string"
+      "type": "string",
+      "description": "The name of the property to set.",
+      "descriptionDe": "Der Name der zu setzenden Eigenschaft.",
+      "descriptionIt": "Il nome della proprietà da impostare."
     },
     "ToSet": {
-      "type": "string"
+      "type": "string",
+      "description": "The object to set the Property to.",
+      "descriptionDe": "Das Objekt, auf das die Property gesetzt werden soll.",
+      "descriptionIt": "L'oggetto a cui impostare la Property."
     }
   }
 }

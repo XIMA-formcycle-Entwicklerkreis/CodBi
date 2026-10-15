@@ -1,93 +1,156 @@
 {
   "Description": "/classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html#functionality",
   "Parameter": {
-    "MaxPages": "",
-    "Rotation": "",
-    "MaxPixelSize": "",
-    "LLAMAbubble": "",
-    "UserBubble": "",
-    "WelcomeText": "",
-    "WaitingText": "",
-    "LowConfidenceText": "",
-    "RethinkButtonText": "",
-    "UncertainText": "",
-    "ShowUncertainTokens": "",
-    "VoiceHotkey": "",
-    "VoicePlaceholder": "",
-    "VoiceSendHotkey": "",
-    "Language": "",
-    "ResponseLanguage": "",
-    "Specialist": "",
-    "QueueBadge": "",
-    "QueueText": "",
-    "AlertOnFinishText": "",
-    "FilterResults": ""
+    "MaxPages": "Maximum number of PDF pages to process (default: 5). Set to 0 for no limit.",
+    "Rotation": "Image rotation in degrees (90, 180 or 270). 0 or unset means the rotation is unknown.",
+    "MaxPixelSize": "Maximum total pixel budget (width x height). Larger images are downscaled client-side preserving aspect ratio. Default: 3211264. Set to 0 to disable downscaling.",
+    "LLAMAbubble": "Background color for the Llama (AI) chat bubbles (default: #e5e5ea).",
+    "UserBubble": "Background color for the user chat bubbles (default: #0b93f6).",
+    "WelcomeText": "Text shown after the model name(s) in the ready message (default: 'Chat ready. Attach file(s) and type your question.').",
+    "WaitingText": "Text shown while waiting for the AI server to become available (default: 'Waiting for AI server...').",
+    "LowConfidenceText": "Warning text shown when the AI response has low confidence (default: 'Low Confidence').",
+    "RethinkButtonText": "Button label offering to re-answer with the thinking model (default: 'Rethink').",
+    "UncertainText": "Tooltip text shown when hovering over uncertain (low-confidence) tokens (default: 'Low confidence').",
+    "ShowUncertainTokens": "Whether to visually highlight uncertain tokens in AI responses. Set to 'false' to disable highlighting (default: 'true').",
+    "VoiceHotkey": "Keyboard shortcut to toggle voice input, e.g. 'Alt+A' (default: 'Alt+A'). Format: modifier(s) + key separated by '+'.",
+    "VoicePlaceholder": "Placeholder text shown in the chat input when voice input is available (default: 'Alt+A = mic on/off | Alt+Q = mic off + send').",
+    "VoiceSendHotkey": "Keyboard shortcut to stop recording and send, e.g. 'Alt+Q' (default: 'Alt+Q').",
+    "Language": "Language code for Whisper speech-to-text (e.g. 'de', 'en'). Empty or unset means auto-detect.",
+    "ResponseLanguage": "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). When set, the AI is forced to respond in this language.",
+    "Specialist": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+    "QueueBadge": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    "QueueText": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    "AlertOnFinishText": "Text shown in the alert when inference finishes (when the alert-on-finish option is enabled).",
+    "FilterResults": "If set to 'true', enables PII filtering on Brave Search queries for this instance."
   },
   "supportedFormelementtypes": "XTextArea",
   "parameters": {
     "MaxPages": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Maximum number of PDF pages to process (default: 5). Set to 0 for no limit.",
+      "descriptionDe": "Maximale Anzahl zu verarbeitender PDF-Seiten (Standard: 5). 0 deaktiviert das Limit.",
+      "descriptionIt": "Numero massimo di pagine PDF da elaborare (predefinito: 5). 0 disabilita il limite."
     },
     "Rotation": {
       "type": "enum",
-      "options": ["90", "180", "270"]
+      "options": ["90", "180", "270"],
+      "description": "Image rotation in degrees (90, 180 or 270). 0 or unset means the rotation is unknown.",
+      "descriptionDe": "Bilddrehung in Grad (90, 180 oder 270). 0 oder leer bedeutet, dass die Drehung unbekannt ist.",
+      "descriptionIt": "Rotazione immagine in gradi (90, 180 o 270). 0 o vuoto indica rotazione sconosciuta."
     },
     "MaxPixelSize": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Maximum total pixel budget (width x height). Larger images are downscaled client-side preserving aspect ratio. Default: 3211264. Set to 0 to disable downscaling.",
+      "descriptionDe": "Maximales Gesamtpixelbudget (Breite × Höhe). Größere Bilder werden clientseitig unter Beibehaltung des Seitenverhältnisses verkleinert. Standard: 3211264. 0 deaktiviert die Verkleinerung.",
+      "descriptionIt": "Budget pixel totale massimo (larghezza × altezza). Le immagini più grandi vengono ridimensionate lato client mantenendo le proporzioni. Predefinito: 3211264. 0 disabilita il ridimensionamento."
     },
     "LLAMAbubble": {
-      "type": "string"
+      "type": "string",
+      "description": "Background color for the Llama (AI) chat bubbles (default: #e5e5ea).",
+      "descriptionDe": "Hintergrundfarbe für die Llama-(KI-)Chatblasen (Standard: #e5e5ea).",
+      "descriptionIt": "Colore di sfondo per le bolle chat Llama (AI) (predefinito: #e5e5ea)."
     },
     "UserBubble": {
-      "type": "string"
+      "type": "string",
+      "description": "Background color for the user chat bubbles (default: #0b93f6).",
+      "descriptionDe": "Hintergrundfarbe für die Chatblasen des Benutzers (Standard: #0b93f6).",
+      "descriptionIt": "Colore di sfondo per le bolle chat dell'utente (predefinito: #0b93f6)."
     },
     "WelcomeText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text shown after the model name(s) in the ready message (default: 'Chat ready. Attach file(s) and type your question.').",
+      "descriptionDe": "Text nach dem/dem Modellnamen in der Bereitschaftsnachricht (Standard: 'Chat bereit. Datei(en) anhängen und Frage eingeben.').",
+      "descriptionIt": "Testo mostrato dopo i nomi dei modelli nel messaggio di pronto (predefinito: 'Chat pronta. Allega file e digita la tua domanda.')."
     },
     "WaitingText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text shown while waiting for the AI server to become available (default: 'Waiting for AI server...').",
+      "descriptionDe": "Text, der angezeigt wird, während auf den KI-Server gewartet wird (Standard: 'Warte auf KI-Server...').",
+      "descriptionIt": "Testo mostrato mentre si attende che il server AI sia disponibile (predefinito: 'Attendere il server AI...')."
     },
     "LowConfidenceText": {
-      "type": "string"
+      "type": "string",
+      "description": "Warning text shown when the AI response has low confidence (default: 'Low Confidence').",
+      "descriptionDe": "Warntext, der angezeigt wird, wenn die KI-Antwort eine geringe Sicherheit hat (Standard: 'Geringe Sicherheit').",
+      "descriptionIt": "Testo di avviso mostrato quando la risposta AI ha bassa confidenza (predefinito: 'Confidenza bassa')."
     },
     "RethinkButtonText": {
-      "type": "string"
+      "type": "string",
+      "description": "Button label offering to re-answer with the thinking model (default: 'Rethink').",
+      "descriptionDe": "Button-Label, das anbietet, mit dem Denkmodell erneut zu antworten (Standard: 'Neu denken').",
+      "descriptionIt": "Etichetta del pulsante per rispondere nuovamente con il modello di ragionamento (predefinito: 'Riprova')."
     },
     "UncertainText": {
-      "type": "string"
+      "type": "string",
+      "description": "Tooltip text shown when hovering over uncertain (low-confidence) tokens (default: 'Low confidence').",
+      "descriptionDe": "Tooltip-Text beim Überfahren unsicherer (niedrig-sicherer) Token (Standard: 'Geringe Sicherheit').",
+      "descriptionIt": "Testo del tooltip al passaggio del mouse sui token incerti (bassa confidenza) (predefinito: 'Confidenza bassa')."
     },
     "ShowUncertainTokens": {
-      "type": "string"
+      "type": "string",
+      "description": "Whether to visually highlight uncertain tokens in AI responses. Set to 'false' to disable highlighting (default: 'true').",
+      "descriptionDe": "Ob unsichere Token in KI-Antworten visuell hervorgehoben werden sollen. 'false' deaktiviert die Hervorhebung (Standard: 'true').",
+      "descriptionIt": "Se evidenziare visivamente i token incerti nelle risposte AI. 'false' disabilita l'evidenziazione (predefinito: 'true')."
     },
     "VoiceHotkey": {
-      "type": "string"
+      "type": "string",
+      "description": "Keyboard shortcut to toggle voice input, e.g. 'Alt+A' (default: 'Alt+A'). Format: modifier(s) + key separated by '+'.",
+      "descriptionDe": "Tastenkürzel zum Umschalten der Spracheingabe, z. B. 'Alt+A' (Standard: 'Alt+A'). Format: Modifikator(en) + Taste, getrennt durch '+'.",
+      "descriptionIt": "Scorciatoia da tastiera per attivare l'input vocale, es. 'Alt+A' (predefinito: 'Alt+A'). Formato: modificatore/i + tasto separati da '+'."
     },
     "VoicePlaceholder": {
-      "type": "string"
+      "type": "string",
+      "description": "Placeholder text shown in the chat input when voice input is available (default: 'Alt+A = mic on/off | Alt+Q = mic off + send').",
+      "descriptionDe": "Platzhaltertext im Chat-Eingabefeld, wenn Spracheingabe verfügbar ist (Standard: 'Alt+A = Mikrofon an/aus | Alt+Q = Mikrofon aus + senden').",
+      "descriptionIt": "Testo segnaposto mostrato nell'input chat quando l'input vocale è disponibile (predefinito: 'Alt+A = mic on/off | Alt+Q = mic off + invia')."
     },
     "VoiceSendHotkey": {
-      "type": "string"
+      "type": "string",
+      "description": "Keyboard shortcut to stop recording and send, e.g. 'Alt+Q' (default: 'Alt+Q').",
+      "descriptionDe": "Tastenkürzel zum Stoppen der Aufnahme und Senden, z. B. 'Alt+Q' (Standard: 'Alt+Q').",
+      "descriptionIt": "Scorciatoia da tastiera per fermare la registrazione e inviare, es. 'Alt+Q' (predefinito: 'Alt+Q')."
     },
     "Language": {
-      "type": "string"
+      "type": "string",
+      "description": "Language code for Whisper speech-to-text (e.g. 'de', 'en'). Empty or unset means auto-detect.",
+      "descriptionDe": "Sprachcode für Whisper-Sprach-zu-Text (z. B. 'de', 'en'). Leer bedeutet Auto-Erkennung.",
+      "descriptionIt": "Codice lingua per Whisper speech-to-text (es. 'de', 'en'). Vuoto o non impostato indica rilevamento automatico."
     },
     "ResponseLanguage": {
-      "type": "string"
+      "type": "string",
+      "description": "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). When set, the AI is forced to respond in this language.",
+      "descriptionDe": "Zweistelliger ISO-639-1-Code (z. B. 'de', 'fr'). Wenn gesetzt, wird die KI gezwungen, in dieser Sprache zu antworten.",
+      "descriptionIt": "Codice ISO 639-1 di due lettere (es. 'de', 'fr'). Se impostato, l'AI è obbligata a rispondere in questa lingua."
     },
     "Specialist": {
-      "type": "string"
+      "type": "string",
+      "description": "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+      "descriptionDe": "Name eines Spezialistenmodells, das über eine AI_LLAMA_STD_SPECIALIST_XXX-Plugin-Eigenschaft registriert ist. Leitet Anfragen an den Server dieses Spezialisten weiter.",
+      "descriptionIt": "Nome di un modello specialista registrato tramite una proprietà plugin AI_LLAMA_STD_SPECIALIST_XXX. Instrada le richieste al server di quello specialista."
     },
     "QueueBadge": {
-      "type": "string"
+      "type": "string",
+      "description": "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird während des Wartens auf die Inferenz ein Abzeichen mit der aktuellen Warteschlangenposition angezeigt.",
+      "descriptionIt": "Se impostato su 'true', mostra un badge con la posizione corrente in coda mentre si attende l'inferenza."
     },
     "QueueText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+      "descriptionDe": "Text, der nach der Warteschlangenpositionsnummer im Abzeichen angehängt wird (z. B. 'in Warteschlange' zeigt '3 in Warteschlange'). Standard: leer.",
+      "descriptionIt": "Testo aggiunto dopo il numero di posizione in coda nel badge (es. 'in coda' mostra '3 in coda'). Predefinito: vuoto."
     },
     "AlertOnFinishText": {
-      "type": "string"
+      "type": "string",
+      "description": "Text shown in the alert when inference finishes (when the alert-on-finish option is enabled).",
+      "descriptionDe": "Text, der in der Meldung angezeigt wird, wenn die Inferenz abgeschlossen ist (wenn die Option Meldung-bei-Fertigstellung aktiviert ist).",
+      "descriptionIt": "Testo mostrato nell'avviso quando l'inferenza termina (quando l'opzione avviso-al-termine è abilitata)."
     },
     "FilterResults": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', enables PII filtering on Brave Search queries for this instance.",
+      "descriptionDe": "Wenn auf 'true' gesetzt, wird die PII-Filterung bei Brave-Search-Abfragen für diese Instanz aktiviert.",
+      "descriptionIt": "Se impostato su 'true', abilita il filtraggio PII sulle query di Brave Search per questa istanza."
     }
   }
 }

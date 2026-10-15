@@ -1,20 +1,29 @@
 {
   "Description": "/classes/Functionalities_html.text.mapper.HTML_Text_Mapper.html#functionality",
   "Parameter": {
-    "Replacements": "",
-    "Property": "",
-    "CSS": ""
+    "Replacements": "The object containing the properties which's values will be used to replace the placeholders. If it is an array the string containing the placeholders will be replicated for each entry, allowing it to be used as a template.",
+    "Property": "The property of the tagged element that contains the string to replace the placeholders in.",
+    "CSS": "The CSS-Rules to apply onto the tagged element when replacement has been completed, e.g. to hide it until the placeholders are replaced."
   },
   "supportedFormelementtypes": ["XTextField", "XTextArea"],
   "parameters": {
     "Replacements": {
-      "type": "string"
+      "type": "string",
+      "description": "The object containing the properties which's values will be used to replace the placeholders. If it is an array the string containing the placeholders will be replicated for each entry, allowing it to be used as a template.",
+      "descriptionDe": "Das Objekt mit den Eigenschaften, deren Werte verwendet werden, um die Platzhalter zu ersetzen. Wenn es ein Array ist, wird die die Platzhalter enthaltende Zeichenfolge für jeden Eintrag repliziert, sodass sie als Vorlage verwendet werden kann.",
+      "descriptionIt": "L'oggetto contenente le proprietà i cui valori verranno usati per sostituire i segnaposto. Se è un array, la stringa contenente i segnaposto verrà replicata per ogni voce, permettendone l'uso come modello."
     },
     "Property": {
-      "type": "string"
+      "type": "string",
+      "description": "The property of the tagged element that contains the string to replace the placeholders in.",
+      "descriptionDe": "Die Eigenschaft des markierten Elements, die die Zeichenfolge enthält, in der die Platzhalter ersetzt werden sollen.",
+      "descriptionIt": "La proprietà dell'elemento marcato che contiene la stringa in cui sostituire i segnaposto."
     },
     "CSS": {
-      "type": "string"
+      "type": "string",
+      "description": "The CSS-Rules to apply onto the tagged element when replacement has been completed, e.g. to hide it until the placeholders are replaced.",
+      "descriptionDe": "Die CSS-Regeln, die auf das markierte Element angewendet werden sollen, wenn die Ersetzung abgeschlossen ist, z. B. um es zu verbergen, bis die Platzhalter ersetzt sind.",
+      "descriptionIt": "Le regole CSS da applicare all'elemento marcato quando la sostituzione è completata, es. per nasconderlo finché i segnaposto non vengono sostituiti."
     }
   }
 }

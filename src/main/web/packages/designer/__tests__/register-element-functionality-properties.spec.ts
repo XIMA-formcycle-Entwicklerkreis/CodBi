@@ -37,6 +37,8 @@ describe("registerElementFunctionalityProperties", () => {
     expect(desc?.editor).toBe(ElementFunctionalityConfigType);
     expect(desc?.cat).toBe(ELEMENT_FUNCTIONALITY_CATEGORY_ID);
     expect(desc?.property).toBe(ELEMENT_FUNCS_PROPERTY);
-    expect(desc?.label).toBe("Functionalities");
+    // The property-row label is intentionally empty so FORMCYCLE does not render a redundant
+    // "Funktionalitäten" caption above the embedded CodBi configurator editor.
+    expect(desc?.label).toBe("");
   });
 });

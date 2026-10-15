@@ -1,10 +1,10 @@
 {
   "Description": "/classes/Functionalities_date.time.join.Date_Time_Join.html#functionality",
   "Parameter": {
-    "DateField": "",
-    "TimeField": "",
-    "ToMillis": "",
-    "Divisor": ""
+    "DateField": "Optional CSS selector selecting the input that provides the date. Takes precedence over the CodBi_Date_Time_Join_Date CSS class.",
+    "TimeField": "Optional CSS selector selecting the input that provides the time. Takes precedence over the CodBi_Date_Time_Join_Time CSS class.",
+    "ToMillis": "Whether the tagged input receives the combined date's getTime() milliseconds instead of its string representation (defaults to false).",
+    "Divisor": "Optional number that the combined date's milliseconds are divided by (floored) before writing them into the tagged input. Takes precedence over ToMillis."
   },
   "supportedFormelementtypes": {
     "XTextField": {
@@ -13,17 +13,29 @@
   },
   "parameters": {
     "DateField": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector selecting the input that provides the date. Takes precedence over the CodBi_Date_Time_Join_Date CSS class.",
+      "descriptionDe": "Optionaler CSS-Selektor, der das Eingabefeld auswählt, das das Datum bereitstellt. Hat Vorrang vor der CSS-Klasse CodBi_Date_Time_Join_Date.",
+      "descriptionIt": "Selettore CSS opzionale che seleziona l'input che fornisce la data. Ha precedenza sulla classe CSS CodBi_Date_Time_Join_Date."
     },
     "TimeField": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional CSS selector selecting the input that provides the time. Takes precedence over the CodBi_Date_Time_Join_Time CSS class.",
+      "descriptionDe": "Optionaler CSS-Selektor, der das Eingabefeld auswählt, das die Uhrzeit bereitstellt. Hat Vorrang vor der CSS-Klasse CodBi_Date_Time_Join_Time.",
+      "descriptionIt": "Selettore CSS opzionale che seleziona l'input che fornisce l'ora. Ha precedenza sulla classe CSS CodBi_Date_Time_Join_Time."
     },
     "ToMillis": {
       "type": "boolean",
-      "default": "false"
+      "default": "false",
+      "description": "Whether the tagged input receives the combined date's getTime() milliseconds instead of its string representation (defaults to false).",
+      "descriptionDe": "Ob das markierte Eingabefeld die getTime()-Millisekunden des kombinierten Datums statt seiner Zeichenfolgendarstellung erhält (Standard: false).",
+      "descriptionIt": "Se l'input marcato riceve i millisecondi getTime() della data combinata invece della sua rappresentazione stringa (predefinito: false)."
     },
     "Divisor": {
-      "type": "number"
+      "type": "number",
+      "description": "Optional number that the combined date's milliseconds are divided by (floored) before writing them into the tagged input. Takes precedence over ToMillis.",
+      "descriptionDe": "Optionale Zahl, durch die die Millisekunden des kombinierten Datums geteilt werden (abgerundet), bevor sie in das markierte Eingabefeld geschrieben werden. Hat Vorrang vor ToMillis.",
+      "descriptionIt": "Numero opzionale per cui vengono divisi (con arrotondamento per difetto) i millisecondi della data combinata prima di scriverli nell'input marcato. Ha precedenza su ToMillis."
     }
   }
 }

@@ -271,6 +271,20 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   }
 
   /**
+   * Writes the `data-cb-func` attribute onto an element — or REMOVES it entirely when no functionality
+   * is active (`csv` empty). Leaving an empty `data-cb-func` behind would make the runtime/preview
+   * still treat the element as having a functionality applied, so an empty selection must drop the
+   * attribute rather than persist an empty value.
+   */
+  private writeFuncAttribute(item: IItemLike, csv: string): void {
+    if (csv === "") {
+      removeFuncAttributeQuiet(item as never, CB_FUNC_ATTRIBUTE);
+    } else {
+      setItemAttributeValueQuiet(item as never, CB_FUNC_ATTRIBUTE, csv);
+    }
+  }
+
+  /**
    * Writes one `data-cb-*` attribute onto the SELECTED element itself (the element being edited) and
    * re-asserts its `data-cb-func` tag. A no-op when no element is selected (there is no valid node to
    * carry the attribute). Uses the same write path as the Functionality widget (see
@@ -285,7 +299,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       // this editor works on the SELECTED master item, so the non-quiet variant would run the full
       // `editor.setValue` + `triggerSetProperty` re-valuation on every keystroke — the ~1s lag.
       setItemAttributeValueQuiet(item as never, name, value);
-      setItemAttributeValueQuiet(item as never, CB_FUNC_ATTRIBUTE, this.selected.join(","));
+      this.writeFuncAttribute(item, this.selected.join(","));
     }
   }
 
@@ -300,7 +314,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // the applied functionalities even when only toggled without touching a parameter.
     const item = this.targetElement();
     if (item) {
-      setItemAttributeValueQuiet(item as never, CB_FUNC_ATTRIBUTE, csv);
+      this.writeFuncAttribute(item, csv);
     }
     this.renderParams();
   }

@@ -2670,6 +2670,10 @@ function buildParamTable(
     remove.title = i18n("designer.marker.table.delete");
     remove.setAttribute("aria-label", i18n("designer.marker.table.delete"));
     remove.innerHTML = TRASH_ICON_SVG;
+    // Tab should flow from one parameter value cell to the NEXT value cell, not stop on the row's
+    // delete button. Removing it from the tab order (it stays clickable) keeps the value inputs
+    // contiguous when tabbing through the table.
+    remove.tabIndex = -1;
     isolateControl(remove);
     remove.addEventListener("click", (event) => {
       event.preventDefault();
@@ -2692,6 +2696,9 @@ function buildParamTable(
       ep.title = `${i18n("designer.marker.table.ep")} (${i18n("designer.marker.table.altE")})`;
       ep.setAttribute("aria-label", i18n("designer.marker.table.ep"));
       ep.textContent = "ƒ";
+      // Skip the "ƒ" launcher in the tab order too, so tabbing from a value field continues to the
+      // next value field (the ALT+E shortcut still opens the builder from the focused field).
+      ep.tabIndex = -1;
       isolateControl(ep);
       ep.addEventListener("click", (event) => {
         event.preventDefault();

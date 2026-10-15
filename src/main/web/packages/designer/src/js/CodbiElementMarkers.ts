@@ -557,6 +557,25 @@ function notifyAttributeChange(): void {
  * editor and commits it through the designer's own property pipeline, keeping the visible table and
  * the persisted model in sync.
  */
+function findAttributesEditor(): { setValue: (v: string) => void; triggerSetProperty?: () => void } | undefined {
+  const designer = designerInstance();
+  const view = designer?.getPropertyView?.();
+  // Locate the attributes editor (some designer builds key it differently — fall back to a scan).
+  const editor =
+    view?.getEditorForProperty?.("attributes") ??
+    view?.getPropertyEditors?.().find((ed) => ed?.config?.property === "attributes");
+  return editor as { setValue?: (v: string) => void; triggerSetProperty?: () => void } | undefined as
+    | { setValue: (v: string) => void; triggerSetProperty?: () => void }
+    | undefined;
+}
+
+/**
+ * When the edited item is the SELECTED one, the designer's AttributesEditor (the grid in the
+ * element config's "attributes" table) is mounted and holds its own copy of the data — so a direct
+ * model mutation alone would not refresh it. This pushes the current attribute array back into that
+ * editor and commits it through the designer's own property pipeline, keeping the visible table and
+ * the persisted model in sync.
+ */
 function syncAttributesEditor(item: IMarkerItemLike): void {
   try {
     const designer = designerInstance();
@@ -576,11 +595,7 @@ function syncAttributesEditor(item: IMarkerItemLike): void {
     if (selected !== item) {
       return;
     }
-    const view = designer.getPropertyView?.();
-    // Locate the attributes editor (some designer builds key it differently — fall back to a scan).
-    const editor =
-      view?.getEditorForProperty?.("attributes") ??
-      view?.getPropertyEditors?.().find((ed) => ed?.config?.property === "attributes");
+    const editor = findAttributesEditor();
     if (!editor?.setValue || !editor.triggerSetProperty) {
       console.warn("[CodBi] Element markers: attributes editor not found — is the item selectable?");
       return;
@@ -590,6 +605,38 @@ function syncAttributesEditor(item: IMarkerItemLike): void {
     editor.triggerSetProperty();
   } catch (x) {
     console.warn("[CodBi] Element markers: could not sync the attributes editor", x);
+  }
+}
+
+/**
+ * Refreshes the OPEN AttributesEditor grid for an item whose attributes were just mutated in place —
+ * but WITHOUT committing through the designer's property pipeline. This is the light half of
+ * {@link syncAttributesEditor}: it re-pushes the (already updated) attribute array into the grid's own
+ * copy so the visible table updates immediately, yet skips `triggerSetProperty`, so it does not fire
+ * the expensive `set-property` re-valuation that makes per-keystroke edits on the SELECTED item slow.
+ *
+ * Only runs for the SELECTED master item (the grid is bound to it); for every other item the grid is
+ * not showing that item's data, so there is nothing to refresh.
+ */
+function refreshAttributesGrid(item: IMarkerItemLike): void {
+  try {
+    const designer = designerInstance();
+    if (!designer) {
+      return;
+    }
+    const selected = designer.getSelectedMasterItem?.();
+    if (selected !== item) {
+      return;
+    }
+    const editor = findAttributesEditor();
+    if (!editor?.setValue) {
+      // No mounted attributes grid to refresh — nothing to do (the change is already in the bags).
+      return;
+    }
+    const attrs = propertiesOf(item)?.attributes;
+    editor.setValue(JSON.stringify(Array.isArray(attrs) ? attrs : []));
+  } catch (x) {
+    console.warn("[CodBi] Element markers: could not refresh the attributes editor", x);
   }
 }
 
@@ -692,10 +739,10 @@ function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): b
 
 /**
  * Like {@link setItemAttributeValue}, but WITHOUT forcing the open AttributesEditor to re-valuate. It
- * writes the attribute directly into the item's property bags and nudges the persist differ, which is
- * all the CodBi config panel needs — it re-renders its own controls and persists through the bags, so
- * the expensive attributes-grid re-valuation only slows the SELECTED item down (the very lag the badge
- * tables avoid). The attribute still appears in the attributes grid when it is (re)opened.
+ * writes the attribute directly into the item's property bags and nudges the persist differ, then
+ * refreshes the (mounted) attributes grid's own copy so the visible table updates immediately — yet it
+ * skips `triggerSetProperty`, so it never fires the expensive `set-property` re-valuation that makes
+ * edits on the SELECTED item slow (the very lag the badge tables avoid).
  *
  * @param item  The target item.
  * @param name  The attribute name (e.g. `data-cb-reverse`).
@@ -703,7 +750,11 @@ function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): b
  *
  * @returns **True** when the attribute was written. */
 export function setItemAttributeValueQuiet(item: IMarkerItemLike, name: string, value: string): boolean {
-  return writeAttrBags(item, name, value);
+  const ok = writeAttrBags(item, name, value);
+  if (ok) {
+    refreshAttributesGrid(item);
+  }
+  return ok;
 }
 
 /**
@@ -803,16 +854,21 @@ export function removeFuncAttribute(item: IMarkerItemLike, name: string): boolea
 
 /**
  * Like {@link removeFuncAttribute}, but WITHOUT forcing the open AttributesEditor to re-valuate. It
- * removes the attribute directly from the item's property bags and nudges the persist differ, which
- * is all the CodBi config panel needs — the expensive attributes-grid re-valuation only slows the
- * SELECTED item down (the very lag the badge tables avoid).
+ * removes the attribute directly from the item's property bags and nudges the persist differ, then
+ * refreshes the (mounted) attributes grid's own copy so the visible table updates immediately — yet
+ * it skips `triggerSetProperty`, so it never fires the expensive `set-property` re-valuation that
+ * makes edits on the SELECTED item slow (the very lag the badge tables avoid).
  *
  * @param item The target item.
  * @param name The attribute name (e.g. `data-cb-reverse`).
  *
  * @returns **True** when the attribute was removed. */
 export function removeFuncAttributeQuiet(item: IMarkerItemLike, name: string): boolean {
-  return removeAttrBags(item, name);
+  const ok = removeAttrBags(item, name);
+  if (ok) {
+    refreshAttributesGrid(item);
+  }
+  return ok;
 }
 
 /**

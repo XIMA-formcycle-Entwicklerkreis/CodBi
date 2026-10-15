@@ -622,6 +622,11 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     epButton.title = "EP";
     epButton.textContent = "ƒ";
     epButton.style.cssText = "min-width:24px;";
+    // Tab should flow from one parameter value field to the NEXT parameter value field, not jump onto
+    // the EP launcher between them. Removing the button from the tab order (it stays clickable, and
+    // the inline ALT+E shortcut still opens the builder from the focused field) keeps the sequence of
+    // value inputs contiguous when tabbing through the panel.
+    epButton.tabIndex = -1;
     epButton.addEventListener("click", () => {
       // Triggering the builder on a checkbox converts it into a text input (per spec).
       showText(currentValue);

@@ -643,10 +643,14 @@ function writablePropertyBags(item: IMarkerItemLike): TItemProperties[] {
 }
 
 /**
- * Sets or updates one `data-cb-*` attribute on the item's property bag (the same bag the designer's
- * AttributesEditor reads/writes) so the change is reflected in the element's config attribute table.
+ * Mutates the item's writable property bags so one `data-cb-*` attribute is set/updated, and nudges
+ * the persist differ so the change is picked up as a form edit. This is the light half of a write:
+ * it does NOT force the designer's AttributesEditor to re-valuate, which is the heavy operation that
+ * makes per-keystroke edits on the SELECTED item slow (see {@link setFuncAttribute}).
+ *
+ * @returns **True** when the attribute was written into at least one bag.
  */
-function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): boolean {
+function writeAttrBags(item: IMarkerItemLike, name: string, value: string): boolean {
   const bags = writablePropertyBags(item);
   if (bags.length === 0) {
     return false;
@@ -670,8 +674,36 @@ function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): b
     props.attributes = attrs;
   }
   notifyAttributeChange();
-  syncAttributesEditor(item);
   return true;
+}
+
+/**
+ * Sets or updates one `data-cb-*` attribute on the item's property bag (the same bag the designer's
+ * AttributesEditor reads/writes) so the change is reflected in the element's config attribute table,
+ * and syncs the open AttributesEditor for the selected item.
+ */
+function setFuncAttribute(item: IMarkerItemLike, name: string, value: string): boolean {
+  const ok = writeAttrBags(item, name, value);
+  if (ok) {
+    syncAttributesEditor(item);
+  }
+  return ok;
+}
+
+/**
+ * Like {@link setItemAttributeValue}, but WITHOUT forcing the open AttributesEditor to re-valuate. It
+ * writes the attribute directly into the item's property bags and nudges the persist differ, which is
+ * all the CodBi config panel needs — it re-renders its own controls and persists through the bags, so
+ * the expensive attributes-grid re-valuation only slows the SELECTED item down (the very lag the badge
+ * tables avoid). The attribute still appears in the attributes grid when it is (re)opened.
+ *
+ * @param item  The target item.
+ * @param name  The attribute name (e.g. `data-cb-reverse`).
+ * @param value The new attribute value.
+ *
+ * @returns **True** when the attribute was written. */
+export function setItemAttributeValueQuiet(item: IMarkerItemLike, name: string, value: string): boolean {
+  return writeAttrBags(item, name, value);
 }
 
 /**
@@ -718,17 +750,18 @@ export function setSelectedItemAttributeValue(name: string, value: string): bool
 
 /**
  * Removes one `data-cb-*` attribute (name and value) from the item's property bags and nudges the
- * persist differ.
+ * persist differ. This is the light half of a remove: it does NOT force the designer's
+ * AttributesEditor to re-valuate, which is the heavy operation that makes edits on the SELECTED item
+ * slow (see {@link removeFuncAttribute}).
  *
  * The parameter may be handed to us with or without the `data-cb-` prefix (the stored attribute can
  * use either convention depending on how it was written), so we match on BOTH the raw name and its
  * prefixed/unprefixed counterpart. Otherwise a name mismatch would silently leave the attribute in
  * the bag while still reporting success — exactly the "remove icon does nothing" symptom.
  *
- * Exported so the per-element CodBi config editor can drop a functionality's parameters when that
- * functionality is removed.
+ * @returns **True** when the attribute was removed from at least one bag.
  */
-export function removeFuncAttribute(item: IMarkerItemLike, name: string): boolean {
+function removeAttrBags(item: IMarkerItemLike, name: string): boolean {
   const bags = writablePropertyBags(item);
   if (bags.length === 0) {
     return false;
@@ -750,8 +783,36 @@ export function removeFuncAttribute(item: IMarkerItemLike, name: string): boolea
     props.attributes = attrs;
   }
   notifyAttributeChange();
-  syncAttributesEditor(item);
   return true;
+}
+
+/**
+ * Removes one `data-cb-*` attribute (name and value) from the item's property bags, nudges the
+ * persist differ, and syncs the open AttributesEditor for the selected item.
+ *
+ * Exported so the per-element CodBi config editor can drop a functionality's parameters when that
+ * functionality is removed.
+ */
+export function removeFuncAttribute(item: IMarkerItemLike, name: string): boolean {
+  const ok = removeAttrBags(item, name);
+  if (ok) {
+    syncAttributesEditor(item);
+  }
+  return ok;
+}
+
+/**
+ * Like {@link removeFuncAttribute}, but WITHOUT forcing the open AttributesEditor to re-valuate. It
+ * removes the attribute directly from the item's property bags and nudges the persist differ, which
+ * is all the CodBi config panel needs — the expensive attributes-grid re-valuation only slows the
+ * SELECTED item down (the very lag the badge tables avoid).
+ *
+ * @param item The target item.
+ * @param name The attribute name (e.g. `data-cb-reverse`).
+ *
+ * @returns **True** when the attribute was removed. */
+export function removeFuncAttributeQuiet(item: IMarkerItemLike, name: string): boolean {
+  return removeAttrBags(item, name);
 }
 
 /**

@@ -12,7 +12,7 @@ import {
   registerCustomProperty,
 } from "@de-xima/fc-form-designer";
 import { Constants } from "codbi-common";
-import { setItemAttributeValue, removeFuncAttribute } from "./CodbiElementMarkers.js";
+import { setItemAttributeValueQuiet, removeFuncAttributeQuiet } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
@@ -279,8 +279,13 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private writeAttribute(name: string, value: string): void {
     const item = this.targetElement();
     if (item) {
-      setItemAttributeValue(item as never, name, value);
-      setItemAttributeValue(item as never, CB_FUNC_ATTRIBUTE, this.selected.join(","));
+      // Use the QUIET write paths: they mutate the property bags and nudge the persist differ
+      // without forcing the designer's shared AttributesEditor to re-valuate. The badge tables are
+      // fast because their item is never the SELECTED one (so `syncAttributesEditor` early-returns);
+      // this editor works on the SELECTED master item, so the non-quiet variant would run the full
+      // `editor.setValue` + `triggerSetProperty` re-valuation on every keystroke — the ~1s lag.
+      setItemAttributeValueQuiet(item as never, name, value);
+      setItemAttributeValueQuiet(item as never, CB_FUNC_ATTRIBUTE, this.selected.join(","));
     }
   }
 
@@ -295,7 +300,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // the applied functionalities even when only toggled without touching a parameter.
     const item = this.targetElement();
     if (item) {
-      setItemAttributeValue(item as never, CB_FUNC_ATTRIBUTE, csv);
+      setItemAttributeValueQuiet(item as never, CB_FUNC_ATTRIBUTE, csv);
     }
     this.renderParams();
   }
@@ -337,9 +342,11 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       return;
     }
     for (const attrName of paramsToRemoveForRemovedFunctionality(removedId, this.selected)) {
-      // `removeFuncAttribute` matches both the prefixed and the bare attribute name, and is a no-op
-      // when the attribute is not actually set on the element.
-      removeFuncAttribute(item as never, attrName);
+      // `removeFuncAttributeQuiet` matches both the prefixed and the bare attribute name, and is a
+      // no-op when the attribute is not actually set on the element. It skips the shared
+      // AttributesEditor re-valuation — a toggle already fired the `set-property` pipeline in
+      // `persistFunctionalities`, so re-valuating again here would double the ~1s lag.
+      removeFuncAttributeQuiet(item as never, attrName);
     }
   }
 

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>ClarificationQuestionFilter</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            fc-plugin-codbi
+                    </a>
+            </div>
+            <div class="library-version">
+            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter="fc-plugin-codbi/JVM">JVM</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="fc-plugin-codbi::com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/ClarificationQuestionFilter///PointingToDeclaration//967027945">
+  <div class="breadcrumbs"><a href="../../../index.html">fc-plugin-codbi</a><span class="delimiter">/</span><a href="../index.html">com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb</a><span class="delimiter">/</span><span class="current">ClarificationQuestionFilter</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Clarification</span><wbr></wbr><span>Question</span><wbr></wbr><span><span>Filter</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">object </span><a href="index.html">ClarificationQuestionFilter</a></div><p class="paragraph">Applica UNA regola della richiesta di chiarimento nel codice: una domanda non deve mai essere posta due volte.</p><p class="paragraph">Un piccolo modello locale tende a chiedere nuovamente un dettaglio che ha già ricevuto o l'elemento target contiene già (osservato: &quot;Welche Art von Taschenrechner ...&quot; chiesto giro dopo giro, &quot;Wie viele Tage sollen angezeigt werden?&quot; due volte, &quot;Für welchen Ort ...?&quot; tre volte e &quot;Wie heißt das vorhandene Video-Element ...?&quot; due volte). Le istruzioni portano la regola e questo filtro è il backstop deterministico per questo: quando il round si ripete, il chiamante COSTRUISCE invece di aprendo nuovamente il popup.</p><p class="paragraph">Non c'è deliberatamente NESSUN limite di round qui: quanti round sono sensati è un giudizio chiamato the le istruzioni rapide creano (&quot;prendi tutto ciò che esiste dall'elemento esistente&quot;), non un valore fisso numero.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="-392642887%2FFunctions%2F967027945" anchor-label="dropAlreadyAsked" id="-392642887%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="drop-already-asked.html"><span>drop</span><wbr></wbr><span>Already</span><wbr></wbr><span><span>Asked</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-392642887%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><span class="token operator">&lt;</span><a href="drop-already-asked.html">T</a><span class="token operator">&gt; </span><a href="drop-already-asked.html"><span class="token function">dropAlreadyAsked</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">questions<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="drop-already-asked.html">T</a><span class="token operator">&gt;</span><span class="token punctuation">, </span></span><span class="parameter ">askedQuestions<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token punctuation">, </span></span><span class="parameter ">textOf<span class="token operator">: </span><span class="token punctuation">(</span><a href="drop-already-asked.html">T</a><span class="token punctuation">)</span><span class="token operator"> -&gt; </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="drop-already-asked.html">T</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Elimina tutte le domande già poste in precedenza. Un risultato VUOTO indica solo l'assistente si è ripetuto: il chiamante deve quindi creare il modulo invece di chiedere nuovamente all'utente.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1567292055%2FFunctions%2F967027945" anchor-label="isAlreadyAsked" id="1567292055%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="is-already-asked.html"><span>is</span><wbr></wbr><span>Already</span><wbr></wbr><span><span>Asked</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1567292055%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="is-already-asked.html"><span class="token function">isAlreadyAsked</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">question<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">askedQuestions<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph">Vero quando la domanda era già stata posta: o i testi normalizzati sono IDENTICI, oppure loro condividono i loro primi <span data-unresolved-link="com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/ClarificationQuestionFilter/STEM_LENGTH/#/PointingToDeclaration/">STEM_LENGTH</span> caratteri: il modello chiede regolarmente la stessa cosa solo una coda diversa (un &quot;(z. B. 7 einzelne Felder)&quot; aggiunto o una seconda dicitura abbreviata). Le domande più corte di <span data-unresolved-link="com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/ClarificationQuestionFilter/MIN_STEM/#/PointingToDeclaration/">MIN_STEM</span> caratteri vengono confrontate solo parola per parola, quindi domande brevi non possono ingoiarsi accidentalmente a vicenda.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-157255943%2FFunctions%2F967027945" anchor-label="normalizeQuestion" id="-157255943%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="normalize-question.html"><span>normalize</span><wbr></wbr><span><span>Question</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-157255943%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="normalize-question.html"><span class="token function">normalizeQuestion</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">text<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">Normalizza una domanda per il confronto: minuscolo, ogni carattere diverso da una lettera/cifra (domanda segni, trattini, parentesi, trattini unificatori dal modello, ...) compressi in un unico spazio, e un'enumerazione iniziale rimossa.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

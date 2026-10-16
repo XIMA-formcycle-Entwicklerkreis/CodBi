@@ -95,9 +95,11 @@ interface Window {
           };
         };
         /**
-         * The FORMCYCLE widget class names this functionality is intended for (e.g. `XFieldSet`).
-         * An empty/absent list means "any element" (fail-open). Populated by the build-time
-         * generator (Tier A) or the local API-doc manager (Tier B). */
+         * LEGACY alias of {@link supportedFormelementtypes}: the FORMCYCLE widget class names this
+         * functionality is intended for (e.g. `XFieldSet`). Empty/absent means "any element"
+         * (fail-open). Still read as a fallback, but the local API-doc manager now WRITES the
+         * canonical {@link supportedFormelementtypes} so its selection overrides the build-time
+         * applicability in the designer. */
         formElements?: Array<string>;
         /** The `@SupportedFormelementtype` spec (widget classes + per-type property constraints). */
         supportedFormelementtypes?:
@@ -149,6 +151,20 @@ interface Window {
     fslElementplaceholder: string;
     /** Stores a CSV stating the actual file's names where the code for **CodBi-Functionalities** resides. */
     fslFunctionalities: string;
+    /**
+     * Re-renders the per-element CodBi config panel of the currently selected element in place (its
+     * functionality/standard-configuration listings are computed from `detFunctionalities` at render
+     * time). Registered by the per-element config editor; called by the local API-doc manager after a
+     * successful sync so a changed `supportedFormelementtypes` shows up without a designer reload.
+     * Absent until the designer has registered the per-element CodBi properties. */
+    refreshElementConfig?: () => void;
+    /**
+     * The plugin's BUILD token — the very version the designer's own resources are served with
+     * (`designer.js?v=<buildVersion>`): a per-build timestamp for development builds, the release
+     * version otherwise. Used to cache-bust the hand-injected Angular manager bundle
+     * (`cb-manager.js`), whose URL carries no version of its own — see `codbiManagerCacheSuffix()`.
+     * Absent with an older plugin, in which case the manager URLs stay unversioned. */
+    buildVersion?: string;
     /** Re-Populates the **Standard-Configuration** listing displayed in the form designer's form properties tab.*/
     populateStandards: () => void;
     /**

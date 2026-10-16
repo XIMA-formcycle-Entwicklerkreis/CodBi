@@ -147,7 +147,14 @@ interface TreeNodeData {
   /**
    * The FORMCYCLE widget class names a **Functionality** may be applied to (comma/space separated,
    * e.g. `XFieldSet, XContainer`). Empty/absent ⇒ "any element". Only meaningful for functionalities.
+   *
+   * Persisted under the canonical **`supportedFormelementtypes`** key — the SAME key the built-in
+   * functionality `.json` files carry and the designer reads to decide which element types a
+   * functionality may be applied to. (An earlier revision wrote it as `formElements`, which nothing
+   * on the designer side reads, so a selection made here had no effect in the config panel.)
    */
+  supportedFormelementtypes?: string | string[];
+  /** LEGACY alias written by an older sync; read as a fallback and migrated on the next save. */
   formElements?: string;
   /**
    * The short (one-sentence) description of the element, per designer language (e.g. `{ en, de, it }`).
@@ -177,6 +184,8 @@ interface InputDataItem {
   /**
    * The FORMCYCLE widget class names a **Functionality** may be applied to (either a CSV string or an
    * array). Empty/absent ⇒ "any element". */
+  supportedFormelementtypes?: string | string[];
+  /** LEGACY alias of {@link InputDataItem.supportedFormelementtypes} (written by an older sync). */
   formElements?: string | string[];
   /** The short (one-sentence) description of the element (a plain string or a per-language map). */
   Summary?: string | I18nSummary;
@@ -2096,6 +2105,14 @@ export class Manager implements AfterViewInit {
         this.synchronizing = false;
         this.synchronized = true;
 
+        // Reflect the just-synced functionality types into the designer's LIVE registry so the element
+        // config panel's applicability listing picks them up on its next render, instead of only after
+        // a full designer reload (which is where the stored doc is merged into `detFunctionalities`).
+        this.applyTypesToLiveRegistry(localNodeData.detFunctionalities);
+        // ...and re-render the panel right away, so the change is visible on the spot rather than
+        // after re-selecting the element. The hook is published by the per-element config editor.
+        window.CodbiPluginData?.refreshElementConfig?.();
+
         this.cdr.markForCheck();
       },
       error: () => {
@@ -2215,6 +2232,12 @@ export class Manager implements AfterViewInit {
     const result = {};
     // #region Conversion.
     for (const node of toExtractFrom) {
+      // The allowed widget classes, written under the CANONICAL `supportedFormelementtypes` key the
+      // designer reads. An empty selection becomes `undefined` (dropped by the JSON serialization) so
+      // it never overrides a built-in functionality's applicability upstream — exactly like `Summary`.
+      const formElementTypes = this.parseFormElementTypes(
+        node.data?.supportedFormelementtypes ?? node.data?.formElements,
+      );
       result[`${base ? `${base.toLowerCase()}.` : ""}${node.label.toLowerCase()}`] = {
         Description: node.data ? node.data.Description.replace(/'/g, "") : "",
         // The short description (per-language map); `undefined` when empty so it never overrides a
@@ -2223,13 +2246,8 @@ export class Manager implements AfterViewInit {
         Parameter: node.data?.Parameter ? this.arrayToObject(node.data.Parameter) : [],
         globals: node.data?.globals ? this.arrayToObject(node.data.globals) : [],
         classes: node.data?.classes ? this.arrayToObject(node.data.classes) : [],
-        // The allowed form-element types of a functionality (CSV → array), empty = "any".
-        formElements: node.data?.formElements
-          ? String(node.data.formElements)
-              .split(/[,\s]+/)
-              .map((entry) => entry.trim())
-              .filter((entry) => entry.length > 0)
-          : [],
+        // The allowed form-element types of a functionality (empty ⇒ "any element").
+        supportedFormelementtypes: formElementTypes.length > 0 ? formElementTypes : undefined,
         notes: node.data.Notes ? node.data.Notes : "",
         CondensedPrompt: node.data?.CondensedPrompt ?? "",
         DetailedPrompt: node.data?.DetailedPrompt ?? "",
@@ -3132,19 +3150,18 @@ export class Manager implements AfterViewInit {
             // #region Merge API-Doc entries.
             for (const key in parsedData.detFunctionalities) {
               if (window.CodbiPluginData.detFunctionalities[key] === undefined) {
+                // The allowed widget classes, under the CANONICAL key the designer's applicability
+                // checks read (the legacy `formElements` alias of an older sync is still honored).
+                const localTypes = this.parseFormElementTypes(
+                  parsedData.detFunctionalities[key].supportedFormelementtypes ??
+                    parsedData.detFunctionalities[key].formElements,
+                );
                 window.CodbiPluginData.detFunctionalities[key] = {
                   Description: parsedData.detFunctionalities[key].Description,
                   Summary: this.normalizeSummary(parsedData.detFunctionalities[key].Summary),
                   Parameter: parsedData.detFunctionalities[key].Parameter as { [name: string]: string },
-                  formElements: Array.isArray(parsedData.detFunctionalities[key].formElements)
-                    ? parsedData.detFunctionalities[key].formElements
-                    : typeof parsedData.detFunctionalities[key].formElements === "string" &&
-                        parsedData.detFunctionalities[key].formElements !== ""
-                      ? String(parsedData.detFunctionalities[key].formElements)
-                          .split(/[,\s]+/)
-                          .map((entry) => entry.trim())
-                          .filter((entry) => entry.length > 0)
-                      : undefined,
+                  // An empty/absent list ⇒ `undefined`, i.e. "any element".
+                  supportedFormelementtypes: localTypes.length > 0 ? localTypes : undefined,
                   Code: parsedData.detFunctionalities[key].Code,
                   local: true,
                 };
@@ -3338,8 +3355,8 @@ export class Manager implements AfterViewInit {
   /** The current filter query of the widget-class listing. */
   protected formElementTypeFilter = "";
   /**
-   * The raw `formElements` CSV that {@link cachedFormElementTypes } was derived from. Used to keep
-   * {@link selectedFormElementTypes } returning a STABLE array reference. */
+   * The raw `supportedFormelementtypes` CSV that {@link cachedFormElementTypes } was derived from.
+   * Used to keep {@link selectedFormElementTypes } returning a STABLE array reference. */
   private cachedFormElementsRaw: string | undefined;
   /**
    * Cached, STABLE array returned by {@link selectedFormElementTypes }.
@@ -3351,23 +3368,20 @@ export class Manager implements AfterViewInit {
   private cachedFormElementTypes: string[] = [];
   /**
    * The {@link string[] } of widget class names currently assigned to the selected functionality
-   * (derived from the `formElements` CSV string, empty = any).
+   * (derived from the `supportedFormelementtypes` value, empty = any).
    *
-   * Returns a STABLE array reference that only changes when the underlying CSV actually changes; a
-   * fresh array per call would stall the designer's change detection (it is bound to a `<select>`
-   * via `[ngModel]`). */
+   * Returns a STABLE array reference that only changes when the underlying value actually changes; a
+   * fresh array per call would stall the designer's change detection (it is bound via `[ngModel]`/
+   * `*ngFor`). */
   protected get selectedFormElementTypes(): string[] {
-    const raw = this.currentlySelectedFunctionalityData?.formElements;
+    const data = this.currentlySelectedFunctionalityData;
+    // The canonical key first, then the legacy `formElements` alias an older sync may have stored.
+    const raw = data?.supportedFormelementtypes ?? data?.formElements;
+    const key = Array.isArray(raw) ? raw.join(",") : String(raw ?? "");
 
-    if (raw !== this.cachedFormElementsRaw) {
-      this.cachedFormElementsRaw = raw;
-      this.cachedFormElementTypes =
-        typeof raw !== "string" || raw.trim() === ""
-          ? []
-          : raw
-              .split(/[,\s]+/)
-              .map((entry) => entry.trim())
-              .filter((entry) => entry.length > 0);
+    if (key !== this.cachedFormElementsRaw) {
+      this.cachedFormElementsRaw = key;
+      this.cachedFormElementTypes = this.parseFormElementTypes(raw);
     }
     return this.cachedFormElementTypes;
   }
@@ -3433,17 +3447,70 @@ export class Manager implements AfterViewInit {
   }
   /**
    * Persists the selected widget classes as a CSV string on
-   * {@link currentlySelectedFunctionalityData }`.formElements` (empty/absent ⇒ "any element"), so the
-   * existing export/import path (`String(...).split(/[,\s]+/)`) keeps working.
+   * {@link currentlySelectedFunctionalityData }`.supportedFormelementtypes` (empty/absent ⇒ "any
+   * element"), i.e. under the canonical key the designer reads and the export writes.
    *
    * @param selected The widget class names to persist. */
   private setFormElementTypes(selected: string[]): void {
     if (this.currentlySelectedFunctionalityData === undefined) {
       return;
     }
-    const cleaned = Array.from(new Set(selected.map((entry) => entry.trim()).filter((entry) => entry !== "")));
-    this.currentlySelectedFunctionalityData.formElements = cleaned.length > 0 ? cleaned.join(", ") : undefined;
+    const cleaned = this.parseFormElementTypes(selected);
+    this.currentlySelectedFunctionalityData.supportedFormelementtypes =
+      cleaned.length > 0 ? cleaned.join(", ") : undefined;
+    // Drop the legacy alias so the two keys can never disagree.
+    this.currentlySelectedFunctionalityData.formElements = undefined;
     this.synchronized = false;
+  }
+  /**
+   * Normalizes a functionality's allowed FORMCYCLE widget classes (a CSV string or an array) into a
+   * trimmed, de-duplicated array. Shared by the types UI, the sync payload and the load paths.
+   *
+   * @param raw The stored/pending value (`undefined`/empty ⇒ no restriction).
+   *
+   * @returns The normalized widget class names (empty ⇒ "any element"). */
+  private parseFormElementTypes(raw: string | string[] | undefined | null): string[] {
+    const parts = Array.isArray(raw) ? raw : String(raw ?? "").split(/[,\s]+/);
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const part of parts) {
+      const type = String(part).trim();
+      if (type === "" || seen.has(type.toLowerCase())) {
+        continue;
+      }
+      seen.add(type.toLowerCase());
+      result.push(type);
+    }
+    return result;
+  }
+  /**
+   * Pushes the functionality types of the just-synced node data into the designer's LIVE
+   * `window.CodbiPluginData.detFunctionalities`, so the element config panel already reflects the sync
+   * on its next render. Only a NON-EMPTY selection is pushed — an entry without any type is left
+   * untouched so a built-in functionality's own applicability is never widened by an unrelated local
+   * entry. The authoritative merge (including "cleared" selections) happens when the designer reloads
+   * the stored doc (see `LocalDocInterface`).
+   *
+   * @param detFunctionalities The `detFunctionalities` section of the just-synced payload. */
+  private applyTypesToLiveRegistry(detFunctionalities: object): void {
+    const registry = window.CodbiPluginData?.detFunctionalities;
+    if (registry === undefined) {
+      return;
+    }
+    const section = detFunctionalities as {
+      [key: string]: { supportedFormelementtypes?: string | string[] } | undefined;
+    };
+    for (const key in section) {
+      const entry = registry[key];
+      if (entry === undefined) {
+        continue;
+      }
+      const types = this.parseFormElementTypes(section[key]?.supportedFormelementtypes);
+      if (types.length > 0) {
+        entry.supportedFormelementtypes = types;
+        entry.local = true;
+      }
+    }
   }
   /**
    * Fetches the FORMCYCLE widget classes installed on this system (the core widgets plus every
@@ -3851,8 +3918,16 @@ export class Manager implements AfterViewInit {
       ParameterPrompts?: { [key: string]: string };
       GlobalPrompts?: { [key: string]: string };
       ClassPrompts?: { [key: string]: string };
+      /** The allowed FORMCYCLE widget classes (canonical key; an array or a CSV string). */
+      supportedFormelementtypes?: string | string[];
+      /** LEGACY alias written by an older sync. */
+      formElements?: string | string[];
     },
   ): TreeNode {
+    // The allowed widget classes must survive this round trip, under the canonical key.
+    const formElementTypes = this.parseFormElementTypes(
+      segmentToConvert.supportedFormelementtypes ?? segmentToConvert.formElements,
+    );
     return {
       label: label,
       data: {
@@ -3863,6 +3938,7 @@ export class Manager implements AfterViewInit {
         code: segmentToConvert.code,
         CondensedPrompt: segmentToConvert.CondensedPrompt ?? "",
         DetailedPrompt: segmentToConvert.DetailedPrompt ?? "",
+        supportedFormelementtypes: formElementTypes.length > 0 ? formElementTypes.join(", ") : undefined,
       },
     };
   }
@@ -3889,6 +3965,10 @@ export class Manager implements AfterViewInit {
       ClassPrompts?: { [key: string]: string };
       Signature?: ApiSignature;
       parameters?: { [name: string]: { type?: string } };
+      /** The allowed FORMCYCLE widget classes (canonical key; an array or a CSV string). */
+      supportedFormelementtypes?: string | string[];
+      /** LEGACY alias written by an older sync. */
+      formElements?: string | string[];
     };
   }): TreeNode[] {
     const root: TreeNode[] = [];
@@ -3921,6 +4001,13 @@ export class Manager implements AfterViewInit {
 
             existingNode.data.Notes = toConvert[key].notes;
             existingNode.data.code = toConvert[key].Code;
+
+            // The functionality's allowed widget classes (canonical key, legacy alias as fallback).
+            const existingTypes = this.parseFormElementTypes(
+              toConvert[key].supportedFormelementtypes ?? toConvert[key].formElements,
+            );
+            existingNode.data.supportedFormelementtypes =
+              existingTypes.length > 0 ? existingTypes.join(", ") : undefined;
 
             for (const pKey in toConvert[key].Parameter) {
               DEFINED.tsCheck<Array<unknown>>(existingNode.data.Parameter).push({
@@ -3992,6 +4079,15 @@ export class Manager implements AfterViewInit {
 
             newNode.data.Notes = toConvert[key].notes;
             newNode.data.code = toConvert[key].Code;
+
+            // The functionality's allowed widget classes (canonical key, legacy alias as fallback).
+            // MANDATORY order: this must run AFTER the `newNode.data = { … }` (re)assignment above —
+            // setting it before that replacement would be wiped by it and the selection would come
+            // back unchecked after every reload.
+            const newTypes = this.parseFormElementTypes(
+              toConvert[key].supportedFormelementtypes ?? toConvert[key].formElements,
+            );
+            newNode.data.supportedFormelementtypes = newTypes.length > 0 ? newTypes.join(", ") : undefined;
 
             for (const pKey in toConvert[key].Parameter) {
               DEFINED.tsCheck<Array<unknown>>(newNode.data.Parameter).push({
@@ -4277,6 +4373,13 @@ export class Manager implements AfterViewInit {
             } else {
               itemNode.data.Description = "";
             }
+          }
+
+          // The functionality's allowed widget classes (canonical key, legacy alias as fallback) must
+          // survive an IMPORT too, otherwise the types selected in the manager are silently dropped.
+          const importedTypes = this.parseFormElementTypes(item.supportedFormelementtypes ?? item.formElements);
+          if (importedTypes.length > 0) {
+            itemNode.data.supportedFormelementtypes = importedTypes.join(", ");
           }
 
           processToArrayCollection(itemNode.data, "globals", item.globals);

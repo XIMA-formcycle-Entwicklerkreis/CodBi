@@ -141,9 +141,13 @@ const BADGE_CSS = `
    ::after OVERLAY (on top of the element) rather than by the element itself: form-designer
    content cells fill themselves with child wrappers whose own rectangular background would cover
    the element's rounded corners, and their overflow would clip an outer glow. The overlay is
-   always roundrect and sits above every child, so the highlight is readable on any element. */
+   always roundrect and sits above every child, so the highlight is readable on any element.
+   The overlay is HOVER-ONLY: it is always present (so its geometry is stable and the pointer is
+   unaffected) but kept fully transparent until the marked widget itself is hovered — the marked
+   widgets therefore no longer carry a permanent darkorange frame in the canvas. */
 .codbi-elem-marked{position:relative!important;overflow:visible!important;z-index:2}
-.codbi-elem-marked::after{content:"";position:absolute;inset:-2px;pointer-events:none;box-sizing:border-box;border:2px solid darkorange;border-radius:10px;box-shadow:0 0 0 1px rgba(255,140,0,.30),0 0 10px 3px rgba(255,140,0,.55);z-index:9999}
+.codbi-elem-marked::after{content:"";position:absolute;inset:-2px;pointer-events:none;box-sizing:border-box;border:2px solid darkorange;border-radius:10px;box-shadow:0 0 0 1px rgba(255,140,0,.30),0 0 10px 3px rgba(255,140,0,.55);z-index:9999;opacity:0;transition:opacity .15s ease}
+.codbi-elem-marked:hover::after{opacity:1}
 .codbi-mirror-icon{background-image:url("${MIRROR_ICON_URL}");background-repeat:no-repeat;background-position:center;background-size:contain}
 .codbi-mirror-icon svg{display:none}
 .codbi-elem-badge--funcs{overflow:visible}
@@ -551,6 +555,23 @@ function notifyAttributeChange(): void {
 }
 
 /**
+ * Locates the designer property VIEW's editor bound to `property` (e.g. `attributes`, `cssclasses`)
+ * on the currently selected item. Some designer builds key the editor differently, so the lookup
+ * falls back to scanning the mounted editors by their `config.property`.
+ *
+ * @param property The designer property name (e.g. `attributes`).
+ */
+function findPropertyEditor(
+  property: string,
+): { setValue?: (v: unknown) => void; triggerSetProperty?: () => void } | undefined {
+  const view = designerInstance()?.getPropertyView?.();
+  return (view?.getEditorForProperty?.(property) ??
+    view?.getPropertyEditors?.().find((ed) => ed?.config?.property === property)) as
+    | { setValue?: (v: unknown) => void; triggerSetProperty?: () => void }
+    | undefined;
+}
+
+/**
  * When the edited item is the SELECTED one, the designer's AttributesEditor (the grid in the
  * element config's "attributes" table) is mounted and holds its own copy of the data — so a direct
  * model mutation alone would not refresh it. This pushes the current attribute array back into that
@@ -558,13 +579,7 @@ function notifyAttributeChange(): void {
  * the persisted model in sync.
  */
 function findAttributesEditor(): { setValue: (v: string) => void; triggerSetProperty?: () => void } | undefined {
-  const designer = designerInstance();
-  const view = designer?.getPropertyView?.();
-  // Locate the attributes editor (some designer builds key it differently — fall back to a scan).
-  const editor =
-    view?.getEditorForProperty?.("attributes") ??
-    view?.getPropertyEditors?.().find((ed) => ed?.config?.property === "attributes");
-  return editor as { setValue?: (v: string) => void; triggerSetProperty?: () => void } | undefined as
+  return findPropertyEditor("attributes") as
     | { setValue: (v: string) => void; triggerSetProperty?: () => void }
     | undefined;
 }
@@ -1007,24 +1022,17 @@ function standardClassNames(): Set<string> {
 }
 
 /**
- * Reads the element's `cssclasses` property (an array of class names) and returns the subset that are
- * recognized CodBi standard-configuration classes. Handles an array or a whitespace/comma separated
- * string defensively.
+ * Normalizes a raw `cssclasses` property value (the FORMCYCLE persist shape is an array of strings,
+ * but a whitespace/comma separated string is handled defensively) into a de-duplicated, ordered list
+ * of class names. Unrelated classes are preserved — the list is NOT filtered by `detStandards`.
  */
-function existingCssClasses(item: IMarkerItemLike): string[] {
-  const props = propertiesOf(item);
-  const raw = props?.[CSS_CLASSES_PROPERTY];
-  const parts = Array.isArray(raw)
-    ? raw.map((c) => String(c))
-    : String(raw ?? "")
-        .split(/[\s,]+/)
-        .map((c) => c.trim());
-  const recognized = standardClassNames();
+function parseCssClasses(raw: unknown): string[] {
+  const parts = Array.isArray(raw) ? raw.map((c) => String(c)) : String(raw ?? "").split(/[\s,]+/);
   const result: string[] = [];
   const seen = new Set<string>();
   for (const part of parts) {
     const name = part.trim();
-    if (!name || seen.has(name) || !recognized.has(name)) {
+    if (!name || seen.has(name)) {
       continue;
     }
     seen.add(name);
@@ -1033,9 +1041,92 @@ function existingCssClasses(item: IMarkerItemLike): string[] {
   return result;
 }
 
+/**
+ * Reads the element's `cssclasses` property and returns the subset that are recognized CodBi
+ * standard-configuration classes.
+ */
+function existingCssClasses(item: IMarkerItemLike): string[] {
+  const recognized = standardClassNames();
+  return parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]).filter((name) => recognized.has(name));
+}
+
 /** @returns `true` when the item carries at least one recognized CodBi standard-configuration class. */
 function hasCssClasses(item: IMarkerItemLike): boolean {
   return existingCssClasses(item).length > 0;
+}
+
+/**
+ * The element's FULL `cssclasses` property (every class name, unrelated ones included). Exported so
+ * the per-element CodBi config editor can render one checkbox per standard-configuration class with
+ * its current applied state.
+ */
+export function elementCssClasses(item: IMarkerItemLike): string[] {
+  return parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]);
+}
+
+/** @returns whether the element currently carries the CSS class `className`. */
+export function elementHasCssClass(item: IMarkerItemLike, className: string): boolean {
+  const wanted = className.trim();
+  return wanted !== "" && elementCssClasses(item).includes(wanted);
+}
+
+/**
+ * Adds (`on === true`) or removes (`on === false`) ONE CSS class on the element's `cssclasses`
+ * property in every writable property bag, then nudges the persist differ so the change is synced.
+ *
+ * Unlike the `data-cb-*` attribute writers this only touches the named class — every UNRELATED class
+ * on the element is preserved. This is how a standard configuration is applied to a single element:
+ * the class itself is the runtime hook (each configuration's `loadConfig({ targets: ".<class>",
+ * FUNC })` matches elements by that class), so no `data-cb-func` needs to be written.
+ *
+ * @param item      The target item.
+ * @param className The CSS class to add/remove (e.g. `CodBi_NoFutureDate`).
+ * @param on        **True** to apply the class, **false** to remove it.
+ *
+ * @returns **True** when at least one property bag was updated. */
+export function setElementCssClass(item: IMarkerItemLike, className: string, on: boolean): boolean {
+  const name = className.trim();
+  if (name === "") {
+    return false;
+  }
+  const bags = writablePropertyBags(item);
+  if (bags.length === 0) {
+    return false;
+  }
+  for (const props of bags) {
+    const current = parseCssClasses(props[CSS_CLASSES_PROPERTY]);
+    const next = on
+      ? current.includes(name)
+        ? current
+        : [...current, name]
+      : current.filter((entry) => entry !== name);
+    props[CSS_CLASSES_PROPERTY] = next;
+  }
+  notifyAttributeChange();
+  refreshCssClassesEditor(item);
+  return true;
+}
+
+/**
+ * Re-pushes the item's `cssclasses` into the designer's own (mounted) CSS-classes editor so its
+ * visible field matches the model after a direct {@link setElementCssClass} mutation. Only the
+ * SELECTED item's editor is bound (the grid is shared), so this is a no-op for any other item; it is
+ * also a no-op when that editor is not currently mounted — the change is already in the persisted
+ * property bags and is synced by the differ.
+ */
+function refreshCssClassesEditor(item: IMarkerItemLike): void {
+  try {
+    if (designerInstance()?.getSelectedMasterItem?.() !== item) {
+      return;
+    }
+    const editor = findPropertyEditor(CSS_CLASSES_PROPERTY);
+    if (!editor?.setValue) {
+      return;
+    }
+    editor.setValue(parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]));
+  } catch (x) {
+    console.warn("[CodBi] Element markers: could not refresh the CSS-classes editor", x);
+  }
 }
 
 /**

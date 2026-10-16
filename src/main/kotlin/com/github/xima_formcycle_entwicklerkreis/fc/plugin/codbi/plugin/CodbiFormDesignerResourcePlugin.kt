@@ -199,6 +199,12 @@ ${docsApiUrls.entries.joinToString("\n") { (lang, url) ->
     "            window.CodbiPluginData.docsAPI.${lang}               = \"${safeUrl}\";"
 }}
             window.CodbiPluginData.localCode                = "$detLocalCode";
+            // The build token this plugin's OWN resources are versioned with (`designer.js?v=<version>`
+            // above). Exposed so the hand-injected Angular manager bundle (`cb-manager.js`, whose URL
+            // carries no version) can be cache-busted with the very same token — see
+            // `codbiManagerCacheSuffix()` in the designer. Without it a browser keeps serving a CACHED
+            // manager bundle and a rebuilt one never reaches the designer.
+            window.CodbiPluginData.buildVersion             = "$version";
 
             $originalJsContent
         """

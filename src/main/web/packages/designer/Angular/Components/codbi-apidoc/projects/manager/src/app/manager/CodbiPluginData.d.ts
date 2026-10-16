@@ -64,9 +64,11 @@ interface Window {
         /** Stores the parameter that this **CodBi-Functionality** provides. */
         Parameter: { [key: string]: string };
         /**
-         * The FORMCYCLE widget class names this functionality is intended for (e.g. `XFieldSet`).
-         * An empty/absent list means "any element" (fail-open). Populated by the build-time
-         * generator (Tier A) or the local API-doc manager (Tier B). */
+         * LEGACY alias of {@link supportedFormelementtypes}: the FORMCYCLE widget class names this
+         * functionality is intended for (e.g. `XFieldSet`). Empty/absent means "any element"
+         * (fail-open). Still read as a fallback, but the local API-doc manager now WRITES the
+         * canonical {@link supportedFormelementtypes} so the selection actually overrides the
+         * build-time applicability in the designer. */
         formElements?: Array<string>;
         /** The `@SupportedFormelementtype` spec (widget classes + per-type property constraints). */
         supportedFormelementtypes?:
@@ -125,6 +127,13 @@ interface Window {
     fslFunctionalities: string;
     /** Stores a list of CodBi-Elements that're currently available in the Plugin's local code repository. */
     localCode: string;
+    /**
+     * Re-renders the per-element CodBi config panel of the currently selected element in place (its
+     * functionality listing is computed from `detFunctionalities` at render time). Published by the
+     * per-element config editor; called by this manager right after a successful sync so a changed
+     * `supportedFormelementtypes` shows up without a designer reload. Absent while that editor is not
+     * registered (older designer builds). */
+    refreshElementConfig?: () => void;
     /** Re-Populates the **Standard-Configuration** listing displayed in the form designer's form properties tab.*/
     populateStandards: () => void;
     /**

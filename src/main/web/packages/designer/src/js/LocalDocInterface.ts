@@ -11,6 +11,7 @@ import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { setSelectedItemAttributeValue } from "./CodbiElementMarkers.js";
+import { codbiManagerCacheSuffix } from "./CodbiManagerBundle.js";
 import { i18n } from "./i18n.js";
 // #endregion Imports
 // #region Helper
@@ -1190,7 +1191,9 @@ export function enableLocalDocInterface(): void {
           // Guard against double-loading: enableAICodBiAssistantDialog() already injects cb-manager.js
           // (which defines cb-manager, cb-ai-assistant and cb-prompt-manager) on designer startup. Loading
           // the bundle again would re-run main.ts and throw "the name cb-manager has already been used".
-          const managerScriptSrc = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
+          // Both call sites append the SAME build token, so the guard matches and the bundle loads once.
+          const managerCacheSuffix = codbiManagerCacheSuffix();
+          const managerScriptSrc = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js${managerCacheSuffix}`;
           const scriptAPIManager = document.createElement("script");
 
           scriptAPIManager.src = managerScriptSrc;
@@ -1202,7 +1205,7 @@ export function enableLocalDocInterface(): void {
           const cssAPIManager = document.createElement("link");
           cssAPIManager.rel = "stylesheet";
           cssAPIManager.type = "text/css";
-          cssAPIManager.href = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.css`;
+          cssAPIManager.href = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.css${managerCacheSuffix}`;
 
           document.head.appendChild(cssAPIManager);
           document.body.insertAdjacentHTML(

@@ -19,7 +19,12 @@ import {
   type TStandardConfigClassSpec,
   type TStandardConfigSupportedSpec,
 } from "codbi-common";
-import { setItemAttributeValueQuiet, removeFuncAttributeQuiet } from "./CodbiElementMarkers.js";
+import {
+  setItemAttributeValueQuiet,
+  removeFuncAttributeQuiet,
+  elementCssClasses,
+  setElementCssClass,
+} from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
@@ -143,7 +148,19 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private funcQuery = "";
   /** The current filter query for the second (non-applicable) functionality listing. */
   private allQuery = "";
-  /** The container holding the (filtered) APPLICABLE standard-configuration option rows (read-only). */
+  /** The listing box of the APPLICABLE functionality list (toggled by {@link mainToggleButton}). */
+  private readonly funcList: HTMLDivElement;
+  /** The header button that shows/hides the APPLICABLE functionality list. */
+  private readonly mainToggleButton: HTMLButtonElement;
+  /** Whether the APPLICABLE functionality list is currently visible (collapsed by default). */
+  private showApplicable = false;
+  /** The listing box of the APPLICABLE standard-configuration list (toggled by {@link stdMainToggleButton}). */
+  private readonly stdList: HTMLDivElement;
+  /** The header button that shows/hides the APPLICABLE standard-configuration list. */
+  private readonly stdMainToggleButton: HTMLButtonElement;
+  /** Whether the APPLICABLE standard-configuration list is currently visible (collapsed by default). */
+  private showStdApplicable = false;
+  /** The container holding the (filtered) APPLICABLE standard-configuration option rows. */
   private readonly stdOptions: HTMLDivElement;
   /** The inline filter input of the applicable standard-configuration listing. */
   private readonly stdFilter: HTMLInputElement;
@@ -180,6 +197,19 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     allToggleButton.className = "codbi-func-config__show-all";
     allToggleButton.setAttribute("aria-expanded", "false");
     allToggleButton.addEventListener("click", () => this.toggleInapplicableList());
+    // Explains what the button is for (native tooltip).
+    allToggleButton.title = kI18n("designer.element.property.funcs.more.hint");
+    // The toggle of the APPLICABLE list, placed ABOVE the list it controls (the "not declared" toggle
+    // sits BELOW its list). It carries the SAME `.codbi-func-config__show-all` style; only the top
+    // margin is neutralized by the `--main` modifier (see frame.css). Like the second list, the
+    // applicable list starts COLLAPSED and is revealed by this button.
+    const mainToggleButton = document.createElement("button");
+    mainToggleButton.type = "button";
+    mainToggleButton.className = "codbi-func-config__show-all codbi-func-config__show-all--main";
+    mainToggleButton.setAttribute("aria-expanded", "false");
+    mainToggleButton.addEventListener("click", () => this.toggleApplicableList());
+    // Explains what the button is for (native tooltip).
+    mainToggleButton.title = kI18n("designer.element.property.funcs.hint");
     // The listing box CONTAINS the filter input (top) and the option rows below it.
     const funcList = document.createElement("div");
     funcList.className = "codbi-func-config__funclist";
@@ -218,27 +248,30 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const funcOptionsAll = document.createElement("div");
     funcOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
     funcAllList.append(allFuncFilter, funcOptionsAll);
-    // The non-applicable listing sits BELOW the show-all button that reveals it.
-    funcSection.append(funcList, allToggleButton, funcAllList);
+    // The applicable listing sits BELOW its own toggle; the non-applicable listing sits BELOW the
+    // show-all button that reveals it.
+    funcSection.append(mainToggleButton, funcList, allToggleButton, funcAllList);
     this.funcFilter = funcFilter;
     this.funcOptions = funcOptions;
+    this.funcList = funcList;
+    this.mainToggleButton = mainToggleButton;
     this.funcAllList = funcAllList;
     this.funcOptionsAll = funcOptionsAll;
     this.allToggleButton = allToggleButton;
     // #endregion 1. Functionality picker.
 
-    // #region 2. Standard-configuration listing (read-only). Shows the AVAILABLE CodBi standard
-    // configurations as two lists split by whether the configuration's `supportedFormelementtypes`
-    // matches the selected element's widget type — the same "applicable / not-applicable" split as
-    // the functionality lists. Holistic configurations and any `Active` (form-level toggle) state are
-    // ignored here: the Configurations metadata is global, not per-form. Standard configurations are
-    // NOT toggled per element (they are enabled form-wide via the form properties "Standard
-    // Configurations" editor), so the rows carry no checkbox: they are informational.
+    // #region 2. Standard-configuration listing. Shows the AVAILABLE CodBi standard configurations as
+    // two lists split by whether the class applies to the selected element's widget type — the same
+    // "applicable / not-applicable" split as the functionality lists. Holistic configurations and any
+    // `Active` (form-level toggle) state are ignored here: the Configurations metadata is global, not
+    // per-form. Each row carries a checkbox (styled identically to the functionality checkboxes) that
+    // applies/removes the class on the selected element — the class IS the runtime hook of the
+    // configuration. A config that provides no CSS class renders an informational row without a
+    // checkbox, since there is nothing to apply.
     const stdSection = document.createElement("div");
     stdSection.className = "codbi-func-config__section codbi-func-config__section--standards";
-    const stdTitle = document.createElement("strong");
-    stdTitle.className = "codbi-func-config__title";
-    stdTitle.textContent = kI18n("designer.element.standardConfig.label");
+    // NOTE: no separate `<strong>` section title — the APPLICABLE list's toggle button carries the
+    // "Standard configurations" label, so it acts as BOTH the section heading and its collapse control.
     // The toggle for the SECOND (non-applicable) standard-configuration list. It stays hidden until
     // the user clicks it (placed BELOW the list it controls), mirroring the functionality toggle.
     const stdToggleButton = document.createElement("button");
@@ -246,7 +279,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     stdToggleButton.className = "codbi-func-config__show-all codbi-func-config__show-all--std";
     stdToggleButton.setAttribute("aria-expanded", "false");
     stdToggleButton.addEventListener("click", () => this.toggleStdInapplicableList());
-    // The listing box CONTAINS the filter input (top) and the read-only option rows below it.
+    // Explains what the button is for (native tooltip).
+    stdToggleButton.title = kI18n("designer.element.standardConfig.more.hint");
+    // The listing box CONTAINS the filter input (top) and the option rows below it.
     const stdList = document.createElement("div");
     stdList.className = "codbi-func-config__funclist";
     stdList.style.cssText = "max-height:160px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;";
@@ -260,6 +295,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       this.stdQuery = stdFilter.value;
       this.renderStandardConfigList();
     });
+    // The toggle of the APPLICABLE standard-configuration list, placed between the section title and
+    // the list (mirrors the functionality section). Same `.codbi-func-config__show-all` style; the
+    // list starts COLLAPSED like the second one.
+    const stdMainToggleButton = document.createElement("button");
+    stdMainToggleButton.type = "button";
+    stdMainToggleButton.className = "codbi-func-config__show-all codbi-func-config__show-all--main";
+    stdMainToggleButton.setAttribute("aria-expanded", "false");
+    stdMainToggleButton.addEventListener("click", () => this.toggleStdApplicableList());
+    // Explains what the button is for (native tooltip).
+    stdMainToggleButton.title = kI18n("designer.element.standardConfig.label.hint");
     const stdOptions = document.createElement("div");
     stdOptions.className = "codbi-func-config__options";
     stdList.append(stdFilter, stdOptions);
@@ -281,9 +326,11 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const stdOptionsAll = document.createElement("div");
     stdOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
     stdAllList.append(stdAllFilter, stdOptionsAll);
-    stdSection.append(stdTitle, stdList, stdToggleButton, stdAllList);
+    stdSection.append(stdMainToggleButton, stdList, stdToggleButton, stdAllList);
     this.stdOptions = stdOptions;
     this.stdFilter = stdFilter;
+    this.stdList = stdList;
+    this.stdMainToggleButton = stdMainToggleButton;
     this.stdAllList = stdAllList;
     this.stdOptionsAll = stdOptionsAll;
     this.stdToggleButton = stdToggleButton;
@@ -304,7 +351,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.renderStandardConfigList();
     this.renderFunctionalityList();
     this.renderParams();
+    this.syncApplicableVisibility();
     this.syncInapplicableVisibility();
+    this.syncStdApplicableVisibility();
     this.syncStdInapplicableVisibility();
   }
 
@@ -529,6 +578,41 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     return row;
   }
 
+  /** Shows/hides the APPLICABLE functionality list (and syncs its toggle button). */
+  private toggleApplicableList(): void {
+    this.showApplicable = !this.showApplicable;
+    this.syncApplicableVisibility();
+  }
+
+  /**
+   * Sets a toggle button's `▾`/`▸` state indicator, its `aria-expanded` attribute and its
+   * state-INDEPENDENT label resolved from `labelKey` — the text never changes with the state, only
+   * the arrow does (e.g. "▸ Funktionalitäten" / "▾ Funktionalitäten").
+   *
+   * @param button   The toggle button to update.
+   * @param expanded Whether the list it controls is currently expanded.
+   * @param labelKey The message key of the (fixed) button label.
+   */
+  private syncToggleButton(button: HTMLButtonElement, expanded: boolean, labelKey: string): void {
+    // The chevron is its OWN element (not part of the label text) so `frame.css` can render it larger
+    // than the label — the `▸`/`▾` glyphs are barely visible at the button's 11px label size. It is
+    // purely decorative (the state is exposed via `aria-expanded`).
+    const chevron = document.createElement("span");
+    chevron.className = "codbi-func-config__show-all__chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    chevron.textContent = expanded ? "\u25BE" : "\u25B8";
+    // The leading space keeps `textContent` identical to the previous plain-text form.
+    button.replaceChildren(chevron, document.createTextNode(` ${kI18n(labelKey)}`));
+    button.setAttribute("aria-expanded", String(expanded));
+  }
+
+  /** Applies {@link showApplicable} to the APPLICABLE functionality list and its toggle button. */
+  private syncApplicableVisibility(): void {
+    this.funcList.style.display = this.showApplicable ? "block" : "none";
+    // The button doubles as the section heading: "Funktionalitäten".
+    this.syncToggleButton(this.mainToggleButton, this.showApplicable, "designer.widget.functionality.funcs");
+  }
+
   /** Shows/hides the second (non-applicable) functionality list. */
   private toggleInapplicableList(): void {
     this.showInapplicable = !this.showInapplicable;
@@ -538,53 +622,63 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   /** Applies {@link showInapplicable} to the second list and its toggle button. */
   private syncInapplicableVisibility(): void {
     this.funcAllList.style.display = this.showInapplicable ? "block" : "none";
-    this.allToggleButton.textContent =
-      (this.showInapplicable ? "\u25BE " : "\u25B8 ") +
-      kI18n(
-        this.showInapplicable ? "designer.element.property.funcs.hideAll" : "designer.element.property.funcs.showAll",
-      );
-    this.allToggleButton.setAttribute("aria-expanded", String(this.showInapplicable));
+    // "Mehr Funktionalitäten".
+    this.syncToggleButton(this.allToggleButton, this.showInapplicable, "designer.element.property.funcs.more");
   }
 
   /**
-   * Renders the two read-only **standard-configuration** lists:
+   * Renders the two **standard-configuration** lists:
    *
    * 1. the **main** list with the CSS standard **classes** the AVAILABLE CodBi standard
    *    configurations provide AND that are applicable to the selected element (applicability by the
-   *    config's `supportedFormelementtypes` — fail-open when the config declares none);
+   *    class's own widget list / the functionalities it applies — fail-open when the config declares
+   *    none), plus every class already applied to the element;
    * 2. the **second** list (hidden until toggled) with the complement — the CSS standard classes
    *    provided by configurations NOT deemed applicable to this element.
    *
    * Each row is one CSS-Class (e.g. `CodBi_NoFutureDate`, shown without the leading `.`) that a
-   * standard configuration defines via `loadConfig`/`loadConfigs`. A configuration that provides no
-   * CSS classes falls back to its config id as a single row. The rows are informational (no checkbox):
-   * a standard configuration is enabled form-wide via the form properties editor, never per element.
+   * standard configuration defines via `loadConfig`/`loadConfigs`. The row carries a checkbox that
+   * applies/removes the class on the selected element (see {@link toggleStandardConfigClass}); its
+   * checked state reflects the element's current `cssclasses`. A configuration that provides no CSS
+   * classes falls back to its config id as a single informational row (no checkbox — an id is not a
+   * class and cannot be applied to the element).
    */
   private renderStandardConfigList(): void {
     const query = this.stdQuery.trim().toLowerCase();
     const allQuery = this.stdAllQuery.trim().toLowerCase();
     const target = this.applicabilityElement();
+    const element = this.targetElement();
+    // The classes already on the element decide every checkbox's initial state.
+    const applied = new Set(element ? elementCssClasses(element as never) : []);
     const mainFragment = document.createDocumentFragment();
     const otherFragment = document.createDocumentFragment();
     let mainShown = 0;
 
     for (const [id, classes, funcs, spec] of activeStandardConfigs()) {
-      // The labels shown are the config's CSS classes (when it provides any), else its id.
-      const labels = classes && Object.keys(classes).length > 0 ? Object.keys(classes) : [id];
+      // The labels shown are the config's CSS classes (when it provides any), else its id. Only a
+      // real CSS class is applicable per element, so an id-only row stays informational.
+      const hasClasses = classes != null && Object.keys(classes).length > 0;
+      const labels = hasClasses ? Object.keys(classes as Record<string, unknown>) : [id];
       for (const label of labels) {
+        // A class the element already carries is ALWAYS shown (and checked) in the main list, so an
+        // applied class cannot silently disappear even when its declared applicability excludes this
+        // element (it can then still be unchecked).
+        const isSelected = hasClasses && applied.has(label);
         // Applicability is decided PER CSS-CLASS from that class's own widget list (its `classes`
         // entry) / the functionalities it actually applies (`funcs[class]`), so a config file may
         // legitimately split its classes across widget types.
-        const applicable = this.standardConfigClassApplies(funcs, classes, spec, label, target);
+        const applicable = isSelected || this.standardConfigClassApplies(funcs, classes, spec, label, target);
         const lower = label.toLowerCase();
-        // Each listing has its OWN inline filter.
-        const matches = applicable
-          ? query.length === 0 || lower.includes(query)
-          : allQuery.length === 0 || lower.includes(allQuery);
+        // Each listing has its OWN inline filter. Selected entries are never hidden by a filter
+        // mismatch so a selection cannot silently disappear.
+        const matches =
+          (applicable
+            ? query.length === 0 || lower.includes(query)
+            : allQuery.length === 0 || lower.includes(allQuery)) || isSelected;
         if (!matches) {
           continue;
         }
-        const row = this.buildStandardConfigRow(label);
+        const row = this.buildStandardConfigRow(label, isSelected, hasClasses);
         if (applicable) {
           mainShown += 1;
           mainFragment.appendChild(row);
@@ -654,15 +748,70 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     return funcNames.some((name) => functionalityAppliesTo(name, element));
   }
 
-  /** Builds one read-only standard-configuration row (a CSS-Class name or config id — not per-element toggled). */
-  private buildStandardConfigRow(label: string): HTMLElement {
-    const row = document.createElement("div");
-    row.className = "codbi-func-config__option codbi-func-config__option--readonly";
-    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;";
+  /**
+   * Applies/removes a standard configuration's CSS class on the SELECTED element. The class is the
+   * runtime hook of a standard configuration: each configuration's `loadConfig({ targets: ".<class>",
+   * FUNC })` matches elements by that class, so adding/removing the class enables/disables the
+   * configuration for THIS element — no `data-cb-func` needs to be written (the class carries it).
+   * The listing is re-rendered afterwards so the checkbox state and the list ordering stay in sync.
+   */
+  private toggleStandardConfigClass(label: string, on: boolean): void {
+    const item = this.targetElement();
+    if (!item) {
+      return;
+    }
+    setElementCssClass(item as never, label, on);
+    this.renderStandardConfigList();
+  }
+
+  /**
+   * Builds one standard-configuration option row.
+   *
+   * When the row is a real CSS class it carries the SAME cheque-box as a functionality row (the same
+   * `codbi-func-config__option` class + a plain `input[type="checkbox"]`, which `frame.css` paints
+   * darkorange) and applies/removes the class on the element via {@link toggleStandardConfigClass}.
+   * A configuration that provides no CSS class falls back to its id as a plain informational row (an
+   * id is not a class — there is nothing to apply per element).
+   *
+   * @param label       The CSS class name (or the config id for an id-only row).
+   * @param isSelected  Whether the element already carries the class.
+   * @param hasCheckbox **True** for a real CSS class (checkbox), **false** for an id-only row.
+   */
+  private buildStandardConfigRow(label: string, isSelected: boolean, hasCheckbox: boolean): HTMLElement {
+    if (!hasCheckbox) {
+      const readOnly = document.createElement("div");
+      readOnly.className = "codbi-func-config__option codbi-func-config__option--readonly";
+      readOnly.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;";
+      const readOnlyText = document.createElement("span");
+      readOnlyText.textContent = label;
+      readOnly.append(readOnlyText);
+      return readOnly;
+    }
+    const row = document.createElement("label");
+    row.className = "codbi-func-config__option";
+    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;cursor:pointer;";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = label;
+    checkbox.checked = isSelected;
+    checkbox.addEventListener("change", () => this.toggleStandardConfigClass(label, checkbox.checked));
     const text = document.createElement("span");
     text.textContent = label;
-    row.append(text);
+    row.append(checkbox, text);
     return row;
+  }
+
+  /** Shows/hides the APPLICABLE standard-configuration list (and syncs its toggle button). */
+  private toggleStdApplicableList(): void {
+    this.showStdApplicable = !this.showStdApplicable;
+    this.syncStdApplicableVisibility();
+  }
+
+  /** Applies {@link showStdApplicable} to the APPLICABLE standard-configuration list and its button. */
+  private syncStdApplicableVisibility(): void {
+    this.stdList.style.display = this.showStdApplicable ? "block" : "none";
+    // The button doubles as the section heading: "Standard-Konfigurationen".
+    this.syncToggleButton(this.stdMainToggleButton, this.showStdApplicable, "designer.element.standardConfig.label");
   }
 
   /** Shows/hides the second (non-applicable) standard-configuration list. */
@@ -674,14 +823,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   /** Applies {@link showStdInapplicable} to the second list and its toggle button. */
   private syncStdInapplicableVisibility(): void {
     this.stdAllList.style.display = this.showStdInapplicable ? "block" : "none";
-    this.stdToggleButton.textContent =
-      (this.showStdInapplicable ? "\u25BE " : "\u25B8 ") +
-      kI18n(
-        this.showStdInapplicable
-          ? "designer.element.standardConfig.hideAll"
-          : "designer.element.standardConfig.showAll",
-      );
-    this.stdToggleButton.setAttribute("aria-expanded", String(this.showStdInapplicable));
+    // "Mehr Standard-Konfigurationen".
+    this.syncToggleButton(this.stdToggleButton, this.showStdInapplicable, "designer.element.standardConfig.more");
   }
 
   /** Renders the parameter table of every selected functionality. */
@@ -1026,6 +1169,47 @@ function originalCaseKey(id: string): string {
 }
 
 /**
+ * Re-renders the per-element CodBi config panel of the CURRENTLY SELECTED element.
+ *
+ * The panel's functionality/standard-configuration listings are derived from
+ * `window.CodbiPluginData.detFunctionalities` (`supportedFormelementtypes`) at render time. When
+ * something OUTSIDE the designer updates that registry — notably the Angular local API-doc manager
+ * after a successful sync — the panel would keep showing the stale split until the element is
+ * re-selected or the designer is reloaded. This hook re-runs the panel's own `setValue` (with the
+ * element's unchanged selection), which rebuilds both listings and the parameter table in place.
+ *
+ * A no-op when no element is selected or the panel is not mounted.
+ */
+export function refreshElementFunctionalityConfig(): void {
+  try {
+    const view = (
+      instance() as unknown as
+        | {
+            getPropertyView?: () =>
+              | {
+                  getEditorForProperty?: (property: string) => { setValue?: (value: unknown) => void } | undefined;
+                  getPropertyEditors?: () => ReadonlyArray<{
+                    config?: { property?: string };
+                    setValue?: (value: unknown) => void;
+                  }>;
+                }
+              | undefined;
+          }
+        | undefined
+    )?.getPropertyView?.();
+    // Locate the mounted panel (some designer builds key the editor differently — fall back to a scan).
+    const editor =
+      view?.getEditorForProperty?.(ELEMENT_FUNCS_PROPERTY) ??
+      view?.getPropertyEditors?.().find((entry) => entry?.config?.property === ELEMENT_FUNCS_PROPERTY);
+
+    // Re-render with the element's CURRENT selection: `setValue` re-reads the property and redraws.
+    editor?.setValue?.(selectedProperty(ELEMENT_FUNCS_PROPERTY));
+  } catch (x) {
+    console.warn("[CodBi] Element: could not refresh the config panel", x);
+  }
+}
+
+/**
  * Registers the per-element CodBi configuration: the existing "CodBi" category and the composite
  * configurator bound to the element-scoped `funcs` property exposed on EVERY form element.
  */
@@ -1060,6 +1244,12 @@ export function registerElementFunctionalityProperties(): void {
       // No left-hand property label ("Funktionalitäten"): the panel is self-explanatory.
       label: "",
     } satisfies IElementFunctionalityConfigDescriptor);
+
+    // Publish the refresh hook so any OTHER part of the designer (e.g. the Angular local API-doc
+    // manager after a successful sync) can make the panel re-evaluate its listings in place.
+    if (window.CodbiPluginData) {
+      window.CodbiPluginData.refreshElementConfig = refreshElementFunctionalityConfig;
+    }
   } catch (x) {
     console.error("[CodBi] Failed to register the per-element CodBi properties", x);
   }

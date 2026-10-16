@@ -637,6 +637,20 @@
   box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.3);
   transform: translateY(1px) scale(0.98);
 }
+/* The toggle of the APPLICABLE list sits ABOVE the list it controls (the "not declared" toggles sit
+   BELOW theirs), so the default top margin is dropped and a small bottom gap takes its place. */
+.codbi-func-config__show-all--main {
+  margin: 0 auto 6px;
+}
+/* The ▸/▾ state indicator of a show/hide toggle button. It is its OWN element so it can be rendered
+   larger than the (11px) label — at the label size the small triangle glyphs are barely visible.
+   2.2em of the button's 11px ≈ 24px, i.e. more than twice the label size. */
+.codbi-func-config__show-all__chevron {
+  display: inline-block;
+  font-size: 2.2em;
+  line-height: 1;
+  vertical-align: middle;
+}
 
 /* The EP-builder launcher to the right of each parameter value field: a darkorange, rounded,
    transparent button with darkorange text. On hover it glows with a soft darkorange halo,

@@ -1,4 +1,5 @@
 import { instance as getDesignerInstance } from "@de-xima/fc-form-designer";
+import { codbiManagerCacheSuffix } from "./CodbiManagerBundle.js";
 
 /**
  * Loads the `cb-manager.js` Angular bundle (which also defines `cb-ai-assistant`) and wires the
@@ -16,9 +17,12 @@ import { instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 export function enableAICodBiAssistantDialog(): void {
   const baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   const resourceBase = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/`;
+  // Cache-bust the manager bundle with the plugin's build token (its URL carries no version, so a
+  // rebuilt bundle would otherwise never replace the browser's cached copy).
+  const cacheSuffix = codbiManagerCacheSuffix();
 
-  const scriptSrc = `${resourceBase}cb-manager.js`;
-  const cssSrc = `${resourceBase}cb-manager.css`;
+  const scriptSrc = `${resourceBase}cb-manager.js${cacheSuffix}`;
+  const cssSrc = `${resourceBase}cb-manager.css${cacheSuffix}`;
 
   // Load cb-manager.js (defines both cb-manager and cb-ai-assistant)
   if (!document.querySelector(`script[src="${scriptSrc}"]`)) {

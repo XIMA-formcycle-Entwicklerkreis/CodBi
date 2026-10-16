@@ -6,7 +6,10 @@ import type { TEditorCfg } from "@de-xima/fc-form-designer";
 
 import {
   ElementFunctionalityConfigEditor,
+  ELEMENT_FUNCS_PROPERTY,
   paramsToRemoveForRemovedFunctionality,
+  refreshElementFunctionalityConfig,
+  registerElementFunctionalityProperties,
   type IElementFunctionalityConfigDescriptor,
 } from "../src/js/ElementFunctionalityConfigEditor.js";
 
@@ -58,6 +61,13 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
     expect(optionIds(rootEl, ".codbi-func-config__options--all")).toEqual(["Html.Panel"]);
   });
 
+  /** The functionality section (i.e. `rootEl`'s section that is NOT the standard-configuration one). */
+  function funcSection(rootEl: HTMLElement): HTMLElement {
+    return Array.from(rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__section")).find(
+      (section) => !section.classList.contains("codbi-func-config__section--standards"),
+    ) as HTMLElement;
+  }
+
   it("keeps the second list hidden until the toggle button is clicked", () => {
     TestState.language = "en";
     (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
@@ -65,16 +75,58 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
     };
 
     const rootEl = buildEditor("XTextField", {});
-    const allList = rootEl.querySelector<HTMLElement>(".codbi-func-config__funclist--all");
-    const toggle = rootEl.querySelector<HTMLButtonElement>(".codbi-func-config__show-all");
+    const section = funcSection(rootEl);
+    const allList = section.querySelector<HTMLElement>(".codbi-func-config__funclist--all");
+    // The toggles of the SECOND list are the ones WITHOUT the `--main` modifier (the applicable list
+    // has its own toggle above it).
+    const toggle = section.querySelector<HTMLButtonElement>(
+      ".codbi-func-config__show-all:not(.codbi-func-config__show-all--main)",
+    );
 
+    // Explains what the button is for (native tooltip).
+    expect(toggle?.title).toBe(
+      "Shows further functionalities that are not declared for the selected element (apply with care).",
+    );
     expect(allList?.style.display).toBe("none");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    // The label is state-INDEPENDENT ("Mehr Funktionalitäten"); only the arrow changes on toggle.
+    expect(toggle?.textContent).toBe("\u25B8 More functionalities");
 
     toggle?.click();
 
     expect(allList?.style.display).toBe("block");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.textContent).toBe("\u25BE More functionalities");
+  });
+
+  it("hides the APPLICABLE functionality list behind its own toggle (collapsed by default)", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: { "Any.Thing": {} },
+    };
+
+    const rootEl = buildEditor("XTextField", {});
+    const section = funcSection(rootEl);
+    const mainList = section.querySelector<HTMLElement>(
+      ".codbi-func-config__funclist:not(.codbi-func-config__funclist--all)",
+    );
+    const toggle = section.querySelector<HTMLButtonElement>(".codbi-func-config__show-all--main");
+
+    // Explains what the button is for (native tooltip).
+    expect(toggle?.title).toBe(
+      "Shows the functionalities applicable to the selected element. Click to show/hide the list.",
+    );
+    // Collapsed by default (like the not-applicable list); the toggle reveals it. Its label is the
+    // FIXED section heading ("Funktionalitäten") — only the arrow reflects the state.
+    expect(mainList?.style.display).toBe("none");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.textContent).toBe("\u25B8 Functionalities");
+
+    toggle?.click();
+
+    expect(mainList?.style.display).toBe("block");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.textContent).toBe("\u25BE Functionalities");
   });
 });
 
@@ -335,17 +387,58 @@ describe("ElementFunctionalityConfigEditor standard-configuration lists", () => 
     const allList = section.querySelector<HTMLElement>(".codbi-func-config__funclist--all");
     const toggle = section.querySelector<HTMLButtonElement>(".codbi-func-config__show-all--std");
 
+    // Explains what the button is for (native tooltip).
+    expect(toggle?.title).toBe(
+      "Shows further standard configurations that are not declared as applicable to the selected element.",
+    );
     expect(allList?.style.display).toBe("none");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    // The label is state-INDEPENDENT ("Mehr Standard-Konfigurationen"); only the arrow changes.
+    expect(toggle?.textContent).toBe("\u25B8 More standard configurations");
 
     toggle?.click();
 
     expect(allList?.style.display).toBe("block");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.textContent).toBe("\u25BE More standard configurations");
   });
 
-  it("renders standard-config rows as read-only (no per-element checkbox)", () => {
+  it("hides the APPLICABLE standard-config list behind its own toggle (collapsed by default)", () => {
     TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        "Text.Box": { classes: { CodBi_TextRegex: { description: "x", formelementtypes: ["XTextField"] } } },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", {});
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const mainList = section.querySelector<HTMLElement>(
+      ".codbi-func-config__funclist:not(.codbi-func-config__funclist--all)",
+    );
+    const toggle = section.querySelector<HTMLButtonElement>(".codbi-func-config__show-all--main");
+
+    // Explains what the button is for (native tooltip).
+    expect(toggle?.title).toBe(
+      "Shows the standard configurations applicable to the selected element. Click to show/hide the list.",
+    );
+    // Collapsed by default (like the not-applicable list); the toggle reveals it. Its label is the
+    // FIXED section heading ("Standard-Konfigurationen") — only the arrow reflects the state.
+    expect(mainList?.style.display).toBe("none");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.textContent).toBe("\u25B8 Standard configurations");
+
+    toggle?.click();
+
+    expect(mainList?.style.display).toBe("block");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.textContent).toBe("\u25BE Standard configurations");
+  });
+
+  it("renders an id-only config row as read-only (no per-element checkbox)", () => {
+    TestState.language = "en";
+    // A config that provides NO CSS classes falls back to its id as a row. An id is not a class, so
+    // there is nothing to apply to the element — the row stays informational (no checkbox).
     (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
       detStandards: {
         "Text.Box": { Active: true, supportedFormelementtypes: ["XTextField"] },
@@ -358,6 +451,65 @@ describe("ElementFunctionalityConfigEditor standard-configuration lists", () => 
 
     expect(row?.classList.contains("codbi-func-config__option--readonly")).toBe(true);
     expect(row?.querySelector("input[type=checkbox]")).toBeNull();
+  });
+
+  it("applies/removes a standard-config class on the element through its checkbox", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        Appointments: {
+          classes: {
+            CodBi_NoFutureDate: { description: "Prevents selecting future dates.", formelementtypes: ["XTextField"] },
+          },
+        },
+      },
+    };
+
+    // A pre-existing UNRELATED class must survive every toggle untouched.
+    const properties: Record<string, unknown> = { cssclasses: ["MyOwnClass"] };
+    const rootEl = buildEditor("XTextField", properties);
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const mainRow = ".codbi-func-config__options:not(.codbi-func-config__options--all) .codbi-func-config__option";
+
+    // The row carries a real checkbox (styled by `.codbi-func-config__option input[type=checkbox]`),
+    // initially unchecked because the element does not carry the class yet.
+    let checkbox = section.querySelector<HTMLInputElement>(`${mainRow} input[type=checkbox]`);
+    expect(checkbox).not.toBeNull();
+    expect(checkbox?.checked).toBe(false);
+
+    // Checking it APPLIES the class to the element (and keeps the unrelated one).
+    checkbox!.checked = true;
+    checkbox!.dispatchEvent(new Event("change"));
+    expect(properties.cssclasses).toEqual(["MyOwnClass", "CodBi_NoFutureDate"]);
+
+    // The re-rendered row reflects the applied state.
+    checkbox = section.querySelector<HTMLInputElement>(`${mainRow} input[type=checkbox]`);
+    expect(checkbox?.checked).toBe(true);
+
+    // Unchecking removes ONLY that class again.
+    checkbox!.checked = false;
+    checkbox!.dispatchEvent(new Event("change"));
+    expect(properties.cssclasses).toEqual(["MyOwnClass"]);
+  });
+
+  it("keeps a class the element already carries in the applicable list (checked) although its type excludes it", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        // Declared for containers only — yet the XTextField below already carries the class.
+        "Panel.Wrap": { classes: { CodBi_Panel: { description: "Panel.", formelementtypes: ["XContainer"] } } },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", { cssclasses: ["CodBi_Panel"] });
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const mainList = ".codbi-func-config__options:not(.codbi-func-config__options--all)";
+
+    // Shown (and checked) in the MAIN list so the applied class can be unchecked, never hidden.
+    expect(stdOptionIds(rootEl, mainList)).toEqual(["CodBi_Panel"]);
+    expect(stdOptionIds(rootEl, ".codbi-func-config__options--all")).toEqual([]);
+    const checkbox = section.querySelector<HTMLInputElement>(`${mainList} input[type=checkbox]`);
+    expect(checkbox?.checked).toBe(true);
   });
 
   it('excludes holistic standard configs (the "Holistic" keyword) from both listings', () => {
@@ -383,6 +535,44 @@ describe("ElementFunctionalityConfigEditor standard-configuration lists", () => 
     expect(complement).toEqual([]);
     expect([...applicable, ...complement]).not.toContain("Holistic.RegEx");
     expect([...applicable, ...complement]).not.toContain("Holistic.Cleave");
+  });
+});
+
+describe("refreshElementFunctionalityConfig (post-sync panel refresh)", () => {
+  it("re-renders the mounted config panel through its own `setValue`", () => {
+    let called = false;
+    TestState.designerInstance = {
+      getSelectedMasterItem: () => ({ className: "XTextField", getPersist: () => ({ properties: {} }) }),
+      getPropertyView: () => ({
+        getEditorForProperty: (property: string) =>
+          property === ELEMENT_FUNCS_PROPERTY
+            ? {
+                setValue: () => {
+                  called = true;
+                },
+              }
+            : undefined,
+      }),
+    };
+
+    refreshElementFunctionalityConfig();
+
+    // Reaching the panel is the whole point: `setValue` rebuilds both listings from the (just synced)
+    // `detFunctionalities`, so the changed applicability shows without a designer reload.
+    expect(called).toBe(true);
+  });
+
+  it("is published on window.CodbiPluginData so the local API-doc manager can call it", () => {
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {},
+      detStandards: {},
+    };
+
+    registerElementFunctionalityProperties();
+
+    const published = (window as unknown as { CodbiPluginData: { refreshElementConfig?: unknown } }).CodbiPluginData
+      .refreshElementConfig;
+    expect(typeof published).toBe("function");
   });
 });
 

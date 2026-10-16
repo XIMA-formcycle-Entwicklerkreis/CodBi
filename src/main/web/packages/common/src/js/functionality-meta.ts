@@ -89,7 +89,13 @@ export function normalizeSupportedFormelementtype(
   const requirements: IFormElementRequirement[] = [];
 
   if (typeof spec === "string") {
-    requirements.push({ type: spec.trim() });
+    // A plain string may be a single widget class (e.g. `"XTextField"`) OR a comma-separated list
+    // (e.g. `"XSelect,XTextField"`) — the local API-doc / manager channel can publish the spec as a
+    // joined string rather than an array. Split on commas so each class becomes its own requirement;
+    // a single-class string (no comma) is unaffected. Widget class names never contain commas.
+    for (const part of spec.split(",")) {
+      requirements.push({ type: part.trim() });
+    }
   } else if (Array.isArray(spec)) {
     for (const type of spec) {
       requirements.push({ type: String(type).trim() });

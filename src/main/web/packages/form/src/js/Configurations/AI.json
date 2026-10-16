@@ -1,21 +1,66 @@
 {
   "Description": "/functions/Configurations_AI.loadConfig.html",
   "classes": {
-    "AI_OCR_Receiver": "Apply to an XUpload field that should receive OCR-extracted text. The OCR result is placed into the element matching data-cb-Field.",
-    "AI_LLAMA_CHAT_Input": "Apply to the text input field of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_Send": "Apply to the send button of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_Stop": "Apply to the stop button of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_Upload": "Apply to the file upload button of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_Thinking": "Apply to the thinking indicator element of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_Internet": "Apply to the internet search toggle of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_Location": "Apply to the location sharing button of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_MailForward": "Apply to the mail forward button of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_MailAddress": "Apply to the mail address input of an AI LLAMA chat widget.",
-    "AI_LLAMA_CHAT_AlertOnFinish": "Apply to the alert-on-finish toggle of an AI LLAMA chat widget.",
-    "AI_LLAMA_QA_Exclude": "Apply to a container (XContainer) element whose contents should be excluded from AI question search.",
-    "AI_LLAMA_STANDARD_QA_Question": "Apply to an XTextField that receives AI responses to questions specified in data-cb-Question.",
-    "AI_LLAMA_STANDARD_TXTQA_Question": "Apply to an XTextField that receives AI responses to questions based on source fields.",
-    "AI_LLAMA_TXTQA_Source": "Apply to an XTextField whose value should be supplied as source context to the AI for question answering."
+    "AI_OCR_Receiver": {
+      "description": "Apply to an XUpload field that should receive OCR-extracted text. The OCR result is placed into the element matching data-cb-Field.",
+      "formelementtypes": ["XTextField", "XTextArea"]
+    },
+    "AI_LLAMA_CHAT_Input": {
+      "description": "Apply to the text input field of an AI LLAMA chat widget.",
+      "formelementtypes": ["XTextArea"]
+    },
+    "AI_LLAMA_CHAT_Send": {
+      "description": "Apply to the send button of an AI LLAMA chat widget.",
+      "formelementtypes": ["XButtonList"]
+    },
+    "AI_LLAMA_CHAT_Stop": {
+      "description": "Apply to the stop button of an AI LLAMA chat widget.",
+      "formelementtypes": ["XButtonList"]
+    },
+    "AI_LLAMA_CHAT_Upload": {
+      "description": "Apply to the file upload button of an AI LLAMA chat widget.",
+      "formelementtypes": ["XUpload"]
+    },
+    "AI_LLAMA_CHAT_Thinking": {
+      "description": "Apply to the thinking indicator element of an AI LLAMA chat widget.",
+      "formelementtypes": ["XCheckbox"]
+    },
+    "AI_LLAMA_CHAT_Internet": {
+      "description": "Apply to the internet search toggle of an AI LLAMA chat widget.",
+      "formelementtypes": ["XCheckbox"]
+    },
+    "AI_LLAMA_CHAT_Location": {
+      "description": "Apply to the location sharing button of an AI LLAMA chat widget.",
+      "formelementtypes": ["XCheckbox"]
+    },
+    "AI_LLAMA_CHAT_MailForward": {
+      "description": "Apply to the mail forward button of an AI LLAMA chat widget.",
+      "formelementtypes": ["XCheckbox"]
+    },
+    "AI_LLAMA_CHAT_MailAddress": {
+      "description": "Apply to the mail address input of an AI LLAMA chat widget.",
+      "formelementtypes": ["XTextField"]
+    },
+    "AI_LLAMA_CHAT_AlertOnFinish": {
+      "description": "Apply to the alert-on-finish toggle of an AI LLAMA chat widget.",
+      "formelementtypes": ["XCheckbox"]
+    },
+    "AI_LLAMA_QA_Exclude": {
+      "description": "Apply to a container (XContainer) element whose contents should be excluded from AI question search.",
+      "formelementtypes": ["XContainer", "XFieldSet"]
+    },
+    "AI_LLAMA_STANDARD_QA_Question": {
+      "description": "Apply to an XTextField that receives AI responses to questions specified in data-cb-Question.",
+      "formelementtypes": ["XTextField", "XTextArea"]
+    },
+    "AI_LLAMA_STANDARD_TXTQA_Question": {
+      "description": "Apply to an XTextField that receives AI responses to questions based on source fields.",
+      "formelementtypes": ["XTextField", "XTextArea"]
+    },
+    "AI_LLAMA_TXTQA_Source": {
+      "description": "Apply to an XTextField whose value should be supplied as source context to the AI for question answering.",
+      "formelementtypes": ["XTextField", "XTextArea"]
+    }
   },
   "funcs": {
     "AI_OCR_Receiver": "HTML.Input.Trans.RegEx",

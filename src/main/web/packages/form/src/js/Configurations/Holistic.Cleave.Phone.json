@@ -3,5 +3,6 @@
   "classes": {},
   "globals": {},
   "targets": "[data-vdt=\"phone\"]:not(.CodBi_XCL):not(.CodBi_XCL_Cleave_Phone)",
-  "func": "HTML.Input.Cleave"
+  "func": "HTML.Input.Cleave",
+  "supportedFormelementtypes": ["Holistic"]
 }

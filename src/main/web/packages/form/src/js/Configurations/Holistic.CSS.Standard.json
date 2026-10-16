@@ -6,5 +6,6 @@
     "CodBi_CSS_Darkmodescheme": ""
   },
   "targets": "head",
-  "func": "HTML.CSS"
+  "func": "HTML.CSS",
+  "supportedFormelementtypes": ["Holistic"]
 }

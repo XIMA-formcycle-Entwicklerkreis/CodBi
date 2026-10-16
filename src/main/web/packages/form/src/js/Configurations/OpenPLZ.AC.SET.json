@@ -1,10 +1,22 @@
 {
   "Description": "/functions/Configurations_OpenPLZ.AC.SET.loadConfig.html",
   "classes": {
-    "CodBi_OpenPLZ_AC_SET_PLZ": "Apply to an XTextField representing a postal code in an OpenPLZ address autocomplete set. Must be grouped with related address fields (Locality, Street, BuildingNumber).",
-    "CodBi_OpenPLZ_AC_SET_Locality": "Apply to an XTextField representing a locality/city in an OpenPLZ address autocomplete set.",
-    "CodBi_OpenPLZ_AC_SET_Street": "Apply to an XTextField representing a street in an OpenPLZ address autocomplete set.",
-    "CodBi_OpenPLZ_AC_SET_BuildingNumber": "Apply to an XTextField representing a building number in an OpenPLZ address autocomplete set."
+    "CodBi_OpenPLZ_AC_SET_PLZ": {
+      "description": "Apply to an XTextField representing a postal code in an OpenPLZ address autocomplete set. Must be grouped with related address fields (Locality, Street, BuildingNumber).",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_OpenPLZ_AC_SET_Locality": {
+      "description": "Apply to an XTextField representing a locality/city in an OpenPLZ address autocomplete set.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_OpenPLZ_AC_SET_Street": {
+      "description": "Apply to an XTextField representing a street in an OpenPLZ address autocomplete set.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_OpenPLZ_AC_SET_BuildingNumber": {
+      "description": "Apply to an XTextField representing a building number in an OpenPLZ address autocomplete set.",
+      "formelementtypes": ["XTextField"]
+    }
   },
   "funcs": {
     "CodBi_OpenPLZ_AC_SET_PLZ": "HTML.Input.Cleave, OpenPLZ.Autocomplete",

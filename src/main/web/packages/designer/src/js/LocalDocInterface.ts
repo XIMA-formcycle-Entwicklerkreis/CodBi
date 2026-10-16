@@ -1591,12 +1591,15 @@ export function enableLocalDocInterface(): void {
                           for (const standard in window.CodbiPluginData.detStandards) {
                             if (window.CodbiPluginData.detStandards[standard]?.Active) {
                               for (const cssClass in window.CodbiPluginData.detStandards[standard].classes) {
+                                // The class entry may be a plain description string (legacy/manager
+                                // shape) or an object `{ description, formelementtypes }` (optimised
+                                // shape where the widget list lives with the description).
+                                const entry = window.CodbiPluginData.detStandards[standard].classes[cssClass];
+                                const description = typeof entry === "string" ? entry : (entry?.description ?? "");
                                 availableClasses.push({
                                   standard: standard,
                                   name: cssClass,
-                                  description: DEFINED.tsCheck(
-                                    window.CodbiPluginData.detStandards[standard].classes[cssClass],
-                                  ),
+                                  description: DEFINED.tsCheck(description),
                                 });
                               }
                             }

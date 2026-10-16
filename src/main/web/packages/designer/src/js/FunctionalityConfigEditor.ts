@@ -307,27 +307,46 @@ function functionalityRequirements(id: string): IFormElementRequirement[] {
     return undefined;
   };
 
+  // Resolves a published entry case-insensitively. The `funcMeta` and `detFunctionalities` registries
+  // are keyed by (lowercase) functionality id (merged from the `.json` file base names), while the id
+  // passed here may use any casing (e.g. `HTML.Input.Regex` vs the `html.input.regex` registry key).
+  const findEntry = (registry: { [key: string]: TPublished } | undefined): TPublished | undefined => {
+    if (!registry) {
+      return undefined;
+    }
+    const wanted = id.toLowerCase();
+    for (const key of Object.keys(registry)) {
+      if (key.toLowerCase() === wanted) {
+        return registry[key];
+      }
+    }
+    return undefined;
+  };
+
   try {
-    const published = window.CodbiPluginData?.funcMeta?.[id] as TPublished | undefined;
-    const publishedReqs = fromEntry(published);
+    const publishedReqs = fromEntry(
+      findEntry(window.CodbiPluginData?.funcMeta as { [key: string]: TPublished } | undefined),
+    );
 
     if (publishedReqs) {
       return publishedReqs;
     }
     // The designer's built-in functionality registry (`detFunctionalities`, merged from the `.json`
     // files by `CodbiFormDesignerResourcePlugin.getDetails()`); carries `supportedFormelementtypes`.
-    const detFunctionalities = (
-      window.CodbiPluginData as unknown as { detFunctionalities?: { [key: string]: TPublished } } | undefined
-    )?.detFunctionalities;
-    const detReqs = fromEntry(detFunctionalities?.[id]);
+    const detReqs = fromEntry(
+      findEntry(
+        (window.CodbiPluginData as unknown as { detFunctionalities?: { [key: string]: TPublished } } | undefined)
+          ?.detFunctionalities,
+      ),
+    );
 
     if (detReqs) {
       return detReqs;
     }
-    const entry = resolveFunctionalityEntry(id)?.formElements;
+    const formElements = resolveFunctionalityEntry(id)?.formElements;
 
-    if (Array.isArray(entry) && entry.length > 0) {
-      return entry.map((type) => ({ type: String(type) }));
+    if (Array.isArray(formElements) && formElements.length > 0) {
+      return formElements.map((type) => ({ type: String(type) }));
     }
   } catch {
     /* ignore */

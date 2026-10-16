@@ -3,5 +3,6 @@
   "classes": {},
   "globals": {},
   "targets": "fieldset:not(.CodBi_XCL):not(.CodBi_XCL_FieldSetToPanel)",
-  "func": "HTML.Panel"
+  "func": "HTML.Panel",
+  "supportedFormelementtypes": ["Holistic"]
 }

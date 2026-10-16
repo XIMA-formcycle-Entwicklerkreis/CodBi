@@ -6,5 +6,6 @@
     "Matomo_URL": ""
   },
   "targets": "body",
-  "func": "Matomo.Tracking"
+  "func": "Matomo.Tracking",
+  "supportedFormelementtypes": ["Holistic"]
 }

@@ -167,8 +167,11 @@ interface InputDataItem {
   Description?: string;
   /** The global Variables defined, if we're dealing with a CodBi Standard Configuration. */
   globals?: { [name: string]: string } | SimplifiedNamedItem[];
-  /** The CSS-Classes defined, if we're dealing with a CodBi Standard Configuration. */
-  classes?: { [name: string]: string } | SimplifiedNamedItem[];
+  /**
+   * The CSS-Classes defined, if we're dealing with a CodBi Standard Configuration. Each value is
+   * either the legacy/manager plain-string description or — under the optimised shape emitted by the
+   * build-time generator — an object holding the description together with its FORMCYCLE widget list. */
+  classes?: { [name: string]: { description?: string; formelementtypes?: string[] } | string } | SimplifiedNamedItem[];
   /** The parameter defined, if we're dealing with either a CodBi Functionality or an Elementplaceholder. */
   Parameter?: { [name: string]: string } | SimplifiedNamedItem[];
   /**
@@ -1749,10 +1752,30 @@ export class Manager implements AfterViewInit {
     const result = {};
 
     for (const element of toConvert ?? []) {
-      result[element.Name] = element.Description;
+      result[element.Name] = this.classDescriptionOf(element.Description);
     }
 
     return result;
+  }
+  /**
+   * Normalises an incoming CSS-class value to its plain string description.
+   *
+   * Under the optimised shape emitted by the build-time generator a class value may be an
+   * {@link object } `{ description, formelementtypes }`; the manager only edits string descriptions
+   * and has no UI to set per-class form-element types, so such values are squashed down to their
+   * description (fail-open) whenever they cross an import/export boundary.
+   *
+   * @param value The raw class value (a description {@link string } or an optimised object).
+   *
+   * @returns The plain string description. */
+  protected classDescriptionOf(value: unknown): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (typeof value === "object" && value !== null) {
+      return (value as { description?: string }).description ?? "";
+    }
+    return value == null ? "" : String(value);
   }
   /**
    * Converts an array of {@link ApiParameter }s into a map of **name → prompt**, skipping entries
@@ -3921,9 +3944,11 @@ export class Manager implements AfterViewInit {
               });
             }
             for (const cKey in toConvert[key].classes) {
+              // Optimised class values may be objects `{ description, formelementtypes }`; the manager's
+              // internal class rows are string-keyed, so squash down to the plain description string.
               DEFINED.tsCheck<Array<unknown>>(existingNode.data.classes).push({
                 Name: cKey,
-                Description: toConvert[key].classes[cKey],
+                Description: this.classDescriptionOf(toConvert[key].classes[cKey]),
               });
             }
 
@@ -3990,9 +4015,11 @@ export class Manager implements AfterViewInit {
               });
             }
             for (const cKey in toConvert[key].classes) {
+              // Optimised class values may be objects `{ description, formelementtypes }`; the manager's
+              // internal class rows are string-keyed, so squash down to the plain description string.
               DEFINED.tsCheck<Array<unknown>>(newNode.data.classes).push({
                 Name: cKey,
-                Description: toConvert[key].classes[cKey],
+                Description: this.classDescriptionOf(toConvert[key].classes[cKey]),
               });
             }
 
@@ -4151,6 +4178,9 @@ export class Manager implements AfterViewInit {
         | Array<object>
         | { Name: string | undefined; Description: string | undefined }
         | { [name: string]: string }
+        // Optimised shape emitted by the build-time generator: `classes[class]` may be an object
+        // `{ description?, formelementtypes? }` (or a plain string description).
+        | { [name: string]: { description?: string; formelementtypes?: string[] } | string }
         | SimplifiedNamedItem[]
         | undefined,
     ) => {
@@ -4183,7 +4213,12 @@ export class Manager implements AfterViewInit {
             for (const nameKey in incomingCollection) {
               if (Object.prototype.hasOwnProperty.call(incomingCollection, nameKey)) {
                 if (incomingCollection[nameKey] !== undefined && incomingCollection[nameKey] !== null) {
-                  itemsToAdd.push({ Name: nameKey, Description: String(incomingCollection[nameKey]) });
+                  // Under the optimised shape a class value may be an object `{ description, formelementtypes }`;
+                  // squash it to a plain string description so the manager's string-based tree keeps working.
+                  itemsToAdd.push({
+                    Name: nameKey,
+                    Description: this.classDescriptionOf(incomingCollection[nameKey]),
+                  });
                 }
               }
             }

@@ -4,5 +4,6 @@
     "CodBi_XCL_Speech": ""
   },
   "targets": "input[type=\"text\"]:not(.CodBi_XCL):not(.CodBi_XCL_Speech):not(.AI_LLAMA_CHAT_Input):not([data-cb-func]), textarea:not(.CodBi_XCL):not(.CodBi_XCL_Speech):not(.AI_LLAMA_CHAT_Input):not([data-cb-func])",
-  "func": "MEDIA.INPUT.SPEECH"
+  "func": "MEDIA.INPUT.SPEECH",
+  "supportedFormelementtypes": ["Holistic"]
 }

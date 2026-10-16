@@ -1,34 +1,118 @@
 {
   "Description": "/functions/Configurations_Appointments.loadConfig.html",
   "classes": {
-    "CodBi_NoFutureDate": "Apply to an XTextField with datatype='dateDE'. Prevents selecting future dates.",
-    "CodBi_DateFrame_1_Begin": "Apply to the BEGIN (minimum) date field of a date range pair. Reference the end date via MaxField parameter.",
-    "CodBi_DateFrame_1_End": "Apply to the END (maximum) date field of a date range pair.",
-    "CodBi_DateFrame_2_Begin": "Apply to the BEGIN date field of a second date range pair.",
-    "CodBi_DateFrame_2_End": "Apply to the END date field of a second date range pair.",
-    "CodBi_DateFrame_3_Begin": "Apply to the BEGIN date field of a third date range pair.",
-    "CodBi_DateFrame_3_End": "Apply to the END date field of a third date range pair.",
-    "CodBi_DateFrame_4_Begin": "Apply to the BEGIN date field of a fourth date range pair.",
-    "CodBi_DateFrame_4_End": "Apply to the END date field of a fourth date range pair.",
-    "CodBi_DateFrame_5_Begin": "Apply to the BEGIN date field of a fifth date range pair.",
-    "CodBi_DateFrame_5_End": "Apply to the END date field of a fifth date range pair.",
-    "CodBi_TimeFrame_1_Begin": "Apply to the BEGIN (minimum) time field of a time range pair. Reference the end time via MaxField parameter.",
-    "CodBi_TimeFrame_1_End": "Apply to the END (maximum) time field of a time range pair.",
-    "CodBi_TimeFrame_2_Begin": "Apply to the BEGIN time field of a second time range pair.",
-    "CodBi_TimeFrame_2_End": "Apply to the END time field of a second time range pair.",
-    "CodBi_TimeFrame_3_Begin": "Apply to the BEGIN time field of a third time range pair.",
-    "CodBi_TimeFrame_3_End": "Apply to the END time field of a third time range pair.",
-    "CodBi_TimeFrame_4_Begin": "Apply to the BEGIN time field of a fourth time range pair.",
-    "CodBi_TimeFrame_4_End": "Apply to the END time field of a fourth time range pair.",
-    "CodBi_TimeFrame_5_Begin": "Apply to the BEGIN time field of a fifth time range pair.",
-    "CodBi_TimeFrame_5_End": "Apply to the END time field of a fifth time range pair.",
-    "CodBi_Date_Time_Join_Date": "Apply to the DATE input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
-    "CodBi_Date_Time_Join_Time": "Apply to the TIME input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
-    "CodBi_Date_Time_Join_Span_Begin": "Apply to the BEGIN date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-Begin parameter takes precedence.",
-    "CodBi_Date_Time_Join_Span_Begin_Time": "Apply to the BEGIN time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-BeginTime parameter takes precedence.",
-    "CodBi_Date_Time_Join_Span_End": "Apply to the END date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-End parameter takes precedence.",
-    "CodBi_Date_Time_Join_Span_End_Time": "Apply to the END time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-EndTime parameter takes precedence.",
-    "CodBi_Holidays_Listing": "Apply to an XSelect that should be filled with holidays for current and next years. The state is specified in global variable CodBi_Holidays_States."
+    "CodBi_NoFutureDate": {
+      "description": "Apply to an XTextField with datatype='dateDE'. Prevents selecting future dates.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_1_Begin": {
+      "description": "Apply to the BEGIN (minimum) date field of a date range pair. Reference the end date via MaxField parameter.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_1_End": {
+      "description": "Apply to the END (maximum) date field of a date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_2_Begin": {
+      "description": "Apply to the BEGIN date field of a second date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_2_End": {
+      "description": "Apply to the END date field of a second date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_3_Begin": {
+      "description": "Apply to the BEGIN date field of a third date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_3_End": {
+      "description": "Apply to the END date field of a third date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_4_Begin": {
+      "description": "Apply to the BEGIN date field of a fourth date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_4_End": {
+      "description": "Apply to the END date field of a fourth date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_5_Begin": {
+      "description": "Apply to the BEGIN date field of a fifth date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_DateFrame_5_End": {
+      "description": "Apply to the END date field of a fifth date range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_1_Begin": {
+      "description": "Apply to the BEGIN (minimum) time field of a time range pair. Reference the end time via MaxField parameter.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_1_End": {
+      "description": "Apply to the END (maximum) time field of a time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_2_Begin": {
+      "description": "Apply to the BEGIN time field of a second time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_2_End": {
+      "description": "Apply to the END time field of a second time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_3_Begin": {
+      "description": "Apply to the BEGIN time field of a third time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_3_End": {
+      "description": "Apply to the END time field of a third time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_4_Begin": {
+      "description": "Apply to the BEGIN time field of a fourth time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_4_End": {
+      "description": "Apply to the END time field of a fourth time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_5_Begin": {
+      "description": "Apply to the BEGIN time field of a fifth time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TimeFrame_5_End": {
+      "description": "Apply to the END time field of a fifth time range pair.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_Date_Time_Join_Date": {
+      "description": "Apply to the DATE input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_Date_Time_Join_Time": {
+      "description": "Apply to the TIME input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_Date_Time_Join_Span_Begin": {
+      "description": "Apply to the BEGIN date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-Begin parameter takes precedence.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_Date_Time_Join_Span_Begin_Time": {
+      "description": "Apply to the BEGIN time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-BeginTime parameter takes precedence.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_Date_Time_Join_Span_End": {
+      "description": "Apply to the END date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-End parameter takes precedence.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_Date_Time_Join_Span_End_Time": {
+      "description": "Apply to the END time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-EndTime parameter takes precedence.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_Holidays_Listing": {
+      "description": "Apply to an XSelect that should be filled with holidays for current and next years. The state is specified in global variable CodBi_Holidays_States.",
+      "formelementtypes": ["XSelect"]
+    }
   },
   "globals": {
     "CodBi_Holidays_States": ""

@@ -11,7 +11,14 @@ import {
   registerLocalizableProperty,
   registerCustomProperty,
 } from "@de-xima/fc-form-designer";
-import { Constants } from "codbi-common";
+import {
+  Constants,
+  standardConfigAppliesTo,
+  standardConfigClassTypes,
+  standardConfigIsHolistic,
+  type TStandardConfigClassSpec,
+  type TStandardConfigSupportedSpec,
+} from "codbi-common";
 import { setItemAttributeValueQuiet, removeFuncAttributeQuiet } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { codbiDocsUrl } from "./CodbiDocs.js";
@@ -136,6 +143,22 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private funcQuery = "";
   /** The current filter query for the second (non-applicable) functionality listing. */
   private allQuery = "";
+  /** The container holding the (filtered) APPLICABLE standard-configuration option rows (read-only). */
+  private readonly stdOptions: HTMLDivElement;
+  /** The inline filter input of the applicable standard-configuration listing. */
+  private readonly stdFilter: HTMLInputElement;
+  /** The container of the SECOND standard-config listing: configurations NOT applicable to the element. */
+  private readonly stdOptionsAll: HTMLDivElement;
+  /** The wrapper of the second standard-config listing (its visibility is toggled by {@link stdToggleButton}). */
+  private readonly stdAllList: HTMLDivElement;
+  /** The header button that shows/hides the second (non-applicable) standard-configuration list. */
+  private readonly stdToggleButton: HTMLButtonElement;
+  /** Whether the second (non-applicable) standard-configuration list is currently visible. */
+  private showStdInapplicable = false;
+  /** The current filter query for the applicable standard-configuration listing. */
+  private stdQuery = "";
+  /** The current filter query for the second (non-applicable) standard-configuration listing. */
+  private stdAllQuery = "";
 
   constructor(config: TEditorCfg<IElementFunctionalityConfigDescriptor>) {
     super(config, "", "text");
@@ -204,7 +227,69 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.allToggleButton = allToggleButton;
     // #endregion 1. Functionality picker.
 
-    // #region 2. Parameter table (applied directly to the selected element).
+    // #region 2. Standard-configuration listing (read-only). Shows the AVAILABLE CodBi standard
+    // configurations as two lists split by whether the configuration's `supportedFormelementtypes`
+    // matches the selected element's widget type — the same "applicable / not-applicable" split as
+    // the functionality lists. Holistic configurations and any `Active` (form-level toggle) state are
+    // ignored here: the Configurations metadata is global, not per-form. Standard configurations are
+    // NOT toggled per element (they are enabled form-wide via the form properties "Standard
+    // Configurations" editor), so the rows carry no checkbox: they are informational.
+    const stdSection = document.createElement("div");
+    stdSection.className = "codbi-func-config__section codbi-func-config__section--standards";
+    const stdTitle = document.createElement("strong");
+    stdTitle.className = "codbi-func-config__title";
+    stdTitle.textContent = kI18n("designer.element.standardConfig.label");
+    // The toggle for the SECOND (non-applicable) standard-configuration list. It stays hidden until
+    // the user clicks it (placed BELOW the list it controls), mirroring the functionality toggle.
+    const stdToggleButton = document.createElement("button");
+    stdToggleButton.type = "button";
+    stdToggleButton.className = "codbi-func-config__show-all codbi-func-config__show-all--std";
+    stdToggleButton.setAttribute("aria-expanded", "false");
+    stdToggleButton.addEventListener("click", () => this.toggleStdInapplicableList());
+    // The listing box CONTAINS the filter input (top) and the read-only option rows below it.
+    const stdList = document.createElement("div");
+    stdList.className = "codbi-func-config__funclist";
+    stdList.style.cssText = "max-height:160px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;";
+    const stdFilter = document.createElement("input");
+    stdFilter.type = "text";
+    stdFilter.className = "codbi-func-config__filter";
+    stdFilter.placeholder = kI18n("designer.element.standardConfig.filter");
+    stdFilter.value = this.stdQuery;
+    stdFilter.style.cssText = "width:100%;box-sizing:border-box;margin:0 0 4px;";
+    stdFilter.addEventListener("input", () => {
+      this.stdQuery = stdFilter.value;
+      this.renderStandardConfigList();
+    });
+    const stdOptions = document.createElement("div");
+    stdOptions.className = "codbi-func-config__options";
+    stdList.append(stdFilter, stdOptions);
+    // The SECOND list: available standard configurations NOT applicable to the selected element.
+    const stdAllList = document.createElement("div");
+    stdAllList.className = "codbi-func-config__funclist codbi-func-config__funclist--all";
+    stdAllList.style.cssText =
+      "max-height:160px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;display:none;margin-top:6px;";
+    const stdAllFilter = document.createElement("input");
+    stdAllFilter.type = "text";
+    stdAllFilter.className = "codbi-func-config__filter";
+    stdAllFilter.placeholder = kI18n("designer.element.standardConfig.filter");
+    stdAllFilter.value = this.stdAllQuery;
+    stdAllFilter.style.cssText = "width:100%;box-sizing:border-box;margin:0 0 4px;";
+    stdAllFilter.addEventListener("input", () => {
+      this.stdAllQuery = stdAllFilter.value;
+      this.renderStandardConfigList();
+    });
+    const stdOptionsAll = document.createElement("div");
+    stdOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
+    stdAllList.append(stdAllFilter, stdOptionsAll);
+    stdSection.append(stdTitle, stdList, stdToggleButton, stdAllList);
+    this.stdOptions = stdOptions;
+    this.stdFilter = stdFilter;
+    this.stdAllList = stdAllList;
+    this.stdOptionsAll = stdOptionsAll;
+    this.stdToggleButton = stdToggleButton;
+    // #endregion 2. Standard-configuration listing.
+
+    // #region 3. Parameter table (applied directly to the selected element).
     const paramSection = document.createElement("div");
     paramSection.className = "codbi-func-config__section";
     const paramTitle = document.createElement("strong");
@@ -213,12 +298,14 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.paramsHost = document.createElement("div");
     this.paramsHost.className = "codbi-func-config__params";
     paramSection.append(paramTitle, this.paramsHost);
-    // #endregion 2. Parameter table.
+    // #endregion 3. Parameter table.
 
-    this.root.append(funcSection, paramSection);
+    this.root.append(stdSection, funcSection, paramSection);
+    this.renderStandardConfigList();
     this.renderFunctionalityList();
     this.renderParams();
     this.syncInapplicableVisibility();
+    this.syncStdInapplicableVisibility();
   }
 
   /** See {@link Editors.BaseEditor }'s **getElement**. */
@@ -231,7 +318,12 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.selected = parseCsv(
       data != null && String(data) !== "" ? String(data) : selectedProperty(ELEMENT_FUNCS_PROPERTY),
     );
+    // Re-render BOTH listings when Formcycle (re)assigns the value / a different element is selected.
+    // The standard-config listing depends on the currently selected element's widget class; without a
+    // re-render here it stays locked to the state from construction time (when no element is selected
+    // yet, so only fail-open configs like the "Print" ones appear applicable).
     this.renderFunctionalityList();
+    this.renderStandardConfigList();
     this.renderParams();
   }
 
@@ -268,7 +360,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     } catch {
       properties = undefined;
     }
-    return { className: item.className ?? undefined, properties };
+    const result = { className: item.className ?? undefined, properties };
+    return result;
   }
 
   /**
@@ -451,6 +544,144 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         this.showInapplicable ? "designer.element.property.funcs.hideAll" : "designer.element.property.funcs.showAll",
       );
     this.allToggleButton.setAttribute("aria-expanded", String(this.showInapplicable));
+  }
+
+  /**
+   * Renders the two read-only **standard-configuration** lists:
+   *
+   * 1. the **main** list with the CSS standard **classes** the AVAILABLE CodBi standard
+   *    configurations provide AND that are applicable to the selected element (applicability by the
+   *    config's `supportedFormelementtypes` — fail-open when the config declares none);
+   * 2. the **second** list (hidden until toggled) with the complement — the CSS standard classes
+   *    provided by configurations NOT deemed applicable to this element.
+   *
+   * Each row is one CSS-Class (e.g. `CodBi_NoFutureDate`, shown without the leading `.`) that a
+   * standard configuration defines via `loadConfig`/`loadConfigs`. A configuration that provides no
+   * CSS classes falls back to its config id as a single row. The rows are informational (no checkbox):
+   * a standard configuration is enabled form-wide via the form properties editor, never per element.
+   */
+  private renderStandardConfigList(): void {
+    const query = this.stdQuery.trim().toLowerCase();
+    const allQuery = this.stdAllQuery.trim().toLowerCase();
+    const target = this.applicabilityElement();
+    const mainFragment = document.createDocumentFragment();
+    const otherFragment = document.createDocumentFragment();
+    let mainShown = 0;
+
+    for (const [id, classes, funcs, spec] of activeStandardConfigs()) {
+      // The labels shown are the config's CSS classes (when it provides any), else its id.
+      const labels = classes && Object.keys(classes).length > 0 ? Object.keys(classes) : [id];
+      for (const label of labels) {
+        // Applicability is decided PER CSS-CLASS from that class's own widget list (its `classes`
+        // entry) / the functionalities it actually applies (`funcs[class]`), so a config file may
+        // legitimately split its classes across widget types.
+        const applicable = this.standardConfigClassApplies(funcs, classes, spec, label, target);
+        const lower = label.toLowerCase();
+        // Each listing has its OWN inline filter.
+        const matches = applicable
+          ? query.length === 0 || lower.includes(query)
+          : allQuery.length === 0 || lower.includes(allQuery);
+        if (!matches) {
+          continue;
+        }
+        const row = this.buildStandardConfigRow(label);
+        if (applicable) {
+          mainShown += 1;
+          mainFragment.appendChild(row);
+        } else {
+          otherFragment.appendChild(row);
+        }
+      }
+    }
+    if (mainShown === 0) {
+      const empty = document.createElement("div");
+      empty.style.cssText = "padding:4px;color:#6b7280;";
+      empty.textContent = kI18n("designer.element.standardConfig.noResults");
+      mainFragment.appendChild(empty);
+    }
+    if (otherFragment.childElementCount === 0) {
+      const empty = document.createElement("div");
+      empty.style.cssText = "padding:4px;color:#6b7280;";
+      empty.textContent = kI18n("designer.element.standardConfig.noInapplicable");
+      otherFragment.appendChild(empty);
+    }
+    this.stdOptions.replaceChildren(mainFragment);
+    this.stdOptionsAll.replaceChildren(otherFragment);
+  }
+
+  /**
+   * Whether a single standard-configuration CSS class applies to the given element.
+   *
+   * The preferred, self-contained path reads the class's OWN entry of the config's `classes` map
+   * (`classes[cssClass].formelementtypes` — the widget types derived at build time from that class's
+   * FUNC `@SupportedFormelementtype` metadata and persisted into the config `.json`). This needs no
+   * `detFunctionalities`/functionality-registry resolution.
+   *
+   * When the class entry carries no widget types, applicability falls back to the OR across the
+   * functionalities that class actually applies (`funcs[cssClass]`, a comma-separated FUNC list),
+   * then to a legacy/synthetic file-level ARRAY/string `spec`, else fail-open (applies to any
+   * element).
+   */
+  private standardConfigClassApplies(
+    funcs: Record<string, string> | undefined,
+    classes: Record<string, TStandardConfigClassSpec> | undefined,
+    spec: TStandardConfigSupportedSpec | undefined,
+    cssClass: string,
+    element: IApplicabilityElement | undefined,
+  ): boolean {
+    // Preferred: the class's OWN widget-type list (held in its `classes` entry) — no registry lookup.
+    const perClass = standardConfigClassTypes(classes, cssClass);
+    if (perClass != null) {
+      return standardConfigAppliesTo(perClass, element);
+    }
+    const csv = funcs?.[cssClass];
+    if (csv == null || String(csv).trim() === "") {
+      // No per-class FUNC mapping and no per-class widget list. Honor a legacy/synthetic
+      // file-level ARRAY/string `spec` when present; otherwise fail-open — a config class with no
+      // applicable functionality targets ANY element.
+      if (Array.isArray(spec)) {
+        return standardConfigAppliesTo(spec, element);
+      }
+      if (typeof spec === "string") {
+        return standardConfigAppliesTo(spec, element);
+      }
+      return true;
+    }
+    const funcNames = String(csv)
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    return funcNames.some((name) => functionalityAppliesTo(name, element));
+  }
+
+  /** Builds one read-only standard-configuration row (a CSS-Class name or config id — not per-element toggled). */
+  private buildStandardConfigRow(label: string): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "codbi-func-config__option codbi-func-config__option--readonly";
+    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;";
+    const text = document.createElement("span");
+    text.textContent = label;
+    row.append(text);
+    return row;
+  }
+
+  /** Shows/hides the second (non-applicable) standard-configuration list. */
+  private toggleStdInapplicableList(): void {
+    this.showStdInapplicable = !this.showStdInapplicable;
+    this.syncStdInapplicableVisibility();
+  }
+
+  /** Applies {@link showStdInapplicable} to the second list and its toggle button. */
+  private syncStdInapplicableVisibility(): void {
+    this.stdAllList.style.display = this.showStdInapplicable ? "block" : "none";
+    this.stdToggleButton.textContent =
+      (this.showStdInapplicable ? "\u25BE " : "\u25B8 ") +
+      kI18n(
+        this.showStdInapplicable
+          ? "designer.element.standardConfig.hideAll"
+          : "designer.element.standardConfig.showAll",
+      );
+    this.stdToggleButton.setAttribute("aria-expanded", String(this.showStdInapplicable));
   }
 
   /** Renders the parameter table of every selected functionality. */
@@ -722,6 +953,55 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     } catch (x) {
       console.error("[CodBi] Element: could not open the EP builder", x);
     }
+  }
+}
+
+/**
+ * The AVAILABLE (non-holistic) CodBi standard configurations as
+ * `[id, classes, funcs, spec]` tuples.
+ *
+ * Every configured standard configuration is offered here — the per-element listing is NOT gated on
+ * the form-level toggle state (`detStandards[*].Active`), since that flag is only populated by the
+ * form-level "Standard Configurations" MultiSelect editor at runtime and is absent from the
+ * `detStandards` injected by the plugin (the Configurations `.json` metadata carries no `Active`
+ * field). `classes` maps each CSS-Class this configuration provides (via `loadConfig`/`loadConfigs`)
+ * to its entry — under the optimised shape each class's description AND its FORMCYCLE widget list
+ * are stored together (`classes[cssClass].formelementtypes`), so the class name appears as a key
+ * exactly once. `funcs` maps each CSS-Class to the comma-separated FUNC list it applies. `spec` is
+ * the config's top-level `supportedFormelementtypes`: absent for regular configs, `["Holistic"]`
+ * for a holistic one.
+ *
+ * **Holistic** configurations — those published with the `"Holistic"` keyword in their
+ * `supportedFormelementtypes` (case-insensitive) — are EXCLUDED: they resolve their targets by a
+ * runtime selector and must not appear in the per-element standard-configuration listings. Entries
+ * are sorted by id so the panel listing is stable.
+ */
+function activeStandardConfigs(): Array<
+  [
+    string,
+    Record<string, TStandardConfigClassSpec> | undefined,
+    Record<string, string> | undefined,
+    TStandardConfigSupportedSpec,
+  ]
+> {
+  try {
+    const entries = window.CodbiPluginData?.detStandards ?? {};
+    const result: Array<
+      [
+        string,
+        Record<string, TStandardConfigClassSpec> | undefined,
+        Record<string, string> | undefined,
+        TStandardConfigSupportedSpec,
+      ]
+    > = [];
+    for (const [id, def] of Object.entries(entries)) {
+      if (def && !standardConfigIsHolistic(def.supportedFormelementtypes)) {
+        result.push([id, def.classes, def.funcs, def.supportedFormelementtypes]);
+      }
+    }
+    return result.sort((a, b) => a[0].localeCompare(b[0]));
+  } catch {
+    return [];
   }
 }
 

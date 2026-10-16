@@ -1,8 +1,14 @@
 {
   "Description": "/functions/Configurations_Financial.loadConfig.html",
   "classes": {
-    "CodBi_Currency": "Apply to an XTextField with datatype='money' or 'formattedNumber' that represents a currency/monetary amount. Formats input using Cleave with currency format.",
-    "CodBi_TRANS_NTW": "Apply to an XTextField that represents a net/tax amount (NTW = Netto). Transforms input for net value calculations."
+    "CodBi_Currency": {
+      "description": "Apply to an XTextField with datatype='money' or 'formattedNumber' that represents a currency/monetary amount. Formats input using Cleave with currency format.",
+      "formelementtypes": ["XTextField"]
+    },
+    "CodBi_TRANS_NTW": {
+      "description": "Apply to an XTextField that represents a net/tax amount (NTW = Netto). Transforms input for net value calculations.",
+      "formelementtypes": ["XTextField"]
+    }
   },
   "funcs": {
     "CodBi_Currency": "HTML.Input.Cleave",

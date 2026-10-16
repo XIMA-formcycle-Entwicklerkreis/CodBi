@@ -938,8 +938,28 @@ function isCbFuncItem(item: IMarkerItemLike): boolean {
 interface IStandardConfigDef {
   Description?: string;
   Active?: boolean;
-  classes?: Record<string, string>;
+  /**
+   * The CSS-Classes this configuration provides, keyed by class name. Under the optimised shape each
+   * class's entry holds BOTH its description AND its FORMCYCLE widget list:
+   * `classes[cssClass] = { description, formelementtypes?: string[] }`. `formelementtypes` absent/empty
+   * ⇒ that class applies to **any** element (fail-open). A plain description `string` is the
+   * legacy/manager form (also fail-open).
+   */
+  classes?: Record<string, { description?: string; formelementtypes?: string[] } | string>;
   globals?: Record<string, string>;
+  /**
+   * The FORMCYCLE widget-class marker of a **holistic** standard configuration. A regular
+   * (non-holistic) config `.json` carries **no** value here — each regular CSS-Class's widget list
+   * lives in its own `classes[cssClass].formelementtypes`, so per-class applicability needs no
+   * `detFunctionalities`/functionality-registry resolution.
+   *
+   * Only the literal array `["Holistic"]` (case-insensitive) marks the configuration as a **holistic**
+   * one — it resolves its targets by a runtime selector and is excluded from the per-element
+   * standard-configuration listings of the CodBi panel. A bare `string`/`string[]` is the
+   * legacy/synthetic file-level form (e.g. the local API-doc / manager channel). An absent property
+   * means "any element" per class (fail-open when a class carries no widget list).
+   */
+  supportedFormelementtypes?: string[] | string;
   /** Maps each CSS-Class (that is a `loadConfig` target) to the comma-separated `FUNC` list. */
   funcs?: Record<string, string>;
   /**

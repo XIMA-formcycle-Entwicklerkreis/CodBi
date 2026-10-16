@@ -3,5 +3,6 @@
   "classes": {},
   "globals": {},
   "targets": "[data-datepicker=\"1\"]:not(.CodBi_XCL):not(.CodBi_XCL_Cleave_Date)",
-  "func": "HTML.Input.Cleave"
+  "func": "HTML.Input.Cleave",
+  "supportedFormelementtypes": ["Holistic"]
 }

@@ -265,6 +265,15 @@ declare global {
     codbiSettings: CodbiSettings;
   }
 }
+/**
+ * Keys of a `loadConfig()` object that are standard-configuration **metadata** rather than CodBi
+ * parameters. They are consumed by code-generation / designer tooling (e.g. to publish
+ * `supportedFormelementtypes` into the matching `.json`) and must be ignored when the runtime
+ * builds `data-cb-*` attributes or resolves element placeholders.
+ */
+function isStandardConfigMetadataKey(key: string): boolean {
+  return key === "supportedFormelementtypes";
+}
 /** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
   /**
@@ -1604,6 +1613,11 @@ export class CodBi implements CodbiGlobal {
     return new Promise(async (resolve) => {
       // #region Check dependencies
       for (const key in toLoad) {
+        // Metadata keys (e.g. `supportedFormelementtypes`) are consumed by the code generator /
+        // designer and must never be treated as CodBi parameters.
+        if (isStandardConfigMetadataKey(key)) {
+          continue;
+        }
         if (key === "FUNC") {
           for (const functionality of toLoad[key].split(",")) {
             if (!this.functionalities.has(functionality.toLowerCase().trim())) {
@@ -1708,6 +1722,11 @@ export class CodBi implements CodbiGlobal {
             }
             // #endregion Check for global overrides.
             for (const key in toLoad) {
+              // Metadata keys (e.g. `supportedFormelementtypes`) must never be written as `data-cb-*`
+              // attributes on the targeted elements.
+              if (isStandardConfigMetadataKey(key)) {
+                continue;
+              }
               if (key.toLowerCase() === "func" && target.hasAttribute("data-cb-func")) {
                 target.setAttribute(
                   "data-cb-func",

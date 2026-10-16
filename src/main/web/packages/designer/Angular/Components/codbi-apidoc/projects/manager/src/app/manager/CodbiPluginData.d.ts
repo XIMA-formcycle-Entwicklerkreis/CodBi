@@ -39,8 +39,11 @@ interface Window {
         Description: string;
         /** Stores a boolean indicating whether this configuration is selected as to be used in the form designer. */
         Active: boolean;
-        /** Stores the CSS-Classes that this configuration provides. */
-        classes: { [key: string]: string };
+        /**
+         * Stores the CSS-Classes that this configuration provides. Each value is either a legacy/manager
+         * plain-string description or — under the optimised shape emitted by the build-time generator —
+         * an object holding the class's description together with its FORMCYCLE widget list. */
+        classes: { [key: string]: { description?: string; formelementtypes?: Array<string> } | string };
         /** Stores the global variables that this configuration provides. */
         globals: { [key: string]: string };
         /** Stores a {@link boolean } stating whether this entry is a local or a native one. */

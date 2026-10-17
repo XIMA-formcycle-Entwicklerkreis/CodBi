@@ -8,9 +8,15 @@ import {
   type TEditorCfg,
 } from "@de-xima/fc-form-designer";
 import { MirrorDropdown } from "./MirrorDropdown.js";
-import { syncMirrorChildren } from "./MirrorChildItems.js";
+import {
+  rememberMirrorElementReference,
+  resolveSelectedMirrorElement,
+  syncMirrorChildren,
+} from "./MirrorChildItems.js";
 import { i18n } from "./i18n.js";
 import {
+  elementFromDesigner,
+  elementKeyFromDesigner,
   formFromDesigner,
   getCurrentMirrorForm,
   mirrorElementOptions,
@@ -49,17 +55,31 @@ declare module "@de-xima/fc-form-designer" {
 export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElementSelectType> {
   private readonly dropdown: MirrorDropdown;
   private _value = "";
+  /** Options currently shown, used to cache the chosen element's TECHNICAL name. */
+  private options: IMirrorOption[] = [];
 
   constructor(config: TEditorCfg<IMirrorElementSelectDescriptor>) {
     super(config, "", "text");
     this.dropdown = new MirrorDropdown(
       (value) => {
         this._value = value;
+        const option = this.options.find((entry) => entry.value === value);
+        // Cache the element's TECHNICAL name next to its id, so a later id change (delete + recreate
+        // with the same designer name) can be recovered.
+        if (option) {
+          rememberMirrorElementReference(this.config.designer, option);
+        }
         Callbacks["set-property"].fire(this.config.property, value, this);
         // Reconcile the Mirror's generated child items with the newly chosen source element
         // (removes the previous children, then materializes the new element's value-able fields as
         // real child items carrying their native names).
-        void syncMirrorChildren(this.config.designer, getCurrentMirrorForm(), value);
+        void syncMirrorChildren(
+          this.config.designer,
+          getCurrentMirrorForm(),
+          value,
+          undefined,
+          option?.name || option?.text,
+        );
       },
       (option) => this.previewBody(option),
       {
@@ -75,6 +95,10 @@ export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElement
 
     onMirrorFormChanged((form) => void this.reload(form));
 
+    const storedElement = elementFromDesigner(this.config.designer);
+    if (storedElement) {
+      this._value = storedElement;
+    }
     const initial = formFromDesigner(this.config.designer) || getCurrentMirrorForm();
     if (initial) {
       setCurrentMirrorForm(initial);
@@ -85,8 +109,29 @@ export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElement
   /** Reloads the element options for the given source form. */
   private async reload(form: string): Promise<void> {
     const options = form ? await mirrorElementOptions(form) : [];
+    this.options = options;
+    let resolved = this._value;
+    if (form) {
+      resolved = resolveSelectedMirrorElement(
+        this.config.designer,
+        options,
+        this._value,
+        elementKeyFromDesigner(this.config.designer),
+      );
+    }
+    const rebound = resolved !== this._value;
+    this._value = resolved;
     this.dropdown.setOptions(options);
     this.dropdown.setValue(this._value);
+    if (rebound && form) {
+      void syncMirrorChildren(
+        this.config.designer,
+        form,
+        resolved,
+        undefined,
+        elementKeyFromDesigner(this.config.designer),
+      );
+    }
   }
 
   /**
@@ -154,7 +199,7 @@ export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElement
       // form's. Both the CSS and the root wrapper come from the backend keyed by the current form.
       const currentKey = MirrorElementSelect.currentFormKey();
       void Promise.all([mirrorFormCss(currentKey), mirrorFormWrapper(currentKey)]).then(([styles, wrapper]) => {
-        void mirrorElementPreview(form, option.value).then((html) => {
+        void mirrorElementPreview(form, option.value, option.name || option.text).then((html) => {
           if (!html) {
             writeFallback(option.className ?? option.text);
             return;
@@ -174,13 +219,6 @@ export class MirrorElementSelect extends Editors.BaseEditor<typeof MirrorElement
           // <form> element, giving exactly the hierarchy a published form has.
           const modern = /(?:^|\s)modern(?:\s|$)/.test(wrapperClass);
           const bodyClass = `body xm-body${modern ? " modern" : ""}`;
-          console.log("[CodBi] Mirror preview", {
-            currentFormKey: currentKey,
-            stylesChars: styles.length,
-            htmlChars: safe.length,
-            wrapper: wrapperClass,
-            bodyClass,
-          });
           // The backend CSS is wrapped in its own <style> element; otherwise the browser would
           // treat the embedded base64 @font-face/data-URI rules as renderable body text and print
           // them at the top of the preview. `onsubmit="return false"` keeps a mirrored submit

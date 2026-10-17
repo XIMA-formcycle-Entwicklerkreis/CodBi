@@ -86,11 +86,7 @@ export interface CodbiGlobal {
   checkAttributes: () => Promise<boolean>;
   /** See {@link CodBi.registerFunctionality }. */
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
-  registerFunctionality(
-    id: string,
-    init: (toLoad: any, toProcess: Element) => any,
-    meta?: FunctionalityMetaInput,
-  ): boolean;
+  registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
   /** See {@link CodBi.describeFunctionality }. */
   describeFunctionality(id: string, meta: FunctionalityMetaInput): void;
   /** See {@link CodBi.resolveFunctionalityMeta }. */
@@ -107,7 +103,6 @@ export interface CodbiGlobal {
   registerEP(
     id: string,
     generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
-    signature?: EPSignatureInput,
   ): boolean;
   /** See {@link CodBi.extendEP }. */
   extendEP(
@@ -116,7 +111,6 @@ export interface CodbiGlobal {
       params: Array<string>,
       original: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
     ) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
-    signature?: EPSignatureInput,
   ): boolean;
   /** See {@link CodBi.describeEP }. */
   describeEP(id: string, signature: EPSignatureInput): void;
@@ -396,13 +390,16 @@ export class CodBi implements CodbiGlobal {
   /**
    * Registers an **E**lement **P**laceholder using the specified {@link string} as it's id.
    *
+   * The parameter signature is NOT passed here: use {@link CodBi.describeEP } (optionally before
+   * this call — it is buffered and merged on registration), the `@epParam` / `@epReturn` tags, or
+   * the signature published by the local API-doc manager instead.
+   *
    * @param id        The {@link string } the placeholder should get as it's id.
    * @param generator The actual placeholder's ( params : Array < string >) => Array< unknown >.
    */
   public registerEP(
     id: string,
     generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
-    signature?: EPSignatureInput,
   ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
@@ -415,15 +412,15 @@ export class CodBi implements CodbiGlobal {
 
     this.availableEPs[id] = generator;
     this.epArities[id] = generator.length;
-    // #region Capture the EP's signature (explicit or previously described) without affecting behaviour.
-    const provided = signature ?? this.pendingEPSignatures[id];
+    // #region Capture the EP's signature described BEFORE registration (see describeEP) without affecting behaviour.
+    const provided = this.pendingEPSignatures[id];
 
     if (provided) {
       this.availableEPSignatures[id] = CodBi.normalizeEPSignature(provided, "runtime");
 
       delete this.pendingEPSignatures[id];
     }
-    // #endregion Capture the EP's signature (explicit or previously described) without affecting behaviour.
+    // #endregion Capture the EP's signature described BEFORE registration (see describeEP) without affecting behaviour.
 
     return true;
   }
@@ -444,7 +441,6 @@ export class CodBi implements CodbiGlobal {
       params: Array<string>,
       original: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
     ) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
-    signature?: EPSignatureInput,
   ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
@@ -462,23 +458,20 @@ export class CodBi implements CodbiGlobal {
     ): Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown> => {
       return generator(params, formerEP);
     };
-    // #region Keep the original arity & only replace the signature when the extension provides one.
+    // #region Keep the original arity. A signature can still be replaced via describeEP(id, signature).
     if (this.epArities[id] === undefined) {
       this.epArities[id] = formerEP.length;
     }
-
-    if (signature) {
-      this.availableEPSignatures[id] = CodBi.normalizeEPSignature(signature, "runtime");
-    }
-    // #endregion Keep the original arity & only replace the signature when the extension provides one.
+    // #endregion Keep the original arity. A signature can still be replaced via describeEP(id, signature).
 
     return true;
   }
   /**
    * Records the parameter signature of an **E**lement **P**laceholder without touching its
-   * implementation. This is the primary way to describe EPs authored in FormCycle's JavaScript
-   * editor (which never pass through the LocalAPIDoc manager) and signatures created by the EP
-   * builder's **"Describe this EP…"** action.
+   * implementation. Use it while PROTOTYPING an EP in FormCycle's JavaScript editor, and for
+   * signatures created by the EP builder's **"Describe this EP…"** action. Once the EP is finished,
+   * upload it to the local API-doc manager and define the metadata (including the signature) there —
+   * that published channel is the authoritative one for the designer.
    *
    * If the EP is not registered yet the signature is buffered and merged on {@link CodBi.registerEP }.
    *
@@ -500,8 +493,7 @@ export class CodBi implements CodbiGlobal {
    * Resolves the parameter signature of the **E**lement **P**laceholder **id** lazily and never
    * throws. Resolution order (first hit wins):
    *
-   * 1. signatures recorded via {@link CodBi.registerEP } / {@link CodBi.extendEP } /
-   *    {@link CodBi.describeEP };
+   * 1. signatures recorded via {@link CodBi.describeEP };
    * 2. `@epParam` / `@epReturn` tags found in the live generator's source
    *    (`Function.prototype.toString()` — only comments **inside** the function body are visible);
    * 3. the arity declared at registration (`generator.length`).
@@ -1463,16 +1455,16 @@ export class CodBi implements CodbiGlobal {
   /**
    * Registered a new functionality with the specified {@params id}.
    *
+   * Element applicability metadata is NOT passed here: use {@link CodBi.describeFunctionality }
+   * (optionally before this call — it is buffered and merged on registration), the
+   * `@SupportedFormelementtype` decorator, or the published `funcMeta` channel instead.
+   *
    * @param id    The {@link string } identifying the new functionality
    *              in {@CodBi.functionalities}.
    * @param init  The method to incorporating the new functionality.
    *
    * @return **TRUE** on successful registration, otherwise **FALSE**. */
-  public registerFunctionality(
-    id: string,
-    init: (toLoad: unknown, toProcess: Element) => unknown,
-    meta?: FunctionalityMetaInput,
-  ): boolean {
+  public registerFunctionality(id: string, init: (toLoad: unknown, toProcess: Element) => unknown): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
 
@@ -1483,15 +1475,15 @@ export class CodBi implements CodbiGlobal {
     }
 
     this.functionalities.set(id, init);
-    // #region Capture the functionality's metadata (explicit or previously described) without affecting behaviour.
-    const providedMeta = meta ?? this.pendingFunctionalityMeta[id];
+    // #region Capture the functionality's metadata described BEFORE registration (see describeFunctionality) without affecting behaviour.
+    const providedMeta = this.pendingFunctionalityMeta[id];
 
     if (providedMeta) {
       this.availableFunctionalityMeta[id] = CodBi.normalizeFunctionalityMeta(providedMeta, "runtime");
 
       delete this.pendingFunctionalityMeta[id];
     }
-    // #endregion Capture the functionality's metadata (explicit or previously described) without affecting behaviour.
+    // #endregion Capture the functionality's metadata described BEFORE registration (see describeFunctionality) without affecting behaviour.
 
     for (const element of document.querySelectorAll(`[data-cb-checked*="${id.toLowerCase()}"]`)) {
       element.setAttribute("data-cb-checked", element.getAttribute("data-cb-checked").replace(id.toLowerCase(), ""));

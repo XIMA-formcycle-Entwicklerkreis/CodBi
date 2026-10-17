@@ -1,4 +1,4 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
+﻿package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
@@ -20,11 +20,11 @@ import org.slf4j.LoggerFactory
  * Servlet action that exposes the cross-form element access of [MirrorFormAccess] to the browser.
  *
  * It is used by
- * - the form designer, to populate the Mirror widget's “source form” / “source element” dropdowns
+ * - the form designer, to populate the Mirror widget's â€œsource formâ€ / â€œsource elementâ€ dropdowns
  *   (`action=forms`, `action=elements&form=<formKey>`), and
  * - (indirectly) the assistant, through [MirrorFormAccess].
  *
- * Endpoint: `plugin?name=CodBi_Mirror&action=…`.
+ * Endpoint: `plugin?name=CodBi_Mirror&action=â€¦`.
  *
  * @since 1.0.0
  */
@@ -87,7 +87,9 @@ class MirrorServletAction : IPluginServletAction {
         "wrapper" ->
             htmlResponse(
                 MirrorFormAccess.formRootClasses(
-                    userContext, params.requestParameters["form"]?.firstOrNull()))
+                    userContext,
+                    params.requestParameters["form"]?.firstOrNull(),
+                    formNameParam(params)))
         else -> {
           val json = formsJson(userContext, params)
           logger.info("[MirrorServletAction] action='forms' -> {} chars", json.length)
@@ -108,12 +110,12 @@ class MirrorServletAction : IPluginServletAction {
   /**
    * Lists the FORMCYCLE form-element TYPES available on this installation: FORMCYCLE's core widgets
    * plus every plugin-provided widget detected via [InstalledFormcycleElements]. Used so a
-   * contained element can be one of ANY installed widget type — not just the hard-coded core list.
+   * contained element can be one of ANY installed widget type â€” not just the hard-coded core list.
    */
   private fun widgetsJson(params: IPluginServletActionParams): String {
     val types = LinkedHashSet<String>()
     types.addAll(InstalledFormcycleElements.CORE_WIDGETS)
-    // Plugin-provided widgets (XCaptcha, XFormula, XRating, …) — best effort; the detector is
+    // Plugin-provided widgets (XCaptcha, XFormula, XRating, â€¦) â€” best effort; the detector is
     // fail-closed and simply contributes nothing when the registry is unavailable.
     runCatching { types.addAll(InstalledFormcycleElements.snapshotFor(params).widgets) }
     // The CodBi Mirror is a real, droppable widget and a valid contained element.
@@ -151,13 +153,13 @@ class MirrorServletAction : IPluginServletAction {
   /**
    * Returns a COMPLETE, standalone HTML document for the CURRENT form (posted as `json`), used by
    * the **per-element whole-form preview**: the document is loaded into a hidden, same-origin
-   * iframe so the FORMCYCLE + CodBi runtime scripts initialize a REAL form instance — full
+   * iframe so the FORMCYCLE + CodBi runtime scripts initialize a REAL form instance â€” full
    * form-level fidelity (navigator, conditional visibility, per-element functionalities) instead of
    * patching a single element client-side.
    *
    * The document combines the server-rendered whole-form body (see
    * [MirrorFormAccess.renderWholeFormBody]) with the platform theme CSS, the form's user CSS, the
-   * FORMCYCLE runtime includes (jQuery/jQuery-UI/response.js — resolved from the platform through
+   * FORMCYCLE runtime includes (jQuery/jQuery-UI/response.js â€” resolved from the platform through
    * reflection) and the CodBi runtime script.
    */
   private fun formDocument(params: IPluginServletActionParams): String {
@@ -246,7 +248,7 @@ class MirrorServletAction : IPluginServletAction {
     return try {
       val clazz = Class.forName("de.xima.fc.form.renderer.XFormIncludesBuilder")
       val builder = clazz.getDeclaredConstructor().newInstance()
-      // MANDATORY: `relative(true)` — otherwise buildJsIncludes/buildCssIncludes return the FULL
+      // MANDATORY: `relative(true)` â€” otherwise buildJsIncludes/buildCssIncludes return the FULL
       // classpath resource path (e.g. `form/includes/010-jquery-min.js`). Prefixing that with the
       // includes base URL duplicated the path and every include 404'd. The platform itself uses the
       // builder strictly in relative mode (see XFormRenderer.appendJSFolderIncludes).
@@ -281,7 +283,7 @@ class MirrorServletAction : IPluginServletAction {
     return if (path.isBlank()) "" else path.trimEnd('/') + "/"
   }
 
-  /** The platform's cache-busting query for include URLs (`?…`), or `""`. */
+  /** The platform's cache-busting query for include URLs (`?â€¦`), or `""`. */
   private fun includesQuery(): String = xfcRendererConfig("getNoCacheQuestParameter").orEmpty()
 
   /**
@@ -296,11 +298,22 @@ class MirrorServletAction : IPluginServletAction {
           }
           .getOrNull()
 
+  /** The cached source-form title sent by the designer (lower-cased or camel-cased param). */
+  private fun formNameParam(params: IPluginServletActionParams): String? =
+      params.requestParameters["formname"]?.firstOrNull()
+          ?: params.requestParameters["formName"]?.firstOrNull()
+
+  /** The cached source-element technical name sent by the designer. */
+  private fun elementKeyParam(params: IPluginServletActionParams): String? =
+      params.requestParameters["elementkey"]?.firstOrNull()
+          ?: params.requestParameters["elementKey"]?.firstOrNull()
+
   private fun versionJson(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull()
+    val formName = formNameParam(params)
     return JSONObject()
-        .fluentPut("version", MirrorFormAccess.latestVersionId(userContext, formKey))
-        .fluentPut("revision", MirrorFormAccess.formRevision(userContext, formKey))
+        .fluentPut("version", MirrorFormAccess.latestVersionId(userContext, formKey, formName))
+        .fluentPut("revision", MirrorFormAccess.formRevision(userContext, formKey, formName))
         .toJSONString()
   }
 
@@ -311,17 +324,20 @@ class MirrorServletAction : IPluginServletAction {
    */
   private fun previewHtml(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull()
+    val formName = formNameParam(params)
     val elementRef = params.requestParameters["element"]?.firstOrNull()
+    val elementKey = elementKeyParam(params)
     if (formKey.isNullOrBlank() || elementRef.isNullOrBlank()) return ""
     return try {
       val config =
           XFormRenderConfig().apply {
             setDesignerPreview(true)
             setFormOnly(true)
-            setProjektID(MirrorFormAccess.projectIdOf(formKey) ?: 0L)
+            setProjektID(
+                MirrorFormAccess.resolveProjectId(userContext, formKey, formName) ?: 0L)
           }
       MirrorFormAccess.renderElementHtml(
-          userContext, formKey, elementRef, config, XFormRenderContext()) ?: ""
+          userContext, formKey, elementRef, config, XFormRenderContext(), formName, elementKey) ?: ""
     } catch (x: Exception) {
       logger.warn("[MirrorServletAction] preview render failed: {}", x.message)
       ""
@@ -342,7 +358,9 @@ class MirrorServletAction : IPluginServletAction {
 
   private fun elementsJson(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull()
-    return MirrorFormAccess.elementsTreeAsJson(MirrorFormAccess.listElements(userContext, formKey))
+    val formName = formNameParam(params)
+    return MirrorFormAccess.elementsTreeAsJson(
+        MirrorFormAccess.listElements(userContext, formKey, formName))
   }
 
   /**
@@ -352,14 +370,17 @@ class MirrorServletAction : IPluginServletAction {
    * placeholders and the fields appear in the placeholder dialog.
    *
    * Each entry also carries the source field's `properties`, so the child item is created with the
-   * source field's label, options, placeholder, required flag, etc. — i.e. it looks and behaves
+   * source field's label, options, placeholder, required flag, etc. â€” i.e. it looks and behaves
    * like the source field instead of falling back to the widget defaults.
    */
   private fun fieldsJson(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull()
+    val formName = formNameParam(params)
     val elementRef = params.requestParameters["element"]?.firstOrNull()
+    val elementKey = elementKeyParam(params)
     val array = JSONArray()
-    for (field in MirrorFormAccess.valueAbleFields(userContext, formKey, elementRef)) {
+    for (field in MirrorFormAccess.valueAbleFields(
+        userContext, formKey, elementRef, formName, elementKey)) {
       array.add(
           JSONObject()
               .fluentPut("id", field.id)
@@ -382,8 +403,11 @@ class MirrorServletAction : IPluginServletAction {
    */
   private fun treeJson(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull()
+    val formName = formNameParam(params)
     val elementRef = params.requestParameters["element"]?.firstOrNull()
-    val subtree = MirrorFormAccess.mirrorSubtree(userContext, formKey, elementRef)
+    val elementKey = elementKeyParam(params)
+    val subtree =
+        MirrorFormAccess.mirrorSubtree(userContext, formKey, elementRef, formName, elementKey)
     if (subtree == null) {
       return "{\"version\":0,\"items\":[]}"
     }
@@ -413,15 +437,17 @@ class MirrorServletAction : IPluginServletAction {
   /**
    * Returns the CSS needed to render the previewed element like a published form: the FORMCYCLE
    * frontend FORM THEME CSS (shipped in the `fc-form-renderer` jar) followed by the form's own user
-   * CSS. The server-rendered element markup is frontend markup, so it must be styled by this CSS —
+   * CSS. The server-rendered element markup is frontend markup, so it must be styled by this CSS â€”
    * not by the designer's own styles (which do not apply to that markup).
    */
   private fun formCss(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull() ?: return ""
+    val formName = formNameParam(params)
     val themeCss = THEME_CSS_PATHS.joinToString("\n") { path -> readClasspathText(path) }
     val userCss =
         try {
-          MirrorFormAccess.loadFormJson(userContext, formKey)?.let { XForm(it).getUserCSS() } ?: ""
+          MirrorFormAccess.loadFormJson(userContext, formKey, formName)
+              ?.let { XForm(it).getUserCSS() } ?: ""
         } catch (x: Exception) {
           logger.warn("[MirrorServletAction] form user CSS failed: {}", x.message)
           ""

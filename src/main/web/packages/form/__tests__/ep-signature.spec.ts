@@ -1,6 +1,6 @@
 /**
- * Tests for the EP signature registry added to `CodBi` (registerEP / extendEP / describeEP /
- * resolveEPSignature).
+ * Tests for the EP signature registry added to `CodBi` (describeEP / resolveEPSignature / scanned
+ * tags / arity heuristic).
  */
 import { describe, expect, it } from "@jest/globals";
 
@@ -11,18 +11,17 @@ const asGenerator = (fn: unknown): ((params: Array<string>) => Array<unknown>) =
   fn as unknown as (params: Array<string>) => Array<unknown>;
 
 describe("CodBi EP signatures", () => {
-  it("stores an explicit signature passed to registerEP", () => {
+  it("stores a signature described via describeEP", () => {
     const codbi = createCodbiGlobal();
 
-    expect(
-      codbi.registerEP("sig.explicit", () => ["x"], {
-        params: [
-          { index: 1, name: "input", type: "array" },
-          { index: 2, name: "by", type: "string", optional: true },
-        ],
-        returnType: "array",
-      }),
-    ).toBe(true);
+    expect(codbi.registerEP("sig.explicit", () => ["x"])).toBe(true);
+    codbi.describeEP("sig.explicit", {
+      params: [
+        { index: 1, name: "input", type: "array" },
+        { index: 2, name: "by", type: "string", optional: true },
+      ],
+      returnType: "array",
+    });
 
     const signature = codbi.resolveEPSignature("sig.explicit");
     expect(signature?.params).toHaveLength(2);

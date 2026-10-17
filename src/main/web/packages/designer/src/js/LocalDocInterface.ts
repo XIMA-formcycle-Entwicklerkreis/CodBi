@@ -849,9 +849,9 @@ export function enableLocalDocInterface(): void {
         }
       };
 
-      const scheduleDismiss = () => {
+      const scheduleDismiss = (skipGrace = false) => {
         // #region Skip dismiss during animation grace period.
-        if (Date.now() - lastPanelShownAt < PANEL_GRACE_MS) {
+        if (!skipGrace && Date.now() - lastPanelShownAt < PANEL_GRACE_MS) {
           return;
         }
         // #endregion Skip dismiss during animation grace period.
@@ -1348,6 +1348,67 @@ export function enableLocalDocInterface(): void {
         cDetails.style.height = `${(rectToAlignTo.height < window.innerHeight / 2 ? window.innerHeight / 2 : rectToAlignTo.height) - (rectToAlignTo.height / 100) * 10}px`;
       };
       // #endregion Define API-Doc layout update
+      // #region Expose the shared documentation viewer to the per-element config panel
+      /**
+       * Opens the documentation of one **CodBi-Functionality** or **standard configuration** in the
+       * shared API-Doc viewer (`cDetails`) — the very viewer the attribute-config (`ALT+F`) and
+       * CSS-config (`.`) flows use — anchored next to the listing row it was invoked from (the
+       * per-element CodBi config panel's listings call this on right-click).
+       *
+       * The viewer is kept open while the pointer reaches it in time: the pointer leaving the anchored
+       * row schedules a dismissal (see {@link window.CodbiPluginData.codbiDocAnchorLeft}) that the
+       * viewer's own `mouseenter` cancels.
+       *
+       * @param kind   The registry to read the description from.
+       * @param id     The functionality id (matched case-insensitively) or the standard-configuration id.
+       * @param anchor The listing row the viewer is positioned next to.
+       */
+      window.CodbiPluginData.showCodbiDoc = (
+        kind: "functionality" | "standard",
+        id: string,
+        anchor?: HTMLElement | null,
+      ): void => {
+        const registry: Record<string, { Description?: string }> =
+          kind === "standard" ? window.CodbiPluginData.detStandards : window.CodbiPluginData.detFunctionalities;
+        const wanted = String(id ?? "").toLowerCase();
+        let entry: { Description?: string } | undefined;
+
+        for (const [candidate, value] of Object.entries(registry ?? {})) {
+          if (candidate.toLowerCase() === wanted) {
+            entry = value as { Description?: string };
+            break;
+          }
+        }
+
+        const description = getDescription(entry);
+
+        if (description === "") {
+          return;
+        }
+
+        renderDetails(cDetails, baseDocURL, description);
+        cDetails.style.display = "block";
+        lastPanelShownAt = Date.now();
+        // The doc is dismissed when the pointer leaves the anchored listing row without reaching the
+        // viewer in time — the action is registered here so `scheduleDismiss` can actually run it.
+        currentCDetailBlurAction = () => {
+          cDetails.style.display = "none";
+          currentCDetailBlurAction = undefined;
+        };
+
+        if (anchor) {
+          updateLayoutCDetails(anchor);
+        }
+      };
+      /**
+       * Notifies the shared API-Doc viewer that the pointer left the listing row whose documentation it
+       * currently shows ({@link window.CodbiPluginData.showCodbiDoc}). Dismisses the viewer unless the
+       * pointer reaches it within the grace period (the viewer's `mouseenter` cancels the dismissal).
+       */
+      window.CodbiPluginData.codbiDocAnchorLeft = (): void => {
+        scheduleDismiss(true);
+      };
+      // #endregion Expose the shared documentation viewer to the per-element config panel
       // #endregion API-Documentation-Viewer
       // #endregion Style the functionality manager
       // #region Setup Attributes-Editor Monitoring

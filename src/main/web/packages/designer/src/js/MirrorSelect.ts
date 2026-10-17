@@ -47,8 +47,8 @@ export function getCurrentMirrorForm(): string {
   return currentMirrorForm;
 }
 
-/** Reads the source form from the designer's persisted properties of the currently selected item. */
-export function formFromDesigner(designer: unknown): string {
+/** Reads the persisted properties of the currently selected designer item. */
+function selectedItemProperties(designer: unknown): Record<string, unknown> | undefined {
   try {
     const d = designer as {
       getSelectedItems?: () => JQuery;
@@ -56,11 +56,43 @@ export function formFromDesigner(designer: unknown): string {
     };
     const selected = d.getSelectedItems?.();
     const item = selected ? d.getItem?.(selected) : undefined;
-    const properties = item?.getPersist?.()?.properties;
-    return String(properties?.[String(Constants["mirror.property.form"])] ?? "");
+    return item?.getPersist?.()?.properties;
   } catch {
-    return "";
+    return undefined;
   }
+}
+
+/** Reads the source form key from the designer's persisted properties of the currently selected item. */
+export function formFromDesigner(designer: unknown): string {
+  return String(selectedItemProperties(designer)?.[String(Constants["mirror.property.form"])] ?? "");
+}
+
+/**
+ * Reads the cached source form TITLE of the currently selected Mirror. This is the fallback used to
+ * re-find the form when its numeric project id changed (export → delete → re-import).
+ */
+export function formNameFromDesigner(designer: unknown): string {
+  return String(selectedItemProperties(designer)?.[String(Constants["mirror.property.form_name"])] ?? "");
+}
+
+/** Reads the cached source ELEMENT reference of the currently selected Mirror. */
+export function elementFromDesigner(designer: unknown): string {
+  return String(selectedItemProperties(designer)?.[String(Constants["mirror.property.element"])] ?? "");
+}
+
+/** Reads the cached source ELEMENT technical name (`txt6`) of the currently selected Mirror. */
+export function elementKeyFromDesigner(designer: unknown): string {
+  return String(selectedItemProperties(designer)?.[String(Constants["mirror.property.element_key"])] ?? "");
+}
+
+/** Query fragment for the cached element name (empty when none is known). */
+function elementKeyQuery(elementKey?: string): string {
+  return elementKey ? `&elementkey=${encodeURIComponent(elementKey)}` : "";
+}
+
+/** Normalizes a form title for name matching (trim, collapse whitespace, case-insensitive). */
+export function normalizeMirrorFormName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
 /**
@@ -99,9 +131,7 @@ function fetchOptions(url: string): Promise<unknown[]> {
   return new Promise((resolve) => {
     $.ajax({ url, type: "GET", dataType: "json" })
       .done((data: unknown) => {
-        const array = Array.isArray(data) ? data : [];
-        console.log("[CodBi] Mirror options", url, array.length);
-        resolve(array);
+        resolve(Array.isArray(data) ? data : []);
       })
       .fail((xhr: JQuery.jqXHR) => {
         console.error("[CodBi] Mirror options request failed", url, xhr?.status, xhr?.responseText);
@@ -128,16 +158,20 @@ export async function mirrorFormOptions(): Promise<IMirrorOption[]> {
  * Fetches the designer-style PREVIEW HTML of one element of a foreign form (how the element renders
  * in the form designer). Returns "" when the reference is incomplete or rendering fails.
  */
-export async function mirrorElementPreview(form: string, element: string): Promise<string> {
+export async function mirrorElementPreview(form: string, element: string, elementKey?: string): Promise<string> {
   if (!form || !element) {
     return "";
   }
   const url =
-    `${mirrorActionUrl()}&action=preview&form=${encodeURIComponent(form)}` + `&element=${encodeURIComponent(element)}`;
+    `${mirrorActionUrl()}&action=preview&form=${encodeURIComponent(form)}` +
+    `&element=${encodeURIComponent(element)}${elementKeyQuery(elementKey)}`;
   return new Promise((resolve) => {
     $.ajax({ url, type: "GET", dataType: "text" })
       .done((data: unknown) => resolve(typeof data === "string" ? data : ""))
-      .fail(() => resolve(""));
+      .fail((xhr: JQuery.jqXHR) => {
+        console.error("[CodBi] Mirror: element-preview request failed", url, xhr?.status, xhr?.responseText);
+        resolve("");
+      });
   });
 }
 
@@ -271,13 +305,14 @@ export interface IMirrorField {
  * materialize the source element as real child items of the Mirror widget (each carrying the source
  * field's native name), which is what makes their values usable as `[%fieldName%]` placeholders.
  */
-export async function mirrorElementFields(form: string, element: string): Promise<IMirrorField[]> {
+export async function mirrorElementFields(form: string, element: string, elementKey?: string): Promise<IMirrorField[]> {
   if (!form || !element) {
     return [];
   }
   const entries = (
     await fetchOptions(
-      `${mirrorActionUrl()}&action=fields&form=${encodeURIComponent(form)}&element=${encodeURIComponent(element)}`,
+      `${mirrorActionUrl()}&action=fields&form=${encodeURIComponent(form)}` +
+        `&element=${encodeURIComponent(element)}${elementKeyQuery(elementKey)}`,
     )
   ).filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null);
   return entries.map((entry) => ({
@@ -318,17 +353,18 @@ export interface IMirrorTree {
 }
 
 /** Fetches the FULL subtree of one element (containers + fields, in document order). */
-export async function mirrorElementTree(form: string, element: string): Promise<IMirrorTree> {
+export async function mirrorElementTree(form: string, element: string, elementKey?: string): Promise<IMirrorTree> {
   if (!form || !element) {
     return { version: 0, revision: 0, items: [] };
   }
-  const url = `${mirrorActionUrl()}&action=tree&form=${encodeURIComponent(form)}&element=${encodeURIComponent(element)}`;
+  const url =
+    `${mirrorActionUrl()}&action=tree&form=${encodeURIComponent(form)}` +
+    `&element=${encodeURIComponent(element)}${elementKeyQuery(elementKey)}`;
   return new Promise((resolve) => {
     $.ajax({ url, type: "GET", dataType: "json" })
       .done((data: unknown) => {
         const obj = (data ?? {}) as { version?: unknown; revision?: unknown; items?: unknown };
         const items = Array.isArray(obj.items) ? (obj.items as IMirrorNode[]) : [];
-        console.log("[CodBi] Mirror tree", items.length, "version", obj.version, "revision", obj.revision);
         resolve({ version: Number(obj.version ?? 0), revision: Number(obj.revision ?? 0), items });
       })
       .fail(() => resolve({ version: 0, revision: 0, items: [] }));

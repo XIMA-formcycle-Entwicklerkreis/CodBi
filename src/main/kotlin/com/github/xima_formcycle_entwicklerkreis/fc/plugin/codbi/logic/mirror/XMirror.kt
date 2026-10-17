@@ -63,7 +63,9 @@ class XMirror : IXItemWidget, IXItemAppendable {
     // workflows/mails — while their ids are namespaced with this widget's id so they cannot clash
     // with the target form's own ids.
     val formRef = renderData.get(Constants.MIRROR_PROPERTY_FORM)?.getString()
+    val formName = renderData.get(Constants.MIRROR_PROPERTY_FORM_NAME)?.getString()
     val elementRef = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT)?.getString()
+    val elementKey = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT_KEY)?.getString()
     val mirrored =
         if (formRef.isNullOrBlank() || elementRef.isNullOrBlank()) {
           null
@@ -73,7 +75,9 @@ class XMirror : IXItemWidget, IXItemAppendable {
               formRef,
               elementRef,
               renderData.getXFormRenderConfig(),
-              formRenderCtx)
+              formRenderCtx,
+              formName,
+              elementKey)
         }
     if (mirrored != null) {
       namespaceLinkedIds(mirrored, mirrorIdPrefix(renderData), mirrorNamePrefix(renderData))
@@ -106,14 +110,17 @@ class XMirror : IXItemWidget, IXItemAppendable {
       formRenderCtx: IXFormRenderContext
   ) {
     val formRef = renderData.get(Constants.MIRROR_PROPERTY_FORM)?.getString()
+    val formName = renderData.get(Constants.MIRROR_PROPERTY_FORM_NAME)?.getString()
     val elementRef = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT)?.getString()
+    val elementKey = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT_KEY)?.getString()
+    val elementName = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT_NAME)?.getString()
+    val locale = Locale.forLanguageTag(renderData.getXFormRenderConfig().getLang() ?: "en")
     if (formRef.isNullOrBlank() || elementRef.isNullOrBlank()) {
       removePreviousRender(container)
       // The default `IXItemWidget.renderItemPreview` renders FORMCYCLE's generic `XWidgetIcon`
       // placeholder (a puzzle piece) — which ignores `getIcon()`. We render our OWN icon instead,
       // so
       // a freshly dropped Mirror already shows the custom CodBi mirror icon plus the widget label.
-      val locale = Locale.forLanguageTag(renderData.getXFormRenderConfig().getLang() ?: "en")
       val placeholder = Div()
       placeholder.setCSSClass("codbi-mirror-placeholder")
       placeholder.setStyle("padding:8px;text-align:center;color:#6b7280;")
@@ -131,6 +138,16 @@ class XMirror : IXItemWidget, IXItemAppendable {
       container.appendChild(placeholder)
       return
     }
+    // A stored reference is only valid while the form still exists AND (if a title was cached) its
+    // title still matches. Never silently re-bind to another form: render nothing and explain the
+    // broken link here in the designer instead.
+    val status =
+        MirrorFormAccess.referenceStatus(
+            MirrorFormAccess.systemContext(), formRef, formName, elementRef, elementKey)
+    if (!status.valid) {
+      renderInvalidReferenceHint(container, renderCtx, status, elementName.orEmpty(), locale)
+      return
+    }
     val wrapper = Div()
     val customClasses = renderData.cssClassesCustom
     wrapper.setCSSClass(
@@ -141,6 +158,116 @@ class XMirror : IXItemWidget, IXItemAppendable {
     removePreviousRender(container)
     container.appendChild(wrapper)
     renderCtx.registerParent(wrapper)
+  }
+
+  /**
+   * Designer-only hint shown when the stored source reference is no longer valid: the form was
+   * deleted, or the form at the stored project id now has a different title. The persisted child
+   * items are nested into a hidden container (so no stale fields appear on the canvas), while the
+   * hint displays the stored form id, stored form title and element id.
+   */
+  private fun renderInvalidReferenceHint(
+      container: Div,
+      renderCtx: XItemRenderCtx,
+      status: MirrorFormAccess.MirrorReferenceStatus,
+      elementName: String,
+      locale: Locale
+  ) {
+    removePreviousRender(container)
+    val outer = Div()
+    outer.setCSSClass("codbi-mirror-invalid")
+    outer.setStyle(
+        "display:flex;align-items:stretch;gap:8px;padding:10px;border:1px dashed #dc2626;" +
+            "border-radius:6px;background:#fef2f2;color:#7f1d1d;font-size:12px;" +
+            "line-height:1.5;text-align:center;")
+    // Warning triangle on the left, stretched to the full height of the hint text/container. The
+    // column keeps a 1:1 aspect ratio so the icon's WIDTH grows with its height instead of being
+    // squished into a fixed 28px column.
+    val warning = Div()
+    warning.setStyle(
+        "flex:0 0 auto;align-self:stretch;aspect-ratio:1/1;" +
+            "display:flex;align-items:center;justify-content:center;")
+    warning.appendChild(
+        RawMarkup(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" " +
+                "preserveAspectRatio=\"xMidYMid meet\" aria-hidden=\"true\" " +
+                "style=\"display:block;width:100%;height:100%;" +
+                "filter:drop-shadow(0 0 1.5px darkorange) " +
+                "drop-shadow(0 0 3px rgba(255,140,0,0.55));\">" +
+                "<path fill=\"#dc2626\" stroke=\"#ffffff\" stroke-width=\"1.2\" " +
+                "stroke-linejoin=\"round\" d=\"M12 2 1 22h22L12 2z\"/>" +
+                "<path fill=\"#fff\" d=\"M11 9h2v7h-2zm0 9h2v2h-2z\"/></svg>"))
+    outer.appendChild(warning)
+    val content = Div()
+    // Center the text block vertically inside the hint container and center the lines horizontally.
+    content.setStyle(
+        "flex:1 1 auto;min-width:0;display:flex;flex-direction:column;" +
+            "justify-content:center;text-align:center;")
+    val title = Div()
+    title.setStyle("font-weight:600;margin-bottom:4px;")
+    title.appendText(
+        org.owasp.encoder.Encode.forHtml(
+            localize(EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_TITLE, locale)))
+    content.appendChild(title)
+    val reason = Div()
+    reason.setStyle("margin-bottom:6px;")
+    reason.appendText(
+        org.owasp.encoder.Encode.forHtml(
+            localize(
+                when {
+                  status.formMissing -> EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_MISSING
+                  status.titleMismatch -> EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_TITLEMISMATCH
+                  else -> EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_ELEMENTMISSING
+                },
+                locale)))
+    content.appendChild(reason)
+    appendHintLine(
+        content,
+        localize(EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_FORMID, locale),
+        status.formKey.ifBlank { "?" })
+    appendHintLine(
+        content,
+        localize(EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_FORMTITLE, locale),
+        status.storedFormName.ifBlank { "?" })
+    appendHintLine(
+        content,
+        localize(EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_ELEMENTID, locale),
+        status.elementRef.ifBlank { "?" })
+    // Always show the element NAME (technical designer name, e.g. `txt6`; fall back to the cached
+    // display name for older Mirrors). This is what the user has to recreate to restore the link.
+    appendHintLine(
+        content,
+        localize(EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_ELEMENTKEY, locale),
+        status.elementKey.ifBlank { elementName }.ifBlank { "?" })
+    if (status.titleMismatch && !status.actualFormName.isNullOrBlank()) {
+      appendHintLine(
+          content,
+          localize(EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_ACTUALTITLE, locale),
+          status.actualFormName)
+    }
+    val recreate = Div()
+    recreate.setStyle("margin-top:6px;font-style:italic;")
+    recreate.appendText(
+        org.owasp.encoder.Encode.forHtml(
+            localize(EMessageKey.DESIGNER_WIDGET_MIRROR_INVALID_RECREATE, locale)))
+    content.appendChild(recreate)
+    outer.appendChild(content)
+    // Keep the persisted copies out of the canvas without deleting them: if the source form is
+    // restored, the Mirror becomes valid again and the copies are immediately usable.
+    val hiddenChildren = Div()
+    hiddenChildren.setStyle("display:none;")
+    outer.appendChild(hiddenChildren)
+    container.appendChild(outer)
+    renderCtx.registerParent(hiddenChildren)
+  }
+
+  /** Appends one `label: value` line to the invalid-reference hint. */
+  private fun appendHintLine(parent: Div, label: String, value: String) {
+    val line = Div()
+    line.appendText(
+        "${org.owasp.encoder.Encode.forHtml(label)}: " +
+            org.owasp.encoder.Encode.forHtml(value))
+    parent.appendChild(line)
   }
 
   /**
@@ -232,6 +359,7 @@ class XMirror : IXItemWidget, IXItemAppendable {
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_FORM, ""),
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_FORM_NAME, ""),
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_ELEMENT, ""),
+        XItemPropertyDesc(Constants.MIRROR_PROPERTY_ELEMENT_KEY, ""),
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_ELEMENT_NAME, ""),
         XItemPropertyDesc(XPropertyEnum.cssclasses),
         XItemPropertyDesc(XPropertyEnum.cssclasseswrapper),

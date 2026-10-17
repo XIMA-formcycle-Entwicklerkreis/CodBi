@@ -167,9 +167,16 @@ object MirrorFormAccess {
   /**
    * Lists the elements of the foreign form referenced by [formKey], depth-first, including a
    * human-readable label and the owning container's name so a dropdown can be grouped.
+   *
+   * [formName] is the cached display title of the form; it is used as a fallback when [formKey] no
+   * longer resolves (see [resolveProject]).
    */
-  fun listElements(userContext: Any?, formKey: String?): List<MirrorElement> {
-    val json = loadFormJson(userContext, formKey) ?: return emptyList()
+  fun listElements(
+      userContext: Any?,
+      formKey: String?,
+      formName: String? = null
+  ): List<MirrorElement> {
+    val json = loadFormJson(userContext, formKey, formName) ?: return emptyList()
     val items = json.getJSONArray("items") ?: return emptyList()
     val byId = LinkedHashMap<String, JSONObject>()
     for (i in 0 until items.size) {
@@ -254,9 +261,16 @@ object MirrorFormAccess {
    * @return the value-able fields in document order (depth-first), or an empty list when the form /
    *   element cannot be resolved.
    */
-  fun valueAbleFields(userContext: Any?, formKey: String?, elementRef: String?): List<MirrorField> {
-    val json = loadFormJson(userContext, formKey) ?: return emptyList()
-    val root = itemJsonByRef(json, elementRef) ?: return emptyList()
+  fun valueAbleFields(
+      userContext: Any?,
+      formKey: String?,
+      elementRef: String?,
+      formName: String? = null,
+      elementKey: String? = null
+  ): List<MirrorField> {
+    val json = loadFormJson(userContext, formKey, formName) ?: return emptyList()
+    val ref = resolveElementRef(json, elementRef, elementKey) ?: return emptyList()
+    val root = itemJsonByRef(json, ref) ?: return emptyList()
     val index = childrenIndex(json)
     val out = ArrayList<MirrorField>()
     val seen = HashSet<String>()
@@ -309,18 +323,18 @@ object MirrorFormAccess {
    * A cheap content hash of the form's items. Used to detect that the SOURCE changed: a normal
    * FORMCYCLE "save" often keeps the same version id, so the version id alone cannot be compared.
    */
-  fun formRevision(userContext: Any?, formKey: String?): Int {
-    val json = loadFormJson(userContext, formKey) ?: return 0
+  fun formRevision(userContext: Any?, formKey: String?, formName: String? = null): Int {
+    val json = loadFormJson(userContext, formKey, formName) ?: return 0
     val items = json.getJSONArray("items")
     return (items?.toJSONString() ?: json.toJSONString()).hashCode()
   }
 
   /** The latest (highest-id) form version id of the referenced form, or `0` when unknown. */
-  fun latestVersionId(userContext: Any?, formKey: String?): Long {
-    val projectId = projectIdOf(formKey) ?: return 0L
+  fun latestVersionId(userContext: Any?, formKey: String?, formName: String? = null): Long {
     return try {
-      val projekt = apiCall("PROJEKT", "getInitializedById", userContext, projectId) ?: return 0L
-      val versions = apiCall("FORMVERSION", "getByProjekt", userContext, projekt) as? List<*>
+      val resolved = resolveForm(userContext, formKey, formName) ?: return 0L
+      val versions =
+          apiCall("FORMVERSION", "getByProjekt", userContext, resolved.project) as? List<*>
       val latest =
           versions.orEmpty().filterNotNull().maxByOrNull { (invoke(it, "getId") as? Long) ?: 0L }
       (latest?.let { invoke(it, "getId") as? Long }) ?: 0L
@@ -339,9 +353,16 @@ object MirrorFormAccess {
    * The referenced element itself is NOT included — it is represented by the Mirror container; its
    * direct children become root-level nodes of the subtree.
    */
-  fun mirrorSubtree(userContext: Any?, formKey: String?, elementRef: String?): MirrorSubtree? {
-    val json = loadFormJson(userContext, formKey) ?: return null
-    val root = itemJsonByRef(json, elementRef) ?: return null
+  fun mirrorSubtree(
+      userContext: Any?,
+      formKey: String?,
+      elementRef: String?,
+      formName: String? = null,
+      elementKey: String? = null
+  ): MirrorSubtree? {
+    val json = loadFormJson(userContext, formKey, formName) ?: return null
+    val ref = resolveElementRef(json, elementRef, elementKey) ?: return null
+    val root = itemJsonByRef(json, ref) ?: return null
     val index = childrenIndex(json)
     val rootProps = root.getJSONObject("properties") ?: return null
     val nodes = ArrayList<MirrorNode>()
@@ -367,7 +388,9 @@ object MirrorFormAccess {
       for (child in childrenOf(index, props)) queue.add(child to ref)
     }
     return MirrorSubtree(
-        latestVersionId(userContext, formKey), formRevision(userContext, formKey), nodes)
+        latestVersionId(userContext, formKey, formName),
+        formRevision(userContext, formKey, formName),
+        nodes)
   }
 
   /** Direct children of [props] within [index] (the index is keyed by both id and name). */
@@ -386,37 +409,239 @@ object MirrorFormAccess {
 
   // region Form JSON
 
-  /** Loads the persisted JSON of the *latest* version of the form referenced by [formKey]. */
-  fun loadFormJson(userContext: Any?, formKey: String?): JSONObject? {
+  /**
+   * Normalizes a form title for name-based matching (trim, collapse whitespace, case-insensitive).
+   */
+  private fun normalizeFormName(value: String?): String =
+      value.orEmpty().trim().replace(Regex("\\s+"), " ").lowercase()
+
+  /** A resolved source form plus whether the stored key/title have to be rewritten. */
+  private data class ResolvedForm(
+      val project: Any,
+      val id: Long,
+      val key: String,
+      val name: String,
+      val keyChanged: Boolean,
+      val nameChanged: Boolean
+  )
+
+  /**
+   * Finds a form by its (normalized) title, ignoring the project [excludeId]. When several forms
+   * share the title, the newest one (highest id — the row a re-import creates) wins.
+   */
+  private fun findFormByName(
+      userContext: Any?,
+      name: String?,
+      excludeId: Long? = null
+  ): MirrorForm? {
+    val wanted = normalizeFormName(name)
+    if (wanted.isEmpty()) return null
+    val candidates =
+        listForms(userContext).filter { it.id != excludeId && normalizeFormName(it.name) == wanted }
+    if (candidates.isEmpty()) return null
+    if (candidates.size > 1) {
+      logger.warn(
+          "[MirrorFormAccess] {} forms are named '{}' — using the newest ({})",
+          candidates.size,
+          name,
+          candidates.maxByOrNull { it.id }?.key)
+    }
+    return candidates.maxByOrNull { it.id }
+  }
+
+  /**
+   * Resolves the stored source form:
+   * 1. the stored `project-<id>` exists and (when a title is cached) its title matches → use it;
+   * 2. otherwise, a form carrying the STORED TITLE is used and its id replaces the stale stored id;
+   * 3. if no such form exists either, the reference is invalid (`null`).
+   *
+   * There is NO element-based re-binding. A form that does not carry the stored title is never
+   * silently accepted.
+   */
+  private fun resolveForm(userContext: Any?, formKey: String?, formName: String?): ResolvedForm? {
     if (userContext == null) return null
-    val projectId = projectIdOf(formKey) ?: return null
+    val storedKey = formKey?.trim().orEmpty()
+    val storedName = formName?.trim().orEmpty()
     return try {
-      val projekt = apiCall("PROJEKT", "getInitializedById", userContext, projectId) ?: return null
-      val versions = apiCall("FORMVERSION", "getByProjekt", userContext, projekt) as? List<*>
+      val storedId = projectIdOf(storedKey)
+      if (storedId != null) {
+        val project = apiCall("PROJEKT", "getInitializedById", userContext, storedId)
+        if (project != null) {
+          val actualName = projectTitle(project) ?: "Form $storedId"
+          if (storedName.isEmpty() ||
+              normalizeFormName(actualName) == normalizeFormName(storedName)) {
+            return ResolvedForm(
+                project = project,
+                id = storedId,
+                key = formKey(storedId),
+                name = actualName,
+                keyChanged = false,
+                nameChanged = storedName.isEmpty())
+          }
+          // The id resolves, but its title changed. Use another form carrying the STORED title.
+          val byName = findFormByName(userContext, storedName, storedId) ?: return null
+          val byNameProject =
+              apiCall("PROJEKT", "getInitializedById", userContext, byName.id) ?: return null
+          logger.info(
+              "[MirrorFormAccess] stored key '{}' resolves to '{}' but the cached title '{}' " +
+                  "belongs to '{}' — re-bound to '{}'",
+              storedKey,
+              actualName,
+              storedName,
+              byName.name,
+              byName.key)
+          return ResolvedForm(
+              project = byNameProject,
+              id = byName.id,
+              key = byName.key,
+              name = byName.name,
+              keyChanged = byName.key != storedKey,
+              nameChanged = false)
+        }
+      }
+      // The stored id is gone: accept ONLY a form with the stored title (e.g. the re-imported one).
+      val byName = findFormByName(userContext, storedName, null) ?: return null
+      val byNameProject =
+          apiCall("PROJEKT", "getInitializedById", userContext, byName.id) ?: return null
+      logger.info(
+          "[MirrorFormAccess] re-bound source form '{}' (stale key '{}') to '{}'",
+          storedName,
+          formKey,
+          byName.key)
+      ResolvedForm(
+          project = byNameProject,
+          id = byName.id,
+          key = byName.key,
+          name = byName.name,
+          keyChanged = byName.key != storedKey,
+          nameChanged = false)
+    } catch (x: Exception) {
+      logger.warn("[MirrorFormAccess] resolveForm failed for '{}': {}", formKey, x.message)
+      null
+    }
+  }
+
+  /** Why a stored Mirror reference is (in)valid. Used by the designer hint. */
+  data class MirrorReferenceStatus(
+      val formKey: String,
+      val storedFormName: String,
+      val elementRef: String,
+      val elementKey: String,
+      val valid: Boolean,
+      val formMissing: Boolean,
+      val titleMismatch: Boolean,
+      val elementMissing: Boolean,
+      val actualFormName: String?
+  )
+
+  /**
+   * Validates the stored reference for the designer: the form must resolve (id + cached title, with
+   * the same-title re-import fallback), and the linked element must exist either by its stored id
+   * or by its cached TECHNICAL name. The frontend renders nothing for an invalid reference; the
+   * designer shows a hint with the stored form id, form title, element id and element name.
+   */
+  fun referenceStatus(
+      userContext: Any?,
+      formKey: String?,
+      formName: String?,
+      elementRef: String?,
+      elementKey: String?
+  ): MirrorReferenceStatus {
+    val key = formKey?.trim().orEmpty()
+    val storedName = formName?.trim().orEmpty()
+    val element = elementRef?.trim().orEmpty()
+    val storedElementKey = elementKey?.trim().orEmpty()
+    // A form carrying the stored title (e.g. the re-imported one) makes the FORM valid even when
+    // the
+    // stored project id is stale. The element is validated separately below.
+    resolveForm(userContext, key, storedName)?.let { resolved ->
+      val json = loadFormJsonForProject(userContext, resolved.project)
+      val resolvedElement =
+          if (json != null) resolveElementRef(json, element, storedElementKey) else null
+      return MirrorReferenceStatus(
+          formKey = key,
+          storedFormName = storedName,
+          elementRef = element,
+          elementKey = storedElementKey,
+          valid = resolvedElement != null,
+          formMissing = false,
+          titleMismatch = false,
+          elementMissing = resolvedElement == null,
+          actualFormName = resolved.name)
+    }
+    val id = projectIdOf(key)
+    if (userContext == null || id == null) {
+      return MirrorReferenceStatus(
+          key, storedName, element, storedElementKey, false, true, false, false, null)
+    }
+    val project =
+        try {
+          apiCall("PROJEKT", "getInitializedById", userContext, id)
+        } catch (x: Exception) {
+          logger.warn("[MirrorFormAccess] referenceStatus failed for '{}': {}", key, x.message)
+          null
+        }
+    if (project == null) {
+      return MirrorReferenceStatus(
+          key, storedName, element, storedElementKey, false, true, false, false, null)
+    }
+    val actualName = projectTitle(project) ?: "Form $id"
+    val mismatch =
+        storedName.isNotEmpty() && normalizeFormName(actualName) != normalizeFormName(storedName)
+    return MirrorReferenceStatus(
+        formKey = key,
+        storedFormName = storedName,
+        elementRef = element,
+        elementKey = storedElementKey,
+        valid = false,
+        formMissing = false,
+        titleMismatch = mismatch,
+        elementMissing = false,
+        actualFormName = actualName)
+  }
+
+  /** Loads the latest form JSON for an already-resolved project entity. */
+  private fun loadFormJsonForProject(userContext: Any?, project: Any): JSONObject? {
+    return try {
+      val versions = apiCall("FORMVERSION", "getByProjekt", userContext, project) as? List<*>
       val latest =
           versions.orEmpty().filterNotNull().maxByOrNull { (invoke(it, "getId") as? Long) ?: 0L }
               ?: return null
       apiCall("FORMVERSION", "getFormAsJSON", userContext, latest) as? JSONObject
     } catch (x: Exception) {
-      logger.warn("[MirrorFormAccess] loadFormJson failed for '{}': {}", formKey, x.message)
+      logger.warn("[MirrorFormAccess] loadFormJsonForProject failed: {}", x.message)
       null
     }
   }
 
+  /** Source form ENTITY for [formKey] — see [resolveForm] for the strict rules. */
+  private fun resolveProject(userContext: Any?, formKey: String?, formName: String?): Any? =
+      resolveForm(userContext, formKey, formName)?.project
+
+  /** Resolves the project id of the referenced form, or `null` when invalid. */
+  fun resolveProjectId(userContext: Any?, formKey: String?, formName: String? = null): Long? =
+      resolveForm(userContext, formKey, formName)?.id
+
+  /**
+   * Loads the persisted JSON of the *latest* version of the form referenced by [formKey]. When the
+   * key is stale, [formName] is used to re-find the form after an export/import cycle.
+   */
+  fun loadFormJson(userContext: Any?, formKey: String?, formName: String? = null): JSONObject? {
+    val resolved = resolveForm(userContext, formKey, formName) ?: return null
+    return loadFormJsonForProject(userContext, resolved.project)
+  }
+
   /** Finds the raw persist JSON of a single element (by id or name) inside the foreign form. */
-  fun findElementJson(userContext: Any?, formKey: String?, elementRef: String?): JSONObject? {
-    val json = loadFormJson(userContext, formKey) ?: return null
-    val items = json.getJSONArray("items") ?: return null
-    val wanted = elementRef?.trim().orEmpty()
-    if (wanted.isEmpty()) return null
-    for (i in 0 until items.size) {
-      val item = items.getJSONObject(i) ?: continue
-      val props = item.getJSONObject("properties") ?: continue
-      val id = props.getString("id").orEmpty()
-      val name = props.getString("name").orEmpty()
-      if (wanted == id || wanted == name) return item
-    }
-    return null
+  fun findElementJson(
+      userContext: Any?,
+      formKey: String?,
+      elementRef: String?,
+      formName: String? = null,
+      elementKey: String? = null
+  ): JSONObject? {
+    val json = loadFormJson(userContext, formKey, formName) ?: return null
+    val ref = resolveElementRef(json, elementRef, elementKey) ?: return null
+    return itemJsonByRef(json, ref)
   }
 
   /**
@@ -428,8 +653,8 @@ object MirrorFormAccess {
    *
    * @return e.g. `"xm-form modern responsive"`, or `""` when the form cannot be loaded.
    */
-  fun formRootClasses(userContext: Any?, formKey: String?): String {
-    val json = loadFormJson(userContext, formKey) ?: return ""
+  fun formRootClasses(userContext: Any?, formKey: String?, formName: String? = null): String {
+    val json = loadFormJson(userContext, formKey, formName) ?: return ""
     return try {
       rootClassesOf(XForm(json))
     } catch (x: Exception) {
@@ -477,13 +702,16 @@ object MirrorFormAccess {
       formKey: String?,
       elementRef: String?,
       renderConfig: IXFormRenderConfig?,
-      renderContext: IXFormRenderContext?
+      renderContext: IXFormRenderContext?,
+      formName: String? = null,
+      elementKey: String? = null
   ): Div? {
     if (renderConfig == null || renderContext == null) return null
-    val json = loadFormJson(userContext, formKey) ?: return null
+    val json = loadFormJson(userContext, formKey, formName) ?: return null
+    val ref = resolveElementRef(json, elementRef, elementKey) ?: return null
     return try {
       val form = XForm(json)
-      val item = findItem(form, formKey, elementRef) ?: return null
+      val item = findItem(form, formKey, ref) ?: return null
       val node =
           item.render(
               renderConfig, HashMap(), emptyMap(), false, renderContext, JSONObject(), false, false)
@@ -492,7 +720,7 @@ object MirrorFormAccess {
       // what
       // nests child items into their container, and we bypass it here — so append the element's
       // descendants ourselves, otherwise containers are previewed/rendered empty.
-      itemJsonByRef(json, elementRef)?.let { elementJson ->
+      itemJsonByRef(json, ref)?.let { elementJson ->
         appendDescendants(
             childrenIndex(json),
             xItemsByRef(form),
@@ -516,9 +744,13 @@ object MirrorFormAccess {
       formKey: String?,
       elementRef: String?,
       renderConfig: IXFormRenderConfig?,
-      renderContext: IXFormRenderContext?
+      renderContext: IXFormRenderContext?,
+      formName: String? = null,
+      elementKey: String? = null
   ): String? =
-      renderElementNode(userContext, formKey, elementRef, renderConfig, renderContext)?.write()
+      renderElementNode(
+              userContext, formKey, elementRef, renderConfig, renderContext, formName, elementKey)
+          ?.write()
 
   /**
    * Renders a single element (and its children) of the CURRENT form from an already-parsed form
@@ -651,6 +883,56 @@ object MirrorFormAccess {
     if (wanted.isEmpty()) return null
     val items = form.getXItems() ?: return null
     return items.values.firstOrNull { it.getId() == wanted || it.getName() == wanted }
+  }
+
+  /**
+   * Resolves the element reference to use inside [json]:
+   * 1. the stored [elementRef] (id, or name as a legacy fallback) still exists → use its id;
+   * 2. otherwise, an element whose TECHNICAL NAME equals [elementKey] (e.g. `txt6`) → use its id;
+   * 3. otherwise `null` (the linked element is gone).
+   *
+   * This is what lets a Mirror recover when the source element was deleted and recreated under the
+   * same designer name: the internal id changed, the technical name did not.
+   */
+  private fun resolveElementRef(
+      json: JSONObject,
+      elementRef: String?,
+      elementKey: String?
+  ): String? {
+    val wantedName = elementKey?.trim().orEmpty()
+    val byRef = itemJsonByRef(json, elementRef)
+    if (byRef != null) {
+      val props = byRef.getJSONObject("properties") ?: return null
+      val id = props.getString("id").orEmpty()
+      val actualName = props.getString("name").orEmpty()
+      val ref = id.ifBlank { actualName }
+      if (wantedName.isEmpty() || actualName == wantedName) {
+        return ref
+      }
+      // The stored id still exists but now carries a DIFFERENT technical name. Prefer an element
+      // that still has the stored name (the original was deleted and another element reused its
+      // id).
+      val items = json.getJSONArray("items") ?: return ref
+      for (i in 0 until items.size) {
+        val otherProps = items.getJSONObject(i)?.getJSONObject("properties") ?: continue
+        val otherId = otherProps.getString("id").orEmpty()
+        val otherName = otherProps.getString("name").orEmpty()
+        if (otherName == wantedName && otherId.isNotBlank() && otherId != id) {
+          return otherId
+        }
+      }
+      // No element carries the stored name any more — the existing id is the renamed original.
+      return ref
+    }
+    if (wantedName.isEmpty()) return null
+    val items = json.getJSONArray("items") ?: return null
+    for (i in 0 until items.size) {
+      val props = items.getJSONObject(i)?.getJSONObject("properties") ?: continue
+      if (props.getString("name").orEmpty() == wantedName) {
+        return props.getString("id").orEmpty().ifBlank { wantedName }
+      }
+    }
+    return null
   }
 
   /**

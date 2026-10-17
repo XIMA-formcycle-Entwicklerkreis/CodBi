@@ -50,6 +50,9 @@ declare module "@de-xima/fc-form-designer" {
  * Document event dispatched whenever either switch is flipped (and whenever the designer seeds a
  * value). The CodBi element-markers overlay (`CodbiElementMarkers.ts`) listens for it so the canvas
  * reacts immediately — independent of whether the designer persists the form properties.
+ *
+ * The `detail` carries the edited `property`, so the overlay can tell the “Mark elements” switch
+ * apart from the “Preview” switch (both reuse this editor and both report `enabled`).
  */
 export const MARK_ELEMENTS_CHANGED_EVENT = "codbi:mark-elements:changed";
 
@@ -155,7 +158,13 @@ export class CodbiSwitchEditor extends Editors.BaseEditor<typeof CodbiSwitchEdit
     try {
       document.dispatchEvent(
         new CustomEvent(MARK_ELEMENTS_CHANGED_EVENT, {
-          detail: { enabled: this.primary.checked, showLabels: this.secondary.checked },
+          detail: {
+            // Which form property this primary switch edits (the editors for "Mark elements" and
+            // "Preview" are separate instances, so the overlay can attribute the state correctly).
+            property: this.config.property,
+            enabled: this.primary.checked,
+            showLabels: this.secondary.checked,
+          },
         }),
       );
     } catch {

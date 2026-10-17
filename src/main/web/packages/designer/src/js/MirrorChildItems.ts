@@ -3,15 +3,15 @@ import { Constants } from "codbi-common";
 import {
   MIRROR_SOURCE_REVISION_PROPERTY,
   MIRROR_SOURCE_VERSION_PROPERTY,
+  mirrorElementOptions,
   mirrorElementTree,
+  mirrorFormOptions,
   mirrorFormStamp,
+  normalizeMirrorFormName,
   type IMirrorNode,
+  type IMirrorOption,
 } from "./MirrorSelect.js";
 // #endregion Imports
-
-// Unconditional marker so it is obvious in the browser console whether the CURRENT designer bundle
-// (the one with the child-items feature) is loaded — a stale cache would otherwise hide the logs.
-console.log("[CodBi] MirrorChildItems module loaded");
 
 /**
  * Materializes a Mirror widget's source element as REAL child items.
@@ -57,8 +57,13 @@ interface IMirrorItemLike {
 interface IDesignerLike {
   items?: Record<string, IMirrorItemLike>;
   getSelectedMasterItem?(): IMirrorItemLike | undefined;
+  getSelectedItemsData?(): IMirrorItemLike[];
+  getSelectedItems?(): JQuery;
+  getItem?(el: unknown): IMirrorItemLike | undefined;
   getValueAbleItems?(useCached?: boolean): unknown[];
   generateUniqueItemId?(className: string): string;
+  /** The designer's persist differ — nudged after a direct property write. */
+  getPersistDiffer?(): { checkForChanges?(): void } | undefined;
   _createItemFromCatalogue?: (
     className: string,
     descriptor: { properties: TItemProperties; use_name_idx?: boolean },
@@ -86,6 +91,45 @@ export const MIRROR_OWNER_PROPERTY = "codbi_mirror_owner";
  */
 export const MIRROR_COPY_CSS_CLASS = "codbi-mirror-copy";
 
+/** Mirror properties holding the source form/element references and their cached names. */
+const MIRROR_FORM_PROPERTY = String(Constants["mirror.property.form"]);
+const MIRROR_FORM_NAME_PROPERTY = String(Constants["mirror.property.form_name"]);
+const MIRROR_ELEMENT_PROPERTY = String(Constants["mirror.property.element"]);
+const MIRROR_ELEMENT_KEY_PROPERTY = String(Constants["mirror.property.element_key"]);
+
+/**
+ * The item currently being edited. Some designer entry points only expose the selection through
+ * `getSelectedItems()` + `getItem()`, so do not rely on `getSelectedMasterItem()` alone — that was
+ * why the Mirror form editor could fail to repair its reference even though it knew the old value.
+ */
+function selectedMirrorItem(designer: IDesignerLike | undefined): IMirrorItemLike | undefined {
+  if (!designer) {
+    return undefined;
+  }
+  try {
+    const master = designer.getSelectedMasterItem?.();
+    if (master) {
+      return master;
+    }
+  } catch {
+    /* try the other access paths */
+  }
+  try {
+    const first = designer.getSelectedItemsData?.()?.[0];
+    if (first) {
+      return first;
+    }
+  } catch {
+    /* try the other access paths */
+  }
+  try {
+    const selected = designer.getSelectedItems?.();
+    return selected ? designer.getItem?.(selected) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Reads the persisted properties of an item, preferring `getPersist()`. */
 function propertiesOf(item: IMirrorItemLike | undefined): TItemProperties | undefined {
   if (!item) {
@@ -100,6 +144,305 @@ function propertiesOf(item: IMirrorItemLike | undefined): TItemProperties | unde
     /* fall through to the live properties bag */
   }
   return item.properties;
+}
+
+/**
+ * @returns every writable property bag of an item — the persisted one (`getPersist().properties`)
+ * and the live one (`item.properties`) when they are distinct objects.
+ */
+function writablePropertyBags(item: IMirrorItemLike): TItemProperties[] {
+  const bags: TItemProperties[] = [];
+  let persisted: TItemProperties | undefined;
+  try {
+    persisted = item.getPersist?.()?.properties;
+  } catch {
+    persisted = undefined;
+  }
+  if (persisted) {
+    bags.push(persisted);
+  }
+  if (item.properties && item.properties !== persisted) {
+    bags.push(item.properties);
+  }
+  return bags;
+}
+
+/** Nudges the designer's persist differ so a direct property write is synced to the server. */
+function notifyDesignerChanged(designer: IDesignerLike): void {
+  try {
+    designer.getPersistDiffer?.()?.checkForChanges?.();
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Writes the source-form reference into the Mirror's property bags:
+ * `codbi_mirror_form` receives the `project-<id>` key, `codbi_mirror_form_name` its title. The title
+ * is the second half of the strict validity check: if the form at that id is later renamed, the
+ * Mirror must become invalid instead of silently mirroring the renamed form.
+ */
+function writeMirrorFormReference(designer: IDesignerLike, mirror: IMirrorItemLike, option: IMirrorOption): void {
+  const bags = writablePropertyBags(mirror);
+  if (bags.length === 0) {
+    return;
+  }
+  for (const props of bags) {
+    props[MIRROR_FORM_PROPERTY] = option.value;
+    props[MIRROR_FORM_NAME_PROPERTY] = option.text;
+  }
+  notifyDesignerChanged(designer);
+  console.info(`[CodBi] Mirror: source form reference "${option.text}" -> "${option.value}".`);
+}
+
+/**
+ * Writes ONLY the stored project id (`codbi_mirror_form`), leaving the cached title untouched.
+ * Used when a form carrying the stored title was found under a NEW id (re-import): the stored title
+ * must keep validating the link, so only the id is corrected.
+ */
+function writeMirrorFormKey(designer: IDesignerLike, mirror: IMirrorItemLike, key: string): void {
+  const bags = writablePropertyBags(mirror);
+  if (bags.length === 0) {
+    return;
+  }
+  for (const props of bags) {
+    props[MIRROR_FORM_PROPERTY] = key;
+  }
+  notifyDesignerChanged(designer);
+}
+
+/**
+ * Remembers the chosen source form on the SELECTED Mirror: writes `codbi_mirror_form` and the
+ * cached `codbi_mirror_form_name`. Both are required to validate the link later.
+ */
+export function rememberMirrorFormReference(designerLike: unknown, option: IMirrorOption): void {
+  const designer = designerLike as IDesignerLike;
+  const mirror = selectedMirrorItem(designer);
+  if (mirror) {
+    writeMirrorFormReference(designer, mirror, option);
+  }
+}
+
+/** @returns the newest option whose title matches [name] (optionally excluding [excludeKey]). */
+function newestOptionByName(options: IMirrorOption[], name: string, excludeKey?: string): IMirrorOption | undefined {
+  const wanted = normalizeMirrorFormName(name);
+  if (!wanted) {
+    return undefined;
+  }
+  let best: IMirrorOption | undefined;
+  for (const option of options) {
+    if (option.value === excludeKey || normalizeMirrorFormName(option.text) !== wanted) {
+      continue;
+    }
+    const id = Number(/^project-(\d+)$/.exec(option.value.trim())?.[1] ?? 0);
+    const bestId = best ? Number(/^project-(\d+)$/.exec(best.value.trim())?.[1] ?? 0) : -1;
+    if (!best || id > bestId) {
+      best = option;
+    }
+  }
+  return best;
+}
+
+/**
+ * Applies the same rule as the backend to the form options:
+ * 1. the stored key still exists and its title matches → keep it;
+ * 2. otherwise, if a form carries the STORED title → use that form and rewrite ONLY the stored id;
+ * 3. otherwise → leave the reference untouched (invalid; the designer hint explains why).
+ */
+function resolveMirrorFormReference(
+  designer: IDesignerLike,
+  mirror: IMirrorItemLike,
+  options: IMirrorOption[],
+  storedKey: string,
+  storedName: string,
+): { key: string; rebound: boolean } {
+  const byKey = storedKey ? options.find((option) => option.value === storedKey) : undefined;
+  if (byKey) {
+    const wanted = normalizeMirrorFormName(storedName);
+    if (!wanted || normalizeMirrorFormName(byKey.text) === wanted) {
+      return { key: storedKey, rebound: false };
+    }
+    const byName = newestOptionByName(options, storedName, storedKey);
+    if (byName) {
+      writeMirrorFormKey(designer, mirror, byName.value);
+      console.info(
+        `[CodBi] Mirror: re-bound source form from stale key "${storedKey}" to "${byName.value}" by stored title "${storedName}".`,
+      );
+      return { key: byName.value, rebound: true };
+    }
+    return { key: storedKey, rebound: false };
+  }
+  if (!storedName) {
+    return { key: storedKey, rebound: false };
+  }
+  const byName = newestOptionByName(options, storedName);
+  if (!byName) {
+    return { key: storedKey, rebound: false };
+  }
+  writeMirrorFormKey(designer, mirror, byName.value);
+  console.info(
+    `[CodBi] Mirror: re-bound source form from deleted key "${storedKey}" to "${byName.value}" by stored title "${storedName}".`,
+  );
+  return { key: byName.value, rebound: true };
+}
+
+/**
+ * Selected-item wrapper for {@link resolveMirrorFormReference}: returns the (possibly corrected)
+ * project key so the form editor can immediately show the form and reload the element dropdown.
+ */
+export function resolveSelectedMirrorForm(
+  designerLike: unknown,
+  options: IMirrorOption[],
+  storedKey: string,
+  storedName: string,
+): string {
+  const designer = designerLike as IDesignerLike;
+  const mirror = selectedMirrorItem(designer);
+  if (!mirror) {
+    return storedKey;
+  }
+  return resolveMirrorFormReference(designer, mirror, options, storedKey, storedName).key;
+}
+
+/**
+ * Recovers the source element's technical NAME from the Mirror's generated child items. The ROOT
+ * copied item (its `parentid` is the Mirror id) carries the namespaced name `<mirrorName>_<name>`;
+ * stripping the prefix yields the source element's designer name (e.g. `txt6`). This also works
+ * after the source form/element was deleted, because the copies live in the TARGET form.
+ */
+function elementNameFromChildren(designer: IDesignerLike, mirror: IMirrorItemLike): string {
+  const mirrorId = mirror.getId?.() ?? "";
+  if (!mirrorId) {
+    return "";
+  }
+  const mirrorName = String(propertiesOf(mirror)?.name ?? "") || mirrorId;
+  const prefix = `${mirrorName}_`;
+  for (const item of Object.values(designer.items ?? {})) {
+    const props = propertiesOf(item);
+    if (!props) {
+      continue;
+    }
+    if (String(props[MIRROR_OWNER_PROPERTY] ?? "") !== mirrorId) {
+      continue;
+    }
+    if (String(props.parentid ?? "") !== mirrorId) {
+      continue;
+    }
+    const name = String(props.name ?? "").trim();
+    if (!name) {
+      continue;
+    }
+    return name.startsWith(prefix) ? name.slice(prefix.length) : name;
+  }
+  return "";
+}
+
+/** Writes ONLY the cached element technical name (`codbi_mirror_element_key`). */
+function writeMirrorElementKey(designer: IDesignerLike, mirror: IMirrorItemLike, key: string): void {
+  const bags = writablePropertyBags(mirror);
+  if (bags.length === 0) {
+    return;
+  }
+  for (const props of bags) {
+    props[MIRROR_ELEMENT_KEY_PROPERTY] = key;
+  }
+  notifyDesignerChanged(designer);
+}
+
+/** Writes the element reference (id + technical name) into the Mirror's property bags. */
+function writeMirrorElementReference(designer: IDesignerLike, mirror: IMirrorItemLike, option: IMirrorOption): void {
+  const bags = writablePropertyBags(mirror);
+  if (bags.length === 0) {
+    return;
+  }
+  const key = option.name || option.text || option.value;
+  for (const props of bags) {
+    props[MIRROR_ELEMENT_PROPERTY] = option.value;
+    props[MIRROR_ELEMENT_KEY_PROPERTY] = key;
+  }
+  notifyDesignerChanged(designer);
+}
+
+/** Remembers the chosen element on the SELECTED Mirror (id + technical name). */
+export function rememberMirrorElementReference(designerLike: unknown, option: IMirrorOption): void {
+  const designer = designerLike as IDesignerLike;
+  const mirror = selectedMirrorItem(designer);
+  if (mirror) {
+    writeMirrorElementReference(designer, mirror, option);
+  }
+}
+
+/** @returns the element option whose technical name equals [name] (id excluded when given). */
+function elementOptionByName(options: IMirrorOption[], name: string, excludeId?: string): IMirrorOption | undefined {
+  const wanted = name.trim();
+  if (!wanted) {
+    return undefined;
+  }
+  return options.find((option) => option.value !== excludeId && (option.name || option.text) === wanted);
+}
+
+/**
+ * Applies the element id/name reconciliation:
+ * 1. the stored element id still exists and its technical name matches → keep it;
+ * 2. otherwise, an element carrying the STORED technical name → use it and rewrite the id;
+ * 3. otherwise → if the id still exists, accept its current name (renamed element); if neither
+ *    exists, leave the reference untouched (the designer hint reports the missing element).
+ */
+function resolveMirrorElementReference(
+  designer: IDesignerLike,
+  mirror: IMirrorItemLike,
+  options: IMirrorOption[],
+  storedId: string,
+  storedKey: string,
+): { id: string; rebound: boolean } {
+  const byId = storedId ? options.find((option) => option.value === storedId) : undefined;
+  if (byId) {
+    const actualKey = byId.name || byId.text || byId.value;
+    if (!storedKey || storedKey === actualKey) {
+      if (!storedKey) {
+        writeMirrorElementKey(designer, mirror, actualKey);
+      }
+      return { id: storedId, rebound: false };
+    }
+    const byName = elementOptionByName(options, storedKey, storedId);
+    if (byName) {
+      writeMirrorElementReference(designer, mirror, byName);
+      console.info(
+        `[CodBi] Mirror: re-bound element from stale id "${storedId}" to "${byName.value}" by stored name "${storedKey}".`,
+      );
+      return { id: byName.value, rebound: true };
+    }
+    // The element was renamed but not replaced: keep the id and update the cached name.
+    writeMirrorElementKey(designer, mirror, actualKey);
+    return { id: storedId, rebound: false };
+  }
+  if (!storedKey) {
+    return { id: storedId, rebound: false };
+  }
+  const byName = elementOptionByName(options, storedKey);
+  if (!byName) {
+    return { id: storedId, rebound: false };
+  }
+  writeMirrorElementReference(designer, mirror, byName);
+  console.info(
+    `[CodBi] Mirror: re-bound element from deleted id "${storedId}" to "${byName.value}" by stored name "${storedKey}".`,
+  );
+  return { id: byName.value, rebound: true };
+}
+
+/** Selected-item wrapper for the element reconciliation; returns the (possibly new) element id. */
+export function resolveSelectedMirrorElement(
+  designerLike: unknown,
+  options: IMirrorOption[],
+  storedId: string,
+  storedKey: string,
+): string {
+  const designer = designerLike as IDesignerLike;
+  const mirror = selectedMirrorItem(designer);
+  if (!mirror) {
+    return storedId;
+  }
+  return resolveMirrorElementReference(designer, mirror, options, storedId, storedKey).id;
 }
 
 /** @returns the ids of the child items this module previously generated for [mirrorId]. */
@@ -205,6 +548,7 @@ export async function syncMirrorChildren(
   form: string,
   element: string,
   explicitMirror?: IMirrorItemLike,
+  elementKey?: string,
 ): Promise<void> {
   const designer = designerLike as IDesignerLike;
   if (!designer) {
@@ -218,16 +562,13 @@ export async function syncMirrorChildren(
     return;
   }
 
-  const removed = generatedChildIds(designer, mirrorId);
   removeGeneratedChildren(designer, mirrorId);
-  console.log("[CodBi] Mirror: sync mirror=%s form=%s element=%s removed=%d", mirrorId, form, element, removed.length);
 
   if (!form || !element) {
     return;
   }
 
-  const tree = await mirrorElementTree(form, element);
-  console.log("[CodBi] Mirror: subtree nodes=%d version=%s", tree.items.length, tree.version);
+  const tree = await mirrorElementTree(form, element, elementKey);
   if (tree.items.length === 0) {
     return;
   }
@@ -268,17 +609,9 @@ export async function syncMirrorChildren(
       } catch (x) {
         console.warn("[CodBi] Mirror: draw() failed for", node.ref, x);
       }
-      const placed = placeInsideParent(parentItem, item);
+      placeInsideParent(parentItem, item);
       itemByRef.set(node.ref, item);
       created += 1;
-      console.log(
-        "[CodBi] Mirror: created %s (%s) id=%s parent=%s placed=%s",
-        node.name || node.ref,
-        className,
-        item.getId?.(),
-        parentId,
-        placed,
-      );
     } catch (x) {
       console.error("[CodBi] Mirror: could not create node", node.ref, className, x);
     }
@@ -293,7 +626,6 @@ export async function syncMirrorChildren(
     /* ignore */
   }
 
-  console.log("[CodBi] Mirror: materialized %d/%d node(s) into %s", created, tree.items.length, mirrorId);
   try {
     // Drop the designer's cached value-able items so the placeholder dialog sees the new fields.
     designer.getValueAbleItems?.(false);
@@ -312,28 +644,33 @@ export async function refreshMirrorIfStale(designerLike: unknown): Promise<void>
   if (!designer) {
     return;
   }
-  const mirror = designer.getSelectedMasterItem?.();
+  const mirror = selectedMirrorItem(designer);
   const props = propertiesOf(mirror);
-  const form = String(props?.[String(Constants["mirror.property.form"])] ?? "");
-  const element = String(props?.[String(Constants["mirror.property.element"])] ?? "");
-  console.log("[CodBi] Mirror: staleness check mirrorId=%s form=%s element=%s", mirror?.getId?.(), form, element);
+  const form = String(props?.[MIRROR_FORM_PROPERTY] ?? "");
+  const formName = String(props?.[MIRROR_FORM_NAME_PROPERTY] ?? "");
+  const element = String(props?.[MIRROR_ELEMENT_PROPERTY] ?? "");
+  const elementKey = String(props?.[MIRROR_ELEMENT_KEY_PROPERTY] ?? "");
   if (!props || !form || !element) {
     return;
   }
+  const options = await mirrorFormOptions();
+  const { key: formKey, rebound } = resolveMirrorFormReference(designer, mirror, options, form, formName);
+  let elementRef = element;
+  let elementRebound = false;
+  if (options.some((option) => option.value === formKey)) {
+    const elementOptions = await mirrorElementOptions(formKey);
+    const resolvedElement = resolveMirrorElementReference(designer, mirror, elementOptions, element, elementKey);
+    elementRef = resolvedElement.id;
+    elementRebound = resolvedElement.rebound;
+  }
+  const finalElementKey = String(propertiesOf(mirror)?.[MIRROR_ELEMENT_KEY_PROPERTY] ?? elementKey);
   const storedVersion = Number(props[MIRROR_SOURCE_VERSION_PROPERTY] ?? 0);
   const storedRevision = Number(props[MIRROR_SOURCE_REVISION_PROPERTY] ?? 0);
-  const stamp = await mirrorFormStamp(form);
-  console.log(
-    "[CodBi] Mirror: staleness version %s->%s revision %s->%s",
-    storedVersion,
-    stamp.version,
-    storedRevision,
-    stamp.revision,
-  );
+  const stamp = await mirrorFormStamp(formKey);
   const revisionChanged = stamp.revision !== 0 && stamp.revision !== storedRevision;
   const versionChanged = stamp.version !== 0 && stamp.version !== storedVersion;
-  if (revisionChanged || versionChanged) {
-    await syncMirrorChildren(designer, form, element, mirror);
+  if (rebound || elementRebound || revisionChanged || versionChanged) {
+    await syncMirrorChildren(designer, formKey, elementRef, mirror, finalElementKey);
   }
 }
 
@@ -350,23 +687,72 @@ export async function refreshAllMirrors(designerLike: unknown): Promise<void> {
   if (!designer) {
     return;
   }
+  // Fetch the form list ONCE. Element lists are cached per source form within this pass.
+  const options = await mirrorFormOptions();
+  const elementOptionsByForm = new Map<string, IMirrorOption[]>();
+  const elementOptionsFor = async (formKey: string): Promise<IMirrorOption[]> => {
+    const cached = elementOptionsByForm.get(formKey);
+    if (cached) {
+      return cached;
+    }
+    const loaded = await mirrorElementOptions(formKey);
+    elementOptionsByForm.set(formKey, loaded);
+    return loaded;
+  };
   const items = Object.values(designer.items ?? {});
-  console.log("[CodBi] Mirror: form loaded — checking %d item(s)", items.length);
   for (const item of items) {
     const props = propertiesOf(item);
     if (!props) {
       continue;
     }
-    const form = String(props[String(Constants["mirror.property.form"])] ?? "");
-    const element = String(props[String(Constants["mirror.property.element"])] ?? "");
+    const form = String(props[MIRROR_FORM_PROPERTY] ?? "");
+    const formName = String(props[MIRROR_FORM_NAME_PROPERTY] ?? "");
+    const element = String(props[MIRROR_ELEMENT_PROPERTY] ?? "");
+    let elementKey = String(props[MIRROR_ELEMENT_KEY_PROPERTY] ?? "");
     if (!form || !element) {
       continue;
     }
+    // Older/newly imported Mirrors may not have the element name cached. Recover it from the
+    // generated child items BEFORE trying to resolve the (possibly already deleted) source element.
+    if (!elementKey) {
+      const derived = elementNameFromChildren(designer, item);
+      if (derived) {
+        writeMirrorElementKey(designer, item, derived);
+        elementKey = derived;
+        // Re-render the widget so the server-side designer hint immediately shows the recovered name.
+        try {
+          await item.draw?.();
+        } catch {
+          /* redraw is best effort */
+        }
+      }
+    }
+    // If the stored id is stale/mismatched but a form with the STORED title exists (the normal
+    // re-import case), rewrite ONLY the stored id. Never overwrite the stored title.
+    const { key: formKey, rebound } = resolveMirrorFormReference(designer, item, options, form, formName);
+    // Backfill the title for older Mirrors that never stored it. A MISMATCHED title is left
+    // untouched: that is exactly the invalid state the designer hint reports.
+    if (!formName) {
+      const option = options.find((entry) => entry.value === formKey);
+      if (option) {
+        writeMirrorFormReference(designer, item, option);
+      }
+    }
+    // Reconcile the element by its TECHNICAL name when its internal id changed (element deleted
+    // and recreated with the same designer name).
+    let elementRef = element;
+    let elementRebound = false;
+    if (options.some((option) => option.value === formKey)) {
+      const elementOptions = await elementOptionsFor(formKey);
+      const resolvedElement = resolveMirrorElementReference(designer, item, elementOptions, element, elementKey);
+      elementRef = resolvedElement.id;
+      elementRebound = resolvedElement.rebound;
+    }
+    const finalElementKey = String(propertiesOf(item)?.[MIRROR_ELEMENT_KEY_PROPERTY] ?? elementKey);
     const storedRevision = Number(props[MIRROR_SOURCE_REVISION_PROPERTY] ?? 0);
-    const stamp = await mirrorFormStamp(form);
-    console.log("[CodBi] Mirror: %s revision stored=%s current=%s", item.getId?.(), storedRevision, stamp.revision);
-    if (stamp.revision !== 0 && stamp.revision !== storedRevision) {
-      await syncMirrorChildren(designer, form, element, item);
+    const stamp = await mirrorFormStamp(formKey);
+    if (rebound || elementRebound || (stamp.revision !== 0 && stamp.revision !== storedRevision)) {
+      await syncMirrorChildren(designer, formKey, elementRef, item, finalElementKey);
     }
   }
 }
@@ -435,7 +821,6 @@ try {
   const topWindow = window.top as unknown as Record<string, unknown> | null;
   if (topWindow && topWindow !== (window as unknown as Record<string, unknown>)) {
     topWindow.__codbiMirrorDebug = mirrorDebugFn;
-    console.log("[CodBi] Mirror: debug hook installed on window.top");
   }
 } catch {
   /* cross-origin top — ignore */

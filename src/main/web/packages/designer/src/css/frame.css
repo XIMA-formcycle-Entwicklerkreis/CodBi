@@ -517,6 +517,15 @@
   text-align: left;
 }
 
+/* Per-element CodBi configuration panel: shown as one cohesive block inside the
+   element-properties sidebar. The padding keeps the content clear of the rounded corners. */
+.codbi-func-config--element {
+  box-sizing: border-box;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+}
+
 /* Centred CodBi watermark, behind the real content. */
 .codbi-func-config::after {
   content: "";
@@ -641,6 +650,72 @@
    BELOW theirs), so the default top margin is dropped and a small bottom gap takes its place. */
 .codbi-func-config__show-all--main {
   margin: 0 auto 6px;
+}
+
+/* The section's two toggles (the applicable-list opener and the "more" opener where the label
+   changes to "Weitere …" — see i18n) form ONE stacked double button. The section is split into a
+   TOP part and a BOTTOM part: the top part holds the "Funktionalitäten" half plus its applicability
+   listing, the bottom part holds the "Weitere Funktionalitäten" half plus the complement listing. A
+   thin divider at the bottom edge of the top part (inset 15 % on both ends) splits the two parts.
+   The outer wrapper paints the single shared darkorange outline that surrounds both parts, so the
+   whole section reads as one bordered control. */
+.codbi-func-config__double {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid darkorange;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.55);
+}
+/* Each half of the double button is one flex column holding its toggle and its listing. */
+.codbi-func-config__part {
+  display: flex;
+  flex-direction: column;
+}
+/* The half buttons lose their individual frame/corners/margins so they merge into the shared
+   double-button outline; labels are centred. */
+.codbi-func-config__double .codbi-func-config__show-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 3px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+/* The hovered half fills darkorange with white text so the active leaf is unmistakable. */
+.codbi-func-config__double .codbi-func-config__show-all:hover {
+  color: #fff;
+  background: darkorange;
+}
+/* Thin divider between the two parts: a horizontal darkorange line at the bottom edge of the TOP
+   part that reaches neither the left nor the right border (15 % inset at both ends), matching the
+   brand colour of the outline. It therefore sits below the first (applicability) listing and above
+   the "Weitere" half. */
+.codbi-func-config__double > .codbi-func-config__part:first-child {
+  position: relative;
+}
+.codbi-func-config__double > .codbi-func-config__part:first-child::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 15%;
+  right: 15%;
+  height: 1px;
+  background: darkorange;
+  pointer-events: none;
+}
+/* The listings rendered INSIDE the frame: no own border/radius (inherited from the outer outline),
+   so they stay flush with their half's toggle. */
+.codbi-func-config__double .codbi-func-config__funclist {
+  border: none;
+  border-radius: 0;
+  margin: 0;
 }
 /* The ▸/▾ state indicator of a show/hide toggle button. It is its OWN element so it can be rendered
    larger than the (11px) label — at the label size the small triangle glyphs are barely visible.

@@ -113,7 +113,7 @@ interface Window {
     /**
      * Stores the **form-element-type** metadata of the CodBi functionalities, keyed by (lowercase)
      * functionality id. Published by the build-time generator or the local API-doc manager; the
-     * runtime merges it with anything provided via `registerFunctionality` / `describeFunctionality`. */
+     * runtime merges it with anything provided via `describeFunctionality`. */
     funcMeta?: {
       [key: string]: {
         /** The widget class names the functionality applies to (empty = any). */
@@ -158,6 +158,24 @@ interface Window {
      * successful sync so a changed `supportedFormelementtypes` shows up without a designer reload.
      * Absent until the designer has registered the per-element CodBi properties. */
     refreshElementConfig?: () => void;
+    /**
+     * Opens the documentation of one **CodBi-Functionality** or **standard configuration** in the
+     * shared API-Doc viewer — the very viewer the attribute-config (`ALT+F`) and CSS-config (`.`)
+     * flows use. Published by the local API-doc interface and called by the per-element CodBi config
+     * panel's functionality/standard-configuration listings on right-click. Absent until the local
+     * API-doc interface has been enabled.
+     *
+     * @param kind   The registry to read the description from.
+     * @param id     The functionality id (matched case-insensitively) or the standard-configuration id.
+     * @param anchor The listing row the viewer is anchored/positioned next to.
+     */
+    showCodbiDoc?: (kind: "functionality" | "standard", id: string, anchor?: HTMLElement | null) => void;
+    /**
+     * Notifies the shared API-Doc viewer that the pointer left the listing row whose documentation it
+     * currently shows (see {@link showCodbiDoc}). The viewer stays open when the pointer reaches it in
+     * time, otherwise it dismisses after a short grace period.
+     */
+    codbiDocAnchorLeft?: () => void;
     /**
      * The plugin's BUILD token — the very version the designer's own resources are served with
      * (`designer.js?v=<buildVersion>`): a per-build timestamp for development builds, the release

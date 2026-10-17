@@ -240,7 +240,10 @@ export class MirrorDropdown {
 
   private renderButton(): void {
     const option = this.selectedOption();
-    const text = option?.text ?? "";
+    // When the stored value is no longer among the options (e.g. the linked form was deleted), show
+    // the RAW stored key instead of a blank button — the designer preview additionally explains why
+    // the Mirror is unlinked.
+    const text = option?.text ?? this.value;
     this.buttonLabel.textContent = text;
     this.button.title = text;
     this.button.disabled = this.options.length === 0;

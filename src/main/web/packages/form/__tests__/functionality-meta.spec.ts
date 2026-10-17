@@ -1,6 +1,6 @@
 /**
  * Tests for the functionality metadata registry added to `CodBi`
- * (registerFunctionality metadata / describeFunctionality / resolveFunctionalityMeta / @funcElement).
+ * (describeFunctionality / resolveFunctionalityMeta / @funcElement / published funcMeta).
  */
 import { describe, expect, it, beforeEach, jest } from "@jest/globals";
 import { SupportedFormelementtype } from "codbi-common";
@@ -17,12 +17,11 @@ describe("CodBi functionality metadata", () => {
     jest.restoreAllMocks();
   });
 
-  it("stores explicit metadata passed to registerFunctionality", () => {
+  it("stores metadata described via describeFunctionality", () => {
     const codbi = createCodbiGlobal();
 
-    expect(codbi.registerFunctionality("func.explicit", () => {}, { formElements: ["XFieldSet", "XContainer"] })).toBe(
-      true,
-    );
+    expect(codbi.registerFunctionality("func.explicit", () => {})).toBe(true);
+    codbi.describeFunctionality("func.explicit", { formElements: ["XFieldSet", "XContainer"] });
 
     const meta = codbi.resolveFunctionalityMeta("func.explicit");
     expect(meta?.formElements).toEqual(["XFieldSet", "XContainer"]);
@@ -46,7 +45,8 @@ describe("CodBi functionality metadata", () => {
 
   it("normalizes (trims + de-duplicates) the widget class names", () => {
     const codbi = createCodbiGlobal();
-    codbi.registerFunctionality("func.norm", () => {}, {
+    codbi.registerFunctionality("func.norm", () => {});
+    codbi.describeFunctionality("func.norm", {
       formElements: [" XFieldSet ", "XFieldSet", "", "XContainer"],
     });
 
@@ -55,7 +55,8 @@ describe("CodBi functionality metadata", () => {
 
   it("is case-insensitive for the functionality id", () => {
     const codbi = createCodbiGlobal();
-    codbi.registerFunctionality("Func.Case", () => {}, { formElements: ["XFieldSet"] });
+    codbi.registerFunctionality("Func.Case", () => {});
+    codbi.describeFunctionality("Func.Case", { formElements: ["XFieldSet"] });
 
     expect(codbi.resolveFunctionalityMeta("func.case")?.formElements).toEqual(["XFieldSet"]);
   });
@@ -102,7 +103,8 @@ describe("CodBi functionality metadata", () => {
       /** @funcElement XFieldSet */
       return undefined;
     };
-    codbi.registerFunctionality("func.prefer", init, { formElements: ["XUpload"] });
+    codbi.registerFunctionality("func.prefer", init);
+    codbi.describeFunctionality("func.prefer", { formElements: ["XUpload"] });
 
     expect(codbi.resolveFunctionalityMeta("func.prefer")?.formElements).toEqual(["XUpload"]);
   });

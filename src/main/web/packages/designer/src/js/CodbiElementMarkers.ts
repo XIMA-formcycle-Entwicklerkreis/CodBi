@@ -1,5 +1,5 @@
 // #region Imports
-import { $, Callbacks, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
+import { $, Callbacks, getDesignerConfig, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 import { Constants } from "codbi-common";
 import { MARK_ELEMENTS_CHANGED_EVENT } from "./CodbiSwitchEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
@@ -89,6 +89,28 @@ const previewSwitches = new Map<string, HTMLElement>();
 /** Signature of the attributes last applied to a preview wrapper, so the runtime isn't re-run. */
 const previewApplied = new WeakMap<HTMLElement, string>();
 
+/**
+ * Last preview signature applied per item id. Unlike {@link previewApplied} (keyed by the anchor DOM
+ * node) this survives the designer's re-render, which replaces the anchor after a property edit. It
+ * lets us tell "first activation" apart from "the element was already previewed and its attributes
+ * changed": only the latter must wait for the draft sync before the iframe reloads.
+ */
+const previewAppliedById = new Map<string, string>();
+
+/**
+ * Delay before a RUNNING element preview is re-applied after a `data-cb-*` attribute change. The
+ * preview page renders the SERVER-side draft, so the designer's persist differ needs time to sync the
+ * change before the iframe reloads — otherwise the preview would re-render the OLD attribute values.
+ */
+const PREVIEW_REAPPLY_DELAY_MS = 1500;
+
+/**
+ * Pending debounced preview re-applies, keyed by the preview wrapper. A single timer per wrapper is
+ * kept: additional refreshes while it is pending do not postpone it (the timer re-reads the live item,
+ * so it always reloads with the latest attribute values).
+ */
+const previewReapplyTimers = new WeakMap<HTMLElement, number>();
+
 /** The preview-toggle icon (an eye). */
 const EYE_ICON_SVG =
   '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">' +
@@ -126,7 +148,7 @@ const CSS_CLASSES_PROPERTY = "cssclasses";
  * because the designer stylesheet does not reach the canvas iframe.
  */
 const BADGE_CSS = `
-.codbi-elem-badge{position:absolute;top:4px;left:0;transform:translateX(6px);z-index:5;display:inline-flex;align-items:center;height:22px;box-sizing:border-box;overflow:hidden;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:5px;box-shadow:0 1px 3px rgba(15,23,42,.28);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;pointer-events:none;user-select:none;white-space:nowrap}
+.codbi-elem-badge{position:absolute;top:4px;left:0;transform:translateX(6px);z-index:5;display:inline-flex;align-items:center;height:22px;box-sizing:border-box;overflow:hidden;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:5px;box-shadow:0 1px 3px rgba(15,23,42,.28);opacity:.3;transition:opacity .15s ease;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;pointer-events:none;user-select:none;white-space:nowrap}
 /* Mirror badges sit in the widget's BOTTOM-LEFT corner (the function/CodBi badges keep top-left).
    They are deliberately stacked BELOW the functionality badge/popup (lower z-index), so when both
    are displayed the functionality widget's parameter table is drawn over/in front of the mirror
@@ -134,37 +156,63 @@ const BADGE_CSS = `
 .codbi-elem-badge--bottom{top:auto;bottom:4px;left:0;z-index:4}
 .codbi-elem-badge__icon{flex:0 0 auto;width:20px;height:20px;box-sizing:border-box;margin:0 1px;pointer-events:none;background-repeat:no-repeat;background-position:center;background-size:16px 16px;filter:drop-shadow(0 0 1.5px rgba(56,189,248,.85)) drop-shadow(0 0 3px rgba(37,99,235,.45))}
 .codbi-elem-badge__text{display:inline-block;max-width:0;overflow:hidden;opacity:0;pointer-events:none;transition:max-width .25s ease,opacity .25s ease,padding .25s ease}
+/* The badge stays VERY TRANSPARENT so it never hides the widget content it overlaps; hovering the
+   widget (or opening/focusing the badge) restores full opacity. The text EXPANSION, however, is
+   badge-hover-only: hovering the widget alone must not widen the badge. Because the badge never
+   captures the pointer (see the drop-target note after BADGE_CSS), the JS proximity tracker
+   installBadgeHoverTracking sets the --hover class instead of CSS :hover. */
+*:hover>.codbi-elem-badge{opacity:1}
+.codbi-elem-badge--open,
+.codbi-elem-badge--focus-active{opacity:1}
 *:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty){border-color:#c96a00;background:#fff7ed}
-*:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty) .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
+.codbi-elem-badge--hover:not(.codbi-elem-badge--empty) .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
 .codbi-elem-badge--open .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
-/* The marked (highlight) frame. The visible rounded border + darkorange glow are drawn by a
-   ::after OVERLAY (on top of the element) rather than by the element itself: form-designer
-   content cells fill themselves with child wrappers whose own rectangular background would cover
-   the element's rounded corners, and their overflow would clip an outer glow. The overlay is
-   always roundrect and sits above every child, so the highlight is readable on any element.
-   The overlay is HOVER-ONLY: it is always present (so its geometry is stable and the pointer is
-   unaffected) but kept fully transparent until the marked widget itself is hovered — the marked
-   widgets therefore no longer carry a permanent darkorange frame in the canvas. */
+/* The marked (highlight) overlay. The visible rounded tint is drawn by a ::after OVERLAY (on top of
+   the element) rather than by the element itself: form-designer content cells fill themselves with
+   child wrappers whose own rectangular background would cover the element's rounded corners, and
+   their overflow would clip an outer glow. The overlay is always roundrect and sits above every
+   child, so the highlight is readable on any element.
+   The codbi-elem-marked class is only assigned while the CodBi markers (Alt+V) are turned on, so
+   the VERY TRANSPARENT blue background stays visible the whole time the markers are active — not
+   just on hover. No border and no glow are drawn, keeping the highlight unobtrusive. */
 .codbi-elem-marked{position:relative!important;overflow:visible!important;z-index:2}
-.codbi-elem-marked::after{content:"";position:absolute;inset:-2px;pointer-events:none;box-sizing:border-box;border:2px solid darkorange;border-radius:10px;box-shadow:0 0 0 1px rgba(255,140,0,.30),0 0 10px 3px rgba(255,140,0,.55);z-index:9999;opacity:0;transition:opacity .15s ease}
-.codbi-elem-marked:hover::after{opacity:1}
+.codbi-elem-marked::after{content:"";position:absolute;inset:0;pointer-events:none;box-sizing:border-box;border:0;border-radius:10px;background:rgba(37,99,235,.04);z-index:1;opacity:1}
+/* Lift the WHOLE marked widget above NEIGHBOURING widgets while one of its functionality sub-badges
+   (or the parameter menu it reveals) is hovered or holds focus. Each .codbi-elem-marked element
+   forms its own stacking context at z-index:2, so the absolutely-positioned parameter menu
+   (z-index:6 INSIDE its own widget) is otherwise trapped below a neighbouring marked widget that
+   comes later in the DOM - e.g. an expanded Mirror-widget badge would paint OVER the menu. Raising
+   the widget that owns the active sub-badge puts its whole subtree, menu included, on top. The
+   :has() selector keeps this stateless and limited to the widget the pointer is actually using. */
+.codbi-elem-marked:has(.codbi-func-item:hover),
+.codbi-elem-marked:has(.codbi-css-item:hover),
+.codbi-elem-marked:has(.codbi-holistic-item:hover),
+.codbi-elem-marked:has(.codbi-func-item--open),
+.codbi-elem-marked:has(.codbi-css-item--open),
+.codbi-elem-marked:has(.codbi-holistic-item--open),
+.codbi-elem-marked:has(.codbi-func-item__params:hover),
+.codbi-elem-marked:has(.codbi-elem-badge--funcs:focus-within){z-index:9000}
 .codbi-mirror-icon{background-image:url("${MIRROR_ICON_URL}");background-repeat:no-repeat;background-position:center;background-size:contain}
 .codbi-mirror-icon svg{display:none}
-.codbi-elem-badge--funcs{overflow:visible}
+.codbi-elem-badge--funcs{overflow:visible;z-index:50}
 .codbi-func-icon{background-image:url("${CODBI_LOGO_URL}")}
-.codbi-func-list{display:inline-flex;align-items:center;gap:4px;max-width:0;overflow:hidden;opacity:0;pointer-events:none;transition:max-width .25s ease,opacity .25s ease,padding .25s ease}
-*:hover>.codbi-elem-badge--funcs>.codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
-.codbi-func-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #c96a00;border-radius:4px;background:#fff7ed;color:#7c2d12;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0;transition:opacity .25s ease}
+/* NOTE: opacity is deliberately NOT transitioned on the list, the sub-badges or the parameter popup.
+   A fade makes the whole popup translucent while animating; on a Mirror widget (whose backdrop differs)
+   that reads as a see-through table, and the live Mirror preview re-renders keep restarting the fade.
+   The reveal still animates via max-width/padding/transform, but opacity snaps to 0/1 instantly. */
+.codbi-func-list{display:inline-flex;align-items:center;gap:4px;max-width:0;overflow:hidden;opacity:0;pointer-events:none;transition:max-width .25s ease,padding .25s ease}
+.codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
+.codbi-func-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #c96a00;border-radius:4px;background:#fff7ed;color:#7c2d12;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0}
 /* The CSS-standard-configuration-class sub-badges are BLUE to distinguish them from the orange
    functionality sub-badges. */
-.codbi-css-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #1d4ed8;border-radius:4px;background:#eff6ff;color:#1e40af;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0;transition:opacity .25s ease}
+.codbi-css-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #1d4ed8;border-radius:4px;background:#eff6ff;color:#1e40af;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0}
 /* The HOLISTIC standard-configuration sub-badges are GREEN to mark elements that a runtime
    selector-resolved (holistic) configuration applies to. */
-.codbi-holistic-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #15803d;border-radius:4px;background:#ecfdf5;color:#14532d;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0;transition:opacity .25s ease}
+.codbi-holistic-item{position:relative;display:inline-flex;align-items:center;height:18px;box-sizing:border-box;padding:0 6px;border:1px solid #15803d;border-radius:4px;background:#ecfdf5;color:#14532d;font-size:11px;line-height:1;white-space:nowrap;pointer-events:auto;opacity:0}
 /* Reveal the sub-badges only once the list is expanded (prevents a flash while overflow is still hidden). */
-*:hover>.codbi-elem-badge--funcs>.codbi-func-list>.codbi-func-item{opacity:1}
-*:hover>.codbi-elem-badge--funcs>.codbi-func-list>.codbi-css-item{opacity:1}
-*:hover>.codbi-elem-badge--funcs>.codbi-func-list>.codbi-holistic-item{opacity:1}
+.codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-func-item{opacity:1}
+.codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-css-item{opacity:1}
+.codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-holistic-item{opacity:1}
 /* "Detailed" mode: reveal the functionality list without hovering (the parameter table stays
    hover-only, since no --open rule targets it). */
 .codbi-elem-badge--open .codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
@@ -181,7 +229,7 @@ const BADGE_CSS = `
 .codbi-func-item__name{pointer-events:none}
 .codbi-css-item__name{pointer-events:none}
 .codbi-holistic-item__name{pointer-events:none}
-.codbi-func-item__params{position:absolute;top:100%;left:-1px;margin-top:3px;z-index:6;width:max-content;max-width:var(--codbi-func-anchor-width,320px);box-sizing:border-box;padding:0 6px;border:1px solid #c96a00;border-radius:4px;background:rgba(255,255,255,.98);box-shadow:0 2px 6px rgba(15,23,42,.3);color:#374151;visibility:hidden;opacity:0;max-height:0;overflow:hidden;transform:translateY(-4px);transition:max-height .25s ease,opacity .25s ease,transform .25s ease,padding .25s ease,visibility .25s}
+.codbi-func-item__params{position:absolute;top:100%;left:-1px;margin-top:3px;z-index:60;width:max-content;max-width:var(--codbi-func-anchor-width,320px);box-sizing:border-box;padding:0 6px;border:1px solid #c96a00;border-radius:4px;background:#fff;box-shadow:0 2px 6px rgba(15,23,42,.3);color:#374151;visibility:hidden;opacity:0;max-height:0;overflow:hidden;transform:translateY(-4px);transition:max-height .25s ease,transform .25s ease,padding .25s ease,visibility .25s}
 .codbi-func-item:hover>.codbi-func-item__params{visibility:visible;opacity:1;max-height:520px;padding:4px 6px;transform:translateY(0)}
 /* The CSS-standard-configuration sub-badges (blue) reveal their accumulated parameter table the same
    way the orange functionality badges do. */
@@ -198,6 +246,20 @@ const BADGE_CSS = `
 .codbi-css-item>.codbi-func-item__params{border-color:#93c5fd}
 .codbi-holistic-item>.codbi-func-item__params{border-color:#6ee7b7}
 .codbi-func-table{width:max-content;max-width:100%;border-collapse:collapse;font-size:10.5px;line-height:1.3}
+/* Give the parameter table (and its body) a SOLID background. The popup itself is only 98% opaque, and
+   a Mirror widget renders ANOTHER form's theme CSS into the same canvas - that theme's generic
+   table/tbody rules can otherwise make this table's body look see-through ONLY on a Mirror widget.
+   Setting it here (high specificity + !important) keeps the table opaque everywhere; header cells and
+   hovered option rows still paint their own variant colours above it. */
+.codbi-func-item__params>.codbi-func-table,
+.codbi-func-item__params>.codbi-func-table>tbody{background:#fff!important}
+/* The row-group white alone can be bypassed inside a Mirror widget's (open) shadow root: slotted or
+   positioned Mirror content may paint between the row-group background and the otherwise-transparent
+   parameter cells. Back the PARAMETER cells with white too. Section titles, the "add" row, the inline
+   option rows, the header and every hover/checked state keep their own backgrounds - those rows are
+   excluded here so their colours are never overridden. */
+.codbi-func-table tbody tr:not(.codbi-func-section-title):not(.codbi-func-addrow):not(.codbi-func-addoption)>td,
+.codbi-func-table tbody tr:not(.codbi-func-section-title):not(.codbi-func-addrow):not(.codbi-func-addoption)>th{background:#fff}
 .codbi-func-table th,.codbi-func-table td{border:1px solid #e7c9a3;padding:1px 5px;text-align:left;vertical-align:top}
 .codbi-func-table thead th{background:#fde7cf;color:#7c2d12;font-weight:600;white-space:nowrap}
 .codbi-func-table tbody th{color:#7c2d12;font-weight:600;white-space:nowrap}
@@ -226,11 +288,11 @@ const BADGE_CSS = `
    clipped by the popup's overflow:hidden. They replace the native <select> (which pushed focus and the
    pointer outside the badge and collapsed the hover-driven popup). */
 .codbi-func-addoption td{color:#2563eb;font-weight:500;white-space:nowrap;cursor:pointer;border-top:0}
-.codbi-func-addoption:hover td{background:#eff6ff;text-decoration:underline}
+.codbi-func-addoption:hover td{background-image:linear-gradient(#eff6ff,#eff6ff);text-decoration:underline}
 .codbi-func-table--css .codbi-func-addoption td{color:#1e40af}
-.codbi-func-table--css .codbi-func-addoption:hover td{background:#dbeafe}
+.codbi-func-table--css .codbi-func-addoption:hover td{background-image:linear-gradient(#dbeafe,#dbeafe)}
 .codbi-func-table--holistic .codbi-func-addoption td{color:#15803d}
-.codbi-func-table--holistic .codbi-func-addoption:hover td{background:#d1fae5}
+.codbi-func-table--holistic .codbi-func-addoption:hover td{background-image:linear-gradient(#d1fae5,#d1fae5)}
 .codbi-func-input{min-width:0;max-width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:3px;background:transparent;padding:0 3px;margin:0;font:inherit;color:#1f2937;pointer-events:auto}
 .codbi-func-input:focus{outline:none;border-color:#c96a00;background:#fff}
 .codbi-func-bool{flex:0 0 auto;vertical-align:middle;cursor:pointer}
@@ -265,15 +327,26 @@ const BADGE_CSS = `
 .codbi-func-preview-switch--on .codbi-func-preview-switch__knob{transform:translateX(12px)}
 .codbi-func-preview-frame{display:block;width:100%;box-sizing:border-box;border:0;background:#fff;overflow:hidden;pointer-events:auto !important;position:relative;z-index:8}
 /* Per-element "Preview mode" (the form-level preview switch). The wrapper is the element's own canvas
-   cell, so it needs its own hide-children + pointer rules. */
+   cell, so it needs its own hide-children + pointer rules. The CodBi marker badges are EXCLUDED from
+   the hiding: a widget keeps its marker (and its functionality/parameter popup) while it is being
+   previewed, otherwise activating a preview made the marker disappear. They are also lifted above the
+   preview iframe (z-index:8) — the functionality badge stays in front of the Mirror badge. */
 .codbi-elem-preview{outline:2px dashed rgba(255,140,0,.55);outline-offset:2px}
-.codbi-elem-preview.codbi-func-preview--rendered > *:not(.codbi-func-preview-frame):not(.codbi-func-preview-switch){display:none !important}
+.codbi-elem-preview.codbi-func-preview--rendered > *:not(.codbi-func-preview-frame):not(.codbi-func-preview-switch):not(.codbi-elem-badge){display:none !important}
+.codbi-elem-preview.codbi-func-preview--rendered > .codbi-elem-badge--funcs{z-index:60}
+.codbi-elem-preview.codbi-func-preview--rendered > .codbi-elem-badge--bottom{z-index:55}
 .codbi-elem-preview.codbi-func-preview--rendered{pointer-events:auto !important}
+/* In PREVIEW mode the widget content is replaced by an iframe, whose internal pointer events do not
+   bubble to the widget cell, so the badge itself must capture the pointer (preview mode has no
+   drop-on-item concern). wireBadgeHoverEvents toggles the same --hover class as the design-mode
+   proximity tracker. */
+.codbi-elem-preview.codbi-func-preview--rendered > .codbi-elem-badge{pointer-events:auto}
 `;
 // NOTE: the Mirror badge never captures the pointer (not even its icon/text). A hover-capturing
 // overlay inside an item can become the drop target when a new element is dropped onto the widget,
-// which breaks the designer's drop-on-item logic. Its expansion is therefore driven by hovering the
-// badge's PARENT (the widget's cell) — see the `*:hover>.codbi-elem-badge` rules above.
+// which breaks the designer's drop-on-item logic. Its expansion is therefore driven by
+// `installBadgeHoverTracking`, which toggles `.codbi-elem-badge--hover` from pointer proximity
+// without ever making the badge a hit target.
 //
 // The function sub-badges are the one exception: they must capture the pointer so each can be
 // hovered individually to reveal its `data-cb-*` parameters. Only the sub-badges (which exist just
@@ -383,6 +456,9 @@ const badges = new Map<string, HTMLElement>();
 /** The CodBi function badges injected so far, keyed by the item id. */
 const funcBadges = new Map<string, HTMLElement>();
 
+/** Widget cells whose badge-hover proximity listeners have already been installed. */
+const badgeHoverTracked = new WeakSet<HTMLElement>();
+
 /** Mirror widget elements currently highlighted with the darkorange "marked" border. */
 const markedWidgets = new Set<HTMLElement>();
 
@@ -423,6 +499,13 @@ let runtimeOverride: boolean | null = null;
  * form-property model is not reliably updated by a custom editor.
  */
 let switchEnabled: boolean | null = null;
+
+/**
+ * The latest state reported by the **“Preview”** switch (`CodbiSwitchEditor`), `null` until it
+ * reports. It is kept separate from {@link switchEnabled} because both form properties reuse the
+ * same editor (and the same change event) — mixing them would let one switch flip the other mode.
+ */
+let previewSwitchEnabled: boolean | null = null;
 
 /**
  * Whether markers should show their entire text without hovering (the companion switch, right of
@@ -552,6 +635,22 @@ function notifyAttributeChange(): void {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Whether the opt-in badge-table diagnostics are enabled. The flag may be set in ANY of the nested
+ * frames (the app, the designer, or the canvas iframe) — the console a user happens to have open is
+ * usually an ANCESTOR frame, so checking only this frame's `window` missed it in practice.
+ */
+function badgeTableDebugEnabled(): boolean {
+  const enabled = (win: Window | null | undefined): boolean => {
+    try {
+      return Boolean((win as unknown as { CodbiBadgeTableDebug?: boolean } | null)?.CodbiBadgeTableDebug);
+    } catch {
+      return false;
+    }
+  };
+  return enabled(window) || enabled(window.parent) || enabled(window.top);
 }
 
 /**
@@ -736,6 +835,9 @@ function writeAttrBags(item: IMarkerItemLike, name: string, value: string): bool
     props.attributes = attrs;
   }
   notifyAttributeChange();
+  // Re-apply the badges/previews: a changed `data-cb-*` attribute changes the element's preview
+  // signature, and the debounced re-apply then reloads a running preview with the synced values.
+  scheduleRefresh();
   return true;
 }
 
@@ -770,6 +872,34 @@ export function setItemAttributeValueQuiet(item: IMarkerItemLike, name: string, 
     refreshAttributesGrid(item);
   }
   return ok;
+}
+
+/**
+ * Sets or updates one TOP-LEVEL property (e.g. `funcs` / `funcs_name`) in every writable property bag
+ * of an item and nudges the persist differ — WITHOUT firing the designer's `set-property` callback.
+ *
+ * This is the property-level analogue of {@link setItemAttributeValueQuiet}. Firing `set-property`
+ * makes the designer re-valuate the whole property view of the SELECTED item (~1s), which is what made
+ * toggling a functionality in the per-element CodBi config panel feel slow. Writing the property bags
+ * directly (the very bags `getPersist().properties` / the designer's `selectedProperty` read) and
+ * nudging the differ is instant — the same mechanism the parameter writes and the standard-config
+ * class toggle already use.
+ *
+ * @param item  The target item.
+ * @param name  The property name (e.g. `funcs`).
+ * @param value The new property value.
+ *
+ * @returns **True** when the property was written into at least one bag. */
+export function setItemPropertyValueQuiet(item: IMarkerItemLike, name: string, value: string): boolean {
+  const bags = writablePropertyBags(item);
+  if (bags.length === 0) {
+    return false;
+  }
+  for (const props of bags) {
+    props[name] = value;
+  }
+  notifyAttributeChange();
+  return true;
 }
 
 /**
@@ -849,6 +979,8 @@ function removeAttrBags(item: IMarkerItemLike, name: string): boolean {
     props.attributes = attrs;
   }
   notifyAttributeChange();
+  // Removing a `data-cb-*` attribute changes the preview signature too — refresh badges/previews.
+  scheduleRefresh();
   return true;
 }
 
@@ -1103,6 +1235,8 @@ export function setElementCssClass(item: IMarkerItemLike, className: string, on:
     props[CSS_CLASSES_PROPERTY] = next;
   }
   notifyAttributeChange();
+  // A standard-configuration class influences the rendered widget, so refresh a running preview.
+  scheduleRefresh();
   refreshCssClassesEditor(item);
   return true;
 }
@@ -1532,9 +1666,16 @@ function dropPreviewSwitch(id: string): void {
 /**
  * Whether the form-level "Preview mode" is ON (the `designer.property.preview_elements` form
  * property). When ON, a preview switch is added to every element — see
- * {@link ensureElementPreviewSwitch}.
+ * {@link ensureElementPreviewSwitch}. Elements that carry a persisted `data-cb-preview="1"`
+ * additionally show their switch even when this form-level mode is OFF (see `refreshBadges`), so a
+ * per-element preview survives a designer reload on its own.
  */
 function previewElementsEnabled(): boolean {
+  // The switch is authoritative while mounted: the persisted form-property model is not reliably
+  // updated by a custom editor (the same rationale as `isMarkEnabled`).
+  if (previewSwitchEnabled !== null) {
+    return previewSwitchEnabled;
+  }
   const designer = designerInstance();
   if (designer?.getFormPropertyValueForCurrentLang) {
     try {
@@ -1552,9 +1693,87 @@ function previewElementsEnabled(): boolean {
   return false;
 }
 
-/** Reads an element's persisted `data-cb-preview` toggle from its attribute bag. */
+/**
+ * Reads an element's persisted `data-cb-preview` toggle from its attribute bag. This attribute is the
+ * single source of truth for the per-element preview, so it also restores the toggle after a reload.
+ * `"true"` is accepted alongside `"1"` (e.g. when the attribute was set by hand in the attributes
+ * table); an absent attribute or `"0"` means off.
+ */
 function elementPreviewOn(item: IMarkerItemLike): boolean {
-  return attributeValue(attributeEntries(item), ELEMENT_PREVIEW_ATTRIBUTE) === "1";
+  const value = attributeValue(attributeEntries(item), ELEMENT_PREVIEW_ATTRIBUTE).toLowerCase();
+  return value === "1" || value === "true";
+}
+
+/**
+ * Signature of everything that influences an element's frontend preview: its identity PLUS every
+ * `data-cb-*` attribute (the functionality list and its parameters) and its CSS classes (CodBi
+ * standard configurations). The preview CONTROL attribute `data-cb-preview` is excluded — flipping
+ * the preview switch itself must not force an extra reload. When a `data-cb-*` attribute changes,
+ * the signature changes and the running preview is re-applied, so parameter edits actually reach the
+ * rendered widget.
+ */
+function elementPreviewSignature(item: IMarkerItemLike): string {
+  const id = item.getId?.() ?? "";
+  const parts: string[] = [];
+  for (const attr of attributeEntries(item)) {
+    const name = String(attr?.text ?? "")
+      .trim()
+      .toLowerCase();
+    if (!name.startsWith(CB_PARAM_PREFIX) || name === ELEMENT_PREVIEW_ATTRIBUTE) {
+      continue;
+    }
+    parts.push(`${name}\u0003${String(attr?.value ?? "").trim()}`);
+  }
+  parts.sort();
+  const cssClasses = parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]).sort();
+  return `elem\u0001${id}\u0001${parts.join("\u0002")}\u0001${cssClasses.join("\u0002")}`;
+}
+
+/** Cancels a pending debounced re-apply of a running element preview. */
+function cancelScheduledPreviewReapply(anchor: HTMLElement): void {
+  const handle = previewReapplyTimers.get(anchor);
+  if (handle !== undefined) {
+    window.clearTimeout(handle);
+    previewReapplyTimers.delete(anchor);
+  }
+}
+
+/**
+ * Debounces a re-apply of a RUNNING element preview after the element's `data-cb-*` attributes
+ * changed. The preview page renders the server-side draft, and the designer syncs attribute changes
+ * with a delay, so the iframe is reloaded only after {@link PREVIEW_REAPPLY_DELAY_MS} — reloading
+ * immediately would render the old values. The timer resolves the LIVE item and re-computes the
+ * signature when it fires, so it always reloads with the newest values. Only one timer per wrapper
+ * is kept; additional refreshes do not postpone it.
+ */
+function schedulePreviewReapply(anchor: HTMLElement, item: IMarkerItemLike): void {
+  if (previewReapplyTimers.has(anchor)) {
+    return;
+  }
+  const handle = window.setTimeout(() => {
+    previewReapplyTimers.delete(anchor);
+    try {
+      if (!anchor.isConnected) {
+        return;
+      }
+      const id = item.getId?.() ?? "";
+      const live = resolveFuncItem(id, anchor, item);
+      const signature = elementPreviewSignature(live);
+      if (previewApplied.get(anchor) === signature) {
+        return;
+      }
+      // Drop the stale signature so `renderServerPreview` reloads the iframe with the synced draft.
+      previewApplied.delete(anchor);
+      if (elementPreviewOn(live)) {
+        void renderServerPreview(anchor, live, signature);
+      } else {
+        clearServerPreview(anchor);
+      }
+    } catch (x) {
+      console.error("[CodBi] Preview: could not refresh the element preview", x);
+    }
+  }, PREVIEW_REAPPLY_DELAY_MS);
+  previewReapplyTimers.set(anchor, handle);
 }
 
 /**
@@ -1564,16 +1783,28 @@ function elementPreviewOn(item: IMarkerItemLike): boolean {
  */
 function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boolean): void {
   try {
+    const id = item.getId?.() ?? "";
     anchor.classList.toggle(ELEM_PREVIEW_CLASS, on);
     if (!on) {
+      cancelScheduledPreviewReapply(anchor);
       previewApplied.delete(anchor);
+      if (id) {
+        previewAppliedById.delete(id);
+      }
       clearServerPreview(anchor);
       return;
     }
-    const id = item.getId?.() ?? "";
-    // Signature = the element's own identity; re-render only when it changed.
-    const signature = `elem\u0001${id}`;
-    if (previewApplied.get(anchor) === signature) {
+    const signature = elementPreviewSignature(item);
+    const previous = previewApplied.get(anchor);
+    if (previous === signature) {
+      return;
+    }
+    // A preview is already running on this anchor, OR the element was previewed before and the
+    // designer re-rendered the anchor after a property edit (so the WeakMap no longer knows it):
+    // in both cases the attributes changed and we must wait for the draft sync before reloading.
+    const previouslyApplied = previous ?? previewAppliedById.get(id);
+    if (previouslyApplied !== undefined) {
+      schedulePreviewReapply(anchor, item);
       return;
     }
     void renderServerPreview(anchor, item, signature);
@@ -1585,8 +1816,9 @@ function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boo
 /**
  * Creates/updates the per-element preview switch (idempotent). It is keyed by the element's item id
  * in the shared {@link previewSwitches} map and toggles the element's persisted `data-cb-preview`
- * attribute (written onto the element itself via {@link setItemAttributeValue}), so the designer
- * re-renders and `refreshBadges` re-applies the preview.
+ * attribute (written onto the element itself via {@link setItemAttributeValue}). That attribute is
+ * the **only** persistence for this setting: it is stored with the element by the designer, so on a
+ * reload `refreshBadges` re-creates the switch and re-applies the preview from it.
  */
 function ensureElementPreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement): void {
   const id = item.getId?.() ?? "";
@@ -1620,10 +1852,16 @@ function ensureElementPreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement):
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const current = elementPreviewOn(item);
+      // The badge can outlive the Item instance it was built for (the designer replaces its items
+      // on re-render), leaving the captured instance with a detached property bag. Resolve the LIVE
+      // item before reading/writing so the toggle lands in the persisted model.
+      const live = resolveFuncItem(id, anchor, item);
+      const current = elementPreviewOn(live);
       // Write the toggle onto the element's own attribute bag; the designer re-renders and
       // refreshBadges re-applies the preview (and the `after-set-property` callback refreshes).
-      setItemAttributeValue(item, ELEMENT_PREVIEW_ATTRIBUTE, current ? "0" : "1");
+      // `data-cb-preview` is the ONLY persistence for this setting — nothing else is written.
+      setItemAttributeValue(live, ELEMENT_PREVIEW_ATTRIBUTE, current ? "0" : "1");
+      scheduleRefresh();
     });
     widget = button;
     previewSwitches.set(id, widget);
@@ -1677,12 +1915,28 @@ async function renderServerPreview(
     const target = frame;
     // The preview page renders the form asynchronously, so the element may appear AFTER `load`.
     target.addEventListener("load", () => scheduleClip(target, elementRef), { once: true });
-    target.src = url;
+    // A failed request (e.g. an HTTP 404 because the derived URL is wrong on a live server) fires the
+    // `error` event on the iframe — log the exact URL that was requested so the 404 is diagnosable.
+    target.addEventListener(
+      "error",
+      () => console.error("[CodBi] Preview: iframe failed to load (HTTP error/404?) for URL=%s", target.src),
+      { once: true },
+    );
+    // Cache-busting key: a re-apply after an attribute change must fetch the freshly synced DRAFT
+    // instead of reusing an already loaded/cached document for the same URL.
+    const separator = url.includes("?") ? "&" : "?";
+    const fullUrl = `${url}${separator}_cbref=${Date.now()}`;
+    target.src = fullUrl;
     wrapper.classList.add("codbi-func-preview--rendered");
     // Mark applied only once the iframe is pointed at the preview (a re-enable with the same target
     // skips the reload; changing the contained element changes the signature and reloads).
     previewApplied.set(wrapper, signature);
-    console.info("[CodBi] Preview: form preview loading %s", url);
+    // Remember the signature by ITEM id too, so a later anchor re-render still recognises that this
+    // element was previewed before and can tell an attribute change from a first activation.
+    const previewItemId = child?.getId?.() ?? "";
+    if (previewItemId) {
+      previewAppliedById.set(previewItemId, signature);
+    }
   } catch (x) {
     console.error("[CodBi] Preview: form preview failed", x);
   }
@@ -2073,14 +2327,7 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     }
     const fit = registerPreviewFit(frame, owner, item);
     observePreview(owner);
-    const height = fitPreviewHeight(fit);
-    console.info(
-      "[CodBi] Preview: preview clipped to %s (item=%s, height=%d, wrapper=%o)",
-      elementRef,
-      `${item.tagName}.${item.className || ""}`,
-      height,
-      wrapper !== null,
-    );
+    fitPreviewHeight(fit);
     return true;
   } catch (x) {
     console.error("[CodBi] Preview: could not clip the preview to the element", x);
@@ -2146,10 +2393,48 @@ function currentProjectId(): string {
 }
 
 /**
+ * Absolute base URL (with a trailing slash) of the FORMCYCLE application the designer is served
+ * from, e.g. `https://host/xima-formcycle/` or `https://host/` for a root deployment.
+ *
+ * The designer's OWN configuration (`urls.base`) is authoritative here: FORMCYCLE sets it to the
+ * application's real context path, including `""` when the app runs at the server root and any
+ * reverse-proxy prefix used in production. Deriving the base by slicing the page URL
+ * (`href.split("/").slice(0, 4)`) silently assumes exactly ONE path segment before
+ * `/form-management/` — on a live server deployed at the root (or behind a path prefix) that turned
+ * the preview URL into `…/form-management/form-management/designer/preview/<id>`, which 404s.
+ */
+function designerAppBaseUrl(): string {
+  try {
+    const configured = getDesignerConfig()?.urls?.base;
+    if (configured !== undefined && configured !== null) {
+      // Accepts a relative base (`/xima-formcycle`, `/`, `""`) as well as an absolute URL.
+      return new URL(`${String(configured).trim().replace(/\/+$/, "")}/`, `${window.location.origin}/`).href;
+    }
+  } catch (x) {
+    console.warn("[CodBi] Preview: could not read designer config urls.base — falling back to path heuristic", x);
+    /* configuration not available yet or malformed — fall back to the path heuristic */
+  }
+  // Fallback: keep everything in front of the designer's `/form-management/` route segment. This
+  // works for a missing/empty config, the root context and ANY number of context-path segments.
+  const marker = "/form-management/";
+  const path = window.location.pathname;
+  const at = path.lastIndexOf(marker);
+  return at >= 0 ? `${window.location.origin}${path.slice(0, at)}/` : `${window.location.origin}/`;
+}
+
+/**
  * The platform's designer-preview URL for the CURRENT form, e.g.
- * `http://host/context/form-management/designer/preview/152?xfd2id=<draftId>`. Loading this URL in a
- * hidden iframe yields a real formcycle form instance (full bootstrap + runtime + CodBi runtime), so
- * the preview shows full form-level fidelity instead of a hand-patched element.
+ * `http://host/context/designer/preview/152?xfd2id=<draftId>`. Loading this URL in a hidden iframe
+ * yields a real formcycle form instance (full bootstrap + runtime + CodBi runtime), so the preview
+ * shows full form-level fidelity instead of a hand-patched element.
+ *
+ * The preview route is derived FROM THE CURRENT DESIGNER PAGE'S PATH rather than hard-coding a
+ * `form-management` prefix: the designer editor page is `…/{prefix}/designer/{projectId}` and the
+ * preview is `…/{prefix}/designer/preview/{projectId}`. Replacing the `/designer/{id}` tail in place
+ * automatically preserves the context path and any tenant segment, so it works on BOTH a single-tenant
+ * dev deployment (`…/form-management/designer/preview/{id}`) AND a multi-tenant live deployment
+ * (`…/StadtAnsbach/designer/preview/{id}`), and it uses the correct origin from `window.location`
+ * instead of a possibly-stale `urls.base` config value.
  *
  * The project id comes from `XFC_METADATA.currentProject.id`; the `xfd2id` (the form-design / draft id)
  * is read from the designer page's URL (walking up the frame chain, since the designer may be framed).
@@ -2157,11 +2442,28 @@ function currentProjectId(): string {
 function designerPreviewUrl(): string {
   const projectId = currentProjectId();
   if (!projectId) {
+    console.warn("[CodBi] Preview: no project id — cannot build designer preview URL");
     return "";
   }
-  const base = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   const draftId = designerDraftId();
   const query = draftId ? `?xfd2id=${encodeURIComponent(draftId)}` : "";
+  const pathname = window.location.pathname;
+  const at = pathname.lastIndexOf("/designer/");
+  if (at >= 0) {
+    // Keep everything up to and including "/designer/" (context + tenant + any prefix), then the preview
+    // route replaces the remaining "{projectId}" with "preview/{projectId}".
+    const base =
+      `${window.location.origin}${pathname.slice(0, at)}/designer/preview/` + `${encodeURIComponent(projectId)}`;
+    return `${base}${query}`;
+  }
+  // Fallback for an unusual embedding where "/designer/" is not on the path: fall back to the base-url
+  // heuristic (which itself prefers `urls.base`, then slices around "/form-management/").
+  const base = designerAppBaseUrl();
+  console.warn(
+    "[CodBi] Preview: '/designer/' not found in designer page path %s — falling back to base heuristic %s",
+    pathname,
+    base,
+  );
   return `${base}form-management/designer/preview/${encodeURIComponent(projectId)}${query}`;
 }
 
@@ -2521,6 +2823,66 @@ function signatureOf(linked: boolean, text: string): string {
   return `${linked ? "1" : "0"}\u0001${text}`;
 }
 
+/**
+ * Enables badge expansion while the pointer is over the BADGE (not merely over its widget), without
+ * turning the badge into a pointer target: a hover-capturing overlay inside an item can become the
+ * drop target when a new element is dropped onto the widget, breaking the designer's drop-on-item
+ * logic (see the note after `BADGE_CSS`). The listeners therefore live on the widget cell and toggle
+ * `codbi-elem-badge--hover` when the pointer is inside a badge's rectangle or over one of its
+ * descendants (the parameter popup may extend past the badge box).
+ *
+ * @param anchor The widget cell that hosts the badges.
+ */
+function installBadgeHoverTracking(anchor: HTMLElement): void {
+  if (badgeHoverTracked.has(anchor)) {
+    return;
+  }
+  badgeHoverTracked.add(anchor);
+  /** Marks exactly the badge under the pointer as hovered. */
+  const update = (event: PointerEvent): void => {
+    const target = event.target as Node | null;
+    for (const child of Array.from(anchor.children)) {
+      if (!child.classList.contains(BADGE_CLASS)) {
+        continue;
+      }
+      const badge = child as HTMLElement;
+      const rect = badge.getBoundingClientRect();
+      const inside =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      badge.classList.toggle("codbi-elem-badge--hover", inside || (target !== null && badge.contains(target)));
+    }
+  };
+  anchor.addEventListener("pointermove", update);
+  anchor.addEventListener("pointerleave", () => {
+    for (const child of Array.from(anchor.children)) {
+      if (child.classList.contains(BADGE_CLASS)) {
+        child.classList.remove("codbi-elem-badge--hover");
+      }
+    }
+  });
+}
+
+/**
+ * Toggles the same `codbi-elem-badge--hover` expansion state from direct badge pointer events. This
+ * is the PREVIEW-mode path: the preview iframe swallows pointer movement, so the anchor proximity
+ * tracker never runs; the preview stylesheet makes the badge a pointer target instead (see the
+ * preview rules in `BADGE_CSS`), and these listeners react to it. In design mode the badge stays
+ * click-through, so they simply never fire.
+ *
+ * @param badge The badge to wire.
+ */
+function wireBadgeHoverEvents(badge: HTMLElement): void {
+  if (badge.dataset.codbiHoverWired === "1") {
+    return;
+  }
+  badge.dataset.codbiHoverWired = "1";
+  badge.addEventListener("pointerenter", () => badge.classList.add("codbi-elem-badge--hover"));
+  badge.addEventListener("pointerleave", () => badge.classList.remove("codbi-elem-badge--hover"));
+}
+
 /** Creates or updates the badge for one Mirror item (no-op when nothing changed). */
 function ensureBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   const id = item.getId?.() ?? "";
@@ -2546,6 +2908,8 @@ function ensureBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   if (badge.parentElement !== anchor) {
     anchor.appendChild(badge);
   }
+  wireBadgeHoverEvents(badge);
+  installBadgeHoverTracking(anchor);
   // Anchor the absolutely-positioned badge to the widget without disturbing an existing position.
   if (getComputedStyle(anchor).position === "static") {
     anchor.style.position = "relative";
@@ -2671,15 +3035,17 @@ function listElementPlaceholders(): Array<string> {
  * its own parameters, while a CSS-standard-configuration badge passes one group per functionality
  * named in the class's `FUNC` list (so all of that class's possible parameters show up together).
  *
- * Every row holds the (fixed) parameter name, an EDITABLE value input and a trash button that removes
- * the parameter; every change is written straight into the item's property bag, so it shows up in the
+ * Every row holds the (fixed) parameter name, an EDITABLE value control, a trash button that removes
+ * the parameter and an **ƒ EP-builder button** right of the trash (mirroring the per-element CodBi
+ * config panel). Every change is written straight into the item's property bag, so it shows up in the
  * element's config attribute table. At the end of each group an "add parameter" `<select>` lists the
  * functionality's available parameters that are NOT yet set — choosing one adds it (empty value) and
  * re-renders the badge.
  *
- * Pressing **ALT+E** on a value input opens the {@link openEPBuilder } popup so Element Placeholders
- * can be composed and nested; applying writes the serialized value back through the same path as a
- * manual edit.
+ * The EP-builder button is available for EVERY parameter row. Applying an EP writes the serialized
+ * value through the same path as a manual edit; since an EP is not a literal of the parameter's type,
+ * the row then renders a text input instead of a toggle/select. Pressing **ALT+E** on a text input
+ * opens the same {@link openEPBuilder } popup.
  *
  * @param variant Which styling variant the table uses: `"func"` (orange), `"css"` (blue) or
  *   `"holistic"` (green, the runtime-selector-resolved standard configurations).
@@ -2694,6 +3060,12 @@ function buildParamTable(
   variant: "func" | "css" | "holistic" = "func",
   badge?: HTMLDivElement,
 ): HTMLTableElement {
+  // Bulletproof opaque backing for the parameter table. A Mirror widget renders ANOTHER form's theme
+  // CSS into the same canvas; that theme can override the popup/table stylesheet backgrounds and
+  // leave the table BODY see-through only there. An INLINE !important background cannot be beaten by
+  // any host stylesheet rule (nor does it depend on BADGE_CSS winning the cascade), so the table stays
+  // opaque regardless of the surrounding widget.
+  popup.style.setProperty("background-color", "#fff", "important");
   const table = doc.createElement("table");
   table.className =
     variant === "css"
@@ -2701,6 +3073,7 @@ function buildParamTable(
       : variant === "holistic"
         ? "codbi-func-table codbi-func-table--holistic"
         : "codbi-func-table";
+  table.style.setProperty("background-color", "#fff", "important");
   const head = doc.createElement("thead");
   const headRow = doc.createElement("tr");
   const headName = doc.createElement("th");
@@ -2748,25 +3121,31 @@ function buildParamTable(
     const valueCell = doc.createElement("td");
     const valueWrap = doc.createElement("span");
     valueWrap.className = "codbi-func-value";
-    // Opens the EP builder for an attribute value input. Shared by the ALT+E shortcut and the
-    // "ƒ" EP-manager button in the actions cell, so both stay in sync. The composed value is
+    // Opens the EP builder for this row's value. Shared by the ALT+E shortcut (text inputs) and the
+    // "ƒ" EP-builder button in the actions cell, so both behave identically: the composed value is
     // written back through the SAME path as a manual edit.
     let openEpFor: (() => void) | undefined;
+    /** Opens the EP builder for one row value and hands the composed value to `apply`. */
+    const openBuilderForValue = (initial: string, apply: (value: string) => void): void => {
+      openEPBuilder({
+        // Render into the DESIGNER document (not the canvas iframe) so the popup snaps to the
+        // designer window's edges, exactly like the Form Assistant dialog.
+        document: window.document,
+        anchor,
+        value: initial,
+        listEPs: listElementPlaceholders,
+        onApply: (applied) => {
+          apply(applied);
+        },
+      });
+    };
     // Attaches the ALT+E EP-builder shortcut + Enter-commit behaviour to a text-like control.
     const bindTextShortcuts = (input: HTMLInputElement): void => {
       openEpFor = (): void => {
-        openEPBuilder({
-          // Render into the DESIGNER document (not the canvas iframe) so the popup snaps to the
-          // designer window's edges, exactly like the Form Assistant dialog.
-          document: window.document,
-          anchor,
-          value: input.value,
-          listEPs: listElementPlaceholders,
-          onApply: (applied) => {
-            input.value = applied;
-            setFuncAttribute(resolve(), attrName, applied);
-            input.blur();
-          },
+        openBuilderForValue(input.value, (applied) => {
+          input.value = applied;
+          setFuncAttribute(resolve(), attrName, applied);
+          input.blur();
         });
       };
       input.addEventListener("change", () => {
@@ -2790,8 +3169,13 @@ function buildParamTable(
       });
     };
     // Render the value control that matches the parameter's published type (see `parameterSpecFor`).
+    // A value that is NOT a literal of its type (e.g. a stored EP placeholder) is always rendered as a
+    // text input — otherwise a toggle/select would silently display it as empty, hiding the EP.
+    const literalBoolean = type === "boolean" && /^(?:|true|false|1|0)$/i.test(value.trim());
+    const literalEnum =
+      type === "enum" && (spec?.options?.length ?? 0) > 0 && (value === "" || (spec?.options ?? []).includes(value));
     let control: HTMLElement;
-    if (type === "boolean") {
+    if (literalBoolean) {
       // A self-drawn toggle — a styled <span>, NOT an <input type="checkbox"> — so the canvas /
       // framework CSS (which resets/paints checkboxes) cannot hide it. The appearance is set as
       // INLINE styles, which win over any stylesheet rule (except `!important`).
@@ -2826,29 +3210,15 @@ function buildParamTable(
         }
       });
       control = toggle;
-      // TEMPORARY diagnostic: confirm the toggle is in the document and actually painted.
-      queueMicrotask(() => {
-        try {
-          const view = doc.defaultView;
-          const cs = view ? view.getComputedStyle(toggle) : null;
-          const rect = toggle.getBoundingClientRect();
-          console.info(
-            "[CodBi][DBG][bool] attr=%s connected=%s rect=%dx%d display=%s bg=%s border=%s visibility=%s opacity=%s",
-            attrName,
-            toggle.isConnected,
-            rect.width,
-            rect.height,
-            cs?.display ?? "",
-            cs?.backgroundColor ?? "",
-            cs?.borderTopColor ?? "",
-            cs?.visibility ?? "",
-            cs?.opacity ?? "",
-          );
-        } catch (error) {
-          console.warn("[CodBi][DBG][bool] diagnostic failed", error);
-        }
-      });
-    } else if (type === "enum" && spec?.options && spec.options.length > 0) {
+      // Boolean parameters get the EP-builder button too, exactly like the form element's config
+      // panel. The builder composes a free-text/EP value which a toggle cannot display, so applying it
+      // writes the attribute and the badge re-renders this row as a TEXT input (see `literalBoolean`).
+      openEpFor = (): void => {
+        openBuilderForValue(value, (applied) => {
+          setFuncAttribute(resolve(), attrName, applied);
+        });
+      };
+    } else if (literalEnum) {
       const select = doc.createElement("select");
       select.className = "codbi-func-input codbi-func-input--enum";
       select.title = attrName;
@@ -2867,12 +3237,23 @@ function buildParamTable(
         setFuncAttribute(resolve(), attrName, select.value);
       });
       control = select;
+      // Enum parameters get the EP-builder button too. Applying an EP writes the attribute; the badge
+      // then renders this row as a text input (the value is no longer one of the enum's literals).
+      openEpFor = (): void => {
+        openBuilderForValue(value, (applied) => {
+          setFuncAttribute(resolve(), attrName, applied);
+        });
+      };
     } else {
+      // A numeric parameter holding a non-numeric value (i.e. an EP placeholder) must use a TEXT input —
+      // an `<input type="number">` would silently blank the composed value.
+      const numericInput =
+        (type === "integer" || type === "number") && (value.trim() === "" || Number.isFinite(Number(value)));
       const input = doc.createElement("input");
-      input.type = type === "integer" || type === "number" ? "number" : "text";
-      if (type === "integer") {
+      input.type = numericInput ? "number" : "text";
+      if (numericInput && type === "integer") {
         input.step = "1";
-      } else if (type === "number") {
+      } else if (numericInput && type === "number") {
         input.step = "any";
       } else {
         // Let the text input claim enough width for the whole value (a stylesheet width can still cap it).
@@ -2911,10 +3292,10 @@ function buildParamTable(
       }
     });
     actionsCell.appendChild(remove);
-    // The EP-manager button, right of the trash icon: opens the EP builder for this attribute's
-    // value, exactly like the "ƒ" icon next to the form element's config parameter values. Only
-    // rows with a text/number value input expose it (boolean toggles and enum selects have no
-    // free-text value to compose).
+    // The EP-builder button, right of the trash icon: opens the EP builder for this attribute's
+    // value, exactly like the "ƒ" icon next to the form element's config parameter values. EVERY
+    // parameter row exposes it — for boolean/enum rows the composed value is written to the attribute
+    // and the row then renders as a text input (see `literalBoolean` / `literalEnum`).
     if (openEpFor) {
       const ep = doc.createElement("button");
       ep.type = "button";
@@ -2937,9 +3318,21 @@ function buildParamTable(
       actionsCell.appendChild(ep);
     }
     row.append(name, valueCell, actionsCell);
+    // Back EVERY body row's cells with an opaque white (inline !important). In a Mirror widget's open
+    // shadow root the row-group background alone can be bypassed, so each cell needs its own opaque
+    // backing. This now ALSO covers the "+ Add" option rows - they were previously excluded, which left
+    // exactly those rows transparent ("the table background is see-through"). Their hover tint is
+    // restored via `background-image` (a separate longhand), so this inline background-color cannot
+    // cancel it. Section-title and add-rows are built separately and have their own inline backgrounds.
+    for (const cell of [name, valueCell, actionsCell]) {
+      cell.style.setProperty("background-color", "#fff", "important");
+    }
   };
 
   const body = doc.createElement("tbody");
+  // See the comment at the top of this function: keep the table BODY opaque even when the host
+  // widget's stylesheet would force it transparent.
+  body.style.setProperty("background-color", "#fff", "important");
   for (const section of sections) {
     // Optional per-group header (the functionality / standard-configuration name).
     if (section.title && sections.length > 1) {
@@ -2949,6 +3342,14 @@ function buildParamTable(
       titleCell.scope = "colgroup";
       titleCell.colSpan = 3;
       titleCell.textContent = section.title;
+      // Preserve the section-title colour with an INLINE !important so a Mirror widget's theme cannot
+      // leave this cell transparent (the same shadow-root paint-order issue as the body: the row-group
+      // white alone can be bypassed).
+      titleCell.style.setProperty(
+        "background-color",
+        variant === "css" ? "#eff6ff" : variant === "holistic" ? "#ecfdf5" : "#f5f5f5",
+        "important",
+      );
       titleRow.appendChild(titleCell);
       body.appendChild(titleRow);
     }
@@ -3064,11 +3465,169 @@ function buildParamTable(
         openMenu(trigger.dataset.cbOpen !== "1");
       });
       selectCell.appendChild(trigger);
+      // The "+ Add" row is the ONLY body row when a functionality has no parameters yet — exactly the
+      // case reported. Back its cells with opaque white too (inline !important), otherwise the host
+      // theme / shadow-root paint order can leave it see-through. The trigger button keeps its own
+      // background and hover colours.
+      labelCell.style.setProperty("background-color", "#fff", "important");
+      selectCell.style.setProperty("background-color", "#fff", "important");
       addRowEl.append(labelCell, selectCell);
       body.appendChild(addRowEl);
     }
   }
   table.appendChild(body);
+  // #region Optional diagnostics (enable with `window.CodbiBadgeTableDebug = true`).
+  // Attached to the SUB-BADGE — hovering it is what reveals this popup — and evaluated at HOVER time,
+  // so the flag can be toggled in the console without rebuilding the badge. The flag may live in an
+  // ancestor frame (see `badgeTableDebugEnabled`). Logs once per rebuilt sub-badge.
+  subBadge.addEventListener("mouseenter", () => {
+    if (!badgeTableDebugEnabled() || subBadge.dataset.codbiTableDiag === "1") {
+      return;
+    }
+    subBadge.dataset.codbiTableDiag = "1";
+    // Defer so the popup's open transition (max-height/visibility) has applied before inspecting it.
+    window.setTimeout(() => {
+      try {
+        const win = doc.defaultView ?? window;
+        const rootNode = popup.getRootNode();
+        const styles = Array.from(
+          (rootNode instanceof ShadowRoot || rootNode instanceof Document
+            ? (rootNode as Document | ShadowRoot).querySelectorAll("style")
+            : []) as ArrayLike<HTMLStyleElement>,
+        );
+        const hasBadgeCss = styles.some((style) => (style.textContent ?? "").includes(".codbi-func-table"));
+        const cs = (el: Element | null): CSSStyleDeclaration | null => (el ? win.getComputedStyle(el) : null);
+        const bg = (el: Element | null): string => cs(el)?.backgroundColor ?? "n/a";
+
+        console.groupCollapsed("[CodBi][diag] badge parameter table background");
+        console.log("host root:", rootNode, rootNode instanceof ShadowRoot ? "(shadow root)" : "(document)");
+        console.log("BADGE_CSS present in host root:", hasBadgeCss);
+        console.log("popup computed background:", bg(popup), "opacity:", cs(popup)?.opacity);
+        console.log("table computed background:", bg(table));
+        console.log("tbody computed background:", bg(body));
+        const firstRow = body.rows[0];
+        const firstCell = firstRow?.cells?.[0] ?? null;
+        console.log("first body cell computed background:", bg(firstCell));
+        console.log(
+          "first row class:",
+          firstRow?.className || "(none)",
+          "| first cell:",
+          firstCell?.tagName ?? "n/a",
+          firstCell?.className || "(no class)",
+        );
+        console.log(
+          "inline tbody background:",
+          body.style.getPropertyValue("background-color"),
+          "priority:",
+          body.style.getPropertyPriority("background-color"),
+        );
+
+        // #region Ancestor translucency — a translucent ancestor makes even solid white look see-through.
+        const flagged: string[] = [];
+        let cursor: Element | null = firstCell;
+        let depth = 0;
+        while (cursor && depth < 16) {
+          const s = win.getComputedStyle(cursor);
+          if (s.opacity !== "1" || s.filter !== "none" || s.mixBlendMode !== "normal" || s.transform !== "none") {
+            flagged.push(
+              `${cursor.tagName}.${cursor.getAttribute("class") ?? ""} ` +
+                `opacity=${s.opacity} filter=${s.filter} blend=${s.mixBlendMode} transform=${s.transform}`,
+            );
+          }
+          cursor = cursor.parentElement;
+          depth += 1;
+        }
+        console.log("ancestor opacity/filter/blend/transform (non-default):", flagged);
+        // #endregion Ancestor translucency.
+
+        // #region Hit-test — what is actually the topmost element at the cell's centre?
+        const rect = firstCell?.getBoundingClientRect();
+        if (rect && rect.width > 1 && rect.height > 1) {
+          const x = rect.left + rect.width / 2;
+          const y = rect.top + rect.height / 2;
+          const shadow =
+            rootNode instanceof ShadowRoot
+              ? (rootNode as unknown as { elementFromPoint?: (px: number, py: number) => Element | null })
+              : null;
+          const topEl = shadow?.elementFromPoint?.(x, y) ?? doc.elementFromPoint(x, y);
+          console.log(
+            "elementFromPoint at first-cell centre:",
+            topEl?.tagName ?? "n/a",
+            (topEl as HTMLElement | null)?.className || "(no class)",
+            "| is the cell (or inside it)?",
+            Boolean(firstCell && (topEl === firstCell || firstCell.contains(topEl))),
+          );
+          console.log("first cell rect:", {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            w: Math.round(rect.width),
+            h: Math.round(rect.height),
+          });
+        }
+        // #endregion Hit-test.
+
+        // #region Overlay detection — list EVERY element whose rect overlaps the first cell, regardless
+        // of pointer-events. `elementFromPoint` skips `pointer-events:none` overlays, so an overlay that
+        // covers the body (but not the header) would otherwise be invisible to the hit-test.
+        if (rect && rect.width > 1 && rect.height > 1) {
+          const seen = new Set<Element>();
+          const pools: Element[][] = [];
+          try {
+            pools.push(Array.from(doc.querySelectorAll("*")));
+          } catch {
+            /* ignore */
+          }
+          if (rootNode instanceof ShadowRoot) {
+            try {
+              pools.push(Array.from(rootNode.querySelectorAll("*")));
+            } catch {
+              /* ignore */
+            }
+          }
+          const overlapping: string[] = [];
+          for (const pool of pools) {
+            for (const el of pool) {
+              if (seen.has(el)) {
+                continue;
+              }
+              seen.add(el);
+              if (el === firstCell || firstCell?.contains(el) || (firstCell && el.contains(firstCell))) {
+                continue;
+              }
+              const r = el.getBoundingClientRect();
+              if (r.width <= 0 || r.height <= 0) {
+                continue;
+              }
+              const overlaps = r.left < rect.right && r.right > rect.left && r.top < rect.bottom && r.bottom > rect.top;
+              if (!overlaps) {
+                continue;
+              }
+              const s = win.getComputedStyle(el);
+              // Only report elements that can paint something: positioned, or with a background/border.
+              const paints =
+                s.position !== "static" ||
+                s.backgroundColor !== "rgba(0, 0, 0, 0)" ||
+                s.backgroundImage !== "none" ||
+                s.boxShadow !== "none";
+              if (!paints) {
+                continue;
+              }
+              overlapping.push(
+                `${el.tagName}.${el.getAttribute("class") ?? ""} pos=${s.position} z=${s.zIndex} ` +
+                  `pe=${s.pointerEvents} op=${s.opacity} bg=${s.backgroundColor} img=${s.backgroundImage !== "none"}`,
+              );
+            }
+          }
+          console.log("elements overlapping the first cell (top-most last):", overlapping.slice(0, 40));
+        }
+        // #endregion Overlay detection.
+        console.groupEnd();
+      } catch (x) {
+        console.warn("[CodBi][diag] could not inspect the badge table", x);
+      }
+    }, 90);
+  });
+  // #endregion Optional diagnostics.
   return table;
 }
 
@@ -3284,6 +3843,8 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   if (badge.parentElement !== anchor) {
     anchor.appendChild(badge);
   }
+  wireBadgeHoverEvents(badge);
+  installBadgeHoverTracking(anchor);
   // Anchor the absolutely-positioned badge to the widget without disturbing an existing position.
   if (getComputedStyle(anchor).position === "static") {
     anchor.style.position = "relative";
@@ -3381,9 +3942,13 @@ function refreshBadges(): void {
       // (green sub-badge) — any of these earns the CodBi badge on the element.
       const isFunc = cbFunc || css || hol;
       const itemId = item.getId?.() ?? "";
+      // A persisted `data-cb-preview="1"` restores THIS element's preview on its own, even when the
+      // form-level "Preview mode" is off: the attribute is the per-element source of truth (and the
+      // only persistence for the switch), so a reload never requires re-activating the preview.
+      const previewOn = elementPreviewOn(item);
       // In preview mode we ALSO need to reach plain elements (fields, fieldsets, containers, pages)
       // so they get their own preview switch — so don't bail out on non-widget items in that mode.
-      if (!isMirror && !isFunc && !elementPreview) {
+      if (!isMirror && !isFunc && !elementPreview && !previewOn) {
         continue;
       }
       if (anchor) {
@@ -3421,9 +3986,11 @@ function refreshBadges(): void {
       }
       // Per-element preview: when the form-level "Preview mode" is ON, EVERY element (fields,
       // fieldsets, containers, pages) gets its own preview switch (see ensureElementPreviewSwitch),
-      // not just those carrying `data-cb-func`. Widgets (Mirror) and the FORMCYCLE spacer (which has
-      // nothing to preview — it is pure layout) are excluded here.
-      if (elementPreview && !isMirror && !isSpacerItem(item) && anchor) {
+      // not just those carrying `data-cb-func`. An element whose persisted `data-cb-preview="1"`
+      // keeps its switch even when the form-level mode is OFF (that is what makes the setting
+      // persistent). Widgets (Mirror) and the FORMCYCLE spacer (which has nothing to preview — it is
+      // pure layout) are excluded here.
+      if ((elementPreview || previewOn) && !isMirror && !isSpacerItem(item) && anchor) {
         if (id) {
           livePreview.add(id);
         }
@@ -3478,6 +4045,19 @@ function scheduleRefresh(): void {
     refreshHandle = null;
     refreshBadges();
   }, 60);
+}
+
+/**
+ * Schedules a debounced re-application of the CodBi element badges.
+ *
+ * Exported so a caller that mutated an element's properties WITHOUT firing the designer's
+ * `set-property` callback — which normally triggers this refresh — can still update the on-canvas
+ * badges immediately. The per-element CodBi config panel uses this after toggling a functionality via
+ * {@link setItemPropertyValueQuiet}, replacing the badge refresh the (expensive) `set-property`
+ * callback used to provide.
+ */
+export function refreshCodbiElementMarkers(): void {
+  scheduleRefresh();
 }
 
 /**
@@ -3553,11 +4133,17 @@ export function enableCodbiElementMarkers(): void {
 
     // The slider switch dispatches this whenever it is flipped (and whenever the designer seeds its
     // value), carrying the actual state — so the overlay updates immediately and never depends on
-    // locating the input by id or on the property having been persisted.
+    // locating the input by id or on the property having been persisted. The `property` in the
+    // detail tells the "Mark elements" switch apart from the "Preview" switch (they reuse the editor),
+    // so one switch can never flip the other mode.
     document.addEventListener(MARK_ELEMENTS_CHANGED_EVENT, (event: Event) => {
-      const detail = (event as CustomEvent<{ enabled?: boolean; showLabels?: boolean }>).detail;
+      const detail = (event as CustomEvent<{ property?: string; enabled?: boolean; showLabels?: boolean }>).detail;
       if (typeof detail?.enabled === "boolean") {
-        switchEnabled = detail.enabled;
+        if (detail.property === PREVIEW_ELEMENTS_PROPERTY) {
+          previewSwitchEnabled = detail.enabled;
+        } else if (detail.property === MARK_PROPERTY || detail.property == null) {
+          switchEnabled = detail.enabled;
+        }
       }
       if (typeof detail?.showLabels === "boolean") {
         showLabels = detail.showLabels;

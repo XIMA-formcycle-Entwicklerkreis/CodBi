@@ -1,7 +1,6 @@
 // #region Imports
 import {
   $,
-  Callbacks,
   Editors,
   type IPropertyDescriptor,
   type TEditorCfg,
@@ -21,6 +20,8 @@ import {
 } from "codbi-common";
 import {
   setItemAttributeValueQuiet,
+  setItemPropertyValueQuiet,
+  refreshCodbiElementMarkers,
   removeFuncAttributeQuiet,
   elementCssClasses,
   setElementCssClass,
@@ -132,6 +133,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private selected: string[] = [];
   /** The root of the parameter table (rebuilt whenever the selection changes). */
   private readonly paramsHost: HTMLDivElement;
+  /** The "Parameter" heading above the table — shown only when at least one parameter is present. */
+  private readonly paramTitle: HTMLElement;
   /** The container holding the (filtered) functionality option rows. */
   private readonly funcOptions: HTMLDivElement;
   /** The inline filter input of the functionality listing. */
@@ -176,13 +179,18 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private stdQuery = "";
   /** The current filter query for the second (non-applicable) standard-configuration listing. */
   private stdAllQuery = "";
+  /**
+   * The listing row whose documentation the shared API-Doc viewer currently shows (right-click), if
+   * any. Used to ignore `mouseleave` events of unrelated rows when deciding whether to dismiss it.
+   */
+  private docAnchorRow: HTMLElement | undefined;
 
   constructor(config: TEditorCfg<IElementFunctionalityConfigDescriptor>) {
     super(config, "", "text");
     this.selected = parseCsv(selectedProperty(ELEMENT_FUNCS_PROPERTY));
 
     this.root = document.createElement("div");
-    this.root.className = "codbi-func-config";
+    this.root.className = "codbi-func-config codbi-func-config--element";
     this.root.style.cssText = "display:flex;flex-direction:column;gap:10px;";
 
     // #region 1. Functionality picker (list with an INLINE filter + checkboxes). The "+" button that
@@ -213,7 +221,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // The listing box CONTAINS the filter input (top) and the option rows below it.
     const funcList = document.createElement("div");
     funcList.className = "codbi-func-config__funclist";
-    funcList.style.cssText = "max-height:220px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;";
+    // Inside the double-button frame, so it carries no border of its own (see frame.css).
+    funcList.style.cssText = "max-height:220px;overflow:auto;padding:4px;";
     const funcFilter = document.createElement("input");
     funcFilter.type = "text";
     funcFilter.className = "codbi-func-config__filter";
@@ -233,8 +242,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // compatible — can still be applied deliberately.
     const funcAllList = document.createElement("div");
     funcAllList.className = "codbi-func-config__funclist codbi-func-config__funclist--all";
-    funcAllList.style.cssText =
-      "max-height:220px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;display:none;margin-top:6px;";
+    // Inside the double-button frame, so it carries no border of its own (see frame.css).
+    funcAllList.style.cssText = "max-height:220px;overflow:auto;padding:4px;display:none;";
     const allFuncFilter = document.createElement("input");
     allFuncFilter.type = "text";
     allFuncFilter.className = "codbi-func-config__filter";
@@ -248,9 +257,20 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const funcOptionsAll = document.createElement("div");
     funcOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
     funcAllList.append(allFuncFilter, funcOptionsAll);
-    // The applicable listing sits BELOW its own toggle; the non-applicable listing sits BELOW the
-    // show-all button that reveals it.
-    funcSection.append(mainToggleButton, funcList, allToggleButton, funcAllList);
+    // The two toggles (the section's "Funktionalitäten" opener and the "more" opener below it) form
+    // ONE stacked double button split into a TOP part and a BOTTOM part (see frame.css). The top part
+    // holds the "Funktionalitäten" half AND its applicability listing (which therefore sits above the
+    // divider); the bottom part holds the "Weitere Funktionalitäten" half and the complement listing.
+    const funcTop = document.createElement("div");
+    funcTop.className = "codbi-func-config__part";
+    funcTop.append(mainToggleButton, funcList);
+    const funcBottom = document.createElement("div");
+    funcBottom.className = "codbi-func-config__part";
+    funcBottom.append(allToggleButton, funcAllList);
+    const funcToggles = document.createElement("div");
+    funcToggles.className = "codbi-func-config__double";
+    funcToggles.append(funcTop, funcBottom);
+    funcSection.append(funcToggles);
     this.funcFilter = funcFilter;
     this.funcOptions = funcOptions;
     this.funcList = funcList;
@@ -284,7 +304,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // The listing box CONTAINS the filter input (top) and the option rows below it.
     const stdList = document.createElement("div");
     stdList.className = "codbi-func-config__funclist";
-    stdList.style.cssText = "max-height:160px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;";
+    // Inside the double-button frame, so it carries no border of its own (see frame.css).
+    stdList.style.cssText = "max-height:160px;overflow:auto;padding:4px;";
     const stdFilter = document.createElement("input");
     stdFilter.type = "text";
     stdFilter.className = "codbi-func-config__filter";
@@ -311,8 +332,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // The SECOND list: available standard configurations NOT applicable to the selected element.
     const stdAllList = document.createElement("div");
     stdAllList.className = "codbi-func-config__funclist codbi-func-config__funclist--all";
-    stdAllList.style.cssText =
-      "max-height:160px;overflow:auto;border:1px solid #d0d5dd;border-radius:4px;padding:4px;display:none;margin-top:6px;";
+    // Inside the double-button frame, so it carries no border of its own (see frame.css).
+    stdAllList.style.cssText = "max-height:160px;overflow:auto;padding:4px;display:none;";
     const stdAllFilter = document.createElement("input");
     stdAllFilter.type = "text";
     stdAllFilter.className = "codbi-func-config__filter";
@@ -326,7 +347,19 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const stdOptionsAll = document.createElement("div");
     stdOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
     stdAllList.append(stdAllFilter, stdOptionsAll);
-    stdSection.append(stdMainToggleButton, stdList, stdToggleButton, stdAllList);
+    // Same stacked double-button wrapper as the functionality section (see the comment there): a TOP
+    // part (opener + its applicability listing, above the divider) and a BOTTOM part (the "Weitere"
+    // opener + the complement listing).
+    const stdTop = document.createElement("div");
+    stdTop.className = "codbi-func-config__part";
+    stdTop.append(stdMainToggleButton, stdList);
+    const stdBottom = document.createElement("div");
+    stdBottom.className = "codbi-func-config__part";
+    stdBottom.append(stdToggleButton, stdAllList);
+    const stdToggles = document.createElement("div");
+    stdToggles.className = "codbi-func-config__double";
+    stdToggles.append(stdTop, stdBottom);
+    stdSection.append(stdToggles);
     this.stdOptions = stdOptions;
     this.stdFilter = stdFilter;
     this.stdList = stdList;
@@ -342,6 +375,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const paramTitle = document.createElement("strong");
     paramTitle.className = "codbi-func-config__title";
     paramTitle.textContent = kI18n("designer.widget.functionality.parameters");
+    // Hidden until the first parameter is rendered (see `renderParams`).
+    paramTitle.style.display = "none";
+    this.paramTitle = paramTitle;
     this.paramsHost = document.createElement("div");
     this.paramsHost.className = "codbi-func-config__params";
     paramSection.append(paramTitle, this.paramsHost);
@@ -446,19 +482,31 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     }
   }
 
-  /** Persists the current functionality selection into the element's `funcs` / `funcs_name` props. */
+  /**
+   * Persists the current functionality selection into the element's `funcs` / `funcs_name` props.
+   *
+   * The values are written DIRECTLY into the item's property bags (quiet write) instead of firing the
+   * designer's `set-property` callback. The callback makes FORMCYCLE re-valuate the whole property view
+   * of the SELECTED item (~1s) — that was the lag that made toggling a functionality feel slow — while
+   * the quiet bag write + persist-differ nudge is instant, exactly like the parameter writes
+   * ({@link writeAttribute}) and the standard-config class toggle (`setElementCssClass`). The on-canvas
+   * badges, which the `set-property` callback used to refresh, are refreshed explicitly instead.
+   */
   private persistFunctionalities(): void {
     const csv = this.selected.join(",");
     // Cache the display names (original casing) resolved from the registry for the designer.
     const names = this.selected.map((id) => originalCaseKey(id)).filter((entry) => entry !== "");
-    Callbacks["set-property"].fire(ELEMENT_FUNCS_PROPERTY, csv, this);
-    Callbacks["set-property"].fire(ELEMENT_FUNCS_NAME_PROPERTY, names.join(","), this);
     // The `data-cb-func` attribute lives directly on the selected element so the runtime/preview see
     // the applied functionalities even when only toggled without touching a parameter.
     const item = this.targetElement();
     if (item) {
+      setItemPropertyValueQuiet(item as never, ELEMENT_FUNCS_PROPERTY, csv);
+      setItemPropertyValueQuiet(item as never, ELEMENT_FUNCS_NAME_PROPERTY, names.join(","));
       this.writeFuncAttribute(item, csv);
     }
+    // The `set-property` callback used to re-apply the canvas badges; keep them in sync after the
+    // quiet write (the selected item's config panel re-renders itself below).
+    refreshCodbiElementMarkers();
     this.renderParams();
   }
 
@@ -471,11 +519,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       this.selected = this.selected.filter((entry) => entry !== key);
     }
     // Persist (and re-render) FIRST, so the `funcs` / `data-cb-func` reflect the reduced selection
-    // BEFORE any pruning. `persistFunctionalities` fires the `set-property` callback, and the pruning
-    // below runs `removeFuncAttribute` which can nudge the designer into re-valuing this very property
-    // editor (`setValue`) via the attributes editor sync — if that happened while the property still
-    // held the OLD selection, the removed functionality would be re-added and the checkbox would stay
-    // checked. Persisting first guarantees a re-valuation reads the already-reduced selection.
+    // BEFORE any pruning. Persisting first guarantees that any subsequent read of the property (e.g. a
+    // re-valuation triggered by the pruning's removals) already sees the reduced selection, so a
+    // removed functionality cannot be re-added and its checkbox cannot stay checked.
     this.persistFunctionalities();
     this.renderFunctionalityList();
     if (!on) {
@@ -501,8 +547,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     for (const attrName of paramsToRemoveForRemovedFunctionality(removedId, this.selected)) {
       // `removeFuncAttributeQuiet` matches both the prefixed and the bare attribute name, and is a
       // no-op when the attribute is not actually set on the element. It skips the shared
-      // AttributesEditor re-valuation — a toggle already fired the `set-property` pipeline in
-      // `persistFunctionalities`, so re-valuating again here would double the ~1s lag.
+      // AttributesEditor re-valuation: the selection is already persisted quietly in
+      // `persistFunctionalities`, so forcing a re-valuation here would only add the ~1s lag back.
       removeFuncAttributeQuiet(item as never, attrName);
     }
   }
@@ -575,6 +621,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const text = document.createElement("span");
     text.textContent = id;
     row.append(checkbox, text);
+    // Right-clicking a row opens its documentation in the shared API-Doc viewer; leaving the row
+    // without reaching the viewer closes it again.
+    row.addEventListener("contextmenu", (event) => this.openDocsOnRightClick(event, "functionality", id, row));
+    row.addEventListener("mouseleave", () => this.onRowPointerLeave(row));
     return row;
   }
 
@@ -622,7 +672,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   /** Applies {@link showInapplicable} to the second list and its toggle button. */
   private syncInapplicableVisibility(): void {
     this.funcAllList.style.display = this.showInapplicable ? "block" : "none";
-    // "Mehr Funktionalitäten".
+    // "Weitere Funktionalitäten".
     this.syncToggleButton(this.allToggleButton, this.showInapplicable, "designer.element.property.funcs.more");
   }
 
@@ -678,7 +728,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         if (!matches) {
           continue;
         }
-        const row = this.buildStandardConfigRow(label, isSelected, hasClasses);
+        const row = this.buildStandardConfigRow(id, label, isSelected, hasClasses);
         if (applicable) {
           mainShown += 1;
           mainFragment.appendChild(row);
@@ -773,11 +823,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
    * A configuration that provides no CSS class falls back to its id as a plain informational row (an
    * id is not a class — there is nothing to apply per element).
    *
+   * Right-clicking ANY row opens the documentation of the owning standard CONFIGURATION (its
+   * `detStandards[id].Description`) in the shared API-Doc viewer — independent of the CSS class shown,
+   * since the doc lives with the configuration, not the class.
+   *
+   * @param id          The owning standard-configuration id (the `detStandards` key).
    * @param label       The CSS class name (or the config id for an id-only row).
    * @param isSelected  Whether the element already carries the class.
    * @param hasCheckbox **True** for a real CSS class (checkbox), **false** for an id-only row.
    */
-  private buildStandardConfigRow(label: string, isSelected: boolean, hasCheckbox: boolean): HTMLElement {
+  private buildStandardConfigRow(id: string, label: string, isSelected: boolean, hasCheckbox: boolean): HTMLElement {
     if (!hasCheckbox) {
       const readOnly = document.createElement("div");
       readOnly.className = "codbi-func-config__option codbi-func-config__option--readonly";
@@ -785,6 +840,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       const readOnlyText = document.createElement("span");
       readOnlyText.textContent = label;
       readOnly.append(readOnlyText);
+      // Right-clicking the row opens its configuration's documentation in the shared API-Doc viewer;
+      // leaving the row without reaching the viewer closes it again.
+      readOnly.addEventListener("contextmenu", (event) => this.openDocsOnRightClick(event, "standard", id, readOnly));
+      readOnly.addEventListener("mouseleave", () => this.onRowPointerLeave(readOnly));
       return readOnly;
     }
     const row = document.createElement("label");
@@ -798,7 +857,57 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const text = document.createElement("span");
     text.textContent = label;
     row.append(checkbox, text);
+    // Right-clicking the row opens its configuration's documentation in the shared API-Doc viewer;
+    // leaving the row without reaching the viewer closes it again.
+    row.addEventListener("contextmenu", (event) => this.openDocsOnRightClick(event, "standard", id, row));
+    row.addEventListener("mouseleave", () => this.onRowPointerLeave(row));
     return row;
+  }
+
+  /**
+   * Opens the documentation of one functionality / standard configuration in the shared API-Doc
+   * viewer — the same viewer the attribute-config `ALT+F` and CSS-config `.` flows use — when the user
+   * right-clicks a listing row. The viewer is anchored to the row and stays open while the pointer
+   * reaches it in time; leaving the row without doing so closes it again (see
+   * {@link onRowPointerLeave}). A no-op when the local API-doc interface has not published its hook.
+   *
+   * @param event The originating `contextmenu` event (its default browser menu is suppressed).
+   * @param kind  The registry to read the documentation from.
+   * @param id    The functionality id (case-insensitive) or the standard-configuration id.
+   * @param row   The listing row the viewer is anchored to.
+   */
+  private openDocsOnRightClick(
+    event: MouseEvent,
+    kind: "functionality" | "standard",
+    id: string,
+    row: HTMLElement,
+  ): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.docAnchorRow = row;
+    try {
+      window.CodbiPluginData?.showCodbiDoc?.(kind, id, row);
+    } catch (x) {
+      console.error("[CodBi] Element: could not open the documentation", x);
+    }
+  }
+
+  /**
+   * Notifies the shared API-Doc viewer that the pointer left the listing row whose documentation it
+   * currently shows, so it can dismiss unless the pointer reaches the viewer in time. Restricted to
+   * the row the doc was actually opened from, so leaving an unrelated row does not close it.
+   *
+   * @param row The listing row the pointer left.
+   */
+  private onRowPointerLeave(row: HTMLElement): void {
+    if (this.docAnchorRow !== row) {
+      return;
+    }
+    try {
+      window.CodbiPluginData?.codbiDocAnchorLeft?.();
+    } catch {
+      /* ignore */
+    }
   }
 
   /** Shows/hides the APPLICABLE standard-configuration list (and syncs its toggle button). */
@@ -823,7 +932,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   /** Applies {@link showStdInapplicable} to the second list and its toggle button. */
   private syncStdInapplicableVisibility(): void {
     this.stdAllList.style.display = this.showStdInapplicable ? "block" : "none";
-    // "Mehr Standard-Konfigurationen".
+    // "Weitere Standard-Konfigurationen".
     this.syncToggleButton(this.stdToggleButton, this.showStdInapplicable, "designer.element.standardConfig.more");
   }
 
@@ -859,12 +968,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         }
       }
     }
-    if (!any) {
-      const none = document.createElement("div");
-      none.style.cssText = "color:#6b7280;";
-      none.textContent = kI18n("designer.widget.functionality.noParams");
-      fragment.appendChild(none);
-    }
+    // The "Parameter" title is shown only when there is at least one parameter to display. When the
+    // selection has no parameters, both the heading and the (former) "Keine Parameter" hint are
+    // hidden entirely — nothing is rendered below the highlighted double button in that case.
+    this.paramTitle.style.display = any ? "" : "none";
     this.paramsHost.replaceChildren(fragment);
   }
 

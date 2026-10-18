@@ -111,7 +111,12 @@ class CodbiExtendedAccessorNodePlugin : APluginActionNodeHandler<CodbiExtendedAc
       factory
           .recordBuilder()
           .optionalProperty("name", factory.string())
-          .optionalProperty("value", factory.largeString())
+          // Must be `string`, not `largeString`: the result builder uses
+          // `ValueBuilderOptions.immutable()` with strict acceptance criteria, where
+          // `enableLargeStringInteroperability()` is false. A plain `String` passed to a
+          // `largeString` property would be rejected and silently replaced by
+          // `LargeString.empty()`, so `[%$Node.RESULT.value%]` would resolve to an empty value.
+          .optionalProperty("value", factory.string())
           .optionalProperty("values", factory.listOfStrings())
           .optionalProperty("repetitions", factory.list(factory.listOfStrings()))
           .optionalProperty("meta", factory.map(factory.any()))

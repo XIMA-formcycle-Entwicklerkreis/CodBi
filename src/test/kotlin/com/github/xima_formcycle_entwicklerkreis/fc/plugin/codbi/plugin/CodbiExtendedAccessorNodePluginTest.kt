@@ -2,6 +2,8 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
 
 import com.alibaba.fastjson.JSON
 import de.xima.fc.interfaces.workflow.params.IGetElementPrototypesParams
+import de.xima.fc.interfaces.workflow.value.ValueBuilderOptions
+import de.xima.fc.workflow.processor.value.ValueDescriptorFactory
 import io.mockk.mockk
 import java.util.Locale
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -78,6 +80,26 @@ class CodbiExtendedAccessorNodePluginTest {
     assertEquals("myField", restored.fieldName)
     assertEquals("ALL", restored.repetitionMode)
     assertTrue(restored.sanitizeHtml)
+  }
+
+  @Test
+  fun `success result keeps the resolved value with the strict result builder`() {
+    // The workflow engine builds the success value with `ValueBuilderOptions.immutable()`,
+    // i.e. strict acceptance criteria. Declaring `value` as `largeString` would reject the
+    // plain `String` and silently store `LargeString.empty()`, making the system placeholder
+    // `[%$Node.RESULT.value%]` resolve to an empty string.
+    val descriptor = plugin.getSuccessValueDescriptor(ValueDescriptorFactory.getInstance()).asRecord()
+
+    val result =
+        descriptor
+            .builder(ValueBuilderOptions.immutable())
+            .property("name", "ed1")
+            .property("value", "Hallo Welt")
+            .property("values", listOf("Hallo Welt"))
+            .property("repetitions", listOf(listOf("Hallo Welt")))
+            .build()
+
+    assertEquals("Hallo Welt", result["value"])
   }
 
   @Test

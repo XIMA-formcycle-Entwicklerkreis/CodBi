@@ -44,7 +44,9 @@ object MirrorFormAccess {
       val className: String,
       val parentName: String?,
       val parentId: String?,
-      val depth: Int
+      val depth: Int,
+      /** The element's configured help text (FORMCYCLE `helptext`), rendered as HTML. */
+      val helpText: String = ""
   ) {
     /** The stable identifier stored on the Mirror widget. */
     val reference: String
@@ -215,6 +217,7 @@ object MirrorFormAccess {
             props.getString("header").orEmpty().ifBlank { props.getString("legend").orEmpty() }
           }
       val className = item.getString("className").orEmpty()
+      val helpText = props.getString("helptext").orEmpty()
       val parentId = parentOf[key]
       val parentName = parentId?.let { byId[it]?.getJSONObject("properties")?.getString("name") }
       result.add(
@@ -225,7 +228,8 @@ object MirrorFormAccess {
               className = className,
               parentName = parentName,
               parentId = parentId,
-              depth = depthOf(key)))
+              depth = depthOf(key),
+              helpText = helpText))
     }
     return result
   }
@@ -1144,6 +1148,7 @@ object MirrorFormAccess {
             e.parentName?.let { put("parent", it) }
             e.parentId?.let { put("parentid", it) }
             put("depth", e.depth)
+            put("helptext", e.helpText)
           })
     }
     return array.toJSONString()

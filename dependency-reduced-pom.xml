@@ -1078,6 +1078,36 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
+      <groupId>de.xima.fc</groupId>
+      <artifactId>fc-workflow-processor</artifactId>
+      <version>8.5.3</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.xima.fc</groupId>
+      <artifactId>fc-workflow-common</artifactId>
+      <version>8.5.3</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.xima.fc</groupId>
+      <artifactId>fc-workflow-flowchart</artifactId>
+      <version>8.5.3</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
+      <artifactId>owasp-java-html-sanitizer</artifactId>
+      <version>20260102.1</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jsoup</groupId>
+      <artifactId>jsoup</artifactId>
+      <version>1.17.2</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-stdlib</artifactId>
       <version>2.2.0</version>
@@ -1158,15 +1188,7 @@
       <scope>test</scope>
       <exclusions>
         <exclusion>
-          <artifactId>fc-dao</artifactId>
-          <groupId>de.xima.fc</groupId>
-        </exclusion>
-        <exclusion>
           <artifactId>fc-project-ms-impl</artifactId>
-          <groupId>de.xima.fc</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>fc-workflow-processor</artifactId>
           <groupId>de.xima.fc</groupId>
         </exclusion>
         <exclusion>
@@ -1175,10 +1197,6 @@
         </exclusion>
         <exclusion>
           <artifactId>fc-certificate-management</artifactId>
-          <groupId>de.xima.fc</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>fc-certificate-provider</artifactId>
           <groupId>de.xima.fc</groupId>
         </exclusion>
         <exclusion>
@@ -1192,14 +1210,6 @@
         <exclusion>
           <artifactId>jakarta.ws.rs-api</artifactId>
           <groupId>jakarta.ws.rs</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>fc-simon-common</artifactId>
-          <groupId>de.xima.fc</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>fc-web-common</artifactId>
-          <groupId>de.xima.fc</groupId>
         </exclusion>
         <exclusion>
           <artifactId>bcmail-jdk18on</artifactId>

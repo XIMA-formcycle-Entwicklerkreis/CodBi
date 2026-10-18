@@ -1,0 +1,179 @@
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
+
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.workflow.ExtendedAccessorResolver
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
+import de.xima.fc.beans.interfaces.IGuiIcon
+import de.xima.fc.interfaces.workflow.execution.INormalCompletionResult
+import de.xima.fc.interfaces.workflow.mixin.IElementCategory
+import de.xima.fc.interfaces.plugin.retval.workflow.IFastJsonConverter
+import de.xima.fc.interfaces.workflow.params.IGetElementPrototypesParams
+import de.xima.fc.interfaces.workflow.params.INodeExecutionParams
+import de.xima.fc.interfaces.workflow.value.IValueDescriptor
+import de.xima.fc.interfaces.workflow.value.IValueDescriptorFactory
+import de.xima.fc.mdl.ui.CustomGuiIcon
+import de.xima.fc.workflow.mixin.APluginActionNodeHandler
+import de.xima.fc.workflow.taglib.model.ClientOpaqueColor
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import org.slf4j.LoggerFactory
+
+/**
+ * Workflow node that exposes the raw or structured value of exactly one form element to the
+ * workflow.
+ *
+ * The primary use case is a TinyMCE/rich-text textarea: the standard mail node escapes form values
+ * with `HTML_FORM_ONLY`, while this node returns the value as a workflow result (`SYSTEM` type), so
+ * it reaches downstream nodes unescaped.
+ *
+ * The node deliberately supports only one configured element per node. There is no "all form data"
+ * mode.
+ */
+class CodbiExtendedAccessorNodePlugin : APluginActionNodeHandler<CodbiExtendedAccessorNodeProps>() {
+  override fun getName(): String = "CodbiExtendedAccessor"
+
+  override fun getPropertiesViewXhtmlName(): String = "CodbiExtendedAccessorNode.xhtml"
+
+  /**
+   * Diagnostic converter that logs the node's persisted custom-parameter JSON (including
+   * `fieldName`) whenever the workflow designer or the workflow engine serializes/deserializes it.
+   */
+  override fun getFastJsonConverter(): IFastJsonConverter = CodbiExtendedAccessorJsonConverter()
+
+  override fun getMainCategory(params: IGetElementPrototypesParams): IElementCategory =
+      ECodbiWorkflowElementCategory.MAIN_CODBI
+
+  override fun getSubCategory(params: IGetElementPrototypesParams): IElementCategory =
+      ECodbiWorkflowElementCategory.SUB_CODBI_ACCESS
+
+  /**
+   * Palette/canvas icon: the CodBi Extended Accessor SVG (blue box with incoming/outgoing arrows),
+   * served from the plugin resource servlet next to `mirror-icon.svg`.
+   */
+  override fun getPrototypeIcon(params: IGetElementPrototypesParams): IGuiIcon {
+    val iconUrl = pluginResourceUrl(EXTENDED_ACCESSOR_ICON_PATH)
+    return CustomGuiIcon.builder()
+        .styleClass("fa fa-exchange-alt")
+        .style(
+            "color:transparent !important;" +
+                "background-image:url('$iconUrl') !important;" +
+                "background-repeat:no-repeat !important;" +
+                "background-position:center !important;" +
+                "background-size:1.4em 1.4em !important;" +
+                "display:inline-block !important;" +
+                "width:1.5em !important;height:1.5em !important;" +
+                "vertical-align:middle !important;" +
+                "filter:drop-shadow(0 0 .18em rgba(37,99,235,.55)) !important;")
+        .build()
+  }
+
+  /**
+   * Builds a URL for a plugin resource. The (root-relative) context path is read through JSF
+   * reflection so the plugin does not need a compile-time JSF dependency.
+   */
+  private fun pluginResourceUrl(path: String): String {
+    val contextPath =
+        runCatching {
+              val facesContextClass = Class.forName("javax.faces.context.FacesContext")
+              val current =
+                  facesContextClass.getMethod("getCurrentInstance").invoke(null)
+                      ?: return@runCatching ""
+              val externalContextClass = Class.forName("javax.faces.context.ExternalContext")
+              val externalContext =
+                  facesContextClass.getMethod("getExternalContext").invoke(current)
+                      ?: return@runCatching ""
+              externalContextClass.getMethod("getRequestContextPath").invoke(externalContext)
+                  as? String ?: ""
+            }
+            .getOrDefault("")
+    val encodedPath = URLEncoder.encode(path, StandardCharsets.UTF_8.name()).replace("+", "%20")
+    return "$contextPath/plugin?name=Resource&Path=$encodedPath"
+  }
+
+  private companion object {
+    private const val EXTENDED_ACCESSOR_ICON_PATH =
+        "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/extended-accessor-icon.svg"
+    private val logger = LoggerFactory.getLogger(CodbiExtendedAccessorNodePlugin::class.java)
+  }
+
+  /** Dark-orange node accent in the workflow designer, matching the CodBi brand colour. */
+  override fun getThemeColor(): ClientOpaqueColor = ClientOpaqueColor.ofRgb(255, 140, 0)
+
+  override fun getResourceBundlePath(): String = Constants.RESOURCE_PATH_BUNDLE.removePrefix("/")
+
+  /**
+   * Declares the result record for the workflow designer so paths such as `value`, `values[0]`,
+   * `repetitions[0][0]`, or `meta.datatype` can be offered as suggestions.
+   *
+   * All properties are optional because the result intentionally stays minimal for missing or empty
+   * fields.
+   */
+  override fun getSuccessValueDescriptor(factory: IValueDescriptorFactory): IValueDescriptor<*, *> =
+      factory
+          .recordBuilder()
+          .optionalProperty("name", factory.string())
+          .optionalProperty("value", factory.largeString())
+          .optionalProperty("values", factory.listOfStrings())
+          .optionalProperty("repetitions", factory.list(factory.listOfStrings()))
+          .optionalProperty("meta", factory.map(factory.any()))
+          .build()
+
+  override fun execute(
+      params: INodeExecutionParams<CodbiExtendedAccessorNodeProps>
+  ): INormalCompletionResult {
+    val props = params.data
+    logger.info(
+        "[CodBi][ExtendedAccessor] execute node='{}' placeholder='[%${props.name}.RESULT.value%]' fieldName='{}' mode='{}' index={} join='{}' sanitize={} htmlToText={} includeMeta={}",
+        props.name,
+        props.fieldName,
+        props.repetitionMode,
+        props.repetitionIndex,
+        props.joinSeparator,
+        props.sanitizeHtml,
+        props.htmlToText,
+        props.includeMeta,
+    )
+
+    if (props.fieldName.isNullOrBlank()) {
+      logger.warn(
+          "[CodBi][ExtendedAccessor] node='{}' has no configured form element (fieldName is blank); next nodes cannot read a result",
+          props.name,
+      )
+      params.softError(
+          "FIELD_REQUIRED",
+          "Please configure a form element.",
+          emptyMap<String, Any>(),
+      )
+      return params.normalResult().build()
+    }
+
+    val result = ExtendedAccessorResolver.resolve(props, params.workflowContext.env())
+    logger.info(
+        "[CodBi][ExtendedAccessor] node='{}' resolved field='{}' values={} repetitions={} valueLength={} hasMeta={}",
+        props.name,
+        result.name,
+        result.values.size,
+        result.repetitions.size,
+        result.value.length,
+        result.meta.isNotEmpty(),
+    )
+
+    return params
+        .normalResult()
+        .success { builder ->
+          val record =
+              builder
+                  .asRecord()
+                  .property("name", result.name)
+                  .property("value", result.value)
+                  .property("values", result.values)
+                  .property("repetitions", result.repetitions)
+
+          if (result.meta.isNotEmpty()) {
+            record.property("meta", result.meta)
+          }
+
+          record.build()
+        }
+        .build()
+  }
+}

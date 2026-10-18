@@ -284,6 +284,38 @@
 			<scope>provided</scope>
 		</dependency>
 
+		<!-- Workflow node API used by the CodBi Extended Accessor node -->
+		<dependency>
+			<groupId>de.xima.fc</groupId>
+			<artifactId>fc-workflow-processor</artifactId>
+			<version>${xfc.version}</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>de.xima.fc</groupId>
+			<artifactId>fc-workflow-common</artifactId>
+			<version>${xfc.version}</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>de.xima.fc</groupId>
+			<artifactId>fc-workflow-flowchart</artifactId>
+			<version>${xfc.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Optional HTML sanitization and HTML-to-text conversion -->
+		<dependency>
+			<groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
+			<artifactId>owasp-java-html-sanitizer</artifactId>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.jsoup</groupId>
+			<artifactId>jsoup</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
 		<!-- Kotlin standard library -->
 		<dependency>
 			<groupId>org.jetbrains.kotlin</groupId>

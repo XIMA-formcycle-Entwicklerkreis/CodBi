@@ -9,7 +9,7 @@ import { i18n } from "./i18n.js";
  * markers:
  * - the primary switch edits this editor's own form property ("Mark CodBi elements"),
  * - the companion switch (to its RIGHT) edits the {@link SECONDARY_PROPERTY} form property
- *   ("always show the reference" — expands every marker without hovering).
+ *   ("always show the reference" — expands a form element's markers while it is hovered).
  *
  * FORMCYCLE renders one property per row and has no switch/slider editor, so rendering both toggles
  * inside a single editor is the only way to place the companion switch directly next to the primary
@@ -28,7 +28,8 @@ export interface ICodbiSwitchEditorDescriptor extends IPropertyDescriptor<typeof
   offValue?: string;
   /**
    * Whether to also render the companion switch (right of the primary one) that edits the
-   * {@link SECONDARY_PROPERTY} ("always show the reference"). Default `true`. Set `false` when the
+   * {@link SECONDARY_PROPERTY} ("always show the reference", hover-driven expansion). Default
+   * `true`. Set `false` when the
    * companion belongs next to only ONE of the editor's rows — otherwise a property reusing this
    * editor (e.g. "Preview") would show a duplicate companion switch.
    */
@@ -85,7 +86,8 @@ export class CodbiSwitchEditor extends Editors.BaseEditor<typeof CodbiSwitchEdit
     this.value = this.offValue;
 
     // The companion "always show the reference" switch may be hidden (see `showCompanion`) when a
-    // property reuses this editor but must not duplicate the companion next to it. The companion
+    // property reuses this editor but must not duplicate the companion next to it. It enables
+    // hover-driven marker expansion (not permanent expansion). The companion
     // INPUT is still built (and seeded) either way so it is a real, independent element — aliasing it
     // to the primary would make `setValue`/`notifyChanged` overwrite the primary with the
     // `mark_labels` value and the primary switch could no longer be toggled.

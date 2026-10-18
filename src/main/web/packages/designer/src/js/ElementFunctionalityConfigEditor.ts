@@ -7,48 +7,48 @@ import {
   instance,
   registerCustomCategory,
   registerCustomEditor,
-  registerLocalizableProperty,
   registerCustomProperty,
+  registerLocalizableProperty,
 } from "@de-xima/fc-form-designer";
 import {
   Constants,
+  type TStandardConfigClassSpec,
+  type TStandardConfigSupportedSpec,
   standardConfigAppliesTo,
   standardConfigClassTypes,
   standardConfigIsHolistic,
-  type TStandardConfigClassSpec,
-  type TStandardConfigSupportedSpec,
 } from "codbi-common";
+import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
-  setItemAttributeValueQuiet,
-  setItemPropertyValueQuiet,
+  elementCssClasses,
   refreshCodbiElementMarkers,
   removeFuncAttributeQuiet,
-  elementCssClasses,
   setElementCssClass,
+  setItemAttributeValueQuiet,
+  setItemPropertyValueQuiet,
 } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
-import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
   CB_FUNC_ATTRIBUTE,
   type IApplicabilityElement,
   type IDesignerLike,
+  type IFunctionalityParameterSpec,
   type IItemLike,
-  parseCsv,
-  selectedProperty,
-  listFunctionalities,
-  resolveFunctionalityEntry,
+  currentAttributeValueForItem,
+  findParameterSpec,
+  functionalityAppliesTo,
+  functionalityParameterTypes,
   functionalityParameters,
   functionalitySummary,
-  functionalityParameterTypes,
-  findParameterSpec,
-  type IFunctionalityParameterSpec,
-  functionalityAppliesTo,
-  parameterType,
+  listFunctionalities,
   parameterLabel,
-  currentAttributeValueForItem,
+  parameterType,
+  parseCsv,
+  resolveFunctionalityEntry,
+  selectedProperty,
 } from "./FunctionalityConfigEditor.js";
-import { i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
 import { ensureCodbiBranding } from "./MirrorSelect.js";
+import { getDesignerLanguage, i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
 // #endregion Imports
 
 /**
@@ -613,6 +613,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const row = document.createElement("label");
     row.className = "codbi-func-config__option";
     row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;cursor:pointer;";
+    // Hovering the row shows the functionality's short, localized description. The id is the
+    // fallback so the row still has a useful tooltip when no Summary is published.
+    const tooltip = functionalitySummary(id) || id;
+    row.title = tooltip;
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = id;
@@ -620,6 +624,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     checkbox.addEventListener("change", () => this.toggleFunctionality(id, checkbox.checked));
     const text = document.createElement("span");
     text.textContent = id;
+    text.title = tooltip;
     row.append(checkbox, text);
     // Right-clicking a row opens its documentation in the shared API-Doc viewer; leaving the row
     // without reaching the viewer closes it again.
@@ -728,7 +733,13 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         if (!matches) {
           continue;
         }
-        const row = this.buildStandardConfigRow(id, label, isSelected, hasClasses);
+        // The class entry carries the short, human-readable description of the standard
+        // configuration's CSS class (under the optimised `classes` shape). Fall back to the id so the
+        // row always has a meaningful tooltip.
+        const classSpec = hasClasses ? classes?.[label] : undefined;
+        const classDescription = typeof classSpec === "string" ? classSpec : classSpec?.description;
+        const tooltip = this.standardConfigTooltip(id, label, classDescription, funcs?.[label]);
+        const row = this.buildStandardConfigRow(id, label, isSelected, hasClasses, tooltip);
         if (applicable) {
           mainShown += 1;
           mainFragment.appendChild(row);
@@ -815,6 +826,34 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   }
 
   /**
+   * Tooltip text of one standard-configuration row.
+   *
+   * The class descriptions published by the configuration `.json` files are currently English-only.
+   * For other designer languages, derive the tooltip from the LOCALIZED short summaries of the
+   * functionalities that class applies. When no functionality summary is available, keep the
+   * published class description as the fallback.
+   */
+  private standardConfigTooltip(
+    id: string,
+    label: string,
+    classDescription: string | undefined,
+    funcsCsv: string | undefined,
+  ): string {
+    const base = classDescription || id;
+    if (getDesignerLanguage().toLowerCase() === "en") {
+      return base;
+    }
+    const summaries = String(funcsCsv ?? "")
+      .split(",")
+      .map((func) => func.trim())
+      .filter(Boolean)
+      .map((func) => functionalitySummary(func))
+      .filter(Boolean);
+    const unique = [...new Set(summaries)];
+    return unique.length > 0 ? unique.join(" · ") : base;
+  }
+
+  /**
    * Builds one standard-configuration option row.
    *
    * When the row is a real CSS class it carries the SAME cheque-box as a functionality row (the same
@@ -832,13 +871,21 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
    * @param isSelected  Whether the element already carries the class.
    * @param hasCheckbox **True** for a real CSS class (checkbox), **false** for an id-only row.
    */
-  private buildStandardConfigRow(id: string, label: string, isSelected: boolean, hasCheckbox: boolean): HTMLElement {
+  private buildStandardConfigRow(
+    id: string,
+    label: string,
+    isSelected: boolean,
+    hasCheckbox: boolean,
+    tooltip: string,
+  ): HTMLElement {
     if (!hasCheckbox) {
       const readOnly = document.createElement("div");
       readOnly.className = "codbi-func-config__option codbi-func-config__option--readonly";
       readOnly.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;";
+      readOnly.title = tooltip;
       const readOnlyText = document.createElement("span");
       readOnlyText.textContent = label;
+      readOnlyText.title = tooltip;
       readOnly.append(readOnlyText);
       // Right-clicking the row opens its configuration's documentation in the shared API-Doc viewer;
       // leaving the row without reaching the viewer closes it again.
@@ -849,13 +896,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const row = document.createElement("label");
     row.className = "codbi-func-config__option";
     row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;cursor:pointer;";
+    row.title = tooltip;
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = label;
     checkbox.checked = isSelected;
+    checkbox.title = tooltip;
     checkbox.addEventListener("change", () => this.toggleStandardConfigClass(label, checkbox.checked));
     const text = document.createElement("span");
     text.textContent = label;
+    text.title = tooltip;
     row.append(checkbox, text);
     // Right-clicking the row opens its configuration's documentation in the shared API-Doc viewer;
     // leaving the row without reaching the viewer closes it again.

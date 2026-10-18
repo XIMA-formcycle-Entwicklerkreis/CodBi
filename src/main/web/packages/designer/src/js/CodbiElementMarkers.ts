@@ -162,11 +162,12 @@ const BADGE_CSS = `
    captures the pointer (see the drop-target note after BADGE_CSS), the JS proximity tracker
    installBadgeHoverTracking sets the --hover class instead of CSS :hover. */
 *:hover>.codbi-elem-badge{opacity:1}
-.codbi-elem-badge--open,
 .codbi-elem-badge--focus-active{opacity:1}
+/* "Detailed" mode: the badge is expanded only while its form element is hovered, never permanently. */
+.codbi-elem-marked:hover>.codbi-elem-badge--open{opacity:1}
 *:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty){border-color:#c96a00;background:#fff7ed}
 .codbi-elem-badge--hover:not(.codbi-elem-badge--empty) .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
-.codbi-elem-badge--open .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
+.codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
 /* The marked (highlight) overlay. The visible rounded tint is drawn by a ::after OVERLAY (on top of
    the element) rather than by the element itself: form-designer content cells fill themselves with
    child wrappers whose own rectangular background would cover the element's rounded corners, and
@@ -213,12 +214,12 @@ const BADGE_CSS = `
 .codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-func-item{opacity:1}
 .codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-css-item{opacity:1}
 .codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-holistic-item{opacity:1}
-/* "Detailed" mode: reveal the functionality list without hovering (the parameter table stays
-   hover-only, since no --open rule targets it). */
-.codbi-elem-badge--open .codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
-.codbi-elem-badge--open .codbi-func-list>.codbi-func-item{opacity:1}
-.codbi-elem-badge--open .codbi-func-list>.codbi-css-item{opacity:1}
-.codbi-elem-badge--open .codbi-func-list>.codbi-holistic-item{opacity:1}
+/* "Detailed" mode: reveal the functionality list while the owning form element is hovered.
+   The parameter table stays hover-only, since no --open rule targets it. */
+.codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-func-list{max-width:2000px;overflow:visible;opacity:1;padding:0 6px 0 2px;pointer-events:auto}
+.codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-func-list>.codbi-func-item{opacity:1}
+.codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-func-list>.codbi-css-item{opacity:1}
+.codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-func-list>.codbi-holistic-item{opacity:1}
 /* While any control inside the badge (the "+ Add" select or a value input) holds focus the whole
    functionality list stays expanded even if the pointer is no longer over the widget — a native
    select dropdown can move the cursor away, which would otherwise collapse the badge. */

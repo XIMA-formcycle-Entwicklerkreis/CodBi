@@ -49,6 +49,50 @@
     initCopyButtons();
   }
 
+  let refreshScheduled = false;
+
+  /**
+   * Re-runs the whole initializer after the properties panel was replaced. PrimeFaces does not always
+   * emit an event that is late enough for the re-inserted panel, so a debounced DOM observer is used
+   * as the reliable fallback. It only schedules when a NEW tree root appears, which avoids reacting
+   * to the tree's own row rendering.
+   */
+  function scheduleInit() {
+    if (refreshScheduled) {
+      return;
+    }
+    refreshScheduled = true;
+    const run = () => {
+      refreshScheduled = false;
+      init();
+    };
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(run);
+    } else {
+      window.setTimeout(run, 16);
+    }
+  }
+
+  function installTreeObserver() {
+    if (!window.MutationObserver || !document.documentElement) {
+      return;
+    }
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const added of mutation.addedNodes) {
+          if (added.nodeType !== 1) {
+            continue;
+          }
+          if (added.matches?.(ROOT_SELECTOR) || added.querySelector?.(ROOT_SELECTOR)) {
+            scheduleInit();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
   let ajaxLoggingBound = false;
 
   function bindAjaxLogging() {
@@ -260,7 +304,8 @@
   }
 
   function initRoot(root) {
-    if (initialized.has(root)) {
+    // Re-render when the properties panel reuses the same root but has cleared its content.
+    if (initialized.has(root) && root.querySelector(".codbi-accessor-tree__list")) {
       return;
     }
     initialized.add(root);
@@ -791,6 +836,9 @@
     }, HIDE_DELAY);
   }
 
+  // Expose an explicit refresh hook for the XHTML bootstrap when the cached script is reused.
+  window.codbiExtendedAccessorRefresh = init;
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
@@ -800,4 +848,5 @@
   if (window.jQuery) {
     window.jQuery(document).on("pfAjaxComplete", init);
   }
+  installTreeObserver();
 })();

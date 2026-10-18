@@ -165,9 +165,10 @@
     // Keep the exact configured name (including any spaces) — the workflow placeholder is matched
     // against the persisted node name verbatim. Only use trimming to detect an empty name.
     const raw = String(name || "");
-    // Workflow-node results use `[%<node name>.RESULT...%]` WITHOUT a `$`. A `$` prefix denotes a
-    // different placeholder type and would never resolve against the node result.
-    return raw.trim() ? `[%${raw}${PLACEHOLDER_SUFFIX}%]` : "";
+    // Workflow-node results are SYSTEM placeholders and require the `$` prefix:
+    // `[%$<node name>.RESULT.value%]`. Without the `$` Formcycle treats it as a form-field
+    // placeholder and looks for a field named "<node name>.RESULT.value", which yields nothing.
+    return raw.trim() ? `[%$${raw}${PLACEHOLDER_SUFFIX}%]` : "";
   }
 
   /** Writes the placeholder derived from `name` into the "Selection" panel. */

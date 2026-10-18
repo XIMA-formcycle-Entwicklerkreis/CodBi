@@ -122,7 +122,7 @@ class CodbiExtendedAccessorNodePlugin : APluginActionNodeHandler<CodbiExtendedAc
   ): INormalCompletionResult {
     val props = params.data
     logger.info(
-        "[CodBi][ExtendedAccessor] execute node='{}' placeholder='[%${props.name}.RESULT.value%]' fieldName='{}' mode='{}' index={} join='{}' sanitize={} htmlToText={} includeMeta={}",
+        "[CodBi][ExtendedAccessor] execute node='{}' placeholder='[%\$${props.name}.RESULT.value%]' fieldName='{}' mode='{}' index={} join='{}' sanitize={} htmlToText={} includeMeta={}",
         props.name,
         props.fieldName,
         props.repetitionMode,

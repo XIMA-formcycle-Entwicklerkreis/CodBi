@@ -121,7 +121,9 @@
     // Keep the exact configured name (including any spaces) — the workflow placeholder is matched
     // against the persisted node name verbatim. Only use trimming to detect an empty name.
     const raw = String(name || "");
-    return raw.trim() ? `[%$${raw}${PLACEHOLDER_SUFFIX}%]` : "";
+    // Workflow-node results use `[%<node name>.RESULT...%]` WITHOUT a `$`. A `$` prefix denotes a
+    // different placeholder type and would never resolve against the node result.
+    return raw.trim() ? `[%${raw}${PLACEHOLDER_SUFFIX}%]` : "";
   }
 
   /** Writes the placeholder derived from `name` into the "Selection" panel. */
@@ -562,6 +564,20 @@
     filter.addEventListener("input", redraw);
     redraw();
     markSelected();
+    logDebug(
+      "tree rows rendered=",
+      list.querySelectorAll(".codbi-accessor-tree__item").length,
+      "selectedRows=",
+      list.querySelectorAll(".codbi-accessor-tree__item--selected").length,
+    );
+    const selectedRow = list.querySelector(".codbi-accessor-tree__item--selected");
+    if (selectedRow) {
+      try {
+        selectedRow.scrollIntoView({ block: "nearest" });
+      } catch {
+        /* older engines */
+      }
+    }
   }
 
   function showPreview(row, node, base, key) {

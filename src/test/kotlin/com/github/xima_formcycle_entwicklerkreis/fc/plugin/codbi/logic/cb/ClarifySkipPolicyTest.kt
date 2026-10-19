@@ -79,6 +79,34 @@ class ClarifySkipPolicyTest {
   }
 
   @Test
+  fun `mentionsForeignForm fires only for cross-form phrasings`() {
+    assertTrue(
+        ClarificationReferenceDetector.mentionsForeignForm(
+            "Füge das Element div6 aus dem Meldeformular für besonders geschützte Wirbeltiere hinzu."))
+    assertTrue(
+        ClarificationReferenceDetector.mentionsForeignForm(
+            "Add element div6 from the Meldeformular form."))
+    assertFalse(
+        ClarificationReferenceDetector.mentionsForeignForm("Mach es genau wie letzte Woche."))
+    assertFalse(ClarificationReferenceDetector.mentionsForeignForm("Füge ein Namensfeld hinzu."))
+  }
+
+  @Test
+  fun `naming an element that comes from another form vetoes the skip`() {
+    // Free-form "aus dem <Titel>formular" / "from the <Title> form" must force the clarify round:
+    // the AI then resolves the form title and asks COPY vs. MIRROR before building.
+    val corpora =
+        listOf(
+            "Füge das Element div6 aus dem Meldeformular für besonders geschützte Wirbeltiere hinzu.",
+            "Übernimm das Feld X aus dem Formular Y.",
+            "Add element div6 from the Meldeformular form.",
+            "Add the container Z from the report form.")
+    for (corpus in corpora) {
+      assertTrue(ClarificationReferenceDetector.wantsFormOrHistoryContext(corpus), corpus)
+    }
+  }
+
+  @Test
   fun `a plain field request triggers no veto`() {
     val corpora =
         listOf(

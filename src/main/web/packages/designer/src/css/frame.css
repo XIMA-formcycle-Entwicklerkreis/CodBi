@@ -352,6 +352,21 @@
   z-index: 1;
 }
 
+/*
+ * An OPEN Mirror dropdown must overlap the CodBi functionality panel ("double buttons").
+ *
+ * Giving every direct child of the settings panel (and every `.codbi-func-config` section below) its
+ * own `z-index: 1` turns it into a stacking context. That confines the option list's `z-index: 2000`
+ * to its row, so a later sibling — the CodBi config with its stacked double buttons — paints over
+ * the list even though the list itself has the higher z-index. While a list is open, lift the row
+ * (and any category wrapper) that CONTAINS it above those siblings. Only the open dropdown's row is
+ * raised, so a closed dropdown never covers the row below it.
+ */
+.xm-panel-box:has(.codbi-mirror-dd__list:not([hidden])) > *:has(.codbi-mirror-dd__list:not([hidden])),
+.codbi-func-config:has(.codbi-mirror-dd__list:not([hidden])) > *:has(.codbi-mirror-dd__list:not([hidden])) {
+  z-index: 2;
+}
+
 /* Let the watermark show through the property rows that hold our dropdowns. */
 .xm-panel-box:has(.codbi-mirror-dd) .xm-pe-row {
   background-color: transparent !important;
@@ -667,6 +682,9 @@
   border: 1px solid darkorange;
   border-radius: 4px;
   overflow: hidden;
+  /* A small vertical gap keeps the two stacked toggle buttons ("Funktionalitäten" opener and the
+     "Weitere …" opener) visually apart so they do not crowd each other. */
+  gap: 6px;
   background: rgba(255, 255, 255, 0.55);
 }
 /* Each half of the double button is one flex column holding its toggle and its listing. */
@@ -725,6 +743,33 @@
   font-size: 2.2em;
   line-height: 1;
   vertical-align: middle;
+}
+
+/* Shown in place of the whole panel while the form-level "CodBi aktiviert" checkbox is unchecked.
+   The existing `.codbi-func-config::after` watermark stays visible behind it, so instead of an empty
+   shell the user sees the CodBi logo plus a short explanation of how to activate CodBi. */
+.codbi-func-config__disabled {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 12px;
+  border: 1px dashed darkorange;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.45);
+  text-align: center;
+}
+.codbi-func-config__disabled-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: darkorange;
+}
+.codbi-func-config__disabled-text {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6b7280;
 }
 
 /* The EP-builder launcher to the right of each parameter value field: a darkorange, rounded,

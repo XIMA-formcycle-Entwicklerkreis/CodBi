@@ -101,6 +101,37 @@ class CodbiCapabilitiesPass1NameOnlyTest {
   }
 
   @Test
+  fun `XMirror widget is offered to the AI and has a requestable details section`() {
+    // Regression: without an XMirror entry the assistant never learns that a form element from
+    // ANOTHER form can be MIRRORED (it only sees the copy path) and cannot create the widget.
+    val nameOnly = CodbiCapabilities.buildWidgetsSectionCondensed()
+    assertTrue(
+        nameOnly.contains("\n## XMirror\n"),
+        "the XMirror widget must be listed in the pass-1 widget catalog")
+
+    // The detailed reference must carry the exact property wiring, otherwise a pass-2 details
+    // request for XMirror resolves to nothing and the widget cannot be built.
+    val detailed =
+        CodbiCapabilitiesPass1NameOnlyTest::class
+            .java
+            .classLoader
+            .getResourceAsStream(
+                "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-widgets.md")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("bundled formcycle-widgets.md not found")
+    assertTrue(detailed.contains("\n## XMirror\n"), "the detailed XMirror section is missing")
+    for (key in
+        listOf(
+            "codbi_mirror_form",
+            "codbi_mirror_element",
+            "codbi_mirror_element_key",
+            "codbi_mirror_form_name",
+            "codbi_mirror_element_name")) {
+      assertTrue(detailed.contains(key), "the detailed XMirror section is missing '$key'")
+    }
+  }
+
+  @Test
   fun `name-only catalogs are a fraction of the full catalogs they replace`() {
     // Lever 2.4's whole point: names alone are enough to *request* details, so pass-1 should not
     // carry the per-entry prose. This guard keeps the saving from silently regressing.

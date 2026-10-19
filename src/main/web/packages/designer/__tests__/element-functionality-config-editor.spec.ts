@@ -17,8 +17,16 @@ import { resetTestState, TestState } from "./test-state.js";
 
 /** Builds the editor under test with a designer instance reporting the given element. */
 function buildEditor(className: string, properties: Record<string, unknown>): HTMLElement {
+  // Preserve any `getFormPropertyValueForCurrentLang` a test placed on the fake designer (used to
+  // gate the panel's visibility on the form-level "CodBi aktiviert" checkbox).
+  const prior = TestState.designerInstance as
+    | { getFormPropertyValueForCurrentLang?: (property: string) => unknown }
+    | undefined;
   TestState.designerInstance = {
     getSelectedMasterItem: () => ({ className, getPersist: () => ({ properties }) }),
+    ...(prior?.getFormPropertyValueForCurrentLang
+      ? { getFormPropertyValueForCurrentLang: prior.getFormPropertyValueForCurrentLang }
+      : {}),
   };
 
   const config = { designer: {} } as unknown as TEditorCfg<IElementFunctionalityConfigDescriptor>;
@@ -127,6 +135,110 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
     expect(mainList?.style.display).toBe("block");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
     expect(toggle?.textContent).toBe("\u25BE Functionalities");
+  });
+
+  it("focuses the listing's filter input right after a toggle button expands the list", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: { "Any.Thing": {} },
+    };
+
+    const rootEl = buildEditor("XTextField", {});
+    // jsdom only tracks focus on elements attached to the live document.
+    document.body.appendChild(rootEl);
+    const section = funcSection(rootEl);
+    const mainToggle = section.querySelector<HTMLButtonElement>(".codbi-func-config__show-all--main");
+    const allToggle = section.querySelector<HTMLButtonElement>(
+      ".codbi-func-config__show-all:not(.codbi-func-config__show-all--main)",
+    );
+    const mainFilter = section.querySelector<HTMLInputElement>(
+      ".codbi-func-config__funclist .codbi-func-config__filter",
+    );
+    const allFilter = section.querySelector<HTMLInputElement>(
+      ".codbi-func-config__funclist--all .codbi-func-config__filter",
+    );
+
+    // Expanding the APPLICABLE list puts the cursor into its filter box.
+    mainToggle?.click();
+    expect(document.activeElement).toBe(mainFilter);
+
+    // Expanding the non-applicable list puts the cursor into ITS filter box.
+    allToggle?.click();
+    expect(document.activeElement).toBe(allFilter);
+
+    document.body.removeChild(rootEl);
+  });
+
+  it("shows an activation notice instead of the config sections while the form-level CodBi is disabled", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: { "Any.Thing": {} },
+    };
+
+    // CodBi disabled for the form -> the three configurable sections are hidden and an activation
+    // notice is shown in their place (the root stays visible so the watermark can render).
+    TestState.designerInstance = {
+      getSelectedMasterItem: () => ({ className: "XTextField", getPersist: () => ({ properties: {} }) }),
+      getFormPropertyValueForCurrentLang: () => "0",
+    };
+    const hiddenRoot = buildEditor("XTextField", {});
+    // The root itself stays visible (inline flex) so the CodBi watermark renders behind the notice.
+    expect(hiddenRoot.style.display).not.toBe("none");
+    const hiddenSections = hiddenRoot.querySelectorAll<HTMLElement>(".codbi-func-config__section");
+    expect(hiddenSections.length).toBeGreaterThanOrEqual(3);
+    hiddenSections.forEach((section) => expect(section.style.display).toBe("none"));
+    const hint = hiddenRoot.querySelector<HTMLElement>(".codbi-func-config__disabled");
+    expect(hint).not.toBeNull();
+    expect(hint?.style.display).toBe("");
+    expect(hint?.textContent ?? "").toContain("CodBi is not activated");
+
+    // CodBi enabled for the form -> the sections are back and the notice is hidden.
+    TestState.designerInstance = {
+      getSelectedMasterItem: () => ({ className: "XTextField", getPersist: () => ({ properties: {} }) }),
+      getFormPropertyValueForCurrentLang: () => "1",
+    };
+    const shownRoot = buildEditor("XTextField", {});
+    shownRoot.querySelectorAll<HTMLElement>(".codbi-func-config__section").forEach((section) => {
+      expect(section.style.display).toBe("");
+    });
+    expect(shownRoot.querySelector<HTMLElement>(".codbi-func-config__disabled")?.style.display).toBe("none");
+  });
+
+  it("re-reveals the panel immediately when the live CodBi enable checkbox is checked (no rebuild)", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: { "Any.Thing": {} },
+    };
+
+    // A live "CodBi aktiviert" checkbox in the DOM is the authoritative source, so toggling it must
+    // update an ALREADY-BUILT editor immediately (the checkbox reflection, no save + reload).
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = "form-codbi-prop-enable-input";
+    checkbox.checked = false;
+    document.body.appendChild(checkbox);
+
+    TestState.designerInstance = {
+      getSelectedMasterItem: () => ({ className: "XTextField", getPersist: () => ({ properties: {} }) }),
+    };
+    const rootEl = buildEditor("XTextField", {});
+    const sections = rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__section");
+    const hint = rootEl.querySelector<HTMLElement>(".codbi-func-config__disabled");
+
+    // Initially the box is unchecked -> hidden sections, visible notice.
+    sections.forEach((section) => expect(section.style.display).toBe("none"));
+    expect(hint?.style.display).toBe("");
+
+    // Simulate the user ticking the box - the panel must flip WITHOUT rebuilding the editor.
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+    sections.forEach((section) => expect(section.style.display).toBe(""));
+    expect(hint?.style.display).toBe("none");
+
+    // And although the saved form-property model still reports disabled, the live checkbox wins.
+    expect(TestState.designerInstance?.getFormPropertyValueForCurrentLang).toBeUndefined();
+
+    document.body.removeChild(checkbox);
   });
 });
 

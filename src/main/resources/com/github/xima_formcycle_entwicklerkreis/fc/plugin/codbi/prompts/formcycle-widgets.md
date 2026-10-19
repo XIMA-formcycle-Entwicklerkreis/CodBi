@@ -374,6 +374,23 @@ Plain (non-repeatable) container template:
 {"className":"XContainerInvisible","properties":{"name":"divExample","id":"xi-div-example","elements":[],"fullwidth":"0"}}
 ```
 
+## XMirror
+
+Mirror widget (CodBi plugin) — renders a form element that lives in ANOTHER form (including its children) inside THIS form and keeps it LINKED to the source: a later change in the source form is reflected here. Use it ONLY when the user explicitly chose to MIRROR the element (not to copy it). It is NOT a copy — never recreate the source element's fields yourself.
+
+Template:
+```json
+{"className":"XMirror","properties":{"name":"mirDiv6","id":"xi-mir-div6","codbi_mirror_form":"project-<sourceFormId>","codbi_mirror_element":"<sourceElementId>","codbi_mirror_element_key":"<sourceElementName>","codbi_mirror_form_name":"<sourceFormTitle>","codbi_mirror_element_name":"<sourceElementLabel>"}}
+```
+
+- `codbi_mirror_form` = the source form's "key" from the AVAILABLE FORMS list (format "project-<id>").
+- `codbi_mirror_element` = the source element's technical "id" from "FORM ELEMENTS OF ANOTHER FORM".
+- `codbi_mirror_element_key` = the source element's technical "name" (e.g. "div6") from the same list; used to re-find the element if its internal id changes.
+- `codbi_mirror_form_name` / `codbi_mirror_element_name` = the cached display title/label (designer display only).
+- Place it like any other element: add its `name` to the parent page's/container's `elements` array and set `properties.parentid` to that parent's name.
+- The source form's elements are loaded only via `need_form_elements` in the clarification round (never invent an id/name). If the user has not yet chosen COPY vs. MIRROR, ask first — never assume either one.
+- Do NOT duplicate the source element's child fields in the output: the widget renders the source element and its children at runtime.
+
 ## XSignature
 
 Signature pad (XSignature Widget Plugin). The three colours use DIFFERENT property keys — using the wrong key is silently ignored, so use the exact names below:

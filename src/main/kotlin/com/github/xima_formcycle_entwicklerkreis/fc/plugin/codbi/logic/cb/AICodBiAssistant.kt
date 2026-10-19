@@ -521,7 +521,8 @@ class AICodBiAssistant : IPluginServletAction {
         // available so normal form building is not blocked by a detection hiccup.
         o.addProperty(
             "available",
-            InstalledFormcycleElements.isCoreWidget(id) ||
+            normalize(id) == "xmirror" ||
+                InstalledFormcycleElements.isCoreWidget(id) ||
                 snapshot.widgets.isEmpty() ||
                 isInstalled(id, snapshot.widgets))
         widgets.add(o)
@@ -2111,6 +2112,39 @@ class AICodBiAssistant : IPluginServletAction {
           "[AICodBiAssistant] Clarify-check SKIPPED — {} (one full clarify inference saved; the build proceeds immediately)",
           clarifySkipReason)
     }
+    // DETERMINISTIC CROSS-FORM CONTEXT: weak/loose models sometimes answer the clarification round
+    // with PROSE instead of the structured need_form_list / need_form_elements requests. The build
+    // pass then only has the prompt template placeholder (`project-<sourceFormId>`) and the copy
+    // does nothing. Resolve the mentioned form + its elements ourselves here, so the build always
+    // receives real keys; the COPY-vs-MIRROR question is asked deterministically below if the model
+    // did not ask it.
+    val foreignFormMentioned =
+        ClarificationReferenceDetector.mentionsForeignForm(
+            listOfNotNull(prompt, chatContext, clarificationContext).joinToString("\n"))
+    var resolvedForeignFormKey: String? = null
+    if (foreignFormMentioned) {
+      if (formListContext.isNullOrBlank()) {
+        formListAttempted = true
+        formListContext = loadFormListContext(getUserContext(params), formKey)
+        logger.info(
+            "[AICodBiAssistant] Cross-form request detected — form list loaded proactively ({} chars)",
+            formListContext?.length ?: 0)
+      }
+      resolvedForeignFormKey =
+          resolveMentionedFormKey(
+              formListContext,
+              listOfNotNull(prompt, clarificationContext).joinToString("\n"),
+              formKey)
+      if (resolvedForeignFormKey != null &&
+          formElementsLoadedFormKeys.add(resolvedForeignFormKey)) {
+        formElementsContext =
+            loadFormElementsContext(getUserContext(params), resolvedForeignFormKey)
+        logger.info(
+            "[AICodBiAssistant] Cross-form request: resolved form '{}' — its elements loaded ({} chars)",
+            resolvedForeignFormKey,
+            formElementsContext?.length ?: 0)
+      }
+    }
     // `0 until 0` runs the loop zero times, so the round is bypassed without restructuring the
     // (large) loop body; `clarification` then stays null and the build path continues.
     for (round in 0 until (if (clarifySkipReason != null) 0 else 5)) {
@@ -2255,6 +2289,24 @@ class AICodBiAssistant : IPluginServletAction {
       clarification = ClarificationRequest(freshQuestions)
       break
     }
+    // Deterministic fallback when the clarification model answered with PROSE instead of a
+    // structured request: a cross-form element cannot be copied before the user chose COPY vs.
+    // MIRROR. Ask that exact question ourselves (the source form/elements are already loaded
+    // above).
+    if (clarification == null && foreignFormMentioned) {
+      if (resolvedForeignFormKey == null) {
+        val choice = buildFormChoiceClarification(formListContext)
+        if (choice != null) {
+          clarification = ClarificationRequest(listOf(choice))
+          logger.info(
+              "[AICodBiAssistant] Cross-form request: form title could not be matched — asking the user which form")
+        }
+      } else if (!hasCopyMirrorChoice(clarificationHistory, prompt, clarificationContext)) {
+        clarification = ClarificationRequest(listOf(copyMirrorClarification()))
+        logger.info(
+            "[AICodBiAssistant] Cross-form request: asking COPY vs. MIRROR deterministically")
+      }
+    }
     if (clarification != null) {
       logger.info(
           "[AICodBiAssistant] AI asked {} clarification question(s): {}",
@@ -2374,7 +2426,10 @@ class AICodBiAssistant : IPluginServletAction {
                   matomoStatsContext,
                   availableDatasources,
                   availableDatasourceNames,
-                  chatAnswerResult?.sections ?: emptySet())
+                  chatAnswerResult?.sections ?: emptySet(),
+                  getUserContext(params),
+                  formListContext,
+                  formElementsContext)
             }
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
@@ -3897,12 +3952,38 @@ class AICodBiAssistant : IPluginServletAction {
       matomoStatsContext: String? = null,
       availableDatasources: String? = null,
       availableDatasourceNames: List<String> = emptyList(),
-      keepSections: Set<String> = emptySet()
+      keepSections: Set<String> = emptySet(),
+      // Used by the deterministic `_copyElements` expansion: the foreign form is read through
+      // MirrorFormAccess, which needs the request's UserContext. Null (e.g. the translation-only
+      // pass) means copy directives cannot be resolved and are stripped with a warning.
+      userContext: Any? = null,
+      // The foreign form's form list and element digest, so the build pass can emit `_copyElements`
+      // with the EXACT form key / element id / element name instead of inventing them.
+      foreignFormList: String? = null,
+      foreignFormElements: String? = null
   ): Triple<String, String?, TokenUsage> {
     // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
     var tokensIn = 0
     var tokensOut = 0
+    // Cross-form COPY context. The clarification round loaded the other form's list/elements; the
+    // build pass needs the SAME authoritative keys to emit a `_copyElements` directive. Kept empty
+    // (zero token cost) unless the clarification round actually loaded a foreign form.
+    val foreignCopyContext =
+        if (foreignFormList.isNullOrBlank() && foreignFormElements.isNullOrBlank()) ""
+        else
+            buildString {
+              append(
+                  "\n\nCROSS-FORM COPY CONTEXT (authoritative — use these EXACT values in a `_copyElements` directive; never invent or translate form keys, element ids or element names):")
+              if (!foreignFormList.isNullOrBlank()) {
+                append("\nAVAILABLE FORMS:\n").append(foreignFormList)
+              }
+              if (!foreignFormElements.isNullOrBlank()) {
+                append("\nSOURCE FORM ELEMENTS (id / name / label / className / parent):\n")
+                    .append(foreignFormElements)
+              }
+              append("\n")
+            }
     // Decide ONCE for this run whether the build prompts are assembled cache-friendly (see
     // [PromptCachingMode]): an external provider may serve the shared prefix from its prompt cache,
     // a local llama.cpp server cannot. `off` keeps the request-dependent section gating.
@@ -4046,7 +4127,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "\n\nRESOLVE CROSS-ANSWER REFERENCES: an answer that refers to another answer (e.g. \"same address as 1.\", \"gleiche Adresse wie bei Frage 1\", \"wie in Antwort 1\") means USE that referenced answer's value verbatim — copy it, do not ask again and do not leave it empty." +
                 "\n\nAnswers:\n$clarificationContext"
     val userContent =
-        "Instruction: $prompt$imageHint$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
+        "Instruction: $prompt$foreignCopyContext$imageHint$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
             "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt.\n" +
             "REMINDER 2: when the request is a WHOLE-FORM TRANSLATION that adds another language, your JSON MUST ALSO end with the " +
             "top-level \"_workflowMailLanguages\": [\"<baseLanguageCode>\", \"<addedLanguageCode>\", ...] marker (base language first) " +
@@ -4155,6 +4236,11 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
+    // A copy-only answer (`_copyElements` with no item diff) must still be treated as a valid form
+    // response: small models sometimes omit the `items` array and/or the `_diff` marker. Normalize
+    // the envelope BEFORE the form-shape checks so the copy directive survives to the server-side
+    // expansion instead of triggering a repair pass.
+    cleaned = ensureCopyEnvelope(cleaned)
     // Materialize a pass-1 DIFF onto the ORIGINAL form so every later stage keeps working on a
     // COMPLETE form. Pass-1 is instructed (REMINDER 3, TOKEN SAVING) to return only the changed/new
     // items — the single largest output-token cost of an ordinary edit — and to declare that with a
@@ -4335,7 +4421,7 @@ class AICodBiAssistant : IPluginServletAction {
               else
                   "\n\nUser's clarification answers (treat as part of the instruction):\n$clarificationContext"
           val userContent =
-              "Original user request: $prompt$clarificationLine\n\n" +
+              "Original user request: $prompt$foreignCopyContext$clarificationLine\n\n" +
                   "Current form (IPersistJson):\n$blindFormDump\n\n" +
                   blindSlicingNote +
                   "Modify the form according to that request. If the user asked to REMOVE or DELETE " +
@@ -4565,7 +4651,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val pass2UserContent =
-            "Original user request: $prompt$clarificationLine2\n\n" +
+            "Original user request: $prompt$foreignCopyContext$clarificationLine2\n\n" +
                 "Complete current form (IPersistJson):\n$pass2FormDump\n\n" +
                 pass2SlicingNote +
                 (if (candidateClause.isNotBlank())
@@ -4794,7 +4880,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "full items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val finalUserContent =
-            "Original user request: $prompt\n\n" +
+            "Original user request: $prompt$foreignCopyContext\n\n" +
                 "Complete current form (IPersistJson):\n$finalFormDump\n\n" +
                 finalSlicingNote +
                 // The previous rerun requested details and then re-requested the SAME set (a
@@ -5175,14 +5261,19 @@ class AICodBiAssistant : IPluginServletAction {
       // items, so it must run on the finished form). Skipped entirely when the request explicitly
       // asks for Cleave formatting.
       val peopleForm = applyPeopleClassesToForm(openPlzForm, prompt)
+      // Deterministic COPY of elements from ANOTHER form (`_copyElements`). The AI named only the
+      // source references; the server clones the complete foreign subtree (children, options,
+      // attributes, CodBi wiring) here, after every other normalization, so the copy stays faithful
+      // to the source. No-op when the marker is absent or the user context is unavailable.
+      val copiedForm = ForeignElementCopy.apply(peopleForm, userContext)
       // Lever 6: the model no longer lists footprint-bearing CodBi FUNCTIONS in "applied" (dropped
       // to save output tokens — the bulky {"id",targets} entries). Reconstruct those from the
       // before/after form diff (which `data-cb-func` values appeared on elements that did not carry
       // them before) and merge them into the applicability report, while PRESERVING the model's
       // footprint-less Holistic.* standard activations and its considered / codbiVerdict signals.
-      val derivedApplied = deriveAppliedFunctionsFromDiff(persistJson, peopleForm)
+      val derivedApplied = deriveAppliedFunctionsFromDiff(persistJson, copiedForm)
       val enrichedReport = mergeDerivedAppliedIntoReport(applicabilityReport, derivedApplied)
-      Triple(peopleForm, enrichedReport, TokenUsage(tokensIn, tokensOut))
+      Triple(copiedForm, enrichedReport, TokenUsage(tokensIn, tokensOut))
     } catch (e: Exception) {
       logger.warn(
           "[AICodBiAssistant] Form AI returned unparseable response ({} chars): {}",
@@ -6119,6 +6210,9 @@ class AICodBiAssistant : IPluginServletAction {
       if (pass2Obj.has("_removedItems")) {
         pass1Obj.add("_removedItems", pass2Obj.get("_removedItems"))
       }
+      // Cross-form COPY directives may also arrive in pass-2 (e.g. after an unnecessary details
+      // round). Merge them so the final `ForeignElementCopy` expansion sees every request.
+      mergeCopyDirectives(pass1Obj, pass2Obj)
       // `_unchangedItems` is a token-saving hint the AI may emit for untouched items — both LEAF
       // bodies AND unchanged CONTAINERS/PAGES (whose body AND structure were declared identical to
       // pass-1). It is fully consumed by the splice: referenced pass-1 items are simply kept
@@ -6137,6 +6231,47 @@ class AICodBiAssistant : IPluginServletAction {
       gson.toJson(pass1Obj)
     } catch (_: Exception) {
       pass2Json // fallback: return pass-2 as-is
+    }
+  }
+
+  /**
+   * Merges a pass-2 `_copyElements` array into the pass-1 base form (deduplicated). Copy directives
+   * are consumed only after the final form is assembled, so they must survive the pass-2 splice
+   * exactly like `_removedItems` and `_codbiApplicability`.
+   */
+  private fun mergeCopyDirectives(pass1: JsonObject, pass2: JsonObject) {
+    val incoming = pass2.get(ForeignElementCopy.MARKER) ?: return
+    if (!incoming.isJsonArray) return
+    val existing = pass1.get(ForeignElementCopy.MARKER)
+    val merged = JsonArray()
+    if (existing != null && existing.isJsonArray) existing.asJsonArray.forEach { merged.add(it) }
+    incoming.asJsonArray.forEach { merged.add(it) }
+    pass1.add(ForeignElementCopy.MARKER, merged)
+  }
+
+  /**
+   * Normalizes a copy-only AI answer into a valid diff envelope: when the response carries a
+   * `_copyElements` directive but no `items` array and/or no `_diff` marker, this adds them so the
+   * normal form pipeline treats it as a (tiny) form diff instead of an invalid/unparseable answer.
+   * Returns the input unchanged when no copy directive is present.
+   */
+  private fun ensureCopyEnvelope(candidate: String): String {
+    return try {
+      if (!candidate.trim().startsWith("{")) return candidate
+      val root = JsonParser.parseString(candidate).asJsonObject
+      if (!root.has(ForeignElementCopy.MARKER)) return candidate
+      var changed = false
+      if (!root.has("items") || root.get("items")?.isJsonArray != true) {
+        root.add("items", JsonArray())
+        changed = true
+      }
+      if (!FormDiffMarker.isDeclared(candidate)) {
+        root.addProperty(FormDiffMarker.KEY, true)
+        changed = true
+      }
+      if (changed) gson.toJson(root) else candidate
+    } catch (_: Exception) {
+      candidate
     }
   }
 
@@ -7427,6 +7562,8 @@ class AICodBiAssistant : IPluginServletAction {
           "XRating",
           "XImage",
           "XMap",
+          // CodBi plugin widget: renders an element of ANOTHER form and stays linked to it.
+          "XMirror",
           "XNavigationBar",
           "XLanguageSwich",
           "XLine",
@@ -24225,7 +24362,10 @@ class AICodBiAssistant : IPluginServletAction {
     val sent = ArrayList<String>()
     for (id in widgetIds) {
       // "Nicht installierte Elemente erstellen": skip requested widgets not in the allowed set.
-      if (!FormcycleElementFilter.isWidgetAllowed(id)) continue
+      // XMirror ships with THIS plugin, so its template must always be deliverable when requested —
+      // a stale persisted allowed-set must not silently strip the detailed mirror template.
+      val isOwnMirror = id.trim().equals("XMirror", ignoreCase = true)
+      if (!isOwnMirror && !FormcycleElementFilter.isWidgetAllowed(id)) continue
       val norm =
           id.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").replace(Regex("_+"), "_").trim('_')
       if (norm.isEmpty()) continue
@@ -24644,13 +24784,15 @@ class AICodBiAssistant : IPluginServletAction {
       val formElementsListBlock =
           if (!formElementsContext.isNullOrBlank()) {
             "\nFORM ELEMENTS OF ANOTHER FORM (loaded on your request via need_form_elements). \"id\" = the " +
-                "technical element identifier to use in codbi_mirror_element; \"className\" = the Formcycle " +
-                "widget class; \"parent\" = the owning container. You now HAVE these elements — never " +
-                "respond {\"status\":\"need_form_elements\"} for this form again. When the user wants an " +
-                "element from another form added here, ASK which of the two ways they want it: (a) COPY " +
-                "it (generate a normal, independent copy) or (b) MIRROR it (generate the CodBi \"XMirror\" " +
-                "widget referencing the source element so it stays linked to the other form). Only build " +
-                "after the user chose.\n" +
+                "technical element identifier to use in codbi_mirror_element (and as \"element\" in a COPY); " +
+                "\"name\" = the technical element name (\"elementKey\" in a COPY); \"className\" = the " +
+                "Formcycle widget class; \"parent\" = the owning container. You now HAVE these elements — " +
+                "never respond {\"status\":\"need_form_elements\"} for this form again. When the user wants " +
+                "an element from another form added here, ASK which of the two ways they want it: (a) COPY " +
+                "it (the build pass emits a `_copyElements` directive and the SERVER copies the complete " +
+                "subtree, keeping the source's options/children/attributes) or (b) MIRROR it (generate the " +
+                "CodBi \"XMirror\" widget referencing the source element so it stays linked to the other " +
+                "form). Only build after the user chose.\n" +
                 formElementsContext +
                 "\n"
           } else ""
@@ -25288,6 +25430,111 @@ class AICodBiAssistant : IPluginServletAction {
       null
     }
   }
+
+  /** Words that carry no discriminating power in a form title (excluded from token matching). */
+  private val FORM_TITLE_STOP_WORDS =
+      setOf(
+          "form",
+          "formular",
+          "formulare",
+          "forms",
+          "the",
+          "from",
+          "with",
+          "for",
+          "and",
+          "und",
+          "der",
+          "die",
+          "das",
+          "den",
+          "dem",
+          "des",
+          "für",
+          "fuer")
+
+  /** Copy/mirror wording already present in the prompt or an answered clarification. */
+  private val COPY_MIRROR_HINT =
+      Regex("(?i)\\b(kopier\\w*|spiegel\\w*|copy|mirror|verlink\\w*|verkn(?:ü|ue)pf\\w*|linked)\\b")
+
+  /**
+   * Resolves the form TITLE the user mentioned to the form key from [formListJson].
+   *
+   * Two passes: (1) the exact (case-insensitive) title is contained in the request; (2) all
+   * significant title words (length ≥ 4, stop words excluded) appear in the request. The longest
+   * matching title wins, which avoids a short title shadowing a more specific one.
+   */
+  private fun resolveMentionedFormKey(
+      formListJson: String?,
+      corpus: String,
+      currentFormKey: String?
+  ): String? {
+    if (formListJson.isNullOrBlank() || corpus.isBlank()) return null
+    val text = corpus.lowercase()
+    return try {
+      val arr = JsonParser.parseString(formListJson).asJsonArray
+      val candidates =
+          arr.mapNotNull { el ->
+            if (!el.isJsonObject) return@mapNotNull null
+            val o = el.asJsonObject
+            val key =
+                o.get("key")
+                    ?.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val name =
+                o.get("name")
+                    ?.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            if (key == currentFormKey) null else key to name
+          }
+      candidates
+          .filter { (_, name) -> text.contains(name.lowercase()) }
+          .maxByOrNull { (_, name) -> name.length }
+          ?.first
+          ?: candidates
+              .map { (key, name) ->
+                key to
+                    name.lowercase().split(Regex("[^\\p{L}0-9]+")).filter {
+                      it.length >= 4 && it !in FORM_TITLE_STOP_WORDS
+                    }
+              }
+              .filter { (_, tokens) -> tokens.isNotEmpty() && tokens.all { text.contains(it) } }
+              .maxByOrNull { (_, tokens) -> tokens.size }
+              ?.first
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /** True when the prompt or an answered clarification already contains a copy/mirror choice. */
+  private fun hasCopyMirrorChoice(
+      history: List<ClarificationTurn>,
+      prompt: String,
+      clarificationContext: String
+  ): Boolean {
+    if (COPY_MIRROR_HINT.containsMatchIn(prompt)) return true
+    if (COPY_MIRROR_HINT.containsMatchIn(clarificationContext)) return true
+    return history.any {
+      COPY_MIRROR_HINT.containsMatchIn(it.question) || COPY_MIRROR_HINT.containsMatchIn(it.answer)
+    }
+  }
+
+  /** The deterministic COPY-vs-MIRROR question used when the model did not ask it itself. */
+  private fun copyMirrorClarification(): ClarificationQuestion =
+      ClarificationQuestion(
+          id = "copy-or-mirror",
+          question =
+              "Wie soll das Element aus dem anderen Formular übernommen werden? / " +
+                  "How should the element from the other form be added?",
+          options =
+              listOf(
+                  "Kopieren — eigenständige Kopie (Copy)",
+                  "Spiegeln — verknüpft mit dem Quellformular (Mirror)"),
+          allowFreeText = false)
 
   /**
    * Resolves the TITLE of the currently open form (from its `project-<id>` key) so the AI can tell

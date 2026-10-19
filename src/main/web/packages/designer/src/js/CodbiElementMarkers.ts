@@ -2336,6 +2336,97 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
   }
 }
 
+/** Attributes a rendered formcycle element carries its designer item identity through. */
+const PREVIEW_FIND_ATTRIBUTES = ["id", "xi", "data-xi", "name", "data-name", "data-xn", "xn"];
+
+/** The render-identity attributes (point at the actual control/wrapper), preferred over the name family. */
+const PREVIEW_RENDER_ID_ATTRIBUTES = ["id", "xi", "data-xi"];
+
+/** Page/container content blocks — candidates that widen to the full content card in {@link elementContentCard}. */
+const PREVIEW_BLOCK_CLASS = /(^|\s)(CXPage|XPage|CXContainer|XContainer|CXFieldSet|XFieldSet)(\s|$)/;
+
+/**
+ * `true` when the element carries the designer item id as its FULL value or as the final `-`-token of
+ * one of its identity attributes. Formcycle prefixes a rendered element's id/xi/name with a type
+ * token: the designer item id `datum` renders as `id="xi-tf-datum"`, `xi="xi-tf-datum"`,
+ * `data-xn="tfDatum"`. The final `-`-token of `xi-tf-datum` is `datum`, so the element matches
+ * while its `-xc` / `-label` wrapper nodes (`xi-tf-datum-xc`, `xi-tf-datum-label`) do NOT (their
+ * final token is `xc` / `label`) — they are never mistaken for the element itself.
+ */
+function previewIdentityMatches(el: Element, lowerId: string): boolean {
+  for (const name of PREVIEW_FIND_ATTRIBUTES) {
+    const value = (el.getAttribute(name) ?? "").trim().toLowerCase();
+    if (!value) {
+      continue;
+    }
+    if (value === lowerId) {
+      return true;
+    }
+    const segments = value.split("-");
+    if (segments[segments.length - 1] === lowerId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** `true` when [el] itself carries a page/container/fieldset content-block class. */
+function previewIsContentBlock(el: Element): boolean {
+  return PREVIEW_BLOCK_CLASS.test(String(el.className ?? ""));
+}
+
+/** `true` when [el] matches the id through its OWN render-identity attribute (`id`/`xi`/`data-xi`). */
+function previewMatchesRenderIdentity(el: Element, lowerId: string): boolean {
+  for (const name of PREVIEW_RENDER_ID_ATTRIBUTES) {
+    const value = (el.getAttribute(name) ?? "").trim().toLowerCase();
+    if (!value) {
+      continue;
+    }
+    if (value === lowerId) {
+      return true;
+    }
+    if (value.split("-")[value.split("-").length - 1] === lowerId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Collects every element in [doc] whose identity attributes end with the (prefixed) designer item id. */
+function previewFuzzyCandidates(doc: Document, id: string): HTMLElement[] {
+  const lowerId = id.toLowerCase();
+  const out: HTMLElement[] = [];
+  const selector = PREVIEW_FIND_ATTRIBUTES.map((name) => `[${name}]`).join(",");
+  for (const el of Array.from(doc.querySelectorAll<HTMLElement>(selector))) {
+    if (previewIdentityMatches(el, lowerId)) {
+      out.push(el);
+    }
+  }
+  return out;
+}
+
+/**
+ * Picks the best fuzzy candidate. A page/container's design id often sits on the `.CXPage`/
+ * `.CXContainer` content block AND on small navigation nodes (a next/prev page link, a page
+ * `<option>`) that share the same `data-xn`/`name`. Clipping to such a navigation node yields an
+ * EMPTY preview, so the page/container content block and render-identity (`id`/`xi`) candidates are
+ * preferred over bare name-family matches.
+ */
+function previewPickCandidate(candidates: HTMLElement[], lowerId: string): HTMLElement | null {
+  const contentBlocks = candidates.filter((el) => previewIsContentBlock(el));
+  if (contentBlocks.length > 0) {
+    // Innermost content block wins (shortest `id`); `elementContentCard` widens it to the full card.
+    return contentBlocks.reduce((a, b) =>
+      (b.getAttribute("id") ?? "").length < (a.getAttribute("id") ?? "").length ? b : a,
+    );
+  }
+  const renderIdentity = candidates.filter((el) => previewMatchesRenderIdentity(el, lowerId));
+  const pool = renderIdentity.length > 0 ? renderIdentity : candidates;
+  // The control/wrapper is the most specific node (shortest `id`); a page/container wrapper is
+  // re-anchored to its content card by `elementContentCard` regardless.
+  return pool.reduce((a, b) => ((b.getAttribute("id") ?? "").length < (a.getAttribute("id") ?? "").length ? b : a));
+}
+
 /** Finds [id] in [doc] or in a nested same-origin iframe (the preview page may frame the form). */
 function findPreviewElement(doc: Document, id: string): HTMLElement | null {
   const direct = doc.getElementById(id);
@@ -2349,19 +2440,27 @@ function findPreviewElement(doc: Document, id: string): HTMLElement | null {
   if (attr) {
     return attr;
   }
+  // FORMCYCLE prefixes a rendered element's id/xi/name with a type token: the designer item id
+  // `datum` renders as `id="xi-tf-datum"` (and `name="tfDatum"`). The exact matches above then MISS
+  // such an element, `clipPreviewToElement` returns false for all 16 attempts and the preview falls
+  // back to the WHOLE page (header + footer). Match the id as the final `-`-token of an identity
+  // attribute so the element is located despite the prefix.
+  const candidates = previewFuzzyCandidates(doc, id);
+  if (candidates.length > 0) {
+    const picked = previewPickCandidate(candidates, id.toLowerCase());
+    if (picked) {
+      return picked;
+    }
+  }
   for (const frame of Array.from(doc.querySelectorAll("iframe"))) {
     try {
       const inner = (frame as HTMLIFrameElement).contentDocument;
       if (!inner) {
         continue;
       }
-      const found = inner.getElementById(id);
+      const found = findPreviewElement(inner, id);
       if (found) {
-        return found as HTMLElement;
-      }
-      const attrInner = inner.querySelector<HTMLElement>(`[xi="${id}"], [data-xi="${id}"]`);
-      if (attrInner) {
-        return attrInner;
+        return found;
       }
     } catch {
       /* cross-origin — ignore */

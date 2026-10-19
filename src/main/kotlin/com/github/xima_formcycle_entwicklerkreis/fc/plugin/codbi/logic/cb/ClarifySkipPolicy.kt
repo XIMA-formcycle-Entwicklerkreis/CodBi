@@ -136,10 +136,36 @@ internal object ClarificationReferenceDetector {
           "başka form",
           "geçen sefer")
 
+  /**
+   * Free-form "element … from <another form>" phrasings that the literal needles above cannot
+   * enumerate because the form TITLE is arbitrary (e.g. "aus dem Meldeformular für besonders
+   * geschützte Wirbeltiere", "from the Meldeformular form"). A hit only forces the clarify round
+   * (the AI then resolves the title and asks COPY vs. MIRROR); a false positive costs one cheap
+   * clarification inference, a false negative would silently copy/mirror the wrong thing.
+   */
+  private val OTHER_FORM_PHRASE =
+      Regex(
+          "(?i)(?:\\baus\\s+(?:dem|der|einem|einer)\\s+[\\p{L}0-9_\\- ]{0,60}form(?:ular)?\\b)" +
+              "|(?:\\bvon\\s+(?:dem|der|einem|einer)\\s+[\\p{L}0-9_\\- ]{0,60}form(?:ular)?\\b)" +
+              "|(?:\\bfrom\\s+(?:the\\s+)?[\\p{L}0-9_\\- ]{0,60}form\\b)")
+
   /** True when the request (plus chat history) refers to earlier work or to another form. */
   fun wantsFormOrHistoryContext(corpus: String?): Boolean {
     val text = corpus?.lowercase() ?: return false
     if (text.isBlank()) return false
+    if (OTHER_FORM_PHRASE.containsMatchIn(text)) return true
     return NEEDLES.any { text.contains(it) }
+  }
+
+  /**
+   * True when the request explicitly talks about an element/form of ANOTHER form (e.g. "aus dem
+   * Meldeformular", "from the report form"). Unlike [wantsFormOrHistoryContext], this does NOT fire
+   * for "like last week" / "same as before" — it is used to proactively load the foreign form's
+   * list/elements so the build pass always has real keys instead of the prompt template
+   * placeholders.
+   */
+  fun mentionsForeignForm(corpus: String?): Boolean {
+    val text = corpus?.lowercase() ?: return false
+    return text.isNotBlank() && OTHER_FORM_PHRASE.containsMatchIn(text)
   }
 }

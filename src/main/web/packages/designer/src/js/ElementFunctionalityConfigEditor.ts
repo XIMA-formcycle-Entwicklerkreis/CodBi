@@ -59,6 +59,19 @@ import { getDesignerLanguage, i18n as i18nTyped, localizedParameterDescription }
 const kI18n = i18nTyped as unknown as (key: string) => string;
 
 /**
+ * The DOM id of the form-level "CodBi aktiviert" checkbox that gates this panel's visibility. When the
+ * user flips it, the panel must react immediately (no save + reload) — see {@link
+ * ElementFunctionalityConfigEditor#registerCodBiEnableListener}.
+ */
+const CODBI_ENABLE_CHECKBOX_SELECTOR = "#form-codbi-prop-enable-input";
+
+/**
+ * Tracks which "CodBi aktiviert" checkboxes already carry our `change` listener, so re-instantiating the
+ * editor (each element selection rebuilds it) never stacks a second listener on the same checkbox.
+ */
+const codBiEnableCheckboxesWithListener = new WeakSet<HTMLInputElement>();
+
+/**
  * Computes which `data-cb-<param>` attributes should be removed from an element when the
  * functionality `removedId` is deactivated, given the still-active functionalities `remainingIds`.
  *
@@ -139,6 +152,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private readonly funcOptions: HTMLDivElement;
   /** The inline filter input of the functionality listing. */
   private readonly funcFilter: HTMLInputElement;
+  /** The inline filter input of the SECOND (non-applicable) functionality listing. */
+  private readonly allFuncFilter: HTMLInputElement;
   /** The container of the SECOND list: functionalities NOT applicable to the element. */
   private readonly funcOptionsAll: HTMLDivElement;
   /** The wrapper of the second list (its visibility is toggled by {@link allToggleButton}). */
@@ -167,6 +182,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private readonly stdOptions: HTMLDivElement;
   /** The inline filter input of the applicable standard-configuration listing. */
   private readonly stdFilter: HTMLInputElement;
+  /** The inline filter input of the SECOND (non-applicable) standard-configuration listing. */
+  private readonly stdAllFilter: HTMLInputElement;
   /** The container of the SECOND standard-config listing: configurations NOT applicable to the element. */
   private readonly stdOptionsAll: HTMLDivElement;
   /** The wrapper of the second standard-config listing (its visibility is toggled by {@link stdToggleButton}). */
@@ -184,6 +201,14 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
    * any. Used to ignore `mouseleave` events of unrelated rows when deciding whether to dismiss it.
    */
   private docAnchorRow: HTMLElement | undefined;
+  /** The standard-configuration section, hidden while the form-level CodBi enable checkbox is unchecked. */
+  private readonly stdSection: HTMLElement;
+  /** The functionality section, hidden while the form-level CodBi enable checkbox is unchecked. */
+  private readonly funcSection: HTMLElement;
+  /** The parameter table section, hidden while the form-level CodBi enable checkbox is unchecked. */
+  private readonly paramSection: HTMLElement;
+  /** The activation notice shown in place of the panel while the form-level CodBi enable checkbox is unchecked. */
+  private readonly codBiDisabledHint: HTMLElement;
 
   constructor(config: TEditorCfg<IElementFunctionalityConfigDescriptor>) {
     super(config, "", "text");
@@ -271,7 +296,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     funcToggles.className = "codbi-func-config__double";
     funcToggles.append(funcTop, funcBottom);
     funcSection.append(funcToggles);
+    this.funcSection = funcSection;
     this.funcFilter = funcFilter;
+    this.allFuncFilter = allFuncFilter;
     this.funcOptions = funcOptions;
     this.funcList = funcList;
     this.mainToggleButton = mainToggleButton;
@@ -360,8 +387,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     stdToggles.className = "codbi-func-config__double";
     stdToggles.append(stdTop, stdBottom);
     stdSection.append(stdToggles);
+    this.stdSection = stdSection;
     this.stdOptions = stdOptions;
     this.stdFilter = stdFilter;
+    this.stdAllFilter = stdAllFilter;
     this.stdList = stdList;
     this.stdMainToggleButton = stdMainToggleButton;
     this.stdAllList = stdAllList;
@@ -381,9 +410,28 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.paramsHost = document.createElement("div");
     this.paramsHost.className = "codbi-func-config__params";
     paramSection.append(paramTitle, this.paramsHost);
+    this.paramSection = paramSection;
     // #endregion 3. Parameter table.
 
-    this.root.append(stdSection, funcSection, paramSection);
+    // #region 4. CodBi-disabled notice. Shown INSTEAD of the three sections above while the form-level
+    // "CodBi aktiviert" checkbox (`codbi-prop-enable`) is unchecked. The normal `.codbi-func-config`
+    // watermark stays visible behind it, so instead of an empty shell the user sees the CodBi logo plus
+    // a short explanation of how to enable CodBi. It is hidden by default (`syncCodBiEnabledVisibility`
+    // toggles it).
+    const codBiDisabledHint = document.createElement("div");
+    codBiDisabledHint.className = "codbi-func-config__disabled";
+    codBiDisabledHint.style.display = "none";
+    const codBiDisabledTitle = document.createElement("p");
+    codBiDisabledTitle.className = "codbi-func-config__disabled-title";
+    codBiDisabledTitle.textContent = kI18n("designer.element.property.codbi.inactive.title");
+    const codBiDisabledText = document.createElement("p");
+    codBiDisabledText.className = "codbi-func-config__disabled-text";
+    codBiDisabledText.textContent = kI18n("designer.element.property.codbi.inactive.message");
+    codBiDisabledHint.append(codBiDisabledTitle, codBiDisabledText);
+    this.codBiDisabledHint = codBiDisabledHint;
+    // #endregion 4. CodBi-disabled notice.
+
+    this.root.append(stdSection, funcSection, paramSection, codBiDisabledHint);
     this.renderStandardConfigList();
     this.renderFunctionalityList();
     this.renderParams();
@@ -391,6 +439,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.syncInapplicableVisibility();
     this.syncStdApplicableVisibility();
     this.syncStdInapplicableVisibility();
+    // React immediately when the user flips the form-level "CodBi aktiviert" checkbox (no save needed).
+    this.registerCodBiEnableListener();
+    this.syncCodBiEnabledVisibility();
   }
 
   /** See {@link Editors.BaseEditor }'s **getElement**. */
@@ -410,6 +461,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.renderFunctionalityList();
     this.renderStandardConfigList();
     this.renderParams();
+    // Re-check the form-level "CodBi aktiviert" checkbox: the panel is hidden while CodBi is disabled.
+    this.syncCodBiEnabledVisibility();
   }
 
   /** See {@link Editors.BaseEditor }'s **getValue**. */
@@ -633,10 +686,93 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     return row;
   }
 
+  /**
+   * Whether the form-level "CodBi aktiviert" checkbox (`codbi-prop-enable`, default `"0"`) is
+   * currently checked for the edited form. Mirrors the `WhenCodBiEnabled` descriptor used for the
+   * form-level CodBi panel (see `register-custom-form-properties.ts`): every non-essential CodBi
+   * surface stays hidden while CodBi is disabled for the form.
+   *
+   * The LIVE DOM checkbox is consulted FIRST: it reflects the current UI state — including an
+   * unsaved toggle — so flipping it updates this panel immediately, without a save + reload. The saved
+   * form-property model is only consulted when no checkbox is present (e.g. the element panel is open
+   * while the form's CodBi settings panel is not rendered), mirroring `getFormPropertyValueForCurrentLang`.
+   * If neither is available the panel stays visible (the previous behaviour, so the gate never hides
+   * the panel due to missing plumbing).
+   */
+  private isCodBiEnabled(): boolean {
+    // The live checkbox is the authoritative, immediate source of truth when it exists.
+    try {
+      const checkbox = document.querySelector<HTMLInputElement>(CODBI_ENABLE_CHECKBOX_SELECTOR);
+      if (checkbox) {
+        return checkbox.checked === true;
+      }
+    } catch {
+      // ignore, fall back to the saved form-property model below
+    }
+    try {
+      const designer = instance() as unknown as
+        | {
+            getFormPropertyValueForCurrentLang?: (property: string) => unknown;
+          }
+        | undefined;
+      const value = designer?.getFormPropertyValueForCurrentLang?.(Constants["designer.property.enable_codbi"]);
+      if (value === "1" || value === 1 || value === true) {
+        return true;
+      }
+      if (value !== undefined && value !== null && value !== "") {
+        // A definitive non-truthy value ("0" / 0 / false) means CodBi is disabled for this form.
+        return false;
+      }
+    } catch {
+      // ignore
+    }
+    // Neither the checkbox nor the property model is available — keep the panel visible.
+    return true;
+  }
+
+  /**
+   * Registers a `change` listener on the form-level "CodBi aktiviert" checkbox so the panel reacts
+   * IMMEDIATELY when the user flips it — no save + reload required. The checkbox lives in the form's
+   * CodBi settings panel (a different DOM subtree), so it is queried by id. Only one listener is ever
+   * attached to a given checkbox (tracked in a module-level {@link WeakSet}), because the editor is
+   * re-instantiated on every element selection but the checkbox persists.
+   */
+  private registerCodBiEnableListener(): void {
+    try {
+      const checkbox = document.querySelector<HTMLInputElement>(CODBI_ENABLE_CHECKBOX_SELECTOR);
+      if (checkbox && !codBiEnableCheckboxesWithListener.has(checkbox)) {
+        codBiEnableCheckboxesWithListener.add(checkbox);
+        checkbox.addEventListener("change", () => this.syncCodBiEnabledVisibility());
+      }
+    } catch {
+      // The checkbox is not rendered yet — the next editor construction re-tries the registration.
+    }
+  }
+
+  /**
+   * Synchronizes the panel with the form-level "CodBi aktiviert" checkbox. While CodBi is disabled the
+   * three configurable sections are hidden and a notice is shown in their place (the CodBi watermark
+   * stays visible behind it), so the user sees an explanation instead of an empty shell. The root stays
+   * attached so the watermark renders. Re-evaluated on every {@link setValue} and on every `change` of
+   * the enabling checkbox (see {@link registerCodBiEnableListener}).
+   */
+  private syncCodBiEnabledVisibility(): void {
+    const enabled = this.isCodBiEnabled();
+    const contentHidden = enabled ? "" : "none";
+    this.stdSection.style.display = contentHidden;
+    this.funcSection.style.display = contentHidden;
+    this.paramSection.style.display = contentHidden;
+    this.codBiDisabledHint.style.display = enabled ? "none" : "";
+  }
+
   /** Shows/hides the APPLICABLE functionality list (and syncs its toggle button). */
   private toggleApplicableList(): void {
     this.showApplicable = !this.showApplicable;
     this.syncApplicableVisibility();
+    // Focus the listing's filter right after expanding it, so the user can type immediately.
+    if (this.showApplicable) {
+      this.funcFilter.focus();
+    }
   }
 
   /**
@@ -672,6 +808,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private toggleInapplicableList(): void {
     this.showInapplicable = !this.showInapplicable;
     this.syncInapplicableVisibility();
+    // Focus the listing's filter right after expanding it, so the user can type immediately.
+    if (this.showInapplicable) {
+      this.allFuncFilter.focus();
+    }
   }
 
   /** Applies {@link showInapplicable} to the second list and its toggle button. */
@@ -964,6 +1104,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private toggleStdApplicableList(): void {
     this.showStdApplicable = !this.showStdApplicable;
     this.syncStdApplicableVisibility();
+    // Focus the listing's filter right after expanding it, so the user can type immediately.
+    if (this.showStdApplicable) {
+      this.stdFilter.focus();
+    }
   }
 
   /** Applies {@link showStdApplicable} to the APPLICABLE standard-configuration list and its button. */
@@ -977,6 +1121,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private toggleStdInapplicableList(): void {
     this.showStdInapplicable = !this.showStdInapplicable;
     this.syncStdInapplicableVisibility();
+    // Focus the listing's filter right after expanding it, so the user can type immediately.
+    if (this.showStdInapplicable) {
+      this.stdAllFilter.focus();
+    }
   }
 
   /** Applies {@link showStdInapplicable} to the second list and its toggle button. */

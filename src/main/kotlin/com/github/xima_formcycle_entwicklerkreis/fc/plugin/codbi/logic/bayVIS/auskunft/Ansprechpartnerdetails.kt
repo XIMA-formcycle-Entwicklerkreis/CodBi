@@ -72,6 +72,9 @@ class CodBiBayVISAuskunftAnsprechpartnerdetailsAction : IPluginServletAction {
     try {
       val url: URL = URI(url + pathSegment(id)).toURL()
       val connection = url.openConnection() as HttpURLConnection
+      // Never let a hanging/blocked endpoint stall the plugin start-up.
+      connection.connectTimeout = 10_000
+      connection.readTimeout = 20_000
 
       connection.setRequestMethod("GET")
       connection.setRequestProperty(
@@ -93,15 +96,13 @@ class CodBiBayVISAuskunftAnsprechpartnerdetailsAction : IPluginServletAction {
                   it.readText()
                 }
 
-            val errorMessage =
-                "{\"error\": \"Retrieval from BayVIS API failed. Statuscode: $statusCode, Response: $errorResult\"}"
-
-            errorMessage
+            BayVISAuskunftErrors.describe(
+                "Ansprechpartnerdetails", url.toString(), statusCode, errorResult)
           }
 
       connection.disconnect()
     } catch (e: IOException) {
-      buffer[id] = "{\"error\": \"Error connecting to BayVIS API\"}"
+      buffer[id] = BayVISAuskunftErrors.connectionFailure(url, e)
       statusCode = 500
     }
 
@@ -125,10 +126,14 @@ class CodBiBayVISAuskunftAnsprechpartnerdetailsAction : IPluginServletAction {
       hrsTillUpdate = configData.properties.getProperty("BayVIS_UpdateCycle").toInt()
     }
     // #endregion Update
-    for (key in buffer.keys) {
-      retrieveData(key)
+    // NEVER throw here: FC's PluginHelper turns an exception into "plugin invalid". A failed call
+    // is recorded as a WARNING (server log + FORMCYCLE protocol entry) instead, and the result
+    // stays
+    // VALID — an invalid result would make FORMCYCLE refuse to ignite the whole CodBi plugin.
+    BayVISAuskunftStartup.startupCheck("Ansprechpartnerdetails", url, configData.client) {
+      for (key in buffer.keys) retrieveData(key).first
+      200
     }
-
     return null
   }
 
@@ -146,6 +151,11 @@ class CodBiBayVISAuskunftAnsprechpartnerdetailsAction : IPluginServletAction {
 
     if (newURL !== null) {
       this.url = newURL
+    }
+    // Never let a failing prefetch abort the plugin start (see BayVISAuskunftStartup).
+    BayVISAuskunftStartup.startupCheck("Ansprechpartnerdetails", url, configData.client) {
+      for (key in buffer.keys) retrieveData(key).first
+      200
     }
   }
 

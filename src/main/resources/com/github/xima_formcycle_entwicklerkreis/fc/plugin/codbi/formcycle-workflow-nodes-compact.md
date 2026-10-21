@@ -124,7 +124,7 @@ REQUIRED: completion page (Abschlussseite) for success AND for failure, sender a
 FC_CHANGE_STATE — Changes the form record state.
 REQUIRED: the target state (status) the record should be set to.
 ### FC_POST_REQUEST
-FC_POST_REQUEST — Sends an HTTP request (webhook, REST API call).
+FC_POST_REQUEST — Sends an HTTP request (webhook, REST API call). Optional flags: headers[], allowInvalidCertificates, useBasicAuth, treat4xxAsNormal, treat5xxAsNormal.
 REQUIRED: URL and HTTP method (GET/POST/PUT/DELETE/...). Ask for them when not provided.
 CRITICAL — BODY vs. PARAMETERS are mutually exclusive: the node sends EITHER a "body" OR named
 "requestParameters", NEVER both. When the user asks for a POST body AND named parameters, clarify
@@ -189,11 +189,12 @@ FC_EXPORT_FORM_RECORD_CHATS — Exports the form record chat/conversation as a P
 ### RemotePrintService
 RemotePrintService — Renders the filled form itself as a PDF (form-to-PDF / print service). Use when the user wants the submitted/current form as a PDF (e.g. "die Anmeldung als PDF zusenden"). This is the CORRECT node for "form as PDF" — NOT FC_FILL_PDF. No PDF template needed; chain an FC_EMAIL after it to send the PDF.
 ### FC_FILL_PDF
-FC_FILL_PDF — Fills a PDF template with form data at runtime.
-REQUIRED: the PDF template to fill ("Details für die PDF-Befüllung > Datei" — the template file must be set) and the field/value mapping. Use ONLY for filling an existing PDF template, NOT for rendering the form itself as PDF (use RemotePrintService for that).
+FC_FILL_PDF — Fills an EXISTING PDF template from this form's file resources with form data. Required: the template file's EXACT name (see the PDF templates list); optional font via usedFont; attaching the result to the record ("dem Vorgang anhängen"/"attach it to the record") is the node param pdfFileProvision {"attachToFormRecord":true}.
+NO field mapping is needed (the PDF's form fields are filled from same-named form fields). A named font goes verbatim into usedFont ("*embedWholeFonts*" embeds all) — never ask about it. Use ONLY for filling an existing PDF template, NOT for rendering the form itself as PDF (use RemotePrintService for that).
+Attaching the result to the record is a PARAMETER of this node — never a second node and never a reason to replace an existing workflow lane.
 ### FC_FILL_WORD
-FC_FILL_WORD — Fills a Word template with form data.
-REQUIRED: the Word template to fill and the field/value mapping.
+FC_FILL_WORD — Fills an EXISTING Word (.docx) template from this form's file resources with form data. Required: the template file's EXACT name; no field mapping is needed.
+NO field mapping is needed (the document's fields are filled from same-named form fields).
 ### FC_COMPRESS_AS_ZIP
 FC_COMPRESS_AS_ZIP — Compresses one or more files into a ZIP archive.
 REQUIRED: the files to compress and the output archive name.
@@ -208,6 +209,10 @@ FC_COUNTER — Increments, decrements, or resets a counter.
 ### FC_CHANGE_FORM_AVAILABILITY
 FC_CHANGE_FORM_AVAILABILITY — Sets the form online or offline.
 REQUIRED: online or offline (and which page/field scope when applicable).
+### CodbiExtendedAccessor (com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin)
+CodbiExtendedAccessor (com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin) — Reads ONE form element and exposes its RAW value as a node RESULT (NO HTML escaping). USE when a rich-text/TinyMCE value must arrive RENDERED (a plain [%field%] in a mail body is HTML-escaped), or when one repetition (INDEX) or all repetitions (ALL) of a repeatable element must be read. nodeType IS "CodbiExtendedAccessor" (the registered name — NEVER the class name). Result placeholder: [%$<node name>.RESULT.value%].
+REQUIRED: fieldName (the technicalId of the ONE element to read).
+nodeParams: {"fieldName","repetitionMode":"CURRENT"|"INDEX"|"ALL","repetitionIndex","joinSeparator","includeMeta","sanitizeHtml","htmlToText","allowImages","allowLinks","allowTables","allowStyles"}. REQUEST the details for this node type.
 ### CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin)
 CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin) — Creates a new form record (Vorgang) in another form.
 REQUIRED: the target form and the field mapping.

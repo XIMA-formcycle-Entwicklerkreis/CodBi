@@ -37,6 +37,230 @@ import Chart from "chart.js/auto";
 import type { ChartConfiguration } from "chart.js";
 // #endregion Imports
 
+// #region Workflow-refresh network tracking
+/**
+ * Activity bookkeeping for the automatic workflow-tab refresh after a workflow-touching inference.
+ *
+ * The designer has to finish booting and loading its own model (`workflowSetupBean.onPageLoad`)
+ * before the workflow tab is loaded again — otherwise the refresh aborts that load and the tab
+ * ends up on the previous workflow again. Reloading on a FIXED timer therefore raced the designer's
+ * own requests; these counters let the refresh wait until the page's network has settled instead of
+ * guessing a delay.
+ */
+let lastNetworkActivityAt = 0;
+let inflightNetworkRequests = 0;
+let networkTrackingInstalled = false;
+
+/** Records that the page's network was active right now (request start or completion). */
+function noteNetworkActivity(): void {
+  lastNetworkActivityAt = Date.now();
+}
+
+/** Minimal structural view of a tracked XMLHttpRequest. */
+interface ITrackedXhr extends XMLHttpRequest {
+  __codbiTracked?: boolean;
+  __codbiCounted?: boolean;
+}
+
+/** Instruments XMLHttpRequest + fetch exactly ONCE so the follow-up reload can wait for idle. */
+function installNetworkTracking(): void {
+  if (networkTrackingInstalled || typeof window === "undefined") {
+    return;
+  }
+  networkTrackingInstalled = true;
+  noteNetworkActivity();
+  // Requests that finished BEFORE this code ran are still visible in the Resource Timing buffer;
+  // fold their end times in so we do not treat "just finished" as "idle" (which would reload too
+  // early when the workflow model request completed milliseconds before the assistant booted).
+  try {
+    const timeOrigin = performance.timeOrigin;
+    const origin = timeOrigin && timeOrigin > 0 ? timeOrigin : Date.now() - performance.now();
+    for (const entry of performance.getEntriesByType("resource")) {
+      const end = origin + entry.startTime + entry.duration;
+      if (Number.isFinite(end) && end > lastNetworkActivityAt) {
+        lastNetworkActivityAt = end;
+      }
+    }
+  } catch {
+    // Resource Timing unavailable — the live counters below still apply.
+  }
+  try {
+    const proto = XMLHttpRequest.prototype as unknown as {
+      open: (...args: unknown[]) => void;
+      send: (...args: unknown[]) => void;
+    };
+    const originalOpen = proto.open;
+    const originalSend = proto.send;
+    proto.open = function (this: ITrackedXhr, ...args: unknown[]): void {
+      this.__codbiTracked = true;
+      this.__codbiCounted = false;
+      originalOpen.apply(this, args);
+    };
+    proto.send = function (this: ITrackedXhr, ...args: unknown[]): void {
+      if (this.__codbiTracked && !this.__codbiCounted) {
+        this.__codbiCounted = true;
+        inflightNetworkRequests++;
+        noteNetworkActivity();
+        this.addEventListener(
+          "loadend",
+          () => {
+            inflightNetworkRequests = Math.max(0, inflightNetworkRequests - 1);
+            noteNetworkActivity();
+          },
+          { once: true },
+        );
+      }
+      originalSend.apply(this, args);
+    };
+  } catch {
+    // XHR prototype not patchable (e.g. a hardened environment) — fall back to the timer.
+  }
+  try {
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === "function") {
+      window.fetch = ((...args: Parameters<typeof fetch>): Promise<Response> => {
+        inflightNetworkRequests++;
+        noteNetworkActivity();
+        const settle = (): void => {
+          inflightNetworkRequests = Math.max(0, inflightNetworkRequests - 1);
+          noteNetworkActivity();
+        };
+        try {
+          return originalFetch(...args).finally(settle);
+        } catch (err) {
+          settle();
+          throw err;
+        }
+      }) as typeof fetch;
+    }
+  } catch {
+    // fetch not patchable — the XHR tracking / timer still applies.
+  }
+}
+
+// Install as early as possible: the receiving page's designer may start its data requests before the
+// assistant element's ngOnInit runs, and only requests observed from now on can be counted.
+installNetworkTracking();
+
+/** The persisted marker written right before a workflow-touching reload. */
+interface WorkflowReloadMarker {
+  /** When the reload was requested (epoch ms). */
+  ts: number;
+  /** Designer page path at that time, so a navigation to ANOTHER form is not reloaded. */
+  path?: string;
+}
+
+/** The subset of FORMCYCLE's designer-tab API used to load a single designer tab again. */
+interface DesignerTabbingApi {
+  reloadIframe?: (pageId: string) => void;
+}
+
+/** Minimal structural view of the designer SHELL window (`window.top`). */
+interface DesignerShellWindow extends Window {
+  Formcycle?: { DesignerTabbing?: DesignerTabbingApi };
+}
+
+/** Whether an `<iframe>` of the designer tab shell is the WORKFLOW designer tab. */
+function isWorkflowTabFrame(frame: HTMLIFrameElement): boolean {
+  try {
+    const pageId = frame.getAttribute("data-page-id") ?? "";
+    const target = frame.getAttribute("data-target-url") ?? frame.getAttribute("src") ?? "";
+    return /workflow/i.test(pageId) || /workflow/i.test(target);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Loads the FORMCYCLE workflow-designer tab iframe(s) of the designer SHELL again.
+ *
+ * The designer is a tab shell where every tab is one `<iframe>` (`frameContent.xhtml`,
+ * `data-page-id`/`data-target-url`), and `Formcycle.DesignerTabbing.reloadIframe(<pageId>)` is
+ * FORMCYCLE's own way of loading a tab again (it is what the tab's "reload" link invokes).
+ * Re-navigating the iframe to its `data-target-url` is the equivalent fallback.
+ *
+ * `workflowSetupBean.onPageLoad()` reads the workflow from the DATABASE on every load
+ * (`WorkflowProcessDao.loadMainProcess` in a fresh entity context), so a freshly loaded workflow
+ * tab always shows the workflow the AI wrote. An already rendered workflow tab instead keeps the
+ * workflow it loaded when it was opened — reloading only the FORM frame (or the shell, when the
+ * browser restores the unchanged sub-frames from its cache) therefore left that tab on the
+ * previous workflow, which is exactly the "switch to the workflow view and nothing changed"
+ * symptom.
+ *
+ * Returns true when at least one workflow tab iframe was told to load again.
+ */
+function reloadWorkflowTabIframes(): boolean {
+  let shell: DesignerShellWindow;
+  try {
+    shell = (window.top ?? window) as DesignerShellWindow;
+    if (shell.document == null) {
+      return false;
+    }
+  } catch {
+    // Cross-origin shell (not expected for the designer) — nothing we can do from this frame.
+    return false;
+  }
+  let frames: HTMLIFrameElement[];
+  try {
+    frames = Array.from(shell.document.querySelectorAll<HTMLIFrameElement>("iframe"));
+  } catch {
+    return false;
+  }
+  const tabbing = shell.Formcycle?.DesignerTabbing;
+  let reloaded = false;
+  for (const frame of frames) {
+    if (!isWorkflowTabFrame(frame)) {
+      continue;
+    }
+    const pageId = frame.getAttribute("data-page-id");
+    if (pageId && typeof tabbing?.reloadIframe === "function") {
+      try {
+        tabbing.reloadIframe(pageId);
+        reloaded = true;
+        continue;
+      } catch {
+        // Fall through to the plain re-navigation below.
+      }
+    }
+    const url = frame.getAttribute("data-target-url") ?? frame.getAttribute("src");
+    if (!url) {
+      continue;
+    }
+    try {
+      frame.contentWindow?.location.replace(url);
+      reloaded = true;
+    } catch {
+      try {
+        frame.setAttribute("src", url);
+        reloaded = true;
+      } catch {
+        // Ignore — nothing else we can do for this frame.
+      }
+    }
+  }
+  return reloaded;
+}
+
+/** Parses the stored marker (JSON now, plain epoch-ms for older tabs). */
+function parseWorkflowReloadMarker(raw: string): WorkflowReloadMarker | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed != null && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      const ts = Number(obj["ts"]);
+      if (Number.isFinite(ts)) {
+        const path = typeof obj["path"] === "string" ? (obj["path"] as string) : undefined;
+        return { ts, path };
+      }
+    }
+  } catch {
+    // Legacy marker: a plain epoch-ms timestamp.
+  }
+  const ts = Number(raw);
+  return Number.isFinite(ts) ? { ts } : null;
+}
+// #endregion Workflow-refresh network tracking
+
 // #region Interfaces
 /** Minimal pdf.js API surface used by the assistant — the global `pdfjsLib` exposed by the UMD
  *  `pdf.min.js` build that is loaded lazily on demand (see loadPdfJs). */
@@ -287,6 +511,10 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** The full `codbi-prop-standards` CSV that the AI set on its most recent run.
    *  `null` means the AI has never run yet this session (first-run mode). */
   private prevAiStandards: string | null = null;
+  /** Workflow version id of the last workflow-touching run, captured while `designer.config` is
+   *  definitely available. Used to re-assert the invalidation right before the reload — at that
+   *  point `designer.config` can already be gone (e.g. after `publish()`). */
+  private lastWorkflowVersionId: string | null = null;
   /** Whether the change-log side panel is unfolded to the right of the assistant content. */
   showLog = false;
   /** Width (px) of the unfolded change-log panel — adjustable via the draggable splitter. */
@@ -514,9 +742,10 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  session-scoped workflow model LAZILY: after the AI wrote workflow tasks/nodes directly to the
    *  database and the designer reloaded, the freshly loaded page can still be served the PREVIOUS
    *  workflow until that rebuild finished — which is why a second manual reload was needed before.
-   *  The marker makes the assistant perform exactly ONE automatic follow-up reload (after the page
-   *  has booted and FORMCYCLE had time to rebuild), so the workflow changes are shown without a
-   *  manual reload. Consumed immediately, so it never loops. */
+   *  The marker (JSON `{ts, path}`) makes the assistant perform exactly ONE automatic follow-up
+   *  reload once the page has booted AND its network has settled — waiting for the designer's own
+   *  workflow-model request to finish is what guarantees the revalidation happened. Consumed
+   *  immediately, so it never loops. */
   private static readonly WORKFLOW_RELOAD_KEY = "codbi-pending-workflow-reload";
   /** sessionStorage key persisting the current chat conversation within the tab session — survives
    *  closing/reopening the chat and host re-creation, and is cleared automatically when the tab
@@ -869,7 +1098,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           setTimeout(() => {
             this.markWorkflowReloadPending();
             this.persistPendingChat();
-            window.location.reload();
+            this.revalidateWorkflowAndReload();
           }, 1500);
         };
         if (form == null || typeof form !== "object") {
@@ -1200,10 +1429,9 @@ export class AiAssistant implements OnInit, OnDestroy {
     // not created yet" when the Formcycle designer is not ready on first paint, and an uncaught
     // error in ngOnInit would otherwise prevent the chat from ever being restored.
     this.restorePendingChat();
-    // After a workflow-touching reload, FORMCYCLE rebuilds its session-scoped workflow model lazily.
-    // The freshly loaded page can be served the previous workflow until that rebuild finished, so
-    // issue exactly ONE automatic follow-up reload once the designer is ready — the changes are then
-    // shown without the manual second reload that was needed before.
+    // After a workflow-touching reload, load the workflow tab iframe once more as soon as the
+    // designer is ready — an already rendered workflow tab keeps the workflow it loaded before the
+    // run, so without this the user had to reload the page manually to see the changes.
     this.scheduleWorkflowRefreshIfPending();
     // Pre-load the AI models so a restored chat can continue immediately without waiting for the
     // assistant dialog to be opened (selectedModel is otherwise null on a fresh page).
@@ -3642,24 +3870,116 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
-  /** Marks that a workflow-touching reload is about to happen, so the NEXT page load knows to
-   *  perform one automatic follow-up reload once FORMCYCLE has rebuilt its session workflow model. */
+  /** Marks a workflow-touching reload, so the NEXT page load knows to load the workflow tab iframe
+   *  again once the designer has booted (see [scheduleWorkflowRefreshIfPending]).
+   *  The current designer path is stored as well, so a navigation to ANOTHER form while the page
+   *  boots is never touched. */
   private markWorkflowReloadPending(): void {
     try {
-      sessionStorage.setItem(AiAssistant.WORKFLOW_RELOAD_KEY, String(Date.now()));
+      const marker: WorkflowReloadMarker = { ts: Date.now(), path: window.location.pathname };
+      sessionStorage.setItem(AiAssistant.WORKFLOW_RELOAD_KEY, JSON.stringify(marker));
     } catch {
       // ignore storage errors (e.g. blocked storage) — the follow-up reload is skipped then
     }
   }
 
   /**
+   * Brings the WORKFLOW view of the designer onto the state the AI just wrote, then reloads the
+   * designer.
+   *
+   * Two separate things are needed:
+   *
+   * 1. The workflow tab iframe has to be loaded again. An already rendered workflow tab keeps the
+   *    workflow it loaded when it was opened, so reloading only the FORM frame left it on the
+   *    previous workflow — the "switch to the workflow view and nothing changed" symptom. See
+   *    [reloadWorkflowTabIframes].
+   * 2. The form frame has to be reloaded so the newly generated form elements show up.
+   *
+   * Reloading the whole shell (see [reloadDesigner]) usually covers both, but a browser may restore
+   * unchanged sub-frames from its cache, so the explicit tab reload is requested first.
+   */
+  private revalidateWorkflowAndReload(): void {
+    reloadWorkflowTabIframes();
+    this.reloadDesigner();
+  }
+
+  /**
+   * Loads the workflow tab iframe(s) again once the designer has booted, retrying briefly while the
+   * shell has not rendered the tab yet (tabs are rendered lazily, right after a reload).
+   *
+   * The retry window is intentionally short: a tab the user opens LATER is created with a fresh
+   * iframe and loads the workflow from the database anyway, so there is nothing to refresh there —
+   * and touching it late would only throw away what the user is doing in it.
+   */
+  private refreshWorkflowTabAfterReload(): void {
+    const startedAt = Date.now();
+    /** How long to keep trying for the shell to render the (already open) workflow tab. */
+    const RETRY_MS = 5_000;
+    const attempt = (): void => {
+      if (reloadWorkflowTabIframes()) {
+        return;
+      }
+      if (Date.now() - startedAt < RETRY_MS) {
+        setTimeout(attempt, 500);
+      }
+    };
+    attempt();
+  }
+
+  /** The edited form's active workflow version id, or `null` when it has no workflow. */
+  private currentWorkflowVersionId(): string | number | null {
+    try {
+      const designer = getDesignerInstance() as unknown as Record<string, unknown> | undefined;
+      const cfg = designer?.["config"] as Record<string, unknown> | undefined;
+      const id = cfg?.["workflowVersionId"];
+      if (typeof id === "string" && id.trim() !== "") return id;
+      if (typeof id === "number" && Number.isFinite(id)) return id;
+      // Fall back to the id captured when the run was started — `designer.config` can already be
+      // gone at reload time (notably after publish()).
+      return this.lastWorkflowVersionId;
+    } catch {
+      return this.lastWorkflowVersionId;
+    }
+  }
+
+  /**
+   * Reloads the whole designer SHELL, not just this frame.
+   *
+   * The FORMCYCLE designer is a tab shell whose tabs are one `<iframe>` each (`frameContent.xhtml`:
+   * `data-target-url`/`Formcycle.DesignerTabbing`). This assistant runs INSIDE the form tab's
+   * iframe, so `window.location.reload()` recreated only the FORM iframe — an already-open workflow
+   * tab kept its iframe (and thus its stale, previously loaded workflow model) until the user
+   * reloaded the browser. Reloading the top-most window recreates every tab iframe, so the workflow
+   * tab fetches its model again (`workflowSetupBean.onPageLoad` reads the DB) and shows the changes.
+   * Cross-origin frames (unexpected here) fall back to reloading this frame only.
+   *
+   * A shell reload is not guaranteed to reach the sub-frames (a browser may restore unchanged
+   * iframes from its cache), which is why [reloadWorkflowTabIframes] reloads the workflow tab
+   * explicitly as well.
+   */
+  private reloadDesigner(): void {
+    try {
+      const top = window.top;
+      if (top && top !== window) {
+        top.location.reload();
+        return;
+      }
+    } catch {
+      // Cross-origin/denied access to the top window — reload this frame instead.
+    }
+    window.location.reload();
+  }
+
+  /**
    * Runs on EVERY page load. When the previous page wrote [WORKFLOW_RELOAD_KEY] (i.e. a run that
-   * changed the workflow just reloaded the designer), FORMCYCLE rebuilds its session-scoped workflow
-   * model LAZILY: the freshly loaded page can be served the PREVIOUS workflow until that rebuild has
-   * finished — which is why a second manual reload was needed to see the changes. This consumes the
-   * marker and, once the Formcycle designer is ready, performs exactly ONE automatic follow-up
-   * reload after a short grace period, so the (now revalidated) workflow model is displayed without
-   * a manual reload. The marker is consumed BEFORE the follow-up reload, so it cannot loop.
+   * changed the workflow just reloaded the designer), the workflow tab iframe is loaded again once
+   * the designer is ready AND its own network work has settled. Without that, a workflow tab the
+   * browser had restored from its cache kept showing the workflow it rendered before the run — the
+   * reason a second manual reload was needed to see the changes.
+   *
+   * Waiting for network idle instead of a fixed grace period is the important part: firing while
+   * the designer is still loading its own model aborts that load and leaves the tab on the previous
+   * workflow again. The marker is consumed BEFORE the refresh, so it cannot loop.
    */
   private scheduleWorkflowRefreshIfPending(): void {
     let pending: string | null = null;
@@ -3675,29 +3995,56 @@ export class AiAssistant implements OnInit, OnDestroy {
     } catch {
       // ignore storage errors
     }
+    const marker = parseWorkflowReloadMarker(pending);
     // Ignore stale markers from a long-gone session that were never consumed.
-    const written = Number(pending);
-    if (!Number.isFinite(written) || Date.now() - written > 120_000) return;
-    // Only reload on a page that hosts the Formcycle designer (the reload keeps the same URL, so a
-    // designer page reloads into a designer page). Wait until the designer instance is available and
-    // has booted — only then is its workflow model requested (and thereby revalidated by FORMCYCLE).
-    const doFollowUp = (attempt: number): void => {
-      let ready = false;
-      try {
-        const dg = getDesignerInstance() as unknown as Record<string, unknown> | undefined;
-        ready = !!dg && dg["config"] != null;
-      } catch {
-        ready = false;
-      }
-      if (ready) {
-        // Grace period for FORMCYCLE to finish rebuilding its session workflow model, then reload
-        // exactly once.
-        setTimeout(() => window.location.reload(), 2500);
+    if (!marker || Date.now() - marker.ts > 120_000) return;
+    // Never reload a DIFFERENT designer page (another form) that the user opened meanwhile. Only the
+    // path is compared, so switching to the workflow view of the SAME form (hash / route / query
+    // change) still triggers the refresh — and that switch is usually what requests the model.
+    if (marker.path && marker.path !== window.location.pathname) return;
+    installNetworkTracking();
+    const startedAt = Date.now();
+    /** Let the designer start its own data requests before evaluating idle (a fixed 0 ms would
+     *  reload before the workflow model was requested at all). */
+    const MIN_WAIT_MS = 4_000;
+    /** The network must have been quiet this long before reloading. */
+    const QUIET_MS = 1_000;
+    /** How long to wait for the designer instance/config to appear at all (slow first paint). */
+    const READY_MAX_MS = 60_000;
+    /** Absolute cap: reload even if the page never becomes quiet (e.g. a long-polling status). */
+    const HARD_MAX_MS = 12_000;
+    const tick = (): void => {
+      const elapsed = Date.now() - startedAt;
+      if (!this.isDesignerReadyForWorkflowRefresh()) {
+        if (elapsed < READY_MAX_MS) setTimeout(tick, 250);
         return;
       }
-      if (attempt < 40) setTimeout(() => doFollowUp(attempt + 1), 150);
+      if (elapsed < MIN_WAIT_MS) {
+        setTimeout(tick, 250);
+        return;
+      }
+      const quiet = inflightNetworkRequests === 0 && Date.now() - lastNetworkActivityAt >= QUIET_MS;
+      if (quiet || elapsed >= HARD_MAX_MS) {
+        // Only the workflow tab is loaded again here (not the whole designer): the shell was just
+        // reloaded, and reloading it a second time would cost another full designer boot plus
+        // another form persist/publish round trip.
+        this.refreshWorkflowTabAfterReload();
+        return;
+      }
+      setTimeout(tick, 250);
     };
-    setTimeout(() => doFollowUp(0), 600);
+    setTimeout(tick, 300);
+  }
+
+  /** Whether the Formcycle designer is booted AND done loading its own model (best effort). */
+  private isDesignerReadyForWorkflowRefresh(): boolean {
+    try {
+      const dg = getDesignerInstance() as unknown as Record<string, unknown> | undefined;
+      if (!dg || dg["config"] == null) return false;
+      return dg["_isLoading"] !== true;
+    } catch {
+      return false;
+    }
   }
 
   /** Scrolls the chat message list to the newest message. */
@@ -3954,6 +4301,7 @@ export class AiAssistant implements OnInit, OnDestroy {
         this.setError("Could not determine the workflow version ID. Make sure a workflow is configured for this form.");
         return;
       }
+      this.lastWorkflowVersionId = String(workflowVersionId);
       data["workflowVersionId"] = String(workflowVersionId);
 
       try {
@@ -3979,6 +4327,7 @@ export class AiAssistant implements OnInit, OnDestroy {
       // Form-only run (incl. whole-form translation): pass the workflow id so the backend can
       // multilingualize consumer-facing workflow mails after a form translation when the form AI
       // signals "_workflowMailLanguages". No error when absent — the form edit still runs.
+      this.lastWorkflowVersionId = String(workflowVersionId);
       data["workflowVersionId"] = String(workflowVersionId);
     }
 
@@ -4349,11 +4698,11 @@ export class AiAssistant implements OnInit, OnDestroy {
               localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
             }
             // Persist the chat conversation so the chat popup re-opens after the reload, and mark
-            // that a workflow-touching reload happens so the next page load performs the automatic
-            // follow-up reload (see scheduleWorkflowRefreshIfPending).
+            // that a workflow-touching reload happens so the next page load loads the workflow tab
+            // iframe again (see scheduleWorkflowRefreshIfPending).
             this.markWorkflowReloadPending();
             this.persistPendingChat();
-            window.location.reload();
+            this.revalidateWorkflowAndReload();
           };
           const waitUntilReady = (): Promise<void> =>
             new Promise<void>((resolve) => {
@@ -4441,7 +4790,7 @@ export class AiAssistant implements OnInit, OnDestroy {
             // follow-up reload (see scheduleWorkflowRefreshIfPending).
             this.markWorkflowReloadPending();
             this.persistPendingChat();
-            window.location.reload();
+            this.revalidateWorkflowAndReload();
           }, 1500);
         } else if (hasFormJson) {
           // Form only: wait for async rendering to complete (same as "both"), then patch

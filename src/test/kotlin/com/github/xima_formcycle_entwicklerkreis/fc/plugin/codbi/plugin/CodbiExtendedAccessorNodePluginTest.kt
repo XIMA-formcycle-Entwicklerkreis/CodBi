@@ -53,6 +53,25 @@ class CodbiExtendedAccessorNodePluginTest {
   }
 
   @Test
+  fun `builds the prototype icon with the request context path`() {
+    // The AI assistants serialize this icon into the node's custom parameters; without the
+    // context path the resource URL would 404 on deployments below a context path.
+    val icon = plugin.buildPrototypeIcon("/formcycle")
+
+    assertEquals("fa fa-exchange-alt", icon.styleClass)
+    assertTrue(icon.style.contains("/formcycle/plugin?name=Resource"))
+    assertTrue(icon.style.contains("extended-accessor-icon.svg"))
+  }
+
+  @Test
+  fun `sanitizes HTML by default`() {
+    assertTrue(
+        CodbiExtendedAccessorNodeProps().sanitizeHtml,
+        "a new Extended Accessor node must sanitize HTML unless the user disables it",
+    )
+  }
+
+  @Test
   fun `properties view offers a form element tree and preview`() {
     val view = plugin.propertiesViewXhtml.readText()
 

@@ -2,7 +2,6 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.workflow.EExtendedAccessorRepetitionMode
 import de.xima.fc.workflow.taglib.model.BaseActionProps
-import org.slf4j.LoggerFactory
 
 /**
  * Configuration of the CodBi "Extended Accessor" workflow node.
@@ -19,13 +18,8 @@ class CodbiExtendedAccessorNodeProps : BaseActionProps() {
    * `getter` entry proves which value was rendered back into the properties view.
    */
   var fieldName: String? = ""
-    get() {
-      val value = field ?: ""
-      logger.info("[CodBi][ExtendedAccessor] fieldName getter -> '{}' (raw='{}')", value, field)
-      return value
-    }
+    get() = field ?: ""
     set(value) {
-      logger.info("[CodBi][ExtendedAccessor] fieldName setter <- '{}'", value)
       field = value
     }
 
@@ -57,8 +51,13 @@ class CodbiExtendedAccessorNodeProps : BaseActionProps() {
   /** Whether basic element metadata is added to the result. */
   var includeMeta: Boolean = false
 
-  /** Whether the value is passed through the OWASP HTML sanitizer. */
-  var sanitizeHtml: Boolean = false
+  /**
+   * Whether the value is passed through the OWASP HTML sanitizer.
+   *
+   * Defaults to `true`: raw element values may contain user-supplied HTML, so a new accessor node
+   * sanitizes unless the user explicitly turns it off.
+   */
+  var sanitizeHtml: Boolean = true
 
   /** Whether HTML is converted to plain text. */
   var htmlToText: Boolean = false
@@ -74,8 +73,4 @@ class CodbiExtendedAccessorNodeProps : BaseActionProps() {
 
   /** Sanitizer switch: allow inline styles. */
   var allowStyles: Boolean = true
-
-  private companion object {
-    private val logger = LoggerFactory.getLogger(CodbiExtendedAccessorNodeProps::class.java)
-  }
 }

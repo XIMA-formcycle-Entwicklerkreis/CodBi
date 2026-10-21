@@ -136,15 +136,6 @@ export function enableAICodBiAssistantDialog(): void {
 let assistantOpenedOnce = false;
 
 function openAssistant(): void {
-  // Remember this manual open — a strong signal that CodBi is enabled for the current form, used
-  // by isCodBiEnabled() while the form-property model is stale right after an inference-driven
-  // in-place form load.
-  try {
-    localStorage.setItem("codbi-assistant-last-opened", String(Date.now()));
-  } catch {
-    // ignore storage errors
-  }
-
   // Already visible — just (re)dispatch so the prompt gets focus; never touch the mounted element
   // while the dialog is open.
   if (document.querySelector(".cb-ai-assistant-dialog")) {
@@ -342,37 +333,37 @@ function hideAssistantLoadingIndicator(): void {
   setTimeout(() => host.remove(), 220);
 }
 
-/** Whether the "CodBi" checkbox (`codbi-prop-enable`) is set for the currently edited form. */
+/**
+ * Whether the "CodBi" checkbox (`codbi-prop-enable`) is set for the currently edited form.
+ *
+ * Order of the two AUTHORITATIVE sources (never a "remembered" open): the live checkbox in the form
+ * properties first — it also covers the case where the property model is stale right after an
+ * inference-driven in-place form load — and then the designer's property model.
+ *
+ * The previous implementation had a third fallback: "a manual ALT+A open within the last 10 minutes
+ * counts as enabled" (localStorage `codbi-assistant-last-opened`). Because {@link openAssistant}
+ * writes that value on EVERY open, the first ALT+A enabled the hotkey for the next 10 minutes, so
+ * ALT+A kept opening the assistant on forms where CodBi is DISABLED. It is therefore gone: when
+ * neither source confirms the checkbox, the assistant stays closed.
+ */
 function isCodBiEnabled(): boolean {
+  // The live checkbox is the most reliable signal (it is what the user sees and toggles).
+  const checkbox = document.querySelector<HTMLInputElement>("#form-codbi-prop-enable-input");
+
+  if (checkbox) {
+    return checkbox.checked === true;
+  }
   const designer = getDesignerInstance();
 
   if (designer) {
     try {
       const value = designer.getFormPropertyValueForCurrentLang("codbi-prop-enable");
-      if (value === "1" || value === 1 || value === true) {
-        return true;
-      }
+      return value === "1" || value === 1 || value === true;
     } catch {
-      // fall through to the DOM checkbox check below
+      return false;
     }
   }
-  // After an inference-driven form load (no page reload) the property model can be stale even
-  // though the live "CodBi" checkbox is still checked — trust the checkbox in that case.
-  const checkbox = document.querySelector<HTMLInputElement>("#form-codbi-prop-enable-input");
-
-  if (checkbox && checkbox.checked === true) {
-    return true;
-  }
-  // Neither the (possibly stale) property model nor a checked live checkbox confirm it — e.g. right
-  // after an inference-driven in-place form load, when the checkbox may still show the pre-load
-  // state. A manual ALT+A open within the last few minutes is a strong signal that CodBi is enabled
-  // for the currently edited form.
-  try {
-    const lastOpened = Number(localStorage.getItem("codbi-assistant-last-opened") ?? "0");
-    return lastOpened > 0 && Date.now() - lastOpened < 10 * 60 * 1000;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 /** Whether the global dialog-transparency mode is currently active. */

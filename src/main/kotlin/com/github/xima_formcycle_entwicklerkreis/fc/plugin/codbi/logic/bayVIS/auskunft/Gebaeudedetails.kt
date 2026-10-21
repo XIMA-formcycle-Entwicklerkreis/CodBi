@@ -73,6 +73,9 @@ class CodBiBayVISAuskunftGebaeudedetailsAction : IPluginServletAction {
     try {
       val url: URL = URI("$url${pathSegment(id)}/gebaeude/${pathSegment(gebaeudeID)}").toURL()
       val connection = url.openConnection() as HttpURLConnection
+      // Never let a hanging/blocked endpoint stall the plugin start-up.
+      connection.connectTimeout = 10_000
+      connection.readTimeout = 20_000
 
       connection.setRequestMethod("GET")
       connection.setRequestProperty(
@@ -93,15 +96,13 @@ class CodBiBayVISAuskunftGebaeudedetailsAction : IPluginServletAction {
                   it.readText()
                 }
 
-            val errorMessage =
-                "{\"error\": \"Retrieval from BayVIS API failed. Statuscode: $statusCode, Response: $errorResult\"}"
-
-            errorMessage
+            BayVISAuskunftErrors.describe(
+                "Gebaeudedetails", url.toString(), statusCode, errorResult)
           }
 
       connection.disconnect()
     } catch (e: IOException) {
-      buffer[id] = "{\"error\": \"Error connecting to BayVIS API\"}"
+      buffer[id] = BayVISAuskunftErrors.connectionFailure(url, e)
       statusCode = 500
     }
 
@@ -142,6 +143,13 @@ class CodBiBayVISAuskunftGebaeudedetailsAction : IPluginServletAction {
 
     if (newURL !== null) {
       this.url = newURL
+    }
+    // Never let a malformed endpoint abort the plugin start: a data fetch needs a building id, so
+    // only the URL itself is validated here — a failure becomes a warning (log + FORMCYCLE
+    // protocol entry) instead of an exception escaping into FC's plugin start.
+    BayVISAuskunftStartup.startupCheck("Gebaeudedetails", url, configData.client) {
+      java.net.URI(url).toURL()
+      200
     }
   }
 

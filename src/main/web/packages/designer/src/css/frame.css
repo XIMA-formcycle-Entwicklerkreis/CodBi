@@ -441,6 +441,93 @@
   gap: 8px;
 }
 
+/* Column wrapper that REPLACES the "Preview" property row inside its parent: it holds the untouched
+   row plus the quick-links block below it, so the block is always the NEXT LINE — independent of
+   whether the parent lays its children out in a flex row or a grid. */
+.codbi-quick-links-host {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* OWN container for the two quick links, placed directly BELOW the "Preview" switch and its label
+   (see `CodbiSwitchEditor.mountQuickLinksAside`). Keeping them inside the switch's editor element
+   pushed the "Preview" label out of line; placing them beside the row put them in the same line.
+   The pair is CENTRED in this container (`text-align` centres the inline-flex pair), and the extra
+   bottom padding separates it from the next property row ("Konfig-Template"). */
+.codbi-quick-links {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  padding: 6px 0 16px;
+}
+
+/* The two quick links (form assistant / local API doc) form ONE segmented control: no gap between
+   them, the first half rounded on the LEFT, the second on the RIGHT. Icon + short label each. */
+.codbi-quick-actions {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.codbi-quick-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1;
+  color: darkorange;
+  /* White gradient per half: the FIRST darkens towards the RIGHT, the SECOND towards the LEFT, so
+     the two halves read as one bevelled control. */
+  background: linear-gradient(to right, #ffffff 0%, #e4e4e4 100%);
+  border: 1px solid darkorange;
+  border-radius: 0;
+  cursor: pointer;
+  box-shadow: 0 0 0.25em black;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.codbi-quick-action__label {
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Adjacent halves share ONE border: the second button overlaps the first by 1px. */
+.codbi-quick-action + .codbi-quick-action {
+  margin-left: -1px;
+}
+
+.codbi-quick-action--first {
+  border-radius: 4px 0 0 4px;
+}
+
+.codbi-quick-action--last {
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(to left, #ffffff 0%, #e4e4e4 100%);
+}
+
+.codbi-quick-action:hover {
+  color: #fff;
+  background: darkorange;
+}
+
+.codbi-quick-action--last:hover {
+  background: darkorange;
+}
+
+.codbi-quick-action:active {
+  background: #c96a00;
+}
+
 /* Rounded dark-orange box around the companion switch and its caption (see `CodbiSwitchEditor`). */
 .codbi-switch-group {
   display: inline-flex;
@@ -539,6 +626,16 @@
   padding: 8px;
   border: none;
   border-radius: 8px;
+}
+
+/* FOLDED state (CodBi inactive, see `syncCodBiEnabledVisibility`): no padding, no gap and no
+   watermark, so the editor collapses to the single collapsed summary row of the inactive notice. */
+.codbi-func-config--element.codbi-func-config--inactive {
+  padding: 0;
+  gap: 0;
+}
+.codbi-func-config--inactive::after {
+  display: none;
 }
 
 /* Centred CodBi watermark, behind the real content. */
@@ -693,18 +790,38 @@
   flex-direction: column;
 }
 /* The half buttons lose their individual frame/corners/margins so they merge into the shared
-   double-button outline; labels are centred. */
+   double-button outline; labels are centred.
+   EVERY half renders as ONE FIXED-HEIGHT thin row, so both double buttons (the functionality one
+   and the standard-configuration one) are pixel-identically thin: a content-derived height still
+   differed slightly between the two sections, so the row height is pinned here and the label NEVER
+   wraps (it is ellipsized — see `__show-all__label`). 22px = one 11px line + a 2px optical margin
+   above/below, matching the panel's other 22px controls. */
 .codbi-func-config__double .codbi-func-config__show-all {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   width: 100%;
   max-width: none;
+  height: 22px;
+  min-height: 22px;
+  max-height: 22px;
+  box-sizing: border-box;
   margin: 0;
-  padding: 3px 14px;
+  padding: 0 10px;
+  font-size: 11px;
+  line-height: 1;
   border: none;
   border-radius: 0;
   background: transparent;
+}
+/* The label keeps the row at exactly one line: a wrapped label made the "Funktionalitäten" double
+   taller than the "Standard-Konfigurationen" double. Too long for the panel → ellipsis. */
+.codbi-func-config__show-all__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* The hovered half fills darkorange with white text so the active leaf is unmistakable. */
 .codbi-func-config__double .codbi-func-config__show-all:hover {
@@ -737,10 +854,13 @@
 }
 /* The ▸/▾ state indicator of a show/hide toggle button. It is its OWN element so it can be rendered
    larger than the (11px) label — at the label size the small triangle glyphs are barely visible.
-   2.2em of the button's 11px ≈ 24px, i.e. more than twice the label size. */
+   It must NEVER grow the row: 2.2em (≈24px) made the half button taller than its label, which is
+   why the two double buttons had different heights. 1.4em (≈15px) stays clearly larger than the
+   label while its line box matches the label's, so every half is one thin row. */
 .codbi-func-config__show-all__chevron {
   display: inline-block;
-  font-size: 2.2em;
+  flex: 0 0 auto;
+  font-size: 1.4em;
   line-height: 1;
   vertical-align: middle;
 }
@@ -748,25 +868,44 @@
 /* Shown in place of the whole panel while the form-level "CodBi aktiviert" checkbox is unchecked.
    The existing `.codbi-func-config::after` watermark stays visible behind it, so instead of an empty
    shell the user sees the CodBi logo plus a short explanation of how to activate CodBi. */
+/* A `<details>` element rendered FOLDED while CodBi is inactive, so the panel collapses to a single
+   compact row instead of occupying the settings pane with the whole explanation. */
 .codbi-func-config__disabled {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 12px;
+  display: block;
+  padding: 0;
   border: 1px dashed darkorange;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.45);
-  text-align: center;
+  text-align: left;
 }
+/* The folded row: one line, darkorange, with its own ▸/▾ indicator instead of the browser marker. */
 .codbi-func-config__disabled-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
+  padding: 6px 10px;
   font-size: 12px;
   font-weight: 700;
   color: darkorange;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.codbi-func-config__disabled-title::-webkit-details-marker {
+  display: none;
+}
+.codbi-func-config__disabled-title::before {
+  content: "\25B8";
+  font-size: 1.2em;
+  line-height: 1;
+}
+.codbi-func-config__disabled[open] > .codbi-func-config__disabled-title::before {
+  content: "\25BE";
 }
 .codbi-func-config__disabled-text {
   margin: 0;
+  padding: 0 12px 12px;
   font-size: 11px;
   line-height: 1.5;
   color: #6b7280;

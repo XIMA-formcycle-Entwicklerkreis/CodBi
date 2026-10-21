@@ -414,14 +414,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // #endregion 3. Parameter table.
 
     // #region 4. CodBi-disabled notice. Shown INSTEAD of the three sections above while the form-level
-    // "CodBi aktiviert" checkbox (`codbi-prop-enable`) is unchecked. The normal `.codbi-func-config`
-    // watermark stays visible behind it, so instead of an empty shell the user sees the CodBi logo plus
-    // a short explanation of how to enable CodBi. It is hidden by default (`syncCodBiEnabledVisibility`
-    // toggles it).
-    const codBiDisabledHint = document.createElement("div");
+    // "CodBi aktiviert" checkbox (`codbi-prop-enable`) is unchecked. Rendered as a `<details>` block
+    // that is FOLDED by default: with CodBi switched off the whole settings panel collapses to one
+    // line (the summary) instead of occupying the pane with the full explanation; expanding it shows
+    // the message on how to enable CodBi. It is hidden completely while CodBi IS enabled
+    // (`syncCodBiEnabledVisibility` toggles the `display`).
+    const codBiDisabledHint = document.createElement("details");
     codBiDisabledHint.className = "codbi-func-config__disabled";
+    codBiDisabledHint.open = false;
     codBiDisabledHint.style.display = "none";
-    const codBiDisabledTitle = document.createElement("p");
+    const codBiDisabledTitle = document.createElement("summary");
     codBiDisabledTitle.className = "codbi-func-config__disabled-title";
     codBiDisabledTitle.textContent = kI18n("designer.element.property.codbi.inactive.title");
     const codBiDisabledText = document.createElement("p");
@@ -763,6 +765,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.funcSection.style.display = contentHidden;
     this.paramSection.style.display = contentHidden;
     this.codBiDisabledHint.style.display = enabled ? "none" : "";
+    // FOLD the panel while CodBi is inactive: without the padding/gap/watermark the editor shrinks to
+    // the single collapsed summary row instead of looking like a full settings panel.
+    this.root.classList.toggle("codbi-func-config--inactive", !enabled);
   }
 
   /** Shows/hides the APPLICABLE functionality list (and syncs its toggle button). */
@@ -792,8 +797,14 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     chevron.className = "codbi-func-config__show-all__chevron";
     chevron.setAttribute("aria-hidden", "true");
     chevron.textContent = expanded ? "\u25BE" : "\u25B8";
+    // The label is its OWN element as well: a half of a double button must stay ONE thin line, so the
+    // label is ellipsized instead of WRAPPING (a wrapped label made the "Funktionalitäten" double
+    // taller than the "Standard-Konfigurationen" one — see frame.css).
+    const label = document.createElement("span");
+    label.className = "codbi-func-config__show-all__label";
     // The leading space keeps `textContent` identical to the previous plain-text form.
-    button.replaceChildren(chevron, document.createTextNode(` ${kI18n(labelKey)}`));
+    label.textContent = ` ${kI18n(labelKey)}`;
+    button.replaceChildren(chevron, label);
     button.setAttribute("aria-expanded", String(expanded));
   }
 

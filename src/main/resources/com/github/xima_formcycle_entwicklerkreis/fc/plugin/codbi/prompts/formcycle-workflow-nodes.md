@@ -11,7 +11,7 @@ CRITICAL — taskName is MANDATORY for EVERY node type. Always set a short, mean
 CRITICAL — taskDescription is MANDATORY for EVERY node object (the lane's main node AND EVERY entry in "chainedNodes"): write ONE short, meaningful, human-readable sentence describing WHAT that node does (it becomes the node's description in the workflow designer). taskDescription is NOT the node name — taskName is the name. NEVER leave taskDescription empty ("" is invalid).
 LANGUAGE — write taskName, taskDescription, ALL node names/labels, and the endpointState label in the SAME language as the user's request: a German prompt → German taskName/description (e.g. taskName "Zeilen als JSON in Hulu schreiben") and a German endpoint label (e.g. "Empfangen" instead of "Received"); an English prompt → English. Never fall back to a default language.
 
-REQUIRED PARAMS — Most node types need mandatory nodeParams. Whenever a required value is missing from the user's request and cannot be derived, ASK the user for it (clarification) instead of inventing one. Common required values: FC_EMAIL → senderAddress, subject, recipient (recipientMessageService/address), message; FC_DOI_INIT → success + failure completion pages, sender, subject, recipient; FC_POST_REQUEST → URL + HTTP method; FC_REDIRECT → URL or urlTemplate; FC_SHOW_TEMPLATE → htmlTemplate; FC_MOVE_FORM_RECORD_TO_INBOX → inboxName; FC_SAVE_TO_FILE_SYSTEM → path; FC_SAVE_TO_WEBDAV → connection + path; FC_FILL_PDF / FC_FILL_WORD → template + field mapping; FC_CREATE_TEXT_FILE → file name + content; FC_CHANGE_FORM_VALUE / FC_WRITE_FORM_RECORD_ATTRIBUTES → field/attribute + value; FC_SET_FORM_RECORD_PASSWORD → password; FC_CHANGE_STATE → the target state.
+REQUIRED PARAMS — Most node types need mandatory nodeParams. Whenever a required value is missing from the user's request and cannot be derived, ASK the user for it (clarification) instead of inventing one. Common required values: FC_EMAIL → senderAddress, subject, recipient (recipientMessageService/address), message; FC_DOI_INIT → success + failure completion pages, sender, subject, recipient; FC_POST_REQUEST → URL + HTTP method; FC_REDIRECT → URL or urlTemplate; FC_SHOW_TEMPLATE → htmlTemplate; FC_MOVE_FORM_RECORD_TO_INBOX → inboxName; FC_SAVE_TO_FILE_SYSTEM → path; FC_SAVE_TO_WEBDAV → connection + path; FC_FILL_PDF / FC_FILL_WORD → the template FILE NAME only (there is NO field mapping to ask for — the document's form fields are filled automatically from the same-named form fields); FC_CREATE_TEXT_FILE → file name + content; FC_CHANGE_FORM_VALUE / FC_WRITE_FORM_RECORD_ATTRIBUTES → field/attribute + value; FC_SET_FORM_RECORD_PASSWORD → password; FC_CHANGE_STATE → the target state.
 
 REPEATABLE-CONTAINER → JSON → STORAGE (prominent, UNIVERSAL rule):
 - When form data lives in a REPEATABLE (dynamic) container — an UNKNOWN number of rows — and must be stored as ONE JSON value (in a database column, a CMIS node/document, a file, a form field, a server attribute, ...), the row count is UNKNOWN at design time. NEVER hardcode a JSON literal with field placeholders (e.g. '[{"name":"[%tfName%]","data":"[%tfData%]"}]') — that captures only one row and is not dynamic.
@@ -256,16 +256,17 @@ Sends an HTTP request (webhook, REST API call). ALL nodeParams fields are option
 - "requestParameters":[{"name":"<parameter name>","value":"<value>"},...] — for FORM_DATA / named POST parameters. Each "value" supports [%placeholder%] to reference a form field OR a form GLOBAL VARIABLE (Formularvariable) by its name, e.g. "Seite" = the content of variable "Zielseite" → {"name":"Seite","value":"[%Zielseite%]"}. NEVER create hidden form fields for existing global variables — reference them with [%variableName%] directly.
 - "headers":[{"name":"<header>","value":"<value>"},...] (optional)
 - "sendAllFormValues":<true|false> (optional, default false) — send all form field values as request parameters
-- "allowInvalidCertificates":<true|false> (optional, default false) — accept self-signed/invalid SSL certificates
+- "allowInvalidCertificates":<true|false> (optional, default false) — accept self-signed/invalid SSL certificates. Set true whenever the MEANING of the request is that the target's TLS certificate must NOT be verified (self-signed, expired, mismatched host, certificate errors are acceptable) — in ANY language, never by matching a fixed phrase.
 - "asResponsePage":<true|false> (optional, default false). CRITICAL: false = HTTP runs in background, formcycle shows Abschlussseite. true = HTTP response REPLACES formcycle page. Set true ONLY when user explicitly asks to show HTTP response to the user.
-- "treat4xxAsNormal":<true|false> (optional, default false) — 4xx status codes do NOT cause workflow error. Use when user says "400er sollen keine Fehler verursachen", "treat 4xx as normal", etc.
+- "treat4xxAsNormal":<true|false> (optional, default false) — 4xx status codes do NOT cause workflow error. Set true whenever the MEANING of the request is that client errors (4xx) of this request must not be treated as a failure — in ANY language, never by matching a fixed phrase.
 - "treat5xxAsNormal":<true|false> (optional, default false) — 5xx status codes do NOT cause workflow error
-- "useBasicAuth":<true|false> (optional, default false) — enable HTTP basic authentication
+- "useBasicAuth":<true|false> (optional, default false) — enable HTTP basic authentication. Set true whenever the MEANING of the request is that the endpoint authenticates with the HTTP **basic** authentication scheme (a user name and password for the endpoint) — in ANY language, never by matching a fixed phrase. The credentials go into "basicAuthProps":{"basicAuthLogin":"<user name>","basicAuthPwd":"<password>"} (the FcHttpRequestProps schema); prefer a [%field%] / [%$…%] placeholder over a literal secret.
+- "useProxy":<true|false> (optional, default false) — route the request THROUGH a proxy server (a different option than "useBasicAuth", which authenticates against the TARGET). Together with "proxyProps":{"proxyHost":"<host without scheme>","proxyPort":<number>,"useProxyAuth":<true|false>,"proxyAuthProps":{"proxyAuthLogin":"<user>","proxyAuthPwd":"<password>"}} — the proxy credentials are set only when the proxy itself requires a login.
 - "inputCharset":"<charset>" (optional, default "UTF-8")
 - "outputCharset":"<charset>" (optional, default "UTF-8")
 - "outputFileName":"<filename>" (optional) — name of the output file
-- "connectTimeoutSeconds":<number> (optional, default 30)
-- "readTimeoutMinutes":<number> (optional, default 5)
+- "connectTimeout":{"duration":<number>,"unit":"<ETimeUnit>"} (optional, default 30 SECONDS) — how long ESTABLISHING the connection may take. The node stores a `TimeDuration`, so the amount and the unit are two independent fields. FORMCYCLE accepts ONLY 1 SECOND … 1 MINUTE here, and the unit dropdown offers ONLY MILLISECONDS, SECONDS and MINUTES (verified: `@MinTimeDuration(1, SECONDS)` / `@MaxTimeDuration(1, MINUTES)` on `connectTimeout` and `<xi:timeDuration … max="1" maxUnit="MINUTES">` in `httpRequest.xhtml`; FC's `WorkflowValidator` enforces the same constraint through Bean Validation). Emit the amount the user stated — the plugin clamps it to the nearest allowed bound and reports the adjustment, so do NOT pre-clamp here. There is no "connectTimeoutSeconds" key.
+- "readTimeout":{"duration":<number>,"unit":"<ETimeUnit>"} (optional, default 5 MINUTES) — how long to WAIT FOR THE RESPONSE (the read/lease timeout of the call); same `TimeDuration` shape and the same three units as "connectTimeout", but its accepted window is 1 SECOND … 30 MINUTES (`@MaxTimeDuration(30, MINUTES)`). Emit the stated amount; the plugin clamps and reports it. There is no "readTimeoutMinutes" key.
 - The httpRequestType is automatically derived from contentType: "CUSTOM" for JSON|PLAIN_TEXT|XML, "FORM_DATA" for FORM_DATA, "URL" when no body is needed (GET/DELETE/OPTIONS or POST with empty body).
 
 MUTUALLY EXCLUSIVE — BODY vs. NAMED PARAMETERS (CRITICAL): The formcycle HTTP request node sends EITHER
@@ -401,15 +402,19 @@ Renders the FILLED FORM ITSELF as a PDF (a "print service" / form-to-PDF export)
 - To send the resulting PDF by email, chain an FC_EMAIL node after it (via chainedNodes) whose attachments reference the RemotePrintService output.
 
 ### FC_FILL_PDF
-Fills a PDF template with form data and produces a filled PDF.
-- nodeParams: {"file":"<template filename from form resources, e.g. 'vorlage.pdf'>","exportName":"<output filename, e.g. 'ausgefuellt.pdf'>","flatten":<true|false> (optional, default true)}.
+Fills an EXISTING PDF template (a .pdf from the form's own file resources) with form data and produces a filled PDF.
+- nodeParams: {"file":"<EXACT name of a PDF template from the PDF TEMPLATES list, e.g. 'Gehaltsabrechnung.pdf'>","exportName":"<output file name, e.g. 'Gehaltsabrechnung_ausgefuellt.pdf'>","flatten":<true|false> (optional, default true),"usedFont":"<font name the user named, verbatim — or '*embedWholeFonts*'>","pdfFileProvision":{"attachToFormRecord":<true|false>,"attachmentAccessibleToEndUser":<true|false>} (optional)}.
+- The template is MANDATORY: "file" must be one of the names in the PDF TEMPLATES list of the prompt. Match a topic/title in ANY language against that list ("die PDF Gehaltsabrechnung" → "Gehaltsabrechnung.pdf") and use the single PDF when the list contains exactly one. Do NOT invent a name and do NOT ask for the file while the list contains it — only ask when the list is empty.
+- NO FIELD MAPPING EXISTS: `FcFillPdfProps` has only `exportName`, `flatten`, `usedFont`, `singleFile` and `pdfFileProvision`; the PDF's AcroForm fields are filled at runtime from the form fields of the SAME NAME. NEVER ask for a field/value mapping — such a question blocks the node from being created at all.
+- FONT: when the user names a font ("Schriftart Algerian", "font Algerian"), write it VERBATIM into `usedFont`; never ask whether it is installed, never drop the node because of it and never substitute a different font. The designer offers the server's installed fonts plus "*embedWholeFonts*" (embeds every font); use "*embedWholeFonts*" when the user asks to EMBED the fonts.
+- ATTACHING THE FILLED PDF TO THE RECORD: `pdfFileProvision` is `FileProvision` with exactly two flags — `attachToFormRecord` (store the produced PDF on the form record, the "Vorgang") and `attachmentAccessibleToEndUser` (the applicant may download it). Judge by MEANING in ANY language: "dem Vorgang anhängen", "an den Vorgang anhängen", "der Akte beifügen", "attach it to the record", "add it to the case file", "ajouter au dossier", "allegare al fascicolo" → `"pdfFileProvision":{"attachToFormRecord":true,"attachmentAccessibleToEndUser":true}`. This is a PARAMETER of this node — never a second node and never a reason to modify an existing workflow lane.
 - When used as a chained node, the template file is taken from the preceding node's output.
-- USE ONLY when the intent is to FILL AN EXISTING PDF TEMPLATE with data collected by the form at runtime (e.g. a vorlage.pdf whose fields get mapped to form values). For rendering the form itself as a PDF, use RemotePrintService instead.
-- CRITICAL — the mandatory "Details für die PDF-Befüllung > Datei" field MUST be set: provide the template file via "file" (the template's filename from the form's resources). Never omit it.
+- USE ONLY when an EXISTING PDF FORM/TEMPLATE is to be filled with data collected at runtime. For rendering the form itself as a PDF, use RemotePrintService instead.
 
 ### FC_FILL_WORD
 Fills a Word template with form data and produces a filled document.
-- nodeParams: {"file":"<template filename from form resources, e.g. 'vorlage.docx'>","exportName":"<output filename, e.g. 'ausgefuellt.docx'>"}.
+- nodeParams: {"file":"<EXACT file name of the .docx template from the form's file resources, e.g. 'vorlage.docx'>","exportName":"<output filename, e.g. 'ausgefuellt.docx'>"}.
+- "file" must be a real file name of the form's file resources — never invent one, and never ask for it when the user names a document that is obviously one of them.
 - When used as a chained node, the template is taken from the preceding node's output.
 
 ### FC_DELETE_ATTACHMENT
@@ -449,6 +454,26 @@ Increments, decrements, or resets a counter.
 Sets the form online or offline.
 - nodeParams: {"changeType":"SET_ONLINE"|"SET_OFFLINE"}.
 - Use this when the user says the form should go offline or online, e.g. "Formular offline gehen", "Formular online schalten". Do NOT use this for setting the form record status — that is endpointState.
+
+### CodbiExtendedAccessor (com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin)
+Reads exactly ONE form element and exposes its raw or structured value as a workflow RESULT instead of a form-field value.
+- Use this node when the user wants the RAW / unescaped / structured value of a rich-text (TinyMCE) element — FC_EMAIL inserts a normal [%fieldName%] placeholder with HTML escaping (HTML_FORM_ONLY), so formatted HTML arrives as escaped/plain text — or when one specific repetition (INDEX) or all repetitions (ALL) of a repeatable element must be read. MATCH THE MEANING IN ANY LANGUAGE: English "unescaped", "raw value", "HTML source instead of formatting", "keep the formatting"; German "unmaskiert", "nicht maskiert", "roh", "HTML-Quelltext statt Formatierung", "Formatierung soll erhalten bleiben".
+- CRITICAL — nodeType MUST be the EXACT technical name "CodbiExtendedAccessor" (that is the name the node handler is REGISTERED under; the class name in the heading only identifies the handler). NEVER emit the fully-qualified class ("com.github.…CodbiExtendedAccessorNodePlugin") as the nodeType — formcycle stores it but cannot resolve a handler for it ("no handler was registered for that node") — and NEVER use the display label "Extended Accessor" / "Erweiterter Zugriff", which is equally invalid.
+- nodeParams use the EXACT CodbiExtendedAccessorNodeProps property names (camelCase):
+  fieldName: the technicalId/alias of the ONE element to read (REQUIRED). There is NO "all form data" mode.
+  repetitionMode: "CURRENT" (default — the current repetition/value context), "INDEX" (one explicit repetition) or "ALL" (every repetition).
+  repetitionIndex: the ZERO-BASED repetition index, used only with repetitionMode "INDEX" (-1 = not set).
+  joinSeparator: separator used to join the values into "value" (default ",").
+  includeMeta: true to add basic element metadata to the result (default false).
+  sanitizeHtml: true to run the value through the OWASP HTML sanitizer (default true).
+  htmlToText: true to convert HTML to plain text (default false).
+  allowImages / allowLinks / allowTables / allowStyles: sanitizer switches (defaults: images false, links/tables/styles true).
+- RESULT PLACEHOLDERS are SYSTEM placeholders — the "$" is REQUIRED: [%$<node name>.RESULT.value%] (joined value), [%$<node name>.RESULT.values%] (flat list), [%$<node name>.RESULT.repetitions%] (per-repetition lists), [%$<node name>.RESULT.meta%]. Write the placeholder DIRECTLY into the consuming parameter (FC_EMAIL body, FC_POST_REQUEST body, FC_SQL_STATEMENT value, ...). Without the "$" formcycle looks for a FORM FIELD of that name and resolves nothing.
+- The placeholder references this node by its taskName — ALWAYS set a short "taskName" on the accessor node (letters/numbers/spaces/hyphens/parentheses/underscores) and reuse EXACTLY that string inside [%$…%].
+- Order: this node runs BEFORE the node that consumes the value (chainedNodes). The consuming node must NOT use the plain [%fieldName%] placeholder for the same content.
+- Do NOT create a hidden helper field to hold the value — the node result IS the mechanism.
+- Example output:
+  {"taskName":"Antragstext unescaped","triggerType":"FC_FORM_SUBMIT_BUTTON","triggerParams":{},"nodeType":"CodbiExtendedAccessor","nodeParams":{"fieldName":"tfAntragstext","repetitionMode":"CURRENT"},"chainedNodes":[{"nodeType":"FC_EMAIL","nodeParams":{"to":"Amt@Ansbach.de","from":"Intranet@Ansbach.de","subject":"Ihr Antrag","body":"<p>Antragstext:</p>[%$Antragstext unescaped.RESULT.value%]"}}],"endpointState":"Received","endpointType":"FC_CHANGE_STATE"}
 
 ### CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin)
 Creates a new form record (Vorgang) in another form.

@@ -1436,7 +1436,13 @@ internal object PromptLoader {
             all["formcycle.workflow_nodes.node_types.$n"]
                 ?: all.entries
                     .firstOrNull { (k, _) ->
-                      k.removePrefix("formcycle.workflow_nodes.node_types.").startsWith(n)
+                      // Short-name match (a catalogue heading starts with the node name) OR a
+                      // fully-qualified plugin-class match: a plugin heading is written as
+                      // "<ShortName> (<fully.qualified.ClassName>)", so a requested FQCN normalises
+                      // to the TAIL of the derived key (e.g. the AI emitting
+                      // de.xima.akdb.epay.logic.plugin.node.PaymentInitPlugin must still resolve).
+                      val key = k.removePrefix("formcycle.workflow_nodes.node_types.")
+                      key.startsWith(n) || key.endsWith(n)
                     }
                     ?.value
                 ?: continue
@@ -1456,7 +1462,9 @@ internal object PromptLoader {
             all["formcycle.workflow_nodes.trigger_types.$n"]
                 ?: all.entries
                     .firstOrNull { (k, _) ->
-                      k.removePrefix("formcycle.workflow_nodes.trigger_types.").startsWith(n)
+                      // Short-name OR fully-qualified-class match — see the node lookup above.
+                      val key = k.removePrefix("formcycle.workflow_nodes.trigger_types.")
+                      key.startsWith(n) || key.endsWith(n)
                     }
                     ?.value
                 ?: continue

@@ -60,6 +60,9 @@ class CodBiBayVISAuskunftBehoerdenverzeichnisAction : IPluginServletAction {
     try {
       val url: URL = URI(url).toURL()
       val connection = url.openConnection() as HttpURLConnection
+      // Never let a hanging/blocked endpoint stall the plugin start-up.
+      connection.connectTimeout = 10_000
+      connection.readTimeout = 20_000
 
       connection.setRequestMethod("GET")
       connection.setRequestProperty(
@@ -80,15 +83,13 @@ class CodBiBayVISAuskunftBehoerdenverzeichnisAction : IPluginServletAction {
                   it.readText()
                 }
 
-            val errorMessage =
-                "{\"error\": \"Retrieval from BayVIS API failed. Statuscode: $statusCode, Response: $errorResult\"}"
-
-            errorMessage
+            BayVISAuskunftErrors.describe(
+                "Behoerdenverzeichnis", url.toString(), statusCode, errorResult)
           }
 
       connection.disconnect()
     } catch (e: IOException) {
-      buffer = "{\"error\": \"Error connecting to BayVIS API\"}"
+      buffer = BayVISAuskunftErrors.connectionFailure(url, e)
       statusCode = 500
     }
 
@@ -110,6 +111,13 @@ class CodBiBayVISAuskunftBehoerdenverzeichnisAction : IPluginServletAction {
       hrsTillUpdate = configData.properties.getProperty("BayVIS_UpdateCycle").toInt()
     }
 
+    // NEVER throw here: FC's PluginHelper turns an exception into "plugin invalid". A failed call
+    // is
+    // recorded as a WARNING (server log + FORMCYCLE protocol entry) instead, and the result stays
+    // VALID — an invalid result would make FORMCYCLE refuse to ignite the whole CodBi plugin.
+    BayVISAuskunftStartup.startupCheck("Behoerdenverzeichnis", url, configData.client) {
+      retrieveData().first
+    }
     return null
   }
 
@@ -136,7 +144,9 @@ class CodBiBayVISAuskunftBehoerdenverzeichnisAction : IPluginServletAction {
       url = newURL
     }
 
-    retrieveData()
+    BayVISAuskunftStartup.startupCheck("Behoerdenverzeichnis", url, configData.client) {
+      retrieveData().first
+    }
   }
 
   /**

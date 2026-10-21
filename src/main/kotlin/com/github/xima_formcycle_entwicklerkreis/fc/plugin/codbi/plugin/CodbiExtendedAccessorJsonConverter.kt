@@ -29,16 +29,20 @@ class CodbiExtendedAccessorJsonConverter : IFastJsonConverter {
       delegate.parseJavaArray(json, type)
 
   override fun <T> parseJavaObject(json: JSONObject, type: Type): T {
-    logger.info(
-        "[CodBi][ExtendedAccessor] json -> object type={} jsonName='{}' jsonFieldName='{}' keys={}",
-        type.typeName,
-        json.getString("name"),
-        json.getString("fieldName"),
-        json.keys,
-    )
+    // DEBUG level: this converter is a diagnostic wrapper and runs on EVERY designer page load
+    // (palette prototypes included), so INFO logging here floods the server log.
+    if (logger.isDebugEnabled) {
+      logger.debug(
+          "[CodBi][ExtendedAccessor] json -> object type={} jsonName='{}' jsonFieldName='{}' keys={}",
+          type.typeName,
+          json.getString("name"),
+          json.getString("fieldName"),
+          json.keys,
+      )
+    }
     val result = delegate.parseJavaObject<T>(json, type)
-    if (result is CodbiExtendedAccessorNodeProps) {
-      logger.info(
+    if (result is CodbiExtendedAccessorNodeProps && logger.isDebugEnabled) {
+      logger.debug(
           "[CodBi][ExtendedAccessor] json -> object restored name='{}' fieldName='{}' repetitionMode='{}'",
           result.name,
           result.fieldName,
@@ -49,11 +53,13 @@ class CodbiExtendedAccessorJsonConverter : IFastJsonConverter {
   }
 
   override fun <T> parseJavaObject(json: String, type: Type): T {
-    logger.info(
-        "[CodBi][ExtendedAccessor] json-string -> object type={} length={}",
-        type.typeName,
-        json.length,
-    )
+    if (logger.isDebugEnabled) {
+      logger.debug(
+          "[CodBi][ExtendedAccessor] json-string -> object type={} length={}",
+          type.typeName,
+          json.length,
+      )
+    }
     return delegate.parseJavaObject(json, type)
   }
 
@@ -63,36 +69,30 @@ class CodbiExtendedAccessorJsonConverter : IFastJsonConverter {
 
   override fun toJsonObject(data: Any?): JSONObject {
     val json = delegate.toJsonObject(data)
-    val fieldName = (data as? CodbiExtendedAccessorNodeProps)?.fieldName
-    logger.info(
-        "[CodBi][ExtendedAccessor] object -> json dataName='{}' dataFieldName='{}' jsonName='{}' jsonFieldName='{}' keys={}",
-        (data as? CodbiExtendedAccessorNodeProps)?.name,
-        fieldName,
-        json.getString("name"),
-        json.getString("fieldName"),
-        json.keys,
-    )
-    if (fieldName.isNullOrBlank()) {
-      logger.info(
-          "[CodBi][ExtendedAccessor] WARNING serializing node props with an EMPTY fieldName; stack:",
-          Throwable("empty-fieldName-serialization"),
+    if (logger.isDebugEnabled) {
+      logger.debug(
+          "[CodBi][ExtendedAccessor] object -> json dataName='{}' dataFieldName='{}' jsonName='{}' jsonFieldName='{}' keys={}",
+          (data as? CodbiExtendedAccessorNodeProps)?.name,
+          (data as? CodbiExtendedAccessorNodeProps)?.fieldName,
+          json.getString("name"),
+          json.getString("fieldName"),
+          json.keys,
       )
     }
+    // A blank fieldName is NORMAL here: formcycle serialises a fresh props instance for every
+    // palette prototype, and a just-created node has no element configured yet. Logging a Throwable
+    // for it produced a scary (harmless) stack trace on every designer page load, so this is a
+    // DEBUG note only.
     return json
   }
 
   override fun toJsonString(data: Any?): String {
     val json = delegate.toJsonString(data)
-    val fieldName = (data as? CodbiExtendedAccessorNodeProps)?.fieldName
-    logger.info(
-        "[CodBi][ExtendedAccessor] object -> json-string dataFieldName='{}' length={}",
-        fieldName,
-        json.length,
-    )
-    if (fieldName.isNullOrBlank()) {
-      logger.info(
-          "[CodBi][ExtendedAccessor] WARNING serializing node props string with an EMPTY fieldName; stack:",
-          Throwable("empty-fieldName-json-string"),
+    if (logger.isDebugEnabled) {
+      logger.debug(
+          "[CodBi][ExtendedAccessor] object -> json-string dataFieldName='{}' length={}",
+          (data as? CodbiExtendedAccessorNodeProps)?.fieldName,
+          json.length,
       )
     }
     return json

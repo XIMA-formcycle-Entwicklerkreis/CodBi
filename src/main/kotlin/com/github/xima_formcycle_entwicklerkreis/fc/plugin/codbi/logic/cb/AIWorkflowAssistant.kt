@@ -382,7 +382,8 @@ class AIWorkflowAssistant : IPluginServletAction {
               throw first
             }
           }
-          gson.fromJson(parseable, WorkflowTaskSpec::class.java).also { spec ->
+          val parsedSpec = gson.fromJson(parseable, WorkflowTaskSpec::class.java)
+          normalizeWorkflowSpecs(listOf(parsedSpec)).first().also { spec ->
             if (spec.nodeType == "FC_DOI_INIT") {
               logger.info(
                   "[AIWorkflowAssistant] DOI workflow task spec: nodeType=FC_DOI_INIT, failurePage='{}', all nodeParams keys={}",
@@ -2292,6 +2293,19 @@ class AIWorkflowAssistant : IPluginServletAction {
         else -> ""
       }
 
+  /**
+   * Reads a boolean workflow-node parameter tolerantly. The AI emits JSON booleans in the happy
+   * path but also `"true"`/`"false"` strings or 1/0 numbers; a plain `as? Boolean` silently turns
+   * every one of those into `false`, which is how node options could never be switched on.
+   */
+  private fun workflowParamBoolean(params: Map<String, Any>, key: String): Boolean =
+      when (val v = params[key]) {
+        is Boolean -> v
+        is Number -> v.toInt() != 0
+        is String -> v.trim().lowercase() in setOf("true", "1", "yes", "ja", "on")
+        else -> false
+      }
+
   private fun buildNodeParamsJson(
       spec: WorkflowTaskSpec,
       workflowVersion: Any? = null,
@@ -2407,16 +2421,265 @@ class AIWorkflowAssistant : IPluginServletAction {
               body.isBlank() -> "URL" // POST with no body content → use URL type
               else -> "CUSTOM" // JSON, PLAIN_TEXT, XML → custom body content
             }
-        val asResponsePage = spec.nodeParams["asResponsePage"] as? Boolean ?: false
-        val treat4xxAsNormal = spec.nodeParams["treat4xxAsNormal"] as? Boolean ?: false
-        val treat5xxAsNormal = spec.nodeParams["treat5xxAsNormal"] as? Boolean ?: false
+        val asResponsePage = workflowParamBoolean(spec.nodeParams, "asResponsePage")
+        val treat4xxAsNormal = workflowParamBoolean(spec.nodeParams, "treat4xxAsNormal")
+        val treat5xxAsNormal = workflowParamBoolean(spec.nodeParams, "treat5xxAsNormal")
+        // These two were previously HARD-CODED to `false` here, so the designer's "Allow invalid
+        // certificates" and "Basic authentication" checkboxes could never be ticked no matter what
+        // the AI emitted. The keys mirror FcHttpRequestProps (fc-workflow-processor):
+        // allowInvalidCertificates, useBasicAuth, basicAuthProps{basicAuthLogin, basicAuthPwd}.
+        val allowInvalidCertificates =
+            workflowParamBoolean(spec.nodeParams, "allowInvalidCertificates")
+        val useBasicAuth = workflowParamBoolean(spec.nodeParams, "useBasicAuth")
+        // The AI writes the credentials either FLAT (basicAuthLogin / basicAuthUser / user) or — as
+        // the prompt asks — as the nested object {"basicAuthProps":{"basicAuthLogin":…,
+        // "basicAuthPwd":…}} (the FcHttpRequestProps shape). Only the flat form used to be read, so
+        // the "Basic authentication" checkbox was ticked while the user name field stayed EMPTY.
+        val nestedAuthProps: Map<String, Any> =
+            (spec.nodeParams["basicAuthProps"] as? Map<*, *>)
+                ?.entries
+                ?.mapNotNull { (k, v) ->
+                  val name = k?.toString() ?: return@mapNotNull null
+                  val value = v ?: return@mapNotNull null
+                  name to value
+                }
+                ?.toMap() ?: emptyMap()
+        fun authParam(key: String, vararg aliases: String): String {
+          val fromNested = workflowParamString(nestedAuthProps, key)
+          if (fromNested.isNotBlank()) return fromNested
+          for (name in listOf(key) + aliases) {
+            val flat = workflowParamString(spec.nodeParams, name)
+            if (flat.isNotBlank()) return flat
+          }
+          return ""
+        }
+        val basicAuthLogin =
+            authParam("basicAuthLogin", "basicAuthUser", "user", "username", "userName")
+        val basicAuthPwd = authParam("basicAuthPwd", "basicAuthPassword", "password", "pwd")
+        // Emit basicAuthProps only when basic auth is really wanted — the designer shows the
+        // credentials fields for it, and an empty object would suggest a configured login.
+        val basicAuthPropsJson =
+            if (useBasicAuth || basicAuthLogin.isNotBlank() || basicAuthPwd.isNotBlank()) {
+              ""","useBasicAuth":true,"basicAuthProps":{"basicAuthLogin":${gson.toJson(basicAuthLogin)},"basicAuthPwd":${gson.toJson(basicAuthPwd)}}"""
+            } else {
+              ""
+            }
+        // PROXY — a request routed THROUGH a proxy server is NOT "basic authentication": the node
+        // has its own proxy block (`FcHttpRequestProps.ProxyProps` / `ProxyAuthProps`), while
+        // `useBasicAuth` means "authenticate against the TARGET".
+        // The AI emits the proxy data NESTED — `"proxyProps":{"proxyHost":…,"proxyPort":…,
+        // "useProxyAuth":…,"proxyAuthProps":{"proxyAuthLogin":…,"proxyAuthPwd":…}}`, exactly as the
+        // prompt asks and as the FcHttpRequestProps schema expects. Only FLAT keys used to be read,
+        // so "Use proxy server" was ticked while host, port and the proxy login stayed empty.
+        fun asParamMap(raw: Any?): Map<String, Any> =
+            (raw as? Map<*, *>)
+                ?.entries
+                ?.mapNotNull { (k, v) ->
+                  val name = k?.toString() ?: return@mapNotNull null
+                  val value = v ?: return@mapNotNull null
+                  name to value
+                }
+                ?.toMap() ?: emptyMap()
+        val nestedProxyProps = asParamMap(spec.nodeParams["proxyProps"])
+        val nestedProxyAuthProps = asParamMap(nestedProxyProps["proxyAuthProps"])
+        fun proxyParam(key: String, vararg aliases: String): String {
+          for (name in listOf(key) + aliases) {
+            val nested = workflowParamString(nestedProxyProps, name)
+            if (nested.isNotBlank()) return nested
+            val flat = workflowParamString(spec.nodeParams, name)
+            if (flat.isNotBlank()) return flat
+          }
+          return ""
+        }
+        val useProxy =
+            workflowParamBoolean(spec.nodeParams, "useProxy") || nestedProxyProps.isNotEmpty()
+        val proxyHost = proxyParam("proxyHost", "proxyServer", "host")
+        // The port arrives as a JSON NUMBER or a string — `workflowParamString` only handles
+        // strings
+        // (and lists), so a numeric 8080 would otherwise become an empty string and thus port 0.
+        val proxyPort =
+            (nestedProxyProps["proxyPort"] as? Number)?.toInt()
+                ?: proxyParam("proxyPort", "port").trim().toIntOrNull()
+                ?: (spec.nodeParams["proxyPort"] as? Number)?.toInt()
+                ?: 0
+        val useProxyAuth =
+            workflowParamBoolean(spec.nodeParams, "useProxyAuth") ||
+                workflowParamBoolean(nestedProxyProps, "useProxyAuth")
+        fun proxyAuthParam(key: String, vararg aliases: String): String {
+          for (name in listOf(key) + aliases) {
+            val nested = workflowParamString(nestedProxyAuthProps, name)
+            if (nested.isNotBlank()) return nested
+          }
+          return proxyParam(key, *aliases)
+        }
+        val proxyAuthLogin = proxyAuthParam("proxyAuthLogin", "proxyUser", "proxyUsername")
+        val proxyAuthPwd = proxyAuthParam("proxyAuthPwd", "proxyPassword")
+        val proxyPropsJson =
+            if (useProxy || proxyHost.isNotBlank()) {
+              val port = proxyPort
+              val proxyAuthJson =
+                  if (useProxyAuth || proxyAuthLogin.isNotBlank() || proxyAuthPwd.isNotBlank()) {
+                    ""","useProxyAuth":true,"proxyAuthProps":{"proxyAuthLogin":${gson.toJson(proxyAuthLogin)},"proxyAuthPwd":${gson.toJson(proxyAuthPwd)}}"""
+                  } else {
+                    ""
+                  }
+              ""","useProxy":true,"proxyProps":{"proxyHost":${gson.toJson(proxyHost)},"proxyPort":$port$proxyAuthJson}"""
+            } else {
+              ""
+            }
+        // CONNECT / READ TIMEOUT — each is a `TimeDuration` (FcHttpRequestProps: `connectTimeout`,
+        // `readTimeout`), i.e. {"duration":<long>,"unit":"<ETimeUnit>"} where ETimeUnit is
+        // NANOSECONDS..WEEKS. The amount and the unit are INDEPENDENT fields, so the user's unit is
+        // kept verbatim (never converted). Accepts the nested object or flat "<key>"/"<key>Unit".
+        fun jsonTimeout(key: String): String? {
+          val units =
+              setOf(
+                  "NANOSECONDS",
+                  "MICROSECONDS",
+                  "MILLISECONDS",
+                  "SECONDS",
+                  "MINUTES",
+                  "HOURS",
+                  "DAYS",
+                  "WEEKS")
+          /** Maps a unit word/abbreviation (any case) to its ETimeUnit constant, or null. */
+          val normalizeUnit: (String?) -> String? = { raw ->
+            val compact =
+                (raw ?: "").trim().uppercase().replace("_", "").replace("-", "").replace(" ", "")
+            when {
+              compact.isBlank() -> null
+              compact in units -> compact
+              // Short forms / singulars. Order matters: "MS" must not be read as minutes.
+              compact == "NS" -> "NANOSECONDS"
+              compact == "US" -> "MICROSECONDS"
+              compact == "MS" || compact == "MILLISEC" || compact == "MILLISECS" -> "MILLISECONDS"
+              compact == "S" || compact == "SEC" || compact == "SECS" -> "SECONDS"
+              compact == "M" || compact == "MIN" || compact == "MINS" -> "MINUTES"
+              compact == "H" || compact == "HR" || compact == "HRS" -> "HOURS"
+              compact == "D" -> "DAYS"
+              compact == "W" -> "WEEKS"
+              compact == "NANOSECOND" -> "NANOSECONDS"
+              compact == "MICROSECOND" -> "MICROSECONDS"
+              compact == "MILLISECOND" -> "MILLISECONDS"
+              compact == "SECOND" -> "SECONDS"
+              compact == "MINUTE" -> "MINUTES"
+              compact == "HOUR" -> "HOURS"
+              compact == "DAY" -> "DAYS"
+              compact == "WEEK" -> "WEEKS"
+              else -> null
+            }
+          }
+          val nested = spec.nodeParams[key] as? Map<*, *>
+          val rawDuration = nested?.get("duration") ?: nested?.get("value") ?: spec.nodeParams[key]
+          val rawUnit =
+              nested?.get("unit")
+                  ?: nested?.get("timeUnit")
+                  ?: spec.nodeParams["${key}Unit"]
+                  ?: spec.nodeParams["${key}TimeUnit"]
+          // The duration may be a number, a numeric string, or a combined string ("100 MINUTES").
+          var duration =
+              when (val d = rawDuration) {
+                is Number -> d.toLong()
+                is String -> d.trim().toLongOrNull()
+                else -> null
+              }
+          var unit = normalizeUnit(rawUnit as? String)
+          if (duration == null && rawDuration is String) {
+            val match = Regex("(\\d+)").find(rawDuration)
+            duration = match?.groupValues?.get(1)?.toLongOrNull()
+            if (unit == null) {
+              unit = normalizeUnit(rawDuration.replace(Regex("\\d"), " "))
+            }
+          }
+          logger.info(
+              "[AIWorkflowAssistant] FC_HTTP_REQUEST timeout '{}': raw='{}' ({}), rawUnit='{}' -> duration={}, unit={}",
+              key,
+              rawDuration,
+              rawDuration?.javaClass?.simpleName ?: "null",
+              rawUnit,
+              duration,
+              unit)
+          if (duration == null || unit == null) {
+            logger.warn(
+                "[AIWorkflowAssistant] FC_HTTP_REQUEST timeout '{}' NOT emitted — duration='{}' unit='{}' (unit must be one of {} or an abbreviation like min/s/ms)",
+                key,
+                duration,
+                rawUnit,
+                units)
+            return null
+          }
+          // FORMCYCLE constrains both timeouts in its OWN designer. Verified in the jar:
+          // FcHttpRequestProps declares @MinTimeDuration(value = 1, unit = SECONDS) plus
+          // @MaxTimeDuration(value = 1, unit = MINUTES) on `connectTimeout` and
+          // @MaxTimeDuration(value = 30, unit = MINUTES) on `readTimeout`, and httpRequest.xhtml
+          // passes exactly those bounds to <xi:timeDuration>. Its unit dropdown only offers
+          // MILLISECONDS, SECONDS and MINUTES. A value outside that window is rejected by the
+          // designer, so the node then LOOKS as if the timeout had never been set at all.
+          val millisPerUnit =
+              mapOf(
+                  "NANOSECONDS" to 1.0 / 1_000_000.0,
+                  "MICROSECONDS" to 1.0 / 1_000.0,
+                  "MILLISECONDS" to 1.0,
+                  "SECONDS" to 1_000.0,
+                  "MINUTES" to 60_000.0,
+                  "HOURS" to 3_600_000.0,
+                  "DAYS" to 86_400_000.0,
+                  "WEEKS" to 604_800_000.0)
+          val minMillis = 1_000L
+          val maxMillis = if (key == "connectTimeout") 60_000L else 1_800_000L
+          val maxLabel = if (key == "connectTimeout") "1 min" else "30 min"
+          var millis = Math.rint(duration.toDouble() * (millisPerUnit[unit] ?: 1.0)).toLong()
+          if (millis < minMillis || millis > maxMillis) {
+            val clamped = millis.coerceIn(minMillis, maxMillis)
+            logger.warn(
+                "[AIWorkflowAssistant] FC_HTTP_REQUEST timeout '{}': {} {} is outside FORMCYCLE's allowed range (1 s .. {}) — clamped to {} ms",
+                key,
+                duration,
+                unit,
+                maxLabel,
+                clamped)
+            millis = clamped
+          }
+          // Re-express the value in a unit the designer's dropdown actually offers.
+          val (emittedDuration, emittedUnit) =
+              when {
+                unit == "MINUTES" && millis % 60_000L == 0L -> millis / 60_000L to "MINUTES"
+                unit == "SECONDS" && millis % 1_000L == 0L -> millis / 1_000L to "SECONDS"
+                unit == "MILLISECONDS" -> millis to "MILLISECONDS"
+                millis % 1_000L == 0L -> millis / 1_000L to "SECONDS"
+                else -> millis to "MILLISECONDS"
+              }
+          if (emittedDuration != duration || emittedUnit != unit) {
+            logger.info(
+                "[AIWorkflowAssistant] FC_HTTP_REQUEST timeout '{}' adjusted for the designer: {} {} -> {} {}",
+                key,
+                duration,
+                unit,
+                emittedDuration,
+                emittedUnit)
+          }
+          return """{"duration":$emittedDuration,"unit":"$emittedUnit"}"""
+        }
+        val timeoutJson = buildString {
+          jsonTimeout("connectTimeout")?.let { append(""","connectTimeout":$it""") }
+          jsonTimeout("readTimeout")?.let { append(""","readTimeout":$it""") }
+        }
+        if (timeoutJson.isNotBlank()) {
+          logger.info("[AIWorkflowAssistant] FC_HTTP_REQUEST timeouts emitted: {}", timeoutJson)
+        } else {
+          logger.info(
+              "[AIWorkflowAssistant] FC_HTTP_REQUEST: no timeouts emitted (nodeParams keys={})",
+              spec.nodeParams.keys)
+        }
+        val httpFlagsJson =
+            """"allowInvalidCertificates":$allowInvalidCertificates,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal$basicAuthPropsJson$proxyPropsJson$timeoutJson"""
         val nodeParamsJson =
             if (httpRequestType == "FORM_DATA") {
-              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,$httpFlagsJson}"""
             } else if (httpRequestType == "URL") {
-              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,$httpFlagsJson}"""
             } else {
-              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,$httpFlagsJson}"""
             }
         logger.info(
             "[AIWorkflowAssistant] buildNodeParams FC_HTTP_REQUEST: url='{}', httpVerb='{}', httpRequestType='{}', params={}",
@@ -2635,6 +2898,26 @@ class AIWorkflowAssistant : IPluginServletAction {
         val exportName = spec.nodeParams["exportName"] as? String ?: "filled.pdf"
         val flatten = spec.nodeParams["flatten"] as? Boolean ?: true
         val usedFont = spec.nodeParams["usedFont"] as? String ?: ""
+        // `pdfFileProvision` is FileProvision{attachToFormRecord, attachmentAccessibleToEndUser} —
+        // "dem Vorgang anhängen" is THAT flag, not an extra node. Read the nested object (the shape
+        // the prompt documents) first, then the flat keys; defaults keep the previous output.
+        val provisionMap =
+            (spec.nodeParams["pdfFileProvision"] as? Map<*, *>)
+                ?: (spec.nodeParams["fileProvision"] as? Map<*, *>)
+        fun provisionFlag(key: String, fallback: Boolean): Boolean =
+            when (val raw = provisionMap?.get(key)) {
+              is Boolean -> raw
+              is Number -> raw.toInt() != 0
+              is String -> raw.trim().equals("true", true) || raw.trim().equals("1", true)
+              else ->
+                  when (val flat = spec.nodeParams[key]) {
+                    is Boolean -> flat
+                    is String -> flat.trim().equals("true", true) || flat.trim().equals("1", true)
+                    else -> fallback
+                  }
+            }
+        val attachToRecord = provisionFlag("attachToFormRecord", false)
+        val accessibleToEndUser = provisionFlag("attachmentAccessibleToEndUser", true)
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
         val singleFileJson =
@@ -2652,7 +2935,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             }
         val usedFontJson =
             if (usedFont.isNotBlank()) ""","usedFont":${gson.toJson(usedFont)}""" else ""
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)},"flatten":$flatten$usedFontJson$singleFileJson,"pdfFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)},"flatten":$flatten$usedFontJson$singleFileJson,"pdfFileProvision":{"attachToFormRecord":$attachToRecord,"attachmentAccessibleToEndUser":$accessibleToEndUser}}"""
       }
       "FC_FILL_WORD" -> {
         val exportName = spec.nodeParams["exportName"] as? String ?: "filled.docx"
@@ -3276,6 +3559,39 @@ class AIWorkflowAssistant : IPluginServletAction {
         } else {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
         }
+      }
+      WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
+      WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS -> {
+        // CodBi Extended Accessor — reads exactly ONE form element and exposes its raw/structured
+        // value as a node RESULT (SYSTEM placeholders, no HTML escaping). CUSTOM_PARAMS
+        // deserializes into CodbiExtendedAccessorNodeProps, so the parameter names are its Kotlin
+        // property names (camelCase).
+        fun accessorStr(key: String, fallback: String): String =
+            gson.toJson((spec.nodeParams[key] as? String)?.takeIf { it.isNotBlank() } ?: fallback)
+        fun accessorFlag(key: String, fallback: Boolean): Boolean =
+            when (val v = spec.nodeParams[key]) {
+              is Boolean -> v
+              is String -> v.equals("true", ignoreCase = true) || v.trim() == "1"
+              else -> fallback
+            }
+        val fieldName = (spec.nodeParams["fieldName"] as? String)?.trim().orEmpty()
+        if (fieldName.isBlank()) {
+          // Without a configured element the node soft-errors at runtime (FIELD_REQUIRED).
+          logger.warn(
+              "[AIWorkflowAssistant] buildNodeParams CodbiExtendedAccessor: node='{}' has no fieldName",
+              nodeName)
+        }
+        val mode =
+            (spec.nodeParams["repetitionMode"] as? String)?.trim()?.uppercase()?.takeIf {
+              it == "CURRENT" || it == "INDEX" || it == "ALL"
+            } ?: "CURRENT"
+        val index =
+            (when (val v = spec.nodeParams["repetitionIndex"]) {
+              is Number -> v.toInt()
+              is String -> v.trim().toIntOrNull()
+              else -> null
+            }) ?: -1
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fieldName":${gson.toJson(fieldName)},"repetitionMode":"$mode","repetitionIndex":$index,"joinSeparator":${accessorStr("joinSeparator", ",")},"includeMeta":${accessorFlag("includeMeta", false)},"sanitizeHtml":${accessorFlag("sanitizeHtml", true)},"htmlToText":${accessorFlag("htmlToText", false)},"allowImages":${accessorFlag("allowImages", false)},"allowLinks":${accessorFlag("allowLinks", true)},"allowTables":${accessorFlag("allowTables", true)},"allowStyles":${accessorFlag("allowStyles", true)}}"""
       }
       else -> """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
     }
@@ -4436,6 +4752,26 @@ class AIWorkflowAssistant : IPluginServletAction {
   // endregion JSON Utilities
 
   // region Data Classes
+
+  /**
+   * Canonicalises the node types of a parsed spec (see [WorkflowSpecNormalizer]): a plugin node is
+   * REGISTERED under its handler name (`CodbiExtendedAccessor`), not under the handler class the
+   * model tends to emit — formcycle cannot resolve the class and reports "no handler was registered
+   * for that node".
+   *
+   * Result placeholders are deliberately NOT rewritten here: unlike `AICodBiAssistant` this applier
+   * keeps the AI's taskName verbatim, so there is no rename to follow.
+   */
+  private fun normalizeWorkflowSpecs(specs: List<WorkflowTaskSpec>): List<WorkflowTaskSpec> {
+    if (specs.isEmpty()) return specs
+    @Suppress("UNCHECKED_CAST")
+    val maps = specs.map { gson.fromJson(gson.toJson(it), Map::class.java) as Map<*, *> }
+    return maps.map { map ->
+      gson.fromJson(
+          gson.toJson(WorkflowSpecNormalizer.normalizeNode(map, emptyMap())),
+          WorkflowTaskSpec::class.java)
+    }
+  }
 
   /** AI-generated specification for a workflow task. */
   private data class WorkflowTaskSpec(

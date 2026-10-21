@@ -97,7 +97,12 @@ internal object FormcycleElementFilter {
     val n = normalize(id)
     if (n in forbidden()) return false
     val allowed = allowedForRequest.get()?.nodes ?: return true
-    return n in allowed
+    // Deep match in BOTH directions: a plugin node is listed under a compact id that EMBEDS its
+    // class name (`codbiextendedaccessor_com_github_..._codbiextendedaccessornodeplugin`), while
+    // the
+    // AI may name either the short display name or the fully-qualified class. Without this, such a
+    // request would be dropped as "not installed" even though the very same node is allowed.
+    return n in allowed || allowed.any { it.endsWith(n) || n.endsWith(it) }
   }
 
   /**
@@ -110,7 +115,8 @@ internal object FormcycleElementFilter {
     val n = normalize(id)
     if (n in forbidden()) return false
     val allowed = allowedForRequest.get()?.triggers ?: return true
-    return n in allowed
+    // Deep match (both directions) — see isNodeAllowed: plugin ids embed their class name.
+    return n in allowed || allowed.any { it.endsWith(n) || n.endsWith(it) }
   }
 
   /**
@@ -279,7 +285,12 @@ internal object FormcycleElementFilter {
                   "payment failure recording",
                   "epaybl",
                   "akdb e-payment",
-                  "akdb payment"))
+                  "akdb payment"),
+          // CodBi's own workflow node: its prose block lives in the workflow task instruction
+          // (rich-text/unescaped value) and in the node catalogues. When the node is forbidden or
+          // not in the allowed set, the assistant must not even learn about it.
+          "com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin" to
+              listOf("extended accessor", "erweiterter zugriff"))
 
   /**
    * Generic markdown section scrubber: keeps the preamble (everything before the first `##`/`###`

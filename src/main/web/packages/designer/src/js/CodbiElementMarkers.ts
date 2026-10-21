@@ -1927,6 +1927,10 @@ async function renderServerPreview(
     // instead of reusing an already loaded/cached document for the same URL.
     const separator = url.includes("?") ? "&" : "?";
     const fullUrl = `${url}${separator}_cbref=${Date.now()}`;
+    // A previous load may have been collapsed because the element could not be located — restore the
+    // iframe before (re)pointing it at the preview so a later successful clip is actually visible.
+    target.style.visibility = "";
+    target.style.height = "360px";
     target.src = fullUrl;
     wrapper.classList.add("codbi-func-preview--rendered");
     // Mark applied only once the iframe is pointed at the preview (a re-enable with the same target
@@ -1944,20 +1948,33 @@ async function renderServerPreview(
 }
 
 /**
+ * Maximum number of polling attempts while waiting for the element to appear in the preview
+ * document (250 ms each ≈ 15 s). Slow form renders (large forms, many functionalities) used to give
+ * up after ~4 s and then rendered the WHOLE form — see {@link collapseUnresolvedPreview}.
+ */
+const PREVIEW_CLIP_MAX_ATTEMPTS = 60;
+
+/**
  * Keeps the preview fitted to the element: retries until the element exists, then re-fits a few more
  * times AFTER success, because a functionality (e.g. `HTML.Input.TinyMCE`) mounts its editor
  * asynchronously AFTER the form rendered and thereby changes the element's height (and the preview
  * chrome settles late).
  */
-function scheduleClip(frame: HTMLIFrameElement, elementRef: string, attempts = 0): void {
+function scheduleClip(frame: HTMLIFrameElement, elementRef: string, attempts = 0, fits = 0): void {
   const ok = clipPreviewToElement(frame, elementRef);
-  if (attempts >= 16) {
-    if (!ok) {
-      sizePreviewToFullDocument(frame);
+  if (ok) {
+    // Re-fit after success so late-mounting editors (TinyMCE) and settling preview chrome are
+    // reflected in the iframe height.
+    if (fits < 16) {
+      window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1, fits + 1), 500);
     }
     return;
   }
-  window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1), ok ? 500 : 250);
+  if (attempts >= PREVIEW_CLIP_MAX_ATTEMPTS) {
+    collapseUnresolvedPreview(frame);
+    return;
+  }
+  window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1, fits), 250);
 }
 
 /** A form control — never a valid "item wrapper" (its siblings include the functionality's own UI). */
@@ -2013,27 +2030,62 @@ function hidePreviewChrome(doc: Document): void {
   }
 }
 
+/** Rich-text editor containers mounted by the `HTML.Input.TinyMCE` functionality. */
+const PREVIEW_EDITOR_SELECTOR = ".tox-tinymce, .mce-tinymce, .tox-editor-container";
+
+/**
+ * The rich-text editor that BELONGS to [el] — never the editor of a DIFFERENT form element.
+ *
+ * TinyMCE inserts its container as a sibling of the tagged `<textarea>` (inside the same field
+ * wrapper), so a document-wide `querySelector` found the editor of ANY TinyMCE element on the form.
+ * `resolveItemWrapper` then climbed to the OUTERMOST ancestor containing that unrelated editor —
+ * i.e. the page/form wrapper — and the preview rendered the ENTIRE form instead of the single
+ * element. This only showed up once the TinyMCE editor mounted asynchronously after the form
+ * rendered, which is why a persistent preview switch sometimes "rendered as the whole form".
+ *
+ * The lookup is therefore scoped: the editor must be a DESCENDANT of [el] (when [el] is the item
+ * wrapper) or a DIRECT child of [el]'s parent — the field's own `.xm-item-div` wrapper, which holds
+ * both the tagged control and the editor TinyMCE inserts next to it.
+ */
+function findOwnEditor(el: HTMLElement): HTMLElement | null {
+  const inside = el.querySelector<HTMLElement>(PREVIEW_EDITOR_SELECTOR);
+  if (inside) {
+    return inside;
+  }
+  const parent = el.parentElement;
+  if (!parent) {
+    return null;
+  }
+  for (const sibling of Array.from(parent.children)) {
+    if (sibling === el) {
+      continue;
+    }
+    if ((sibling as HTMLElement).matches(PREVIEW_EDITOR_SELECTOR)) {
+      return sibling as HTMLElement;
+    }
+  }
+  return null;
+}
+
 /**
  * Resolves the single-element FORMCYCLE "item wrapper" for [el]: the node that represents ONE form
  * element (as opposed to the whole form).
  *
- * - If a functionality rendered an editor (TinyMCE → `.tox-tinymce`), the wrapper is the closest
- *   ancestor that CONTAINS the editor — never the bare `<textarea>`: the editor is a sibling of the
- *   textarea, so treating the textarea as the wrapper hid the editor and collapsed the height to 0.
+ * - If the element has its OWN rich-text editor (TinyMCE → `.tox-tinymce`), the wrapper is the
+ *   CLOSEST ancestor that contains both the tagged node and that editor — never the bare
+ *   `<textarea>` (the editor is a sibling, so treating the textarea as the wrapper hid the editor and
+ *   collapsed the height to 0) and never a higher ancestor (that would include sibling elements and
+ *   render more than the one element).
  * - Otherwise the nearest ancestor/self with an item class (`.XItem` / `xm-item…`), skipping form
  *   controls (the field itself carries `XItem XTextArea`, which would otherwise win).
  */
 function resolveItemWrapper(el: HTMLElement, owner: Document): HTMLElement | null {
-  const editor = owner.querySelector<HTMLElement>(".tox-tinymce, .mce-tinymce, .tox-editor-container");
+  const editor = findOwnEditor(el);
   if (editor) {
-    let found: HTMLElement | null = null;
     for (let n: HTMLElement | null = el; n && n !== owner.body; n = n.parentElement) {
-      if (n.contains(editor)) {
-        found = n; // keep climbing → the highest ancestor that still contains the editor
+      if (n.contains(editor) && !isFormControl(n)) {
+        return n;
       }
-    }
-    if (found && !isFormControl(found)) {
-      return found;
     }
   }
   for (let n: HTMLElement | null = el; n && n !== owner.body; n = n.parentElement) {
@@ -2194,8 +2246,9 @@ function fitPreviewHeight(entry: IPreviewFit): number {
     }
   }
   // Include the rendered editor (TinyMCE) height: the tagged field often collapses to 0 once the
-  // editor takes over, so the item's own rect alone would be too small.
-  const editor = owner.querySelector<HTMLElement>(".tox-tinymce, .mce-tinymce, .tox-editor-container");
+  // editor takes over, so the item's own rect alone would be too small. Only THIS element's own
+  // editor counts — another element's editor must not inflate (or reveal) the preview.
+  const editor = findOwnEditor(item);
   if (editor) {
     const editorRect = editor.getBoundingClientRect();
     if (editorRect.height > 0) {
@@ -2271,11 +2324,13 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
       }
     }
     // Hide the element's SIBLINGS at every level up to the top-level block, and every other top-level
-    // node — but NEVER a node that contains the functionality's editor (its UI is a sibling of the
-    // tagged field) and never a pop-up. This is done unconditionally (not only when the wrapper was
-    // recognised), so re-enabling the preview reliably isolates the element even if the editor has not
-    // mounted yet (in which case the not-yet-created editor is simply a new node, never hidden).
-    const editor = owner.querySelector<HTMLElement>(".tox-tinymce, .mce-tinymce, .tox-editor-container");
+    // node — but NEVER a node that contains the element's OWN functionality editor (its UI is a
+    // sibling of the tagged field) and never a pop-up. This is done unconditionally (not only when
+    // the wrapper was recognised), so re-enabling the preview reliably isolates the element even if
+    // the editor has not mounted yet (in which case the not-yet-created editor is simply a new node,
+    // never hidden). Never use a document-wide editor lookup here: it would keep nodes of OTHER
+    // elements (which contain THEIR editor) visible, i.e. render the whole form.
+    const editor = findOwnEditor(el);
     const containsEditor = (node: Element): boolean => editor !== null && (node === editor || node.contains(editor));
     const shouldHide = (sibling: Element, keep: Element): boolean =>
       sibling !== keep && !isPreviewPopup(sibling) && !containsEditor(sibling);
@@ -2469,12 +2524,20 @@ function findPreviewElement(doc: Document, id: string): HTMLElement | null {
   return null;
 }
 
-/** Fallback sizing: show the whole preview document (clamped) when the element cannot be located. */
-function sizePreviewToFullDocument(frame: HTMLIFrameElement): void {
+/**
+ * Fallback when the preview document loaded but the element could not be located. The iframe loads a
+ * WHOLE form instance, so sizing it to the document (the previous behaviour) displayed the ENTIRE
+ * form inside a widget whose preview switch promises a single element. Collapse the iframe instead:
+ * the element cell keeps its preview switch, but no misleading whole-form content is shown. A later
+ * re-apply restores the iframe (see `renderServerPreview`).
+ */
+function collapseUnresolvedPreview(frame: HTMLIFrameElement): void {
   try {
-    const full = frame.contentDocument?.documentElement?.scrollHeight ?? 0;
-    if (full > 0) {
-      frame.style.height = `${Math.min(full, 1600)}px`;
+    frame.style.visibility = "hidden";
+    frame.style.height = "0";
+    const doc = frame.contentDocument;
+    if (doc?.documentElement) {
+      doc.documentElement.style.visibility = "hidden";
     }
   } catch {
     /* ignore */

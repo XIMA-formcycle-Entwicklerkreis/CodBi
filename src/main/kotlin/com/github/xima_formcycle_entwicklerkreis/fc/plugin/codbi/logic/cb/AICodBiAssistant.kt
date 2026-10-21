@@ -16,6 +16,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorFormAccess
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
@@ -79,6 +80,17 @@ class AICodBiAssistant : IPluginServletAction {
    * the JSON round-trip unchanged and every consumer here parses JSON.
    */
   private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+
+  /**
+   * Notes about HTTP-node timeouts that had to be CLAMPED to the window FORMCYCLE's own node model
+   * allows. `FcHttpRequestProps.connectTimeout` is annotated `@MaxTimeDuration(1, MINUTES)` and
+   * `readTimeout` `@MaxTimeDuration(30, MINUTES)`, and these constraints are enforced by FC's
+   * `WorkflowValidator` (Bean Validation) — a larger value makes the node invalid and the
+   * designer's `<xi:timeDuration>` spinner can not represent it either. The clamp itself is logged,
+   * but the user must also SEE why the node differs from the prompt, so the notes are appended to
+   * the workflow message of the run (collected per thread, cleared when a run starts).
+   */
+  private val timeoutClampNotes = ThreadLocal.withInitial { mutableListOf<String>() }
 
   /**
    * One AI inference ("trip") of a run: its phase label, the provider-reported token usage, and the
@@ -443,6 +455,7 @@ class AICodBiAssistant : IPluginServletAction {
           "Log" -> handleLog(params)
           "SensitiveCheck" -> handleSensitiveCheck(params)
           "ApplyLogEntry" -> handleApplyLogEntry(params)
+          "TouchWorkflow" -> handleTouchWorkflow(params)
           else -> jsonResponse("""{"error":"Unknown action"}""")
         }
       }
@@ -469,6 +482,29 @@ class AICodBiAssistant : IPluginServletAction {
       }
     } catch (_: Exception) {
       raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }
+  }
+
+  /**
+   * Marks the given WorkflowVersion as workflow-invalid so FORMCYCLE revalidates its cached
+   * workflow model on the next designer load. Called with `X-Action: TouchWorkflow` and request
+   * parameter `workflowVersionId`, immediately before the assistant reloads the designer after a
+   * workflow change — this re-asserts the flag AFTER any form publish that might have cleared it,
+   * so the reloaded page cannot keep showing the previous workflow.
+   */
+  private fun handleTouchWorkflow(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val workflowVersionId =
+        params.requestParameters["workflowVersionId"]?.firstOrNull()?.trim()?.toLongOrNull()
+            ?: return jsonResponse("""{"error":"Missing or invalid workflowVersionId"}""")
+    return try {
+      touchWorkflowVersion(getUserContext(params), workflowVersionId)
+      jsonResponse("""{"status":"ok"}""")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] TouchWorkflow failed for WorkflowVersion {}: {}",
+          workflowVersionId,
+          e.message)
+      jsonResponse("""{"error":${gson.toJson(e.message ?: "TouchWorkflow failed")}}""")
     }
   }
 
@@ -535,24 +571,33 @@ class AICodBiAssistant : IPluginServletAction {
         if (id.isBlank()) continue
         if (key.contains(".trigger_types.")) {
           val o = JsonObject()
+          val displayName = r.displayName?.takeIf { it.isNotBlank() }
           o.addProperty("id", id)
-          o.addProperty("name", r.displayName?.takeIf { it.isNotBlank() } ?: prettifyElementId(id))
+          o.addProperty("name", displayName ?: prettifyElementId(id))
           // Built-in FC_* triggers are always installed; plugin triggers are available only when
-          // positively detected (fail-closed when the registry is unavailable).
+          // positively detected (fail-closed when the registry is unavailable). A plugin catalogue
+          // heading is "Name (fully.qualified.Handler)" — the registry reports the SHORT name, so
+          // that form is tested as well.
           o.addProperty(
               "available",
               InstalledFormcycleElements.isCoreWorkflowType(id) ||
-                  isInstalled(id, snapshot.triggers))
+                  isInstalled(id, snapshot.triggers) ||
+                  isInstalledCatalogueName(displayName, snapshot.triggers))
           triggers.add(o)
         } else if (key.contains(".node_types.")) {
           val o = JsonObject()
+          val displayName = r.displayName?.takeIf { it.isNotBlank() }
           o.addProperty("id", id)
-          o.addProperty("name", r.displayName?.takeIf { it.isNotBlank() } ?: prettifyElementId(id))
+          o.addProperty("name", displayName ?: prettifyElementId(id))
           // Built-in FC_* nodes are always installed; plugin nodes are available only when
-          // positively detected (fail-closed when the registry is unavailable).
+          // positively detected (fail-closed when the registry is unavailable). The compact id
+          // embeds "Name (fully.qualified.Handler)", while the registry reports the handler's SHORT
+          // name (e.g. CodbiExtendedAccessor) — so both spellings are tested.
           o.addProperty(
               "available",
-              InstalledFormcycleElements.isCoreWorkflowType(id) || isInstalled(id, snapshot.nodes))
+              InstalledFormcycleElements.isCoreWorkflowType(id) ||
+                  isInstalled(id, snapshot.nodes) ||
+                  isInstalledCatalogueName(displayName, snapshot.nodes))
           nodes.add(o)
         }
       }
@@ -589,6 +634,19 @@ class AICodBiAssistant : IPluginServletAction {
    * compact key. When the installed set is empty (detection unavailable) every element is treated
    * as installed instead of wrongly marking everything uninstalled.
    */
+  /**
+   * Tests the SHORT name of a catalogue heading ("CodbiExtendedAccessor
+   * (com.github…CodbiExtendedAccessorNodePlugin)") against the detected node/trigger types. The
+   * registry reports a plugin handler by its registered short name, which the compact id does not
+   * contain on its own — without this the node would be marked "not installed" and (with the
+   * installed-only switch on) filtered out of the prompt entirely.
+   */
+  private fun isInstalledCatalogueName(displayName: String?, installed: Set<String>): Boolean {
+    val shortName = displayName?.substringBefore('(')?.trim().orEmpty()
+    if (shortName.isBlank() || installed.isEmpty()) return false
+    return isInstalled(shortName, installed)
+  }
+
   private fun isInstalled(id: String, installed: Set<String>): Boolean {
     // Fail-closed: an element is only "available" when positively detected as installed. When the
     // installed set is empty (detection unavailable) nothing is considered installed, so the switch
@@ -2768,6 +2826,8 @@ class AICodBiAssistant : IPluginServletAction {
           workflowVersionIdStr.toLongOrNull()
               ?: return jsonResponse("""{"error":"Invalid workflowVersionId (must be a number)"}""")
 
+      // Notes about timeouts this run had to clamp to FORMCYCLE's limits (see jsonTimeout).
+      timeoutClampNotes.get().clear()
       val workflowMessage =
           try {
             val (message, nodes, workflowTokenUsage) =
@@ -2796,7 +2856,12 @@ class AICodBiAssistant : IPluginServletAction {
             return jsonResponse(
                 """{"error":${gson.toJson("Workflow creation failed: ${e.message}")}}""")
           }
-      result.append(""","workflowMessage":${gson.toJson(workflowMessage)}""")
+      val timeoutNotes = timeoutClampNotes.get().toList()
+      timeoutClampNotes.get().clear()
+      val workflowMessageWithNotes =
+          if (timeoutNotes.isEmpty()) workflowMessage
+          else workflowMessage + " " + timeoutNotes.joinToString(" ")
+      result.append(""","workflowMessage":${gson.toJson(workflowMessageWithNotes)}""")
     }
 
     // A workflow triggered by the form's submit button (FC_FORM_SUBMIT_BUTTON) is only reachable
@@ -3962,6 +4027,15 @@ class AICodBiAssistant : IPluginServletAction {
       foreignFormList: String? = null,
       foreignFormElements: String? = null
   ): Triple<String, String?, TokenUsage> {
+    // PASSWORD SECURITY (highest priority, deterministic — see runWorkflowCreation): a password
+    // VALUE in the prompt is never processed, in ANY pass. Checking here as well means a combined
+    // "form + workflow" request is refused BEFORE the form is modified (the workflow step alone
+    // would only refuse after the form had already been changed and published).
+    if (containsPasswordValue(prompt)) {
+      logger.warn(
+          "[AICodBiAssistant] Form run refused: the prompt contains a password VALUE (nothing is built)")
+      throw Exception("AI could not modify the form: ${passwordSecurityNotice(prompt)}")
+    }
     // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
     var tokensIn = 0
@@ -12285,6 +12359,17 @@ class AICodBiAssistant : IPluginServletAction {
       changeHistoryContext: String? = null
   ): Triple<String, JsonArray, TokenUsage> {
     val userContext = getUserContext(params)
+    // PASSWORD SECURITY (highest priority, deterministic): the prompts forbid processing a password
+    // VALUE, but a model does not enforce that reliably (observed: a basic-auth password typed by
+    // the
+    // user was built into the HTTP node). Refuse the run BEFORE any inference and answer with the
+    // canonical notice instead of a workflow — the password has already reached the AI, so the user
+    // must be told to remove it and change it.
+    if (containsPasswordValue(prompt)) {
+      logger.warn(
+          "[AICodBiAssistant] Workflow run refused: the prompt contains a password VALUE (nothing is built)")
+      throw Exception("AI could not create the workflow: ${passwordSecurityNotice(prompt)}")
+    }
     var tokensIn = 0
     var tokensOut = 0
     val completionPagesJson = fetchCompletionPages(userContext, workflowVersionId)
@@ -12295,6 +12380,12 @@ class AICodBiAssistant : IPluginServletAction {
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: htmlTemplates={}",
         htmlTemplatesJson ?: "null (no templates found or query failed)")
+    // PDF templates = the .pdf files of the form's file resources. FC_FILL_PDF/FC_FILL_WORD must
+    // name one of these EXACTLY; list them so the model neither asks nor invents a name.
+    val pdfTemplatesJson = fetchPdfResources(userContext, workflowVersionId)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: pdfTemplates={}",
+        pdfTemplatesJson ?: "null (no PDF files in this form)")
     // DEBUG: Log custom_parameters of existing FC_SHOW_TEMPLATE nodes to identify the correct JSON
     // format
     try {
@@ -12508,6 +12599,17 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: existingWorkflowStructure={} chars",
         existingWorkflowStructure?.length ?: 0)
+    // One line that makes the emptiness EXPLICIT: the OUTPUT CONTRACT tells the model that an
+    // absent node list means "the workflow is empty — build NEW lanes", so a future log must show
+    // at a glance whether that was the case or whether only the lookup returned nothing (the two
+    // look identical in the aggregated system-prompt line above).
+    if (existingWorkflowNodes.isNullOrBlank() || existingWorkflowStructure.isNullOrBlank()) {
+      logger.warn(
+          "[AICodBiAssistant] runWorkflowCreation: NO existing workflow context for version {} — nodes={}, structure={} chars. The AI is instructed to CREATE new lane(s) (no replace/remove possible); if nodes DO exist in the designer, the version-scoped lookup (WorkflowNode→task→process→version) is returning nothing",
+          workflowVersionId,
+          if (existingWorkflowNodes.isNullOrBlank()) "NONE" else "present",
+          existingWorkflowStructure?.length ?: 0)
+    }
     // STAGE 2 (two-tier split): when the full existing-structure block exceeds the
     // AI_Workflow_ExistingStructureCap, the job-passes below do NOT ship the whole block every
     // time.
@@ -12588,7 +12690,8 @@ class AICodBiAssistant : IPluginServletAction {
             formVariables,
             currentExistingStructure,
             existingStructureBounded = currentStructureBounded,
-            userGroups = userGroupsJson)
+            userGroups = userGroupsJson,
+            pdfTemplates = pdfTemplatesJson)
 
     var messagesJson = buildString {
       append("[")
@@ -12659,7 +12762,8 @@ class AICodBiAssistant : IPluginServletAction {
               currentExistingStructure,
               existingStructureBounded = currentStructureBounded,
               existingStructureDemandedIds = requestedInstanceIds.toSet(),
-              userGroups = userGroupsJson)
+              userGroups = userGroupsJson,
+              pdfTemplates = pdfTemplatesJson)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -12777,7 +12881,8 @@ class AICodBiAssistant : IPluginServletAction {
                 currentExistingStructure,
                 existingStructureBounded = currentStructureBounded,
                 existingStructureDemandedIds = requestedInstanceIds.toSet(),
-                userGroups = userGroupsJson)
+                userGroups = userGroupsJson,
+                pdfTemplates = pdfTemplatesJson)
         messagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -12906,8 +13011,11 @@ class AICodBiAssistant : IPluginServletAction {
                 }
                 else -> emptyList()
               }
-          logger.info("[AICodBiAssistant] Parsed {} workflow task spec(s)", specs.size)
-          specs.forEachIndexed { i, spec ->
+          // Repair node-type aliases (a plugin node is registered under its handler NAME, not its
+          // class) and node-result placeholders that point at a name the sanitizer rewrites.
+          val normalizedSpecs = normalizeWorkflowSpecs(specs)
+          logger.info("[AICodBiAssistant] Parsed {} workflow task spec(s)", normalizedSpecs.size)
+          normalizedSpecs.forEachIndexed { i, spec ->
             logger.info(
                 "[AICodBiAssistant] Task #{}: nodeType={}, nodeParams keys={}, triggerParams keys={}",
                 i + 1,
@@ -12915,7 +13023,7 @@ class AICodBiAssistant : IPluginServletAction {
                 spec.nodeParams.keys,
                 spec.triggerParams.keys)
           }
-          specs
+          normalizedSpecs
         } catch (e: Exception) {
           logger.warn("[AICodBiAssistant] Could not parse workflow AI response: {}", safeCleaned)
           throw Exception("AI returned invalid workflow JSON: ${e.message}")
@@ -15593,7 +15701,12 @@ class AICodBiAssistant : IPluginServletAction {
       existingStructureDemandedIds: Set<String> = emptySet(),
       // AVAILABLE USER GROUPS — lets the AI restrict a status to specific groups via
       // "accessUserGroups" (resolved to BenutzerGruppe entities at apply time).
-      userGroups: String? = null
+      userGroups: String? = null,
+      // PDF TEMPLATES — the PDF files stored in the form's own file resources (name + uuid).
+      // FC_FILL_PDF needs the EXACT template file name; without this list the model can only ASK
+      // for the file (or invent one), which is exactly why "die PDF Gehaltsabrechnung befüllen"
+      // produced no node at all.
+      pdfTemplates: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -15639,6 +15752,7 @@ class AICodBiAssistant : IPluginServletAction {
       // already uses), on BOTH passes. Fail-open: a non-array input passes through unchanged.
       val workflowCompletionPages = condenseCompletionPagesForClarify(completionPages)
       val workflowHtmlTemplates = condenseCompletionPagesForClarify(htmlTemplates)
+      val workflowPdfTemplates = condenseCompletionPagesForClarify(pdfTemplates)
       val rendered =
           renderWorkflowSystemPrompt(
               workflowTemplate,
@@ -15649,6 +15763,7 @@ class AICodBiAssistant : IPluginServletAction {
               repeatableContainers = repeatableContainers,
               completionPages = workflowCompletionPages,
               htmlTemplates = workflowHtmlTemplates,
+              pdfTemplates = workflowPdfTemplates,
               inboxes = inboxes,
               messageServices = messageServices,
               triggers = triggers,
@@ -16517,8 +16632,17 @@ class AICodBiAssistant : IPluginServletAction {
    * designer's Workflow tab loads. Because the AI bypasses that save flow, the flag never gets set
    * and the Workflow tab can keep showing the previous (cached) workflow after the page reload
    * until a second manual reload.
+   *
+   * The flag is VERIFIED after the API update. FORMCYCLE's `update` runs the normal save flow,
+   * which can reject the entity (e.g. a node-handler validation warning) or clear the flag again —
+   * and a flag that is not persisted is exactly what leaves the designer with a stale workflow
+   * model. When the update did not leave the flag set, it is forced directly in the database.
    */
   private fun touchWorkflowVersion(userContext: Any, workflowVersionId: Long) {
+    var apiUpdateSucceeded = false
+    // Only force the column when the version was actually loaded for THIS user — getById enforces
+    // the mandant/user visibility, so the SQL fallback must not run for an id the user may not see.
+    var entityLoaded = false
     try {
       val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
       val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
@@ -16527,6 +16651,7 @@ class AICodBiAssistant : IPluginServletAction {
           workflowVersionApi.javaClass
               .getMethod("getById", ucClass, Long::class.javaObjectType)
               .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return
+      entityLoaded = true
       workflowVersion.javaClass
           .getMethod("setWorkflowInvalid", Boolean::class.javaPrimitiveType)
           .invoke(workflowVersion, true)
@@ -16536,12 +16661,77 @@ class AICodBiAssistant : IPluginServletAction {
               ucClass,
               Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
       updateMethod.invoke(workflowVersionApi, userContext, workflowVersion)
+      apiUpdateSucceeded = true
       logger.info(
           "[AICodBiAssistant] Marked WorkflowVersion {} as invalid (workflow model will reload)",
           workflowVersionId)
     } catch (e: Exception) {
       logger.warn(
           "[AICodBiAssistant] Could not mark WorkflowVersion {} as invalid: {}",
+          workflowVersionId,
+          e.message)
+    }
+    if (entityLoaded &&
+        (!apiUpdateSucceeded || !isWorkflowVersionInvalid(userContext, workflowVersionId))) {
+      forceWorkflowVersionInvalid(userContext, workflowVersionId)
+    }
+  }
+
+  /** Whether WorkflowVersion.workflowInvalid is currently set (best effort via the entity API). */
+  private fun isWorkflowVersionInvalid(userContext: Any, workflowVersionId: Long): Boolean =
+      try {
+        val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+        val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+        val ucClass = Class.forName("de.xima.fc.user.UserContext")
+        val workflowVersion =
+            workflowVersionApi.javaClass
+                .getMethod("getById", ucClass, Long::class.javaObjectType)
+                .invoke(workflowVersionApi, userContext, workflowVersionId)
+        workflowVersion?.javaClass?.getMethod("isWorkflowInvalid")?.invoke(workflowVersion)
+            as? Boolean ?: false
+      } catch (e: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] Could not read workflowInvalid of WorkflowVersion {}: {}",
+            workflowVersionId,
+            e.message)
+        false
+      }
+
+  /**
+   * Sets `workflow_version.flag_wf_invalid` directly, bypassing the entity API's save flow. Used as
+   * a guaranteed fallback when [touchWorkflowVersion]'s API update did not persist the flag. Runs
+   * in its own entity context/transaction so it cannot be rolled back by the caller.
+   */
+  private fun forceWorkflowVersionInvalid(userContext: Any, workflowVersionId: Long) {
+    try {
+      val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val entityContext =
+          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+      val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+      val tx = em.javaClass.getMethod("getTransaction").invoke(em)
+      tx.javaClass.getMethod("begin").invoke(tx)
+      try {
+        val sql = "UPDATE workflow_version SET flag_wf_invalid = ?1 WHERE id = ?2"
+        val query = em.javaClass.getMethod("createNativeQuery", String::class.java).invoke(em, sql)
+        val setParameter =
+            query.javaClass.getMethod("setParameter", Int::class.javaPrimitiveType, Any::class.java)
+        setParameter.invoke(query, 1, true)
+        setParameter.invoke(query, 2, workflowVersionId)
+        query.javaClass.getMethod("executeUpdate").invoke(query)
+        tx.javaClass.getMethod("commit").invoke(tx)
+        logger.info(
+            "[AICodBiAssistant] Force-set flag_wf_invalid for WorkflowVersion {} (workflow model will reload)",
+            workflowVersionId)
+      } catch (e: Exception) {
+        runCatching { tx.javaClass.getMethod("rollback").invoke(tx) }
+        throw e
+      } finally {
+        runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+      }
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Could not force flag_wf_invalid for WorkflowVersion {}: {}",
           workflowVersionId,
           e.message)
     }
@@ -16578,7 +16768,8 @@ class AICodBiAssistant : IPluginServletAction {
       logger.warn("[AICodBiAssistant] replaceWorkflowNode: root detection failed: {}", e.message)
     }
     // Non-root node: update it in place, keeping its path.
-    return replaceWorkflowNodeInPlace(workflowVersionId, targetId, spec, userContext)
+    return replaceWorkflowNodeInPlace(
+        workflowVersionId, targetId, spec, userContext, params.contextPath)
   }
 
   /**
@@ -16590,7 +16781,8 @@ class AICodBiAssistant : IPluginServletAction {
       workflowVersionId: Long,
       nodeId: Long,
       spec: WorkflowTaskSpec,
-      userContext: Any
+      userContext: Any,
+      contextPath: String? = null
   ): String {
     try {
       val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
@@ -16638,7 +16830,7 @@ class AICodBiAssistant : IPluginServletAction {
           }
           val firstParams =
               buildNodeParamsJsonWithIcon(
-                  firstSpec, workflowVersion, userContext, firstSpec.nodeType)
+                  firstSpec, workflowVersion, userContext, firstSpec.nodeType, contextPath)
           if (firstParams != null) {
             workflowNodeClass
                 .getMethod("setCustomParameters", String::class.java)
@@ -16672,7 +16864,7 @@ class AICodBiAssistant : IPluginServletAction {
           if (parent != null && parentTask != null) {
             replaced.addAll(
                 createChildNodesUnderExisting(
-                    parent, parentTask, workflowVersion, userContext, restSpecs))
+                    parent, parentTask, workflowVersion, userContext, restSpecs, contextPath))
           } else {
             logger.warn(
                 "[AICodBiAssistant] replaceWithChainedNodes: no parent/task for node {} — chained nodes beyond the first were not created",
@@ -16689,7 +16881,8 @@ class AICodBiAssistant : IPluginServletAction {
 
       val newName = deriveNodeName(spec)
       val nodeParamsJson =
-          buildNodeParamsJsonWithIcon(spec, workflowVersion, userContext, spec.nodeType)
+          buildNodeParamsJsonWithIcon(
+              spec, workflowVersion, userContext, spec.nodeType, contextPath)
       if (!spec.nodeType.isNullOrBlank()) {
         workflowNodeClass.getMethod("setType", String::class.java).invoke(node, spec.nodeType)
       }
@@ -16752,7 +16945,8 @@ class AICodBiAssistant : IPluginServletAction {
       userContext: Any,
       workflowVersionId: Long,
       parentNodeId: Long,
-      nodeSpecs: List<WorkflowTaskSpec>
+      nodeSpecs: List<WorkflowTaskSpec>,
+      contextPath: String? = null
   ): String {
     try {
       val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
@@ -16777,7 +16971,7 @@ class AICodBiAssistant : IPluginServletAction {
               ?: return "Cannot insert error nodes: WorkflowVersion $workflowVersionId not found."
       val created =
           createChildNodesUnderExisting(
-              parentNode, parentTask, workflowVersion, userContext, nodeSpecs)
+              parentNode, parentTask, workflowVersion, userContext, nodeSpecs, contextPath)
       if (created.isEmpty()) return "No insertable error nodes in the FC_CATCH_ERROR lane."
       logger.info(
           "[AICodBiAssistant] Inserted into FC_EXPERIMENT handler path {}: {}",
@@ -16802,7 +16996,8 @@ class AICodBiAssistant : IPluginServletAction {
       parentTask: Any,
       workflowVersion: Any,
       userContext: Any,
-      nodeSpecs: List<WorkflowTaskSpec>
+      nodeSpecs: List<WorkflowTaskSpec>,
+      contextPath: String? = null
   ): List<String> {
     val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
     val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
@@ -16825,7 +17020,8 @@ class AICodBiAssistant : IPluginServletAction {
       workflowNodeClass.getMethod("setType", String::class.java).invoke(node, type)
       workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(node, true)
       workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(node, UUID.randomUUID())
-      val nodeParamsJson = buildNodeParamsJsonWithIcon(spec, workflowVersion, userContext, type)
+      val nodeParamsJson =
+          buildNodeParamsJsonWithIcon(spec, workflowVersion, userContext, type, contextPath)
       if (nodeParamsJson != null) {
         workflowNodeClass
             .getMethod("setCustomParameters", String::class.java)
@@ -16872,7 +17068,7 @@ class AICodBiAssistant : IPluginServletAction {
                     gson.fromJson(gson.toJson(cs), WorkflowTaskSpec::class.java)
                   } ?: emptyList())
           insertNodesUnderExistingParent(
-              userContext, workflowVersionId, handlerSequenceId, nodesToInsert)
+              userContext, workflowVersionId, handlerSequenceId, nodesToInsert, params.contextPath)
         }
     return remaining to messages
   }
@@ -17042,7 +17238,8 @@ class AICodBiAssistant : IPluginServletAction {
         .getMethod("setUUIDObject", UUID::class.java)
         .invoke(actionNode, UUID.randomUUID())
     val nodeParamsJson =
-        buildNodeParamsJsonWithIcon(spec, workflowVersion, userContext, spec.nodeType)
+        buildNodeParamsJsonWithIcon(
+            spec, workflowVersion, userContext, spec.nodeType, params.contextPath)
     if (nodeParamsJson != null) {
       logger.info(
           "[AICodBiAssistant] Setting custom_params for nodeType={}: {}",
@@ -17144,7 +17341,8 @@ class AICodBiAssistant : IPluginServletAction {
             .getMethod("setUUIDObject", UUID::class.java)
             .invoke(childNode, UUID.randomUUID())
         val childParamsJson =
-            buildNodeParamsJsonWithIcon(childSpec, workflowVersion, userContext, childSpec.nodeType)
+            buildNodeParamsJsonWithIcon(
+                childSpec, workflowVersion, userContext, childSpec.nodeType, params.contextPath)
         if (childParamsJson != null) {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
@@ -17434,7 +17632,7 @@ class AICodBiAssistant : IPluginServletAction {
                 .invoke(childNode, UUID.randomUUID())
             val childParamsJson =
                 buildNodeParamsJsonWithIcon(
-                    childSpec, workflowVersion, userContext, childSpec.nodeType)
+                    childSpec, workflowVersion, userContext, childSpec.nodeType, params.contextPath)
             if (childParamsJson != null) {
               workflowNodeClass
                   .getMethod("setCustomParameters", String::class.java)
@@ -17579,7 +17777,11 @@ class AICodBiAssistant : IPluginServletAction {
                     .invoke(childNode, UUID.randomUUID())
                 val childParamsJson =
                     buildNodeParamsJsonWithIcon(
-                        childSpec, workflowVersion, userContext, childSpec.nodeType)
+                        childSpec,
+                        workflowVersion,
+                        userContext,
+                        childSpec.nodeType,
+                        params.contextPath)
                 if (childParamsJson != null) {
                   workflowNodeClass
                       .getMethod("setCustomParameters", String::class.java)
@@ -17680,7 +17882,11 @@ class AICodBiAssistant : IPluginServletAction {
         val chainSpecWithUuids = chainSpec.copy(nodeParams = resolvedParams)
         val chainParamsJson =
             buildNodeParamsJsonWithIcon(
-                chainSpecWithUuids, workflowVersion, userContext, chainSpecWithUuids.nodeType)
+                chainSpecWithUuids,
+                workflowVersion,
+                userContext,
+                chainSpecWithUuids.nodeType,
+                params.contextPath)
         if (chainParamsJson != null) {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
@@ -19659,9 +19865,51 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * Resolves the default icon JSON of a workflow node type (see [resolveWorkflowElementIconJson]).
+   *
+   * A PLUGIN node type (such as the CodBi Extended Accessor) has no entry in `EWorkflowNodeType`,
+   * so the generic enum lookup returns `null` and an AI-created node used to render without the
+   * icon a manually inserted node shows. Such types are resolved from their plugin handler's
+   * prototype icon instead. [contextPath] is needed for the icon's resource URL.
    */
-  private fun resolveNodeIconJson(nodeType: String): String? =
-      resolveWorkflowElementIconJson("de.xima.fc.mdl.enums.EWorkflowNodeType", nodeType, "Node")
+  private fun resolveNodeIconJson(nodeType: String, contextPath: String? = null): String? =
+      if (nodeType == WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE ||
+          nodeType == WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS) {
+        resolveExtendedAccessorIconJson(contextPath)
+      } else {
+        resolveWorkflowElementIconJson("de.xima.fc.mdl.enums.EWorkflowNodeType", nodeType, "Node")
+      }
+
+  /**
+   * Icon JSON of the CodBi Extended Accessor node — mirroring exactly what the workflow designer
+   * persists when the node is dragged in from the palette (`getPrototypeIcon` → `ClientIcon`).
+   *
+   * When [contextPath] is unknown the icon's `style` is omitted: its `background-image` URL would
+   * otherwise point at the wrong deployment path, so the FontAwesome fallback carried by the
+   * `styleClass` is shown instead.
+   */
+  private fun resolveExtendedAccessorIconJson(contextPath: String?): String? =
+      try {
+        val icon = CodbiExtendedAccessorNodePlugin().buildPrototypeIcon(contextPath.orEmpty())
+        val styleClass = icon.styleClass ?: ""
+        val value = icon.value ?: ""
+        val style = if (contextPath.isNullOrBlank()) "" else icon.style ?: ""
+        if (styleClass.isBlank() && value.isBlank()) {
+          null
+        } else {
+          logger.info(
+              "[AICodBiAssistant] Node icon for '{}': styleClass='{}' styleLength={}",
+              WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
+              styleClass,
+              style.length)
+          """{"styleClass":${gson.toJson(styleClass)},"value":${gson.toJson(value)},"style":${gson.toJson(style)}}"""
+        }
+      } catch (e: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] Could not resolve node icon for '{}': {}",
+            WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
+            e.message)
+        null
+      }
 
   /**
    * Resolves the default icon JSON of a workflow trigger type (see
@@ -19681,7 +19929,8 @@ class AICodBiAssistant : IPluginServletAction {
       spec: WorkflowTaskSpec,
       workflowVersion: Any?,
       userContext: Any?,
-      nodeType: String = spec.nodeType
+      nodeType: String = spec.nodeType,
+      contextPath: String? = null
   ): String? {
     val base = buildNodeParamsJson(spec, workflowVersion, userContext) ?: return null
     return try {
@@ -19696,7 +19945,9 @@ class AICodBiAssistant : IPluginServletAction {
       // entity-based path; this covers the JSON-based path. The runtime ignores the extra
       // "$version" key (fastjson maps only the FcHttpRequestProps fields).
       obj.addProperty("\$version", "8.5.3")
-      resolveNodeIconJson(nodeType)?.let { obj.add("icon", JsonParser.parseString(it)) }
+      resolveNodeIconJson(nodeType, contextPath)?.let {
+        obj.add("icon", JsonParser.parseString(it))
+      }
       obj.toString()
     } catch (_: Exception) {
       base
@@ -20642,6 +20893,19 @@ class AICodBiAssistant : IPluginServletAction {
         else -> ""
       }
 
+  /**
+   * Reads a boolean workflow-node parameter tolerantly. The AI emits JSON booleans in the happy
+   * path but also `"true"`/`"false"` strings or 1/0 numbers; a plain `as? Boolean` silently turns
+   * every one of those into `false`, which is how node options could never be switched on.
+   */
+  private fun workflowParamBoolean(params: Map<String, Any>, key: String): Boolean =
+      when (val v = params[key]) {
+        is Boolean -> v
+        is Number -> v.toInt() != 0
+        is String -> v.trim().lowercase() in setOf("true", "1", "yes", "ja", "on")
+        else -> false
+      }
+
   private fun buildNodeParamsJson(
       spec: WorkflowTaskSpec,
       workflowVersion: Any? = null,
@@ -20790,9 +21054,273 @@ class AICodBiAssistant : IPluginServletAction {
         //   CUSTOM â€“ for JSON/PLAIN_TEXT/XML (body provided as customBodyContent)
         //   FORM_DATA â€“ for FORM_DATA (key-value pairs in requestParameters)
         //   URL â€“ for GET/DELETE/HEAD/OPTIONS OR when no body content is specified
-        val asResponsePage = spec.nodeParams["asResponsePage"] as? Boolean ?: false
-        val treat4xxAsNormal = spec.nodeParams["treat4xxAsNormal"] as? Boolean ?: false
-        val treat5xxAsNormal = spec.nodeParams["treat5xxAsNormal"] as? Boolean ?: false
+        val asResponsePage = workflowParamBoolean(spec.nodeParams, "asResponsePage")
+        val treat4xxAsNormal = workflowParamBoolean(spec.nodeParams, "treat4xxAsNormal")
+        val treat5xxAsNormal = workflowParamBoolean(spec.nodeParams, "treat5xxAsNormal")
+        // These two were previously HARD-CODED to `false` below, so the designer's "Allow invalid
+        // certificates" and "Basic authentication" checkboxes could never be ticked no matter what
+        // the AI emitted. The keys mirror FcHttpRequestProps (fc-workflow-processor):
+        // allowInvalidCertificates, useBasicAuth, basicAuthProps{basicAuthLogin, basicAuthPwd}.
+        val allowInvalidCertificates =
+            workflowParamBoolean(spec.nodeParams, "allowInvalidCertificates")
+        val useBasicAuth = workflowParamBoolean(spec.nodeParams, "useBasicAuth")
+        // The AI writes the credentials either FLAT (basicAuthLogin / basicAuthUser / user) or — as
+        // the prompt asks — as the nested object {"basicAuthProps":{"basicAuthLogin":…,
+        // "basicAuthPwd":…}} (the FcHttpRequestProps shape). Only the flat form used to be read, so
+        // the "Basic authentication" checkbox was ticked while the user name field stayed EMPTY.
+        val nestedAuthProps: Map<String, Any> =
+            (spec.nodeParams["basicAuthProps"] as? Map<*, *>)
+                ?.entries
+                ?.mapNotNull { (k, v) ->
+                  val name = k?.toString() ?: return@mapNotNull null
+                  val value = v ?: return@mapNotNull null
+                  name to value
+                }
+                ?.toMap() ?: emptyMap()
+        fun authParam(key: String, vararg aliases: String): String {
+          val fromNested = workflowParamString(nestedAuthProps, key)
+          if (fromNested.isNotBlank()) return fromNested
+          for (name in listOf(key) + aliases) {
+            val flat = workflowParamString(spec.nodeParams, name)
+            if (flat.isNotBlank()) return flat
+          }
+          return ""
+        }
+        val basicAuthLogin =
+            authParam("basicAuthLogin", "basicAuthUser", "user", "username", "userName")
+        val basicAuthPwd = authParam("basicAuthPwd", "basicAuthPassword", "password", "pwd")
+        // Emit basicAuthProps only when basic auth is really wanted — the designer shows the
+        // credentials fields for it, and an empty object would suggest a configured login.
+        val basicAuthPropsJson =
+            if (useBasicAuth || basicAuthLogin.isNotBlank() || basicAuthPwd.isNotBlank()) {
+              ""","useBasicAuth":true,"basicAuthProps":{"basicAuthLogin":${gson.toJson(basicAuthLogin)},"basicAuthPwd":${gson.toJson(basicAuthPwd)}}"""
+            } else {
+              ""
+            }
+        // PROXY — a request that must be routed THROUGH a proxy server is NOT "basic
+        // authentication":
+        // the node has its own proxy block (`FcHttpRequestProps.ProxyProps` /
+        // `ProxyAuthProps`), and `useBasicAuth` means "authenticate against the TARGET". The AI
+        // used
+        // to translate "the request goes through proxy X and the proxy needs a login" into
+        // useBasicAuth, which ticked the wrong option.
+        // The AI emits the proxy data NESTED — `"proxyProps":{"proxyHost":…,"proxyPort":…,
+        // "useProxyAuth":…,"proxyAuthProps":{"proxyAuthLogin":…,"proxyAuthPwd":…}}`, exactly as the
+        // prompt asks and as the FcHttpRequestProps schema expects. Only FLAT keys used to be read,
+        // so "Use proxy server" was ticked while host, port and the proxy login stayed empty.
+        fun asParamMap(raw: Any?): Map<String, Any> =
+            (raw as? Map<*, *>)
+                ?.entries
+                ?.mapNotNull { (k, v) ->
+                  val name = k?.toString() ?: return@mapNotNull null
+                  val value = v ?: return@mapNotNull null
+                  name to value
+                }
+                ?.toMap() ?: emptyMap()
+        val nestedProxyProps = asParamMap(spec.nodeParams["proxyProps"])
+        val nestedProxyAuthProps = asParamMap(nestedProxyProps["proxyAuthProps"])
+        fun proxyParam(key: String, vararg aliases: String): String {
+          for (name in listOf(key) + aliases) {
+            val nested = workflowParamString(nestedProxyProps, name)
+            if (nested.isNotBlank()) return nested
+            val flat = workflowParamString(spec.nodeParams, name)
+            if (flat.isNotBlank()) return flat
+          }
+          return ""
+        }
+        val useProxy =
+            workflowParamBoolean(spec.nodeParams, "useProxy") || nestedProxyProps.isNotEmpty()
+        val proxyHost = proxyParam("proxyHost", "proxyServer", "host")
+        // The port arrives as a JSON NUMBER or a string — `workflowParamString` only handles
+        // strings
+        // (and lists), so a numeric 8080 would otherwise become an empty string and thus port 0.
+        val proxyPort =
+            (nestedProxyProps["proxyPort"] as? Number)?.toInt()
+                ?: proxyParam("proxyPort", "port").trim().toIntOrNull()
+                ?: (spec.nodeParams["proxyPort"] as? Number)?.toInt()
+                ?: 0
+        val useProxyAuth =
+            workflowParamBoolean(spec.nodeParams, "useProxyAuth") ||
+                workflowParamBoolean(nestedProxyProps, "useProxyAuth")
+        fun proxyAuthParam(key: String, vararg aliases: String): String {
+          for (name in listOf(key) + aliases) {
+            val nested = workflowParamString(nestedProxyAuthProps, name)
+            if (nested.isNotBlank()) return nested
+          }
+          return proxyParam(key, *aliases)
+        }
+        val proxyAuthLogin = proxyAuthParam("proxyAuthLogin", "proxyUser", "proxyUsername")
+        val proxyAuthPwd = proxyAuthParam("proxyAuthPwd", "proxyPassword")
+        val proxyPropsJson =
+            if (useProxy || proxyHost.isNotBlank()) {
+              val port = proxyPort
+              val proxyAuthJson =
+                  if (useProxyAuth || proxyAuthLogin.isNotBlank() || proxyAuthPwd.isNotBlank()) {
+                    ""","useProxyAuth":true,"proxyAuthProps":{"proxyAuthLogin":${gson.toJson(proxyAuthLogin)},"proxyAuthPwd":${gson.toJson(proxyAuthPwd)}}"""
+                  } else {
+                    ""
+                  }
+              ""","useProxy":true,"proxyProps":{"proxyHost":${gson.toJson(proxyHost)},"proxyPort":$port$proxyAuthJson}"""
+            } else {
+              ""
+            }
+        // CONNECT / READ TIMEOUT — the node stores each as a `TimeDuration` (FcHttpRequestProps:
+        // `connectTimeout`, `readTimeout`), i.e. {"duration":<long>,"unit":"<ETimeUnit>"} where
+        // ETimeUnit is NANOSECONDS..WEEKS. The amount and the unit are INDEPENDENT fields, so the
+        // user's unit must be kept verbatim (never converted). Accepts the nested object or flat
+        // "<key>" + "<key>Unit" pairs.
+        fun jsonTimeout(key: String): String? {
+          val units =
+              setOf(
+                  "NANOSECONDS",
+                  "MICROSECONDS",
+                  "MILLISECONDS",
+                  "SECONDS",
+                  "MINUTES",
+                  "HOURS",
+                  "DAYS",
+                  "WEEKS")
+          /** Maps a unit word/abbreviation (any case) to its ETimeUnit constant, or null. */
+          val normalizeUnit: (String?) -> String? = { raw ->
+            val compact =
+                (raw ?: "").trim().uppercase().replace("_", "").replace("-", "").replace(" ", "")
+            when {
+              compact.isBlank() -> null
+              compact in units -> compact
+              // Short forms / singulars. Order matters: "MS" must not be read as minutes.
+              compact == "NS" -> "NANOSECONDS"
+              compact == "US" -> "MICROSECONDS"
+              compact == "MS" || compact == "MILLISEC" || compact == "MILLISECS" -> "MILLISECONDS"
+              compact == "S" || compact == "SEC" || compact == "SECS" -> "SECONDS"
+              compact == "M" || compact == "MIN" || compact == "MINS" -> "MINUTES"
+              compact == "H" || compact == "HR" || compact == "HRS" -> "HOURS"
+              compact == "D" -> "DAYS"
+              compact == "W" -> "WEEKS"
+              compact == "NANOSECOND" -> "NANOSECONDS"
+              compact == "MICROSECOND" -> "MICROSECONDS"
+              compact == "MILLISECOND" -> "MILLISECONDS"
+              compact == "SECOND" -> "SECONDS"
+              compact == "MINUTE" -> "MINUTES"
+              compact == "HOUR" -> "HOURS"
+              compact == "DAY" -> "DAYS"
+              compact == "WEEK" -> "WEEKS"
+              else -> null
+            }
+          }
+          val nested = spec.nodeParams[key] as? Map<*, *>
+          val rawDuration = nested?.get("duration") ?: nested?.get("value") ?: spec.nodeParams[key]
+          val rawUnit =
+              nested?.get("unit")
+                  ?: nested?.get("timeUnit")
+                  ?: spec.nodeParams["${key}Unit"]
+                  ?: spec.nodeParams["${key}TimeUnit"]
+          // The duration may be a number, a numeric string, or a combined string ("100 MINUTES").
+          var duration =
+              when (val d = rawDuration) {
+                is Number -> d.toLong()
+                is String -> d.trim().toLongOrNull()
+                else -> null
+              }
+          var unit = normalizeUnit(rawUnit as? String)
+          if (duration == null && rawDuration is String) {
+            val match = Regex("(\\d+)").find(rawDuration)
+            duration = match?.groupValues?.get(1)?.toLongOrNull()
+            if (unit == null) {
+              unit = normalizeUnit(rawDuration.replace(Regex("\\d"), " "))
+            }
+          }
+          logger.info(
+              "[AICodBiAssistant] FC_HTTP_REQUEST timeout '{}': raw='{}' ({}), rawUnit='{}' -> duration={}, unit={}",
+              key,
+              rawDuration,
+              rawDuration?.javaClass?.simpleName ?: "null",
+              rawUnit,
+              duration,
+              unit)
+          if (duration == null || unit == null) {
+            logger.warn(
+                "[AICodBiAssistant] FC_HTTP_REQUEST timeout '{}' NOT emitted — duration='{}' unit='{}' (unit must be one of {} or an abbreviation like min/s/ms)",
+                key,
+                duration,
+                rawUnit,
+                units)
+            return null
+          }
+          // FORMCYCLE constrains both timeouts in its OWN designer. Verified in the jar:
+          // FcHttpRequestProps declares @MinTimeDuration(value = 1, unit = SECONDS) plus
+          // @MaxTimeDuration(value = 1, unit = MINUTES) on `connectTimeout` and
+          // @MaxTimeDuration(value = 30, unit = MINUTES) on `readTimeout`, and httpRequest.xhtml
+          // passes exactly those bounds to <xi:timeDuration>. Its unit dropdown only offers
+          // MILLISECONDS, SECONDS and MINUTES. A value outside that window is rejected by the
+          // designer, so the node then LOOKS as if the timeout had never been set at all.
+          val millisPerUnit =
+              mapOf(
+                  "NANOSECONDS" to 1.0 / 1_000_000.0,
+                  "MICROSECONDS" to 1.0 / 1_000.0,
+                  "MILLISECONDS" to 1.0,
+                  "SECONDS" to 1_000.0,
+                  "MINUTES" to 60_000.0,
+                  "HOURS" to 3_600_000.0,
+                  "DAYS" to 86_400_000.0,
+                  "WEEKS" to 604_800_000.0)
+          val minMillis = 1_000L
+          val maxMillis = if (key == "connectTimeout") 60_000L else 1_800_000L
+          val maxLabel = if (key == "connectTimeout") "1 min" else "30 min"
+          val requestedMillis =
+              Math.rint(duration.toDouble() * (millisPerUnit[unit] ?: 1.0)).toLong()
+          var millis = requestedMillis
+          if (millis < minMillis || millis > maxMillis) {
+            val clamped = millis.coerceIn(minMillis, maxMillis)
+            logger.warn(
+                "[AICodBiAssistant] FC_HTTP_REQUEST timeout '{}': {} {} is outside FORMCYCLE's allowed range (1 s .. {}) — clamped to {} ms",
+                key,
+                duration,
+                unit,
+                maxLabel,
+                clamped)
+            millis = clamped
+          }
+          // Re-express the value in a unit the designer's dropdown actually offers.
+          val (emittedDuration, emittedUnit) =
+              when {
+                unit == "MINUTES" && millis % 60_000L == 0L -> millis / 60_000L to "MINUTES"
+                unit == "SECONDS" && millis % 1_000L == 0L -> millis / 1_000L to "SECONDS"
+                unit == "MILLISECONDS" -> millis to "MILLISECONDS"
+                millis % 1_000L == 0L -> millis / 1_000L to "SECONDS"
+                else -> millis to "MILLISECONDS"
+              }
+          if (emittedDuration != duration || emittedUnit != unit) {
+            logger.info(
+                "[AICodBiAssistant] FC_HTTP_REQUEST timeout '{}' adjusted for the designer: {} {} -> {} {}",
+                key,
+                duration,
+                unit,
+                emittedDuration,
+                emittedUnit)
+          }
+          if (millis != requestedMillis) {
+            timeoutClampNotes
+                .get()
+                .add(
+                    "Note: FORMCYCLE allows at most $maxLabel for the " +
+                        "${if (key == "connectTimeout") "connection" else "read"} timeout, so " +
+                        "$duration $unit was reduced to $emittedDuration $emittedUnit.")
+          }
+          return """{"duration":$emittedDuration,"unit":"$emittedUnit"}"""
+        }
+        val timeoutJson = buildString {
+          jsonTimeout("connectTimeout")?.let { append(""","connectTimeout":$it""") }
+          jsonTimeout("readTimeout")?.let { append(""","readTimeout":$it""") }
+        }
+        if (timeoutJson.isNotBlank()) {
+          logger.info("[AICodBiAssistant] FC_HTTP_REQUEST timeouts emitted: {}", timeoutJson)
+        } else {
+          logger.info(
+              "[AICodBiAssistant] FC_HTTP_REQUEST: no timeouts emitted (nodeParams keys={})",
+              spec.nodeParams.keys)
+        }
+        val httpFlagsJson =
+            """"allowInvalidCertificates":$allowInvalidCertificates,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal$basicAuthPropsJson$proxyPropsJson$timeoutJson"""
         // The formcycle HTTP request node is MODE-EXCLUSIVE: it sends EITHER named request
         // parameters (httpRequestType FORM_DATA) OR a raw body (httpRequestType CUSTOM), never
         // both.
@@ -20817,11 +21345,11 @@ class AICodBiAssistant : IPluginServletAction {
             }
         val nodeParamsJson =
             if (httpRequestType == "FORM_DATA") {
-              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":$requestParametersJson,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":$requestParametersJson,"headerParameters":$headersJson,$httpFlagsJson}"""
             } else if (httpRequestType == "URL") {
-              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,$httpFlagsJson}"""
             } else {
-              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,$httpFlagsJson}"""
             }
         logger.info(
             "[AICodBiAssistant] buildNodeParams FC_HTTP_REQUEST: url='{}', httpVerb='{}', httpRequestType='{}', params={}",
@@ -21073,6 +21601,29 @@ class AICodBiAssistant : IPluginServletAction {
         val exportName = spec.nodeParams["exportName"] as? String ?: "filled.pdf"
         val flatten = spec.nodeParams["flatten"] as? Boolean ?: true
         val usedFont = spec.nodeParams["usedFont"] as? String ?: ""
+        // FileProvision (de.xima.fc.workflow.model.nodes.FileProvision) has exactly two flags:
+        // `attachToFormRecord` (store the produced PDF on the form record — the Vorgang) and
+        // `attachmentAccessibleToEndUser` (the applicant may download it). "Die ausgefüllte Datei
+        // soll dem Vorgang angehängt werden" is THIS flag, not an extra node and not a replace.
+        // The prompt documents the NESTED shape (`"pdfFileProvision":{...}`, the FcFillPdfProps
+        // shape), which is what the model normally emits, so read that first and fall back to the
+        // flat keys (same tolerant pattern as basicAuthProps / proxyProps). Defaults keep the
+        // previous output byte-identical (attach=false, accessible=true).
+        val provisionMap =
+            (spec.nodeParams["pdfFileProvision"] as? Map<*, *>)
+                ?: (spec.nodeParams["fileProvision"] as? Map<*, *>)
+        val provisionFlag: (String, Boolean) -> Boolean = { key, fallback ->
+          when (val raw = provisionMap?.get(key)) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> raw.trim().equals("true", true) || raw.trim().equals("1", true)
+            else ->
+                if (spec.nodeParams.containsKey(key)) workflowParamBoolean(spec.nodeParams, key)
+                else fallback
+          }
+        }
+        val attachToRecord = provisionFlag("attachToFormRecord", false)
+        val accessibleToEndUser = provisionFlag("attachmentAccessibleToEndUser", true)
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
         val singleFileJson =
@@ -21090,7 +21641,7 @@ class AICodBiAssistant : IPluginServletAction {
             }
         val usedFontJson =
             if (usedFont.isNotBlank()) ""","usedFont":${gson.toJson(usedFont)}""" else ""
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)},"flatten":$flatten$usedFontJson$singleFileJson,"pdfFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)},"flatten":$flatten$usedFontJson$singleFileJson,"pdfFileProvision":{"attachToFormRecord":$attachToRecord,"attachmentAccessibleToEndUser":$accessibleToEndUser}}"""
       }
       "FC_FILL_WORD" -> {
         val exportName = spec.nodeParams["exportName"] as? String ?: "filled.docx"
@@ -21941,6 +22492,39 @@ class AICodBiAssistant : IPluginServletAction {
         fun regiStr(key: String): String = gson.toJson(regiParams[key] as? String ?: "")
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"files":${regiObj("files")},"metadata":${regiObj("metadata")},"serviceConfig":${regiObj("serviceConfig")},"documentId":${regiStr("documentId")}}"""
       }
+      WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
+      WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS -> {
+        // CodBi Extended Accessor — reads exactly ONE form element and exposes its raw/structured
+        // value as a node RESULT (SYSTEM placeholders, no HTML escaping). CUSTOM_PARAMS
+        // deserializes into CodbiExtendedAccessorNodeProps, so the parameter names are its Kotlin
+        // property names (camelCase).
+        fun accessorStr(key: String, fallback: String): String =
+            gson.toJson((spec.nodeParams[key] as? String)?.takeIf { it.isNotBlank() } ?: fallback)
+        fun accessorFlag(key: String, fallback: Boolean): Boolean =
+            when (val v = spec.nodeParams[key]) {
+              is Boolean -> v
+              is String -> v.equals("true", ignoreCase = true) || v.trim() == "1"
+              else -> fallback
+            }
+        val fieldName = (spec.nodeParams["fieldName"] as? String)?.trim().orEmpty()
+        if (fieldName.isBlank()) {
+          // Without a configured element the node soft-errors at runtime (FIELD_REQUIRED).
+          logger.warn(
+              "[AICodBiAssistant] buildNodeParams CodbiExtendedAccessor: node='{}' has no fieldName",
+              nodeName)
+        }
+        val mode =
+            (spec.nodeParams["repetitionMode"] as? String)?.trim()?.uppercase()?.takeIf {
+              it == "CURRENT" || it == "INDEX" || it == "ALL"
+            } ?: "CURRENT"
+        val index =
+            (when (val v = spec.nodeParams["repetitionIndex"]) {
+              is Number -> v.toInt()
+              is String -> v.trim().toIntOrNull()
+              else -> null
+            }) ?: -1
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fieldName":${gson.toJson(fieldName)},"repetitionMode":"$mode","repetitionIndex":$index,"joinSeparator":${accessorStr("joinSeparator", ",")},"includeMeta":${accessorFlag("includeMeta", false)},"sanitizeHtml":${accessorFlag("sanitizeHtml", true)},"htmlToText":${accessorFlag("htmlToText", false)},"allowImages":${accessorFlag("allowImages", false)},"allowLinks":${accessorFlag("allowLinks", true)},"allowTables":${accessorFlag("allowTables", true)},"allowStyles":${accessorFlag("allowStyles", true)}}"""
+      }
       else -> """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
     }
   }
@@ -22429,9 +23013,17 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * True when [text] contains an ACTUAL password VALUE (not merely a password-protection intent).
-   * Deliberately conservative: it requires a quoted value or an explicit `:`/`=`/`ist`/`lautet`
-   * assignment after a password keyword, so "passwortgeschützt" / "password protection" do NOT
-   * match. Multilingual keyword list.
+   * Deliberately conservative, so "passwortgeschützt" / "password protection" / "Passwort
+   * vergessen" do NOT match. Multilingual keyword list. A value is recognised as
+   * 1. a QUOTED string after the keyword,
+   * 2. an explicit `:`/`=`/`ist`/`lautet` assignment, or
+   * 3. a BARE token that LOOKS like a password — it must contain a digit or a non-alphanumeric
+   *    character (e.g. "Passwort lklko!!222"). Letters-only words that merely follow the keyword
+   *    ("vergessen", "ändern", "zurücksetzen", "minimallänge") are refused as values, which keeps
+   *    the common "add a password field / forgot-password link" requests working.
+   *
+   * Case 3 was missing: "… mit dem Nutzernamen HHH und dem Passwort lklko!!222" therefore slipped
+   * through BOTH the prompt rule and this guard, and the password was built into the workflow.
    */
   private fun containsPasswordValue(text: String): Boolean {
     if (text.isBlank()) return false
@@ -22439,9 +23031,19 @@ class AICodBiAssistant : IPluginServletAction {
     val quoted = Regex("(?i)\\b$kw\\b[^\\n\"'„“«»]{0,40}[\"'„“«»][^\"'„“«»\\n]{1,80}[\"'„“«»]")
     val assigned = Regex("(?i)\\b$kw\\b\\s*[:=]\\s*\\S+")
     val verb = Regex("(?i)\\b$kw\\b\\s+(?:ist|lautet|is|equals)\\s+\\S+")
+    // A bare value after the keyword. Articles/prepositions are skipped so "mit dem Passwort X" and
+    // "Passwort X" behave the same; the captured token is validated below.
+    val bare =
+        Regex("(?i)\\b$kw\\b\\s+(?:(?:dem|der|das|den|mit|to|is|the)\\s+)*([^\\s\"'„“«»]{3,80})")
+    val bareLooksLikeSecret = { raw: String ->
+      val token = raw.trimEnd('.', ',', ';', ')', ']', '…')
+      // A password must contain a digit or a symbol — a plain word is a verb/noun, not a value.
+      token.any { it.isDigit() } || token.any { !it.isLetterOrDigit() && it != '-' }
+    }
     return quoted.containsMatchIn(text) ||
         assigned.containsMatchIn(text) ||
-        verb.containsMatchIn(text)
+        verb.containsMatchIn(text) ||
+        bare.findAll(text).any { bareLooksLikeSecret(it.groupValues[1]) }
   }
 
   /** The canonical, FULL password-security notice; the language follows [prompt]. */
@@ -23513,6 +24115,89 @@ class AICodBiAssistant : IPluginServletAction {
    * RESOURCE_PROJECT table to find a file matching the given name for the workflow version's
    * project. Returns null if the file is not found.
    */
+  /**
+   * Lists the form's FILE RESOURCES (the designer's "Dateien" / file management) as `name to uuid`
+   * pairs, read straight from the project-resource table.
+   *
+   * The PDF/WORD template nodes must name one of these files EXACTLY, so the workflow AI needs the
+   * real list: without it, "die PDF Gehaltsabrechnung befüllen" could only produce a clarification
+   * question (or an invented file name) and the node was never created at all.
+   */
+  private fun listProjectFileResources(projectId: Long): List<Pair<String, String>> {
+    val emf = CodbiEntities.entityManagerFactory ?: return emptyList()
+    val em = emf.createEntityManager()
+    val byName = LinkedHashMap<String, String>()
+    try {
+      val tables =
+          listOf(
+              "RESOURCE_PROJECT",
+              "FILE_RESOURCE_PROJECT",
+              "FILE_PROJECT",
+              "PROJEKTRESSOURCE",
+              "PROJEKT_RESSOURCE",
+              "PROJECT_RESOURCE",
+              "RESSOURCE_PROJEKT",
+              "PROJEKT_DATEI")
+      for (table in tables) {
+        for (nameCol in listOf("name", "filename", "bezeichnung", "dateiname")) {
+          for (projCol in listOf("project_id", "projekt_id", "fk_projekt")) {
+            for (idCol in listOf("uuid", "id")) {
+              try {
+                val query =
+                    em.createNativeQuery("SELECT $nameCol, $idCol FROM $table WHERE $projCol = ?1")
+                query.setParameter(1, projectId)
+                @Suppress("UNCHECKED_CAST") val rows = query.resultList as? List<Any?> ?: continue
+                for (row in rows) {
+                  val cells = row as? Array<*> ?: continue
+                  val name = cells.getOrNull(0)?.toString()?.trim() ?: continue
+                  val id = cells.getOrNull(1)?.toString()?.trim() ?: continue
+                  if (name.isNotEmpty() && id.isNotEmpty()) byName.putIfAbsent(name, id)
+                }
+              } catch (_: Exception) {
+                // This table/column combination does not exist in this FORMCYCLE version.
+              }
+            }
+          }
+        }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not list project file resources: {}", e.message)
+    } finally {
+      em.close()
+    }
+    return byName.entries.map { it.key to it.value }
+  }
+
+  /**
+   * The PDF templates of this form as `[{"name":…,"uuid":…}]` for the workflow prompt. Returns null
+   * when the form has no `.pdf` file resource, so the prompt section is dropped entirely.
+   */
+  private fun fetchPdfResources(userContext: Any, workflowVersionId: Long): String? {
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return null
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return null
+      val pdfs =
+          listProjectFileResources(projectId)
+              .filter { it.first.lowercase().endsWith(".pdf") }
+              .sortedBy { it.first.lowercase() }
+      if (pdfs.isEmpty()) return null
+      pdfs.joinToString(",", "[", "]") {
+        """{"name":${gson.toJson(it.first)},"uuid":${gson.toJson(it.second)}}"""
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load the PDF template list: {}", e.message)
+      null
+    }
+  }
+
   private fun resolveProjectFileUuid(
       userContext: Any?,
       workflowVersion: Any?,
@@ -23651,6 +24336,26 @@ class AICodBiAssistant : IPluginServletAction {
             }
           }
         }
+        // Fuzzy fallback: the request (and therefore the AI) names the template by TOPIC
+        // ("Gehaltsabrechnung") while the resource is stored as "Gehaltsabrechnung.pdf" (or with a
+        // suffix/prefix). Match the normalised names so the node gets the REAL file instead of
+        // falling back to an attachment search.
+        val wanted = fileName.trim().lowercase().substringBeforeLast('.').trim()
+        if (wanted.isNotEmpty()) {
+          val resources = listProjectFileResources(projectId)
+          val best =
+              resources.firstOrNull {
+                it.first.lowercase().substringBeforeLast('.').trim() == wanted
+              } ?: resources.firstOrNull { it.first.lowercase().contains(wanted) }
+          val parsed = best?.let { runCatching { UUID.fromString(it.second) }.getOrNull() }
+          if (best != null && parsed != null) {
+            logger.info(
+                "[AICodBiAssistant] resolveProjectFileUuid: '{}' fuzzy-matched to '{}'",
+                fileName,
+                best.first)
+            return parsed
+          }
+        }
         null
       } finally {
         em.close()
@@ -23778,6 +24483,31 @@ class AICodBiAssistant : IPluginServletAction {
       // \p{N} = any Unicode digit. Formcycle accepts letters/numbers/spaces/hyphens/parentheses/
       // underscores and rejects punctuation like dots, slashes, colons etc.
       name.replace(Regex("[^\\p{L}\\p{N} _\\-()]"), "").trim()
+
+  /**
+   * Normalises the parsed workflow specs before ANYTHING is persisted (see
+   * [WorkflowSpecNormalizer]):
+   * - plugin node types are mapped to the name the handler is REGISTERED under (the model tends to
+   *   emit the handler class, which formcycle stores but cannot resolve to a handler), and
+   * - `[%$<node>.RESULT…%]` placeholders are rewritten to the name the node actually gets after
+   *   [sanitizeWorkflowName] strips punctuation (e.g. the dots of an email address in the
+   *   taskName).
+   *
+   * The specs are round-tripped through their JSON form so chained and nested child nodes are
+   * normalised by the very same pass.
+   */
+  private fun normalizeWorkflowSpecs(specs: List<WorkflowTaskSpec>): List<WorkflowTaskSpec> {
+    if (specs.isEmpty()) return specs
+    @Suppress("UNCHECKED_CAST")
+    val maps = specs.map { gson.fromJson(gson.toJson(it), Map::class.java) as Map<*, *> }
+    val renames = LinkedHashMap<String, String>()
+    maps.forEach { WorkflowSpecNormalizer.collectRenames(it, renames) }
+    return maps.map { map ->
+      gson.fromJson(
+          gson.toJson(WorkflowSpecNormalizer.normalizeNode(map, renames)),
+          WorkflowTaskSpec::class.java)
+    }
+  }
 
   // region Data Classes
 
@@ -25140,6 +25870,7 @@ class AICodBiAssistant : IPluginServletAction {
       repeatableContainers: String?,
       completionPages: String?,
       htmlTemplates: String?,
+      pdfTemplates: String? = null,
       inboxes: String?,
       messageServices: String?,
       triggers: String?,
@@ -25194,6 +25925,9 @@ class AICodBiAssistant : IPluginServletAction {
     out = applyWorkflowSection(out, "REPEATABLE_CONTAINERS", repeatableContainers)
     out = applyWorkflowSection(out, "COMPLETION_PAGES", completionPages)
     out = applyWorkflowSection(out, "HTML_TEMPLATES", htmlTemplates)
+    // PDF / WORD TEMPLATE FILES of this form (name + uuid). The PDF block is dropped when the form
+    // has no file resources, so the model is never told to pick from an empty list.
+    out = applyWorkflowSection(out, "PDF_TEMPLATES", pdfTemplates)
     // URL templates are NOT fetched in THIS flow (no URL-template source exists here, unlike
     // AIWorkflowAssistant which has a real `urlTemplates`). The block used to be filled with the
     // HTML-template list, which (a) KEPT the large URL-TEMPLATES instruction block — it is dropped

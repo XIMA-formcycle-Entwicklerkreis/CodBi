@@ -125,4 +125,29 @@ class ClarifySkipPolicyTest {
     assertFalse(ClarificationReferenceDetector.wantsFormOrHistoryContext(""))
     assertFalse(ClarificationReferenceDetector.wantsFormOrHistoryContext("   "))
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // Ending-page veto merge — AI-as-decision-maker (Round 9)
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  fun `an explicit AI yes fires the veto even if the keyword fallback would not`() {
+    assertTrue(EndingPageNeedDetector.resolveVeto(aiVerdict = true, fallbackVeto = false))
+  }
+
+  @Test
+  fun `an explicit AI no suppresses the veto even if the keyword fallback would fire`() {
+    // The redirect false-positive: "beim Klick auf Senden soll auf www.google.de umgeleitet
+    // werden" is FC_REDIRECT, not an ending-page pick — the model's `false` must win over the
+    // keyword backstop.
+    assertFalse(EndingPageNeedDetector.resolveVeto(aiVerdict = false, fallbackVeto = true))
+  }
+
+  @Test
+  fun `a missing AI verdict fails open to the deterministic fallback`() {
+    // Older installed prompt / strict-retry response / classification failure — the scoped
+    // keyword backstop decides, so a weak/older model can never silently build a broken template.
+    assertTrue(EndingPageNeedDetector.resolveVeto(aiVerdict = null, fallbackVeto = true))
+    assertFalse(EndingPageNeedDetector.resolveVeto(aiVerdict = null, fallbackVeto = false))
+  }
 }

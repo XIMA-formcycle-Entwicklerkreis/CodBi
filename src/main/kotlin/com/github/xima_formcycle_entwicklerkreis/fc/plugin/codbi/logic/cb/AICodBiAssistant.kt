@@ -2086,6 +2086,56 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] Clarification Abschlussseiten loaded: {} chars",
         clarificationCompletionPages?.length ?: 0)
+    // BREADTH OF RESOLVABLE PAGES: the ending-page VETO (below) must recognise a user-named page as
+    // "concrete" whenever the BUILD could resolve it. [resolveHtmlTemplateUuid] resolves a far
+    // wider
+    // set than the project's completion pages — it also covers TextTemplate/ClientTemplate/
+    // FormTemplate/ProjectDOIData entities (see [fetchHtmlTemplates]). A user naming such a
+    // template
+    // (e.g. a TextTemplate "Allgemeiner Fehler 2") is NOT present in the narrow
+    // clarificationCompletionPages list, so the veto would wrongly fire and ask "which page?" even
+    // though the user already named it. Merge the broad HTML-template names with the
+    // completion-page
+    // names so the detector recognises any name the build can actually resolve. Fail-open: if
+    // either
+    // lookup fails we fall back to whatever we have.
+    val endingPageAvailableNames: String? =
+        if (intent == "workflow" || intent == "both") {
+          val workflowVersionId =
+              params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()
+          val merged = mutableListOf<String>()
+          clarificationCompletionPages
+              ?.split(',', '\n', ';')
+              ?.map { it.trim() }
+              ?.filter { it.isNotEmpty() }
+              ?.let { merged.addAll(it) }
+          if (workflowVersionId != null) {
+            val htmlTemplateNames =
+                fetchHtmlTemplates(getUserContext(params), workflowVersionId)
+                    ?.let { condenseCompletionPagesForClarify(it) }
+                    ?.split(',', '\n', ';')
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                    .orEmpty()
+            logger.info(
+                "[AICodBiAssistant] Broad HTML-template names for ending-page veto: {} names ({} chars)",
+                htmlTemplateNames.size,
+                htmlTemplateNames.joinToString(", ").length)
+            merged.addAll(htmlTemplateNames)
+          } else {
+            logger.warn(
+                "[AICodBiAssistant] No workflowVersionId for broad ending-page name merge — veto uses completion pages only")
+          }
+          merged.distinct().joinToString(", ").ifBlank { clarificationCompletionPages }
+        } else clarificationCompletionPages
+    logger.info(
+        "[AICodBiAssistant] Resolvable ending-page names for veto: {} chars ({} names)",
+        endingPageAvailableNames?.length ?: 0,
+        endingPageAvailableNames
+            ?.split(',', '\n', ';')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.size ?: 0)
     // Form GLOBAL variables, so the clarification AI knows they exist and does not ask whether to
     // create hidden fields for them (they are variables, referenced via [%variableName%]).
     val clarificationFormVariables =
@@ -2163,12 +2213,59 @@ class AICodBiAssistant : IPluginServletAction {
     // any tool context, and no deterministic veto fires — see [ClarifySkipPolicy]. Everything
     // unknown
     // fails OPEN and runs the round exactly as before.
+    // Deterministic ending-page veto: when this workflow request needs an Abschlussseite/html
+    // template but the user did NOT name a concrete existing one, the clarify round MUST run (and
+    // must end in a question) so the user is offered the AVAILABLE pages by name. Otherwise the
+    // build silently guesses a template name and creates a broken FC_SHOW_TEMPLATE
+    // (htmlTemplate:null). Computed here so it both forces the round and drives the deterministic
+    // fallback question below.
+    //
+    // The corpus fed to the FALLBACK detector includes the user's already-answered clarification
+    // turns. Otherwise the fallback veto would remain active forever once the user has answered
+    // with
+    // a concrete page name (the original prompt text never contains that name), the deterministic
+    // fallback would re-issue the same question on every subsequent round and the assistant would
+    // loop asking the same Abschlussseite question forever.
+    //
+    // AI-AS-DECISION-MAKER (Round 9): the tier-1 chat classification now declares `needsEndingPage`
+    // BY MEANING (`true` = this change needs an ending page the user did NOT name; `false` = either
+    // a redirect/URL forward, a user-named page, or no ending page at all). The AI is therefore the
+    // AUTHORITY for the ending-page veto:
+    //  - needsEndingPage==true  → veto fires (clarify round forced, the user is offered the pages).
+    //  - needsEndingPage==false → veto SUPPRESSED even if the keyword heuristic would have fired
+    //    (fixes the redirect false-positive: "beim Klick auf Senden soll auf www.google.de
+    //    umgeleitet werden" models a redirect, not an ending-page pick).
+    //  - needsEndingPage==null  → the AI did not decide (older installed prompt / strict-retry /
+    //    classification failure) — FAIL OPEN to the deterministic keyword detector, which stays the
+    //    scoped backstop so a weak/older model can never silently build a broken FC_SHOW_TEMPLATE.
+    val aiEndingPageVerdict = chatAnswerResult?.needsEndingPage
+    val fallbackEndingPageVeto =
+        EndingPageNeedDetector.needsEndingPageButNotNamed(
+            listOfNotNull(prompt, chatContext, clarificationAnswerText(clarificationHistory))
+                .joinToString("\n"),
+            endingPageAvailableNames)
+    val endingPageVeto =
+        EndingPageNeedDetector.resolveVeto(aiEndingPageVerdict, fallbackEndingPageVeto)
+    // Safety net against the same loop when the user answered the ending-page question with FREE
+    // TEXT that happens not to be an exact/substring match of an available page name (the veto
+    // would otherwise stay active forever). Once an ending-page question has been answered AT ALL
+    // we never force the round for it again.
+    val endingPageQuestionAnswered = hasEndingPageAnswer(clarificationHistory)
     val clarifySkipReason =
-        clarificationSkipReason(chatAnswerResult, prompt, clarificationContext, chatContext)
+        clarificationSkipReason(
+            chatAnswerResult,
+            prompt,
+            clarificationContext,
+            chatContext,
+            clarificationCompletionPages,
+            endingPageVeto)
     if (clarifySkipReason != null) {
       logger.info(
           "[AICodBiAssistant] Clarify-check SKIPPED — {} (one full clarify inference saved; the build proceeds immediately)",
           clarifySkipReason)
+    } else if (endingPageVeto) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page veto active: request needs an Abschlussseite without naming a concrete one — clarify round forced")
     }
     // DETERMINISTIC CROSS-FORM CONTEXT: weak/loose models sometimes answer the clarification round
     // with PROSE instead of the structured need_form_list / need_form_elements requests. The build
@@ -2363,6 +2460,20 @@ class AICodBiAssistant : IPluginServletAction {
         clarification = ClarificationRequest(listOf(copyMirrorClarification()))
         logger.info(
             "[AICodBiAssistant] Cross-form request: asking COPY vs. MIRROR deterministically")
+      }
+    }
+    // Deterministic ending-page fallback: the ending-page veto forced the clarify round, but a weak
+    // model can still produce no readable question (or only already-asked ones). In that case ask
+    // WHICH Abschlussseite to use ourselves, offering the AVAILABLE pages by name, instead of
+    // silently building a broken FC_SHOW_TEMPLATE with a guessed (non-matching) htmlTemplate name.
+    // Never re-issue it once the user already answered it (see [hasEndingPageAnswer]) — otherwise a
+    // free-text answer that is not an exact available-name match would loop the popup forever.
+    if (clarification == null && endingPageVeto && !endingPageQuestionAnswered) {
+      val endingChoice = buildEndingPageClarification(endingPageAvailableNames)
+      if (endingChoice != null) {
+        clarification = ClarificationRequest(listOf(endingChoice))
+        logger.info(
+            "[AICodBiAssistant] Ending-page needed but no (fresh) question from the model — asking which Abschlussseite deterministically")
       }
     }
     if (clarification != null) {
@@ -21632,20 +21743,38 @@ class AICodBiAssistant : IPluginServletAction {
                 "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: FINAL JSON = {}", result)
             result
           } else {
-            val result = """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
-            logger.warn(
-                "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: UUID was null, returning {}",
-                result)
-            result
+            // BUILD-SIDE GUARD: never silently emit a broken FC_SHOW_TEMPLATE (htmlTemplate:null).
+            // The user must be asked which AVAILABLE Abschlussseite to use instead. Abort the
+            // workflow creation so the error surfaces in the UI (`Workflow AI error: …`) rather
+            // than
+            // persisting a node that displays no ending page.
+            logger.error(
+                "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: cannot resolve htmlTemplate '{}' to a UUID — aborting workflow (no broken node created)",
+                templateName)
+            throw RuntimeException(
+                "Die Abschlussseite/HTML-Vorlage '$templateName' existiert in diesem Workflow nicht " +
+                    "unter diesem exakten Namen. Bitte nenne die gew\u00FCnschte Abschlussseite aus der " +
+                    "verf\u00FCgbaren Liste, oder wiederhole mit einem konkreten Namen. / The ending page / " +
+                    "HTML template '$templateName' does not exist in this workflow under that exact " +
+                    "name. Please name the desired ending page from the available list, or retry with " +
+                    "a concrete name.")
           }
-        } else {
-          logger.info(
-              "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: SKIPPING htmlTemplate â€” templateName blank={}, workflowVersion null={}, userContext null={}",
-              templateName.isBlank(),
+        } else if (templateName.isNotBlank()) {
+          // A name WAS supplied but we cannot resolve it (missing workflow/user context) — never
+          // build a silent htmlTemplate:null node. Abort so the user can see the issue.
+          logger.error(
+              "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: htmlTemplate '{}' cannot be resolved (workflowVersion null={}, userContext null={}) — aborting workflow",
+              templateName,
               workflowVersion == null,
               userContext == null)
-          val result = """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
-          result
+          throw RuntimeException(
+              "Die Abschlussseite/HTML-Vorlage '$templateName' konnte nicht zugeordnet werden " +
+                  "('$templateName' konnte nicht aufgel\u00F6st werden). / The ending page / HTML template " +
+                  "'$templateName' could not be resolved.")
+        } else {
+          logger.warn(
+              "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: no htmlTemplate name supplied — creating an empty FC_SHOW_TEMPLATE node")
+          """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
         }
       }
       "FC_FILL_PDF" -> {
@@ -26350,6 +26479,74 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * The deterministic WHICH-Abschlussseite question used when a request needs an ending page but
+   * the user did not name a concrete existing one (and the model produced no fresh question).
+   * Offers the AVAILABLE pages BY NAME as options, so the build later resolves the exact name to a
+   * UUID.
+   *
+   * Returns null when no usable page names can be extracted from the condensed list (then the build
+   * proceeds and the build-side guard takes over).
+   */
+  private fun buildEndingPageClarification(completionPages: String?): ClarificationQuestion? {
+    if (completionPages.isNullOrBlank()) return null
+    val names =
+        completionPages
+            .split(',', '\n', ';')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(20)
+    if (names.isEmpty()) return null
+    return ClarificationQuestion(
+        id = "ending-page",
+        question =
+            "Für diese Änderung ist eine Abschlussseite (HTML-Vorlage) erforderlich, aber es wurde " +
+                "keine konkrete benannt. / This change needs an ending page (HTML template) which " +
+                "was not named. Welche soll verwendet werden? / Which one should be used?",
+        options = names,
+        allowFreeText = true,
+        multiSelect = false)
+  }
+
+  /**
+   * Concatenates ONLY the user's already-answered clarification answers into a detection corpus.
+   *
+   * This is fed to [EndingPageNeedDetector.needsEndingPageButNotNamed] so that once the user
+   * answers the ending-page question with a concrete available page name, the veto drops (the
+   * original request text never contains that name). Without this the veto would stay active
+   * forever and the deterministic fallback would re-ask the same question on every round — an
+   * infinite clarification loop.
+   */
+  private fun clarificationAnswerText(history: List<ClarificationTurn>): String =
+      history.joinToString("\n") { it.answer.trim() }.trim()
+
+  /**
+   * True when an ending-page question has ALREADY been answered by the user (free text or option).
+   *
+   * We match the deterministic ending-page question and the model's own Abschlussseite questions by
+   * their text. Once such a question is answered we never re-ask it, regardless of whether the
+   * answer happens to be an exact available-page-name match — otherwise a free-text answer ("the
+   * success page", "deine Wahl") that does not match an available name would loop forever because
+   * the ending-page veto can never expire.
+   */
+  private fun hasEndingPageAnswer(history: List<ClarificationTurn>): Boolean {
+    val answerNeedles =
+        listOf(
+            "abschlussseite (html",
+            "this change needs an ending page",
+            "welche abschlussseite",
+            "which one should be used",
+            "welche soll verwendet werden",
+            "abschlussseite (html-vorlage) erforderlich",
+            "which abschlussseite")
+    return history.any { turn ->
+      if (turn.answer.isBlank()) return@any false
+      val q = turn.question.lowercase()
+      answerNeedles.any { q.contains(it) }
+    }
+  }
+
   /** The deterministic COPY-vs-MIRROR question used when the model did not ask it itself. */
   private fun copyMirrorClarification(): ClarificationQuestion =
       ClarificationQuestion(
@@ -26503,7 +26700,9 @@ class AICodBiAssistant : IPluginServletAction {
       chatAnswerResult: ChatAnswer?,
       prompt: String,
       clarificationContext: String,
-      chatContext: String
+      chatContext: String,
+      completionPages: String?,
+      endingPageVeto: Boolean
   ): String? {
     val ai = chatAnswerResult
     val referenceVeto =
@@ -26512,7 +26711,8 @@ class AICodBiAssistant : IPluginServletAction {
         needsClarification = ai?.needsClarification,
         needsToolContext = ai?.needsToolContext,
         hasClarificationAnswers = clarificationContext.isNotBlank(),
-        referenceVeto = referenceVeto)
+        referenceVeto = referenceVeto,
+        endingPageVeto = endingPageVeto)
   }
 
   private fun tryClarification(
@@ -26643,7 +26843,16 @@ class AICodBiAssistant : IPluginServletAction {
       // SAME chat-classification call (no extra inference) — `"form"` / `"workflow"` / `"both"`, or
       // `"none"` when hasInstructions is false. `null` = key absent (older installed prompt, strict
       // retry, or classification failure) → fail open, i.e. the caller keeps the frontend intent.
-      val intent: String? = null
+      val intent: String? = null,
+      // LEVER 1 (clarify skip, ending-page veto): the tier-1 answer to "does this CHANGE need an
+      // Abschlussseite / HTML template (FC_SHOW_TEMPLATE, FC_DOI_INIT successPage/failurePage) that
+      // the user did NOT name?", decided by MEANING in ANY language — NOT keywords. This makes the
+      // AI (not the keyword heuristic in [EndingPageNeedDetector]) the decision authority for the
+      // ending-page veto: the model sees the concrete request and knows whether it is a real ending
+      // page, a redirect (FC_REDIRECT), or a user-named page. `null` = the key was absent (older
+      // installed prompt, strict-retry response, or classification failure) → fail open, i.e. the
+      // deterministic keyword detector remains the fallback authority for the veto.
+      val needsEndingPage: Boolean? = null
   )
 
   /** Reads the `chatHistory` request param (JSON array of {user, assistant} turns). */
@@ -26923,6 +27132,12 @@ class AICodBiAssistant : IPluginServletAction {
               ?.takeIf { it.isJsonPrimitive && it.asString.isNotBlank() }
               ?.let { it.asString.trim().lowercase() }
               ?.takeIf { it in setOf("form", "workflow", "both", "none") }
+      // LEVER 1 (clarify skip, ending-page veto): read with an explicit PRESENCE check. A missing
+      // key must stay `null` (fail open → the deterministic keyword detector decides the veto) and
+      // must never default to `false`, which would authorise the AI to suppress a veto the model
+      // never approved.
+      val needsEndingPage: Boolean? =
+          obj.get("needsEndingPage")?.let { if (it.isJsonPrimitive) it.asBoolean else null }
       ChatAnswer(
           hasQuestion = obj.get("hasQuestion")?.asBoolean ?: false,
           hasInstructions = obj.get("hasInstructions")?.asBoolean ?: false,
@@ -26933,7 +27148,8 @@ class AICodBiAssistant : IPluginServletAction {
           sections = sections,
           needsClarification = needsClarification,
           needsToolContext = needsToolContext,
-          intent = intent)
+          intent = intent,
+          needsEndingPage = needsEndingPage)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Could not parse chat answer: {}", e.message)
       null

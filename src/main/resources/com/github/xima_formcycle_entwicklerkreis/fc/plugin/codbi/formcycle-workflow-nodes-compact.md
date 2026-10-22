@@ -175,7 +175,20 @@ For a REPEATABLE container, never hardcode a JSON literal with placeholders — 
 NESTING: the per-row append FC_WRITE_FORM_RECORD_ATTRIBUTES goes INSIDE the FC_FOR_EACH_LOOP's nodeParams._childNodes (runs once per row). The seed "[" (before the loop), the close "]" and this FC_SQL_STATEMENT (both after the loop) are chain nodes — NEVER put them inside _childNodes, and NEVER put the per-row append after the loop.
 ### FC_RETURN_FILE
 FC_RETURN_FILE — Returns a file to the user's browser for download.
-REQUIRED: the file source to return.
+REQUIRED: the file source to return. Pick ONE File selection mode via a distinct key:
+  - "fileName" = form RESOURCE by its stored filename (e.g. "xoxo.txt") → selects that form file.
+  - "uploadField" = form UPLOAD FIELD by its technical ID (e.g. "upl1"; copy it character-for-character, as with FC_EMAIL "attachments"/FC_COMPRESS_AS_ZIP "files") → selects the upload field directly, NOT a filename search.
+  - "searchFilename" = SEARCH attachments that already exist (record, inbox, chat …) by file name.
+OPTIONAL "Type Filter" = the attachment's SOURCE, in any language; set "filter" when stated, else omit:
+  - Inbox/postbox/Eingangspostfach → "filter":"INBOX"
+  - Form upload / upload field → "filter":"FORM_UPLOAD"
+  - Previous workflow node output → "filter":"WORKFLOW"
+  - Chat message/conversation → "filter":"CHAT_MESSAGE"
+  - Archived upload → "filter":"ARCHIVED_FORM_UPLOAD"
+  - Preserved/original upload → "filter":"FORM_UPLOAD_PRESERVED_ORIGINAL"
+  - REST API → "filter":"REST_API"
+  E.g. "aus den Anhängen des Eingangspostfachs" → "searchFilename":"Jojo.jpg","filter":"INBOX".
+Include only the one matching "File selection" key; leave the others out.
 ### FC_ENCODE_BASE64
 FC_ENCODE_BASE64 — Encodes a file or form upload to Base64.
 REQUIRED: the source file / upload field to encode.
@@ -194,7 +207,7 @@ NO field mapping is needed (the PDF's form fields are filled from same-named for
 Attaching the result to the record is a PARAMETER of this node — never a second node and never a reason to replace an existing workflow lane.
 ### FC_FILL_WORD
 FC_FILL_WORD — Fills an EXISTING Word (.docx) template from this form's file resources with form data. Required: the template file's EXACT name; no field mapping is needed.
-NO field mapping is needed (the document's fields are filled from same-named form fields).
+NO field mapping is needed (the document's fields are filled from same-named form fields). Attaching the result to the record ("dem Vorgang anhängen"/"attach it to the record") is the node param wordFileProvision {"attachToFormRecord":true} — a PARAMETER of this node, never a second node and never a reason to replace an existing workflow lane.
 ### FC_COMPRESS_AS_ZIP
 FC_COMPRESS_AS_ZIP — Compresses one or more files into a ZIP archive.
 REQUIRED: the files to compress and the output archive name.

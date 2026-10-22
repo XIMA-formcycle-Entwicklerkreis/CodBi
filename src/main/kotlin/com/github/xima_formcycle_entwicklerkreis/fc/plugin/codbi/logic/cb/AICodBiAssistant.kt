@@ -21540,13 +21540,64 @@ class AICodBiAssistant : IPluginServletAction {
         if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}],"attachmentFilter":[]},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
         } else {
+          // Three distinct 'File selection' modes, following the formcycle UI options:
+          // a form RESOURCE (stored file), a form UPLOAD field (by technical ID), or searching
+          // the record's attachments by file name. Each is expressed by a distinct nodeParams key.
+          // The optional "filter" (aliases: attachmentSource / sourceFilter) drives the Type
+          // Filter,
+          // i.e. the EAttachmentSource of the attachment list ("attachmentFilter"). Examples:
+          // "INBOX" for inbox/postbox attachments, "FORM_UPLOAD" for form upload fields,
+          // "WORKFLOW" for previous-node output, "CHAT_MESSAGE" for chat/conversation attachments.
+          fun normalizeSource(raw: String): String {
+            val v = raw.trim().lowercase().replace('_', ' ').replace('-', ' ')
+            return when {
+              v.contains("inbox") ||
+                  v.contains("eingang") ||
+                  v.contains("postbox") ||
+                  v.contains("mail anhang") -> "INBOX"
+              v.contains("workflow") ||
+                  v.contains("vorherig") ||
+                  v.contains("previous") ||
+                  v.contains("vorg\u00E4nger") -> "WORKFLOW"
+              v.contains("chat") || v.contains("konversation") || v.contains("nachricht") ->
+                  "CHAT_MESSAGE"
+              v.contains("archiv") -> "ARCHIVED_FORM_UPLOAD"
+              v.contains("preserved") || v.contains("original") || v.contains("urspr") ->
+                  "FORM_UPLOAD_PRESERVED_ORIGINAL"
+              v.contains("rest") || v.contains("api") || v.contains("schnittstelle") -> "REST_API"
+              else -> "FORM_UPLOAD"
+            }
+          }
+          val srcRaw =
+              (spec.nodeParams["filter"] as? String)
+                  ?: (spec.nodeParams["attachmentSource"] as? String)
+                  ?: (spec.nodeParams["sourceFilter"] as? String)
+                  ?: ""
+          val filterJson =
+              if (srcRaw.isNotBlank()) gson.toJson(listOf(normalizeSource(srcRaw))) else null
           val fileName = spec.nodeParams["fileName"] as? String ?: ""
-          val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
-          if (fileUuid != null) {
-            val uuidStr = fileUuid.toString()
-            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}}],"attachmentFilter":[]},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+          val uploadField = spec.nodeParams["uploadField"] as? String ?: ""
+          val searchName = spec.nodeParams["searchFilename"] as? String ?: ""
+          if (uploadField.isNotBlank()) {
+            // FORM UPLOAD FIELD — let the File selection point directly at the upload field.
+            // Default Type Filter is FORM_UPLOAD; an explicit "filter" overrides it.
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"UPLOAD","identifier":${gson.toJson(uploadField)}}],"attachmentFilter":${filterJson ?: """["FORM_UPLOAD"]"""}},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+          } else if (searchName.isNotBlank()) {
+            // SEARCH BY FILE NAME — look up an attachment already available (e.g. on a record or an
+            // inbox) by its name. Use "filter" to restrict the source (e.g. INBOX for
+            // "Anh\u00E4nge des Eingangspostfachs"), defaulting to FORM_UPLOAD.
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(searchName)}}],"attachmentFilter":${filterJson ?: """["FORM_UPLOAD"]"""}},"searchFilename":${gson.toJson(searchName)},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
           } else {
-            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(fileName)}}],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(fileName)}},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+            val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+            if (fileUuid != null) {
+              val uuidStr = fileUuid.toString()
+              """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}}],"attachmentFilter":[]},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+            } else if (fileName.isNotBlank()) {
+              // Backward-compatible: a non-resource "fileName" is treated as an upload field ID.
+              """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"UPLOAD","identifier":${gson.toJson(fileName)}}],"attachmentFilter":${filterJson ?: """["FORM_UPLOAD"]"""}},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+            } else {
+              """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[],"attachmentFilter":[]},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+            }
           }
         }
       }
@@ -21645,6 +21696,29 @@ class AICodBiAssistant : IPluginServletAction {
       }
       "FC_FILL_WORD" -> {
         val exportName = spec.nodeParams["exportName"] as? String ?: "filled.docx"
+        // `wordFileProvision` is FileProvision{attachToFormRecord, attachmentAccessibleToEndUser} —
+        // "dem Vorgang anhängen"/"attach it to the record" is THAT flag, not an extra node. Read
+        // the
+        // nested object (the shape the prompt documents) first, then the flat keys; defaults keep
+        // the
+        // previous output.
+        val provisionMap =
+            (spec.nodeParams["wordFileProvision"] as? Map<*, *>)
+                ?: (spec.nodeParams["fileProvision"] as? Map<*, *>)
+        fun provisionFlag(key: String, fallback: Boolean): Boolean =
+            when (val raw = provisionMap?.get(key)) {
+              is Boolean -> raw
+              is Number -> raw.toInt() != 0
+              is String -> raw.trim().equals("true", true) || raw.trim().equals("1", true)
+              else ->
+                  when (val flat = spec.nodeParams[key]) {
+                    is Boolean -> flat
+                    is String -> flat.trim().equals("true", true) || flat.trim().equals("1", true)
+                    else -> fallback
+                  }
+            }
+        val attachToRecord = provisionFlag("attachToFormRecord", false)
+        val accessibleToEndUser = provisionFlag("attachmentAccessibleToEndUser", true)
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
         val singleFileJson =
@@ -21660,12 +21734,31 @@ class AICodBiAssistant : IPluginServletAction {
                 ""","singleFile":{"searchFilename":${gson.toJson(fileName)},"attachmentFilter":["FORM_UPLOAD"]}"""
               } else ""
             }
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)}$singleFileJson,"wordFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)}$singleFileJson,"wordFileProvision":{"attachToFormRecord":$attachToRecord,"attachmentAccessibleToEndUser":$accessibleToEndUser}}"""
       }
       "FC_COMPRESS_AS_ZIP" -> {
         val compressedFileName = spec.nodeParams["compressedFileName"] as? String ?: "archive.zip"
         val namingScheme =
             (spec.nodeParams["namingScheme"] as? String ?: "FLAT_FILE_NAME_ONLY").uppercase()
+        // `compressedFileProvision` is FileProvision{attachToFormRecord,
+        // attachmentAccessibleToEndUser}.
+        val provisionMap =
+            (spec.nodeParams["compressedFileProvision"] as? Map<*, *>)
+                ?: (spec.nodeParams["fileProvision"] as? Map<*, *>)
+        fun provisionFlag(key: String, fallback: Boolean): Boolean =
+            when (val raw = provisionMap?.get(key)) {
+              is Boolean -> raw
+              is Number -> raw.toInt() != 0
+              is String -> raw.trim().equals("true", true) || raw.trim().equals("1", true)
+              else ->
+                  when (val flat = spec.nodeParams[key]) {
+                    is Boolean -> flat
+                    is String -> flat.trim().equals("true", true) || flat.trim().equals("1", true)
+                    else -> fallback
+                  }
+            }
+        val attachToRecord = provisionFlag("attachToFormRecord", false)
+        val accessibleToEndUser = provisionFlag("attachmentAccessibleToEndUser", true)
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
         val multiFileJson =
@@ -21683,7 +21776,7 @@ class AICodBiAssistant : IPluginServletAction {
                 ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
               } else ""
             }
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"compressedFileName":${gson.toJson(compressedFileName)},"namingScheme":${gson.toJson(namingScheme)}$multiFileJson,"compressedFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"compressedFileName":${gson.toJson(compressedFileName)},"namingScheme":${gson.toJson(namingScheme)}$multiFileJson,"compressedFileProvision":{"attachToFormRecord":$attachToRecord,"attachmentAccessibleToEndUser":$accessibleToEndUser}}"""
       }
       "FC_SAVE_TO_FILE_SYSTEM" -> {
         val exportDirectory = spec.nodeParams["exportDirectory"] as? String ?: ""

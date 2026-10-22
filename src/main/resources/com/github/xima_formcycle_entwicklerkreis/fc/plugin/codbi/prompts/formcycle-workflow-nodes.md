@@ -369,8 +369,21 @@ Runs a SQL statement (INSERT / UPDATE / DELETE / SELECT) against a configured da
 
 ### FC_RETURN_FILE
 Returns a file to the user's browser for download.
-- nodeParams: {"fileName":"<filename, e.g. 'xoxo.txt'>","forceDownload":<true|false> (optional, default true — forces download instead of inline display),"deleteFileAfterDownload":<true|false> (optional, default false)}
-- Use this when the user says a file should be downloaded when a button is clicked. The file is typically found in the form's file management section (form resources/files tab). Set 'fileName' to the exact filename as stored in the form's file section (e.g. "xoxo.txt").
+- nodeParams: {"fileName":"<form resource filename>","uploadField":"<upload field technical ID>","searchFilename":"<filename to search in the attachments>","filter":"<attachment source> (optional — see Type Filter below)","forceDownload":<true|false> (optional, default true — forces download instead of inline display),"deleteFileAfterDownload":<true|false> (optional, default false)}
+- Use this when the user says a file should be downloaded when a button is clicked (e.g. "download the uploaded file", "soll die Datei heruntergeladen werden"). The 'File selection' picks WHERE the file comes from — choose exactly ONE of these three options, depending on the source:
+  - FORM FILE (file stored in the form's file management / resources section, e.g. "xoxo.txt"): set "fileName" to the exact stored filename. This selects that form resource directly.
+  - FORM UPLOAD FIELD (a file the end user uploaded in an upload field, e.g. "upl1"): set "uploadField" to the technical ID of that upload field EXACTLY as it appears in the form structure (e.g. "upl1"). This selects the upload field directly (the node SNAPSHOTS the field's uploaded file) — NOT a filename search.
+  - SEARCH BY FILE NAME (find an attachment that already exists by its file name — e.g. in an inbox/postbox (Eingangspostfach), a chat/conversation, or on the record — not a fixed form resource/field): set "searchFilename" to the file name to look up.
+- 'Type Filter' (attachment source) — the node has an optional "filter" that restricts WHERE attachments are searched. It is expressed as the attachment's source and understood in ANY language. Determine it from what the user says the file comes from:
+  - Inbox / postbox / incoming mailbox / Eingangspostfach → "filter":"INBOX"
+  - Form upload field (or plain "upload"/uploaded file) → "filter":"FORM_UPLOAD"
+  - A previous workflow node (workflow/file from a preceding step, previous node output) → "filter":"WORKFLOW"
+  - A chat message / conversation (Konversation/Nachricht) → "filter":"CHAT_MESSAGE"
+  - Archived form upload → "filter":"ARCHIVED_FORM_UPLOAD"
+  - Preserved/original (unconverted) version of a form upload → "filter":"FORM_UPLOAD_PRESERVED_ORIGINAL"
+  - REST API → "filter":"REST_API"
+  When the user mentions an inbox/postbox (e.g. "aus den Anhängen des Eingangspostfachs", "from the inbox attachments"), set "filter" to INBOX alongside the chosen File selection key.
+- Include only the ONE 'File selection' key that matches the source; leave the others out. Set "filter" only when the source is stated; otherwise omit it (it defaults sensibly per selection mode). Never invent a technical ID — copy it character-for-character from the form's element list, exactly as with "attachments" in FC_EMAIL and "files" in FC_COMPRESS_AS_ZIP.
 
 ### FC_ENCODE_BASE64
 Encodes a file or form upload to Base64.
@@ -413,8 +426,9 @@ Fills an EXISTING PDF template (a .pdf from the form's own file resources) with 
 
 ### FC_FILL_WORD
 Fills a Word template with form data and produces a filled document.
-- nodeParams: {"file":"<EXACT file name of the .docx template from the form's file resources, e.g. 'vorlage.docx'>","exportName":"<output filename, e.g. 'ausgefuellt.docx'>"}.
+- nodeParams: {"file":"<EXACT file name of the .docx template from the form's file resources, e.g. 'vorlage.docx'>","exportName":"<output filename, e.g. 'ausgefuellt.docx'>","wordFileProvision":{"attachToFormRecord":<true|false>,"attachmentAccessibleToEndUser":<true|false>} (optional)}.
 - "file" must be a real file name of the form's file resources — never invent one, and never ask for it when the user names a document that is obviously one of them.
+- ATTACHING THE FILLED DOCUMENT TO THE RECORD: `wordFileProvision` is `FileProvision` with exactly two flags — `attachToFormRecord` (store the produced document on the form record, the "Vorgang") and `attachmentAccessibleToEndUser` (the applicant may download it). Judge by MEANING in ANY language: "dem Vorgang anhängen", "an den Vorgang anhängen", "der Akte beifügen", "im Vorgang ablegen", "attach it to the record", "add it to the case file", "ajouter au dossier", "allegare al fascicolo", "aan het dossier toevoegen", "adjuntar al expediente" → `"wordFileProvision":{"attachToFormRecord":true}` (add `"attachmentAccessibleToEndUser":true` when the applicant shall be able to download it too). This is a PARAMETER of this node — never a second node and never a reason to modify an existing workflow lane.
 - When used as a chained node, the template is taken from the preceding node's output.
 
 ### FC_DELETE_ATTACHMENT

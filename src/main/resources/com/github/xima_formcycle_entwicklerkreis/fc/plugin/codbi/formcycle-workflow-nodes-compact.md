@@ -139,6 +139,8 @@ without FC_SHOW_TEMPLATE nodes is a HARD ERROR.
 ### FC_CHANGE_FORM_VALUE
 FC_CHANGE_FORM_VALUE — Sets the value of one or more form fields.
 REQUIRED: which field(s) (technicalId) and the value(s) to set.
+nodeParams: {"formValues":[{"name":"<techId>","value":"<value>"},...], "repetitionSizes":[{"name":"<containerTechId>","value":"<count>"},...]}
+REPETITION ("Number of repetitions" = repetitionSizes): grows a REPEATABLE (dynamic) container to a fixed row count WITHOUT a loop. name = the repeatable CONTAINER technicalId (not the single field), value = target count as string. FAVOR this when the prompt only says a field/block must be set/happen N times ("repeat 100 times", "100 Mal", "N-fach", "N rows/copies") and nothing else — NEVER use FC_FOR_EACH_LOOP/FC_WHILE_LOOP for a fixed "set N times". If the block is not yet in a repeatable container, FIRST wrap the repeated fields in a NEW dynamic container so repetitionSizes can grow it.
 ### FC_LOG_ENTRY
 FC_LOG_ENTRY — Writes a log message to the process log.
 ### FC_REDIRECT
@@ -168,11 +170,20 @@ EXACT nodeParams: {"attributes":[{"name":"<key>","value":"<value>"},...]} — op
 READABLE/EMAIL ACCUMULATION (putting ALL rows of a repeatable container into an email body as readable lines): the per-row FC_WRITE_FORM_RECORD_ATTRIBUTES goes INSIDE the FC_FOR_EACH_LOOP's nodeParams._childNodes and its "value" MUST CONCATENATE the previous attribute so rows accumulate — value = "[%\$RECORD_ATTR.<key>%]" + this row's line, e.g. {"attributes":[{"name":"openingHours","value":"[%\$RECORD_ATTR.openingHours%][%selWeekday%]: [%tfFrom%] - [%tfTo%]\n"}]}. WITHOUT that [%\$RECORD_ATTR.<key>%] prefix every row OVERWRITES the attribute and only the LAST row remains; reference the completed [%\$RECORD_ATTR.<key>%] ONCE in the FC_EMAIL body after the loop.
 LIST FC_WRITE_FORM_RECORD_ATTRIBUTES AND FC_FOR_EACH_LOOP IN need_workflow_node_details so you receive their exact schemas.
 ### FC_SQL_STATEMENT
-FC_SQL_STATEMENT — Runs a SQL statement (INSERT/UPDATE/DELETE/SELECT) against a database connection; the ONLY node that writes to or reads from an external database table. USE whenever the user asks to write/save/persist form data into a database/table/column.
-REQUIRED: the database connection/datasource and the SQL text (with [%fieldName%] placeholders).
+FC_SQL_STATEMENT — Runs a SQL statement (INSERT/UPDATE/DELETE/SELECT) against a database connection; the ONLY node that writes to or reads from an external database table. USE whenever the user asks to write/save/persist form data into a database/table/column or to EXECUTE a database query.
+CUSTOM (user gave explicit SQL) — when the user writes a CONCRETE SQL statement (e.g. "SELECT * FROM JOJO"), put it VERBATIM into "sql" and run it as a custom query (useClientDatabaseQuery=false → "Use configured database query" UNCHECKED, SQL in the "SQL-Query" field) EVEN IF configured queries exist. The user's explicit SQL always wins; never refuse it.
+CONFIGURED (user named a query, no SQL text) — only when the user refers to a NAMED/pre-existing "DB query" by MEANING WITHOUT giving any SQL, set "query" to the EXACT name of one of the AVAILABLE CONFIGURED QUERIES (chosen by MEANING); the node runs it with useClientDatabaseQuery=true. Never invent the SQL text nor a query name not in the list.
+CONNECTION — set "connection" to the available connection; when EXACTLY ONE connection is available use it WITHOUT asking (only ask which one when several fit).
 QUOTING: NEVER wrap [%...%] placeholders in quotes in the SQL — VALUES ('[%tfTest%]') causes an error; always emit them unquoted: VALUES ([%tfTest%], ...). Only literal string constants that are NOT placeholders may be quoted.
 For a REPEATABLE container, never hardcode a JSON literal with placeholders — you ALSO need FC_WRITE_FORM_RECORD_ATTRIBUTES (accumulate the JSON in a server attribute) and FC_FOR_EACH_LOOP (iterate the rows) BEFORE the single FC_SQL_STATEMENT. REQUEST those node details too (list them in need_workflow_node_details) so you get their exact parameters.
 NESTING: the per-row append FC_WRITE_FORM_RECORD_ATTRIBUTES goes INSIDE the FC_FOR_EACH_LOOP's nodeParams._childNodes (runs once per row). The seed "[" (before the loop), the close "]" and this FC_SQL_STATEMENT (both after the loop) are chain nodes — NEVER put them inside _childNodes, and NEVER put the per-row append after the loop.
+### FC_LDAP_QUERY
+FC_LDAP_QUERY — Runs an LDAP query against a configured LDAP connection. USE whenever the user asks to EXECUTE an LDAP query/Abfrage.
+CUSTOM (user gave explicit LDAP filter/query text) — when the user writes a CONCRETE LDAP filter/query (e.g. "soll die LDAP-Abfrage (uid=...) ausgeführt werden"), put it VERBATIM into "filter" (plus "baseDN" when given) and run it as a custom query (useClientLdapQuery=false → "Use configured LDAP query" UNCHECKED, text in the "query" field) EVEN IF configured LDAP queries exist. The user's explicit LDAP text always wins; never refuse it.
+CONFIGURED (user named a query, no filter text) — only when the user refers to a NAMED/pre-existing "LDAP-Abfrage" by MEANING WITHOUT giving any filter text, set "query" to the EXACT name of one of the AVAILABLE CONFIGURED LDAP QUERIES (chosen by MEANING); the node runs it with useClientLdapQuery=true. Never invent the filter text nor a query name not in the list.
+CONNECTION — set "connection" to the available connection; when EXACTLY ONE connection is available use it WITHOUT asking (only ask which one when several fit).
+nodeParams (CUSTOM): {"connection":"<exact connection name>","filter":"<the exact LDAP filter text the user typed>","baseDN":"<base DN if given>"} — runs via useClientLdapQuery=false (text in the "query" field). Use this even when configured LDAP queries exist.
+nodeParams (CONFIGURED): {"connection":"<exact connection name>","query":"<exact configured LDAP query name from the AVAILABLE CONFIGURED LDAP QUERIES list, chosen by meaning>"} — runs the configured query via useClientLdapQuery=true. Use the single available connection without asking; ask which connection only when several fit.
 ### FC_RETURN_FILE
 FC_RETURN_FILE — Returns a file to the user's browser for download.
 REQUIRED: the file source to return. Pick ONE File selection mode via a distinct key:
@@ -235,6 +246,9 @@ REQUIRED: the HTML template to render.
 USED FOR ABSCHLUSSSEITEN — the SUCCESS page of a submission goes here as the LAST node before the
 endpoint (top-level "chainedNodes", or inside "_childNodes" after the main action); the FAILURE page
 goes into the "_handlerChildNodes" of an FC_EXPERIMENT wrapping the main action.
+When the user asks for "eine bestimmte"/"a certain"/"a specific" Abschlussseite or an ending page
+WITHOUT naming one (any language), the clarification round MUST ask which one (offering the AVAILABLE
+ABSCHLUSSSEITEN) — never pick one silently, never build without a page.
 nodeParams: {"htmlTemplate":"<EXACT template/Abschlussseite name from the AVAILABLE list>"}.
 ### FC_DELETE_ATTACHMENT
 FC_DELETE_ATTACHMENT — Deletes attachments from the specified upload fields.

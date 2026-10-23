@@ -2930,18 +2930,35 @@ class AIWorkflowAssistant : IPluginServletAction {
                 "[AIWorkflowAssistant] buildNodeParams FC_SHOW_TEMPLATE: FINAL JSON = {}", result)
             result
           } else {
-            val result = """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
-            logger.warn(
-                "[AIWorkflowAssistant] buildNodeParams FC_SHOW_TEMPLATE: UUID was null, returning {}",
-                result)
-            result
+            // BUILD-SIDE GUARD: never silently emit a broken FC_SHOW_TEMPLATE (htmlTemplate:null).
+            // The user must be asked which AVAILABLE Abschlussseite to use instead. Abort the
+            // workflow creation so the error surfaces in the UI rather than persisting a node that
+            // displays no ending page.
+            logger.error(
+                "[AIWorkflowAssistant] buildNodeParams FC_SHOW_TEMPLATE: cannot resolve htmlTemplate '{}' to a UUID — aborting workflow (no broken node created)",
+                templateName)
+            throw RuntimeException(
+                "Die Abschlussseite/HTML-Vorlage '$templateName' existiert in diesem Workflow nicht " +
+                    "unter diesem exakten Namen. Bitte nenne die gew\u00FCnschte Abschlussseite aus der " +
+                    "verf\u00FCgbaren Liste, oder wiederhole mit einem konkreten Namen. / The ending page / " +
+                    "HTML template '$templateName' does not exist in this workflow under that exact " +
+                    "name. Please name the desired ending page from the available list, or retry with " +
+                    "a concrete name.")
           }
-        } else {
-          logger.info(
-              "[AIWorkflowAssistant] buildNodeParams FC_SHOW_TEMPLATE: SKIPPING htmlTemplate — templateName blank={}, workflowVersion null={}, userContext null={}",
-              templateName.isBlank(),
+        } else if (templateName.isNotBlank()) {
+          // A name WAS supplied but we cannot resolve it (missing workflow/user context) — never
+          // build a silent htmlTemplate:null node. Abort so the user can see the issue.
+          logger.error(
+              "[AIWorkflowAssistant] buildNodeParams FC_SHOW_TEMPLATE: htmlTemplate '{}' cannot be resolved (workflowVersion null={}, userContext null={}) — aborting workflow",
+              templateName,
               workflowVersion == null,
               userContext == null)
+          throw RuntimeException(
+              "Die Abschlussseite/HTML-Vorlage '$templateName' konnte nicht zugeordnet werden. / The " +
+                  "ending page / HTML template '$templateName' could not be resolved.")
+        } else {
+          logger.warn(
+              "[AIWorkflowAssistant] buildNodeParams FC_SHOW_TEMPLATE: no htmlTemplate name supplied — creating an empty FC_SHOW_TEMPLATE node")
           """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
         }
       }

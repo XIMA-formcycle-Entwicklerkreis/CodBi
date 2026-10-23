@@ -5683,6 +5683,26 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * True when the workflow AI returned an explicit EMPTY operations wrapper — {"operations":[]},
+   * {"workflow":[]} or {"tasks":[]}. That is the model's deliberate "no workflow change needed"
+   * verdict: the wrapper array is PRESENT but empty. This is a legitimate outcome and must NOT be
+   * reported as a failure the way a malformed, prose, or truly empty response would be.
+   */
+  private fun isExplicitEmptyWorkflowWrapper(cleanedJson: String): Boolean {
+    return try {
+      val el = JsonParser.parseString(cleanedJson)
+      if (!el.isJsonObject) return false
+      val obj = el.asJsonObject
+      listOf("operations", "workflow", "tasks").any { key ->
+        val v = obj.get(key)
+        v != null && v.isJsonArray && v.asJsonArray.size() == 0
+      }
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
    * Returns true when the raw assistant response contains an explicit natural-language statement
    * that no CodBi element is applicable. The JSON-extraction normally discards such prose;
    * capturing it lets us avoid forcing a blind CodBi reconsideration pass when the model already
@@ -12497,6 +12517,24 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: pdfTemplates={}",
         pdfTemplatesJson ?: "null (no PDF files in this form)")
+    // Available configured DATABASE CONNECTIONS + QUERIES (name + uuid). FC_SQL_STATEMENT must run
+    // an EXISTING configured query (useClientDatabaseQuery/databaseQuery) and use the single
+    // available Connection without asking — without this list the AI invented a custom SQL
+    // statement
+    // and a guessed connection name.
+    val databaseSqlContext = buildAvailableDatabaseSqlContext(params)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: databaseSqlContext={}",
+        databaseSqlContext ?: "null (no DB connections/queries found)")
+    // Available configured LDAP CONNECTIONS + QUERIES (name + uuid). FC_LDAP_QUERY must run an
+    // EXISTING configured LDAP query (useClientLdapQuery/ldapQuery) or a custom LDAP filter
+    // (useClientLdapQuery=false, query+baseDN) and use the single available Connection without
+    // asking — without this list the AI invented a non-existent node type (LDAP_QUERY) or a
+    // guessed connection name.
+    val databaseLdapContext = buildAvailableLdapContext(params)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: databaseLdapContext={}",
+        databaseLdapContext ?: "null (no LDAP connections/queries found)")
     // DEBUG: Log custom_parameters of existing FC_SHOW_TEMPLATE nodes to identify the correct JSON
     // format
     try {
@@ -12802,7 +12840,9 @@ class AICodBiAssistant : IPluginServletAction {
             currentExistingStructure,
             existingStructureBounded = currentStructureBounded,
             userGroups = userGroupsJson,
-            pdfTemplates = pdfTemplatesJson)
+            pdfTemplates = pdfTemplatesJson,
+            databaseSql = databaseSqlContext,
+            databaseLdap = databaseLdapContext)
 
     var messagesJson = buildString {
       append("[")
@@ -12874,7 +12914,9 @@ class AICodBiAssistant : IPluginServletAction {
               existingStructureBounded = currentStructureBounded,
               existingStructureDemandedIds = requestedInstanceIds.toSet(),
               userGroups = userGroupsJson,
-              pdfTemplates = pdfTemplatesJson)
+              pdfTemplates = pdfTemplatesJson,
+              databaseSql = databaseSqlContext,
+              databaseLdap = databaseLdapContext)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -12993,7 +13035,9 @@ class AICodBiAssistant : IPluginServletAction {
                 existingStructureBounded = currentStructureBounded,
                 existingStructureDemandedIds = requestedInstanceIds.toSet(),
                 userGroups = userGroupsJson,
-                pdfTemplates = pdfTemplatesJson)
+                pdfTemplates = pdfTemplatesJson,
+                databaseSql = databaseSqlContext,
+                databaseLdap = databaseLdapContext)
         messagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -13141,6 +13185,21 @@ class AICodBiAssistant : IPluginServletAction {
         }
 
     if (taskSpecs.isEmpty()) {
+      // An explicit empty operations wrapper — {"operations":[]}, {"workflow":[]} or {"tasks":[]} —
+      // is the AI's deliberate "no workflow change needed" verdict. That is a legitimate outcome,
+      // NOT a failure: surface a graceful message and return, exactly like the form assistant does
+      // for a "no changes" verdict. Without this the run crashed with a misleading "described form
+      // elements instead of a workflow task" error even though the AI returned an empty operations
+      // list (it did NOT describe form elements).
+      if (isExplicitEmptyWorkflowWrapper(safeCleaned)) {
+        logger.info(
+            "[AICodBiAssistant] Workflow AI returned an empty operations wrapper ({} chars) — no workflow changes needed",
+            safeCleaned.length)
+        return Triple(
+            "No workflow changes were needed — the workflow version was left unchanged.",
+            JsonArray(),
+            TokenUsage(tokensIn, tokensOut))
+      }
       logger.warn(
           "[AICodBiAssistant] Workflow AI returned no task spec ({} chars) - aborting workflow creation",
           safeCleaned.length)
@@ -15817,7 +15876,16 @@ class AICodBiAssistant : IPluginServletAction {
       // FC_FILL_PDF needs the EXACT template file name; without this list the model can only ASK
       // for the file (or invent one), which is exactly why "die PDF Gehaltsabrechnung befüllen"
       // produced no node at all.
-      pdfTemplates: String? = null
+      pdfTemplates: String? = null,
+      // AVAILABLE DATABASE CONNECTIONS + CONFIGURED QUERIES (name + uuid) — lets FC_SQL_STATEMENT
+      // run an EXISTING configured query (useClientDatabaseQuery/databaseQuery) and pick the single
+      // Connection without asking, instead of the AI inventing a custom SQL statement.
+      databaseSql: String? = null,
+      // AVAILABLE LDAP CONNECTIONS + CONFIGURED LDAP QUERIES (name + uuid) — lets FC_LDAP_QUERY
+      // run an EXISTING configured LDAP query (useClientLdapQuery/ldapQuery) or a custom LDAP
+      // filter/query (useClientLdapQuery=false, query+baseDN) and pick the single Connection
+      // without asking, instead of the AI inventing a query name or guessing a connection.
+      databaseLdap: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -15875,6 +15943,8 @@ class AICodBiAssistant : IPluginServletAction {
               completionPages = workflowCompletionPages,
               htmlTemplates = workflowHtmlTemplates,
               pdfTemplates = workflowPdfTemplates,
+              databaseSql = databaseSql,
+              databaseLdap = databaseLdap,
               inboxes = inboxes,
               messageServices = messageServices,
               triggers = triggers,
@@ -21480,7 +21550,34 @@ class AICodBiAssistant : IPluginServletAction {
                   val value = fv["value"] as? String ?: ""
                   """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
                 } ?: emptyList()
-        """{"name":${gson.toJson(nodeName)},"formValues":[${formValues.joinToString(",")}]}"""
+        // repetitionSizes = the "Number of repetitions" option. Each entry sets how many times a
+        // REPEATABLE (dynamic) container grows: name = the container/group technicalId,
+        // value = the target repetition count. The executor only starts container repetitions that
+        // already exist (createIsRepeatedTest), so this can only grow EXISTING dynamic containers.
+        @Suppress("UNCHECKED_CAST")
+        val repetitionSizes =
+            (spec.nodeParams["repetitionSizes"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { rs ->
+                  val name = rs["name"] as? String ?: return@mapNotNull null
+                  val value =
+                      rs["value"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                          ?: return@mapNotNull null
+                  val size = value.toIntOrNull() ?: return@mapNotNull null
+                  if (size < 1) return@mapNotNull null
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(size.toString())}}"""
+                } ?: emptyList()
+        val repetitionSizesJson = repetitionSizes.joinToString(",")
+        logger.info(
+            "[AICodBiAssistant] buildNodeParams FC_CHANGE_FORM_VALUE: name='{}', formValues={}, repetitionSizes=[{}]",
+            nodeName,
+            formValues.size,
+            repetitionSizesJson)
+        if (repetitionSizes.isEmpty()) {
+          """{"name":${gson.toJson(nodeName)},"formValues":[${formValues.joinToString(",")}]}"""
+        } else {
+          """{"name":${gson.toJson(nodeName)},"formValues":[${formValues.joinToString(",")}],"repetitionSizes":[$repetitionSizesJson]}"""
+        }
       }
       "FC_LOG_ENTRY" -> {
         val message = spec.nodeParams["message"] as? String ?: ""
@@ -22592,18 +22689,27 @@ class AICodBiAssistant : IPluginServletAction {
         // CUSTOM_PARAMS stores FcSqlStatementProps:
         //   databaseConnection: UuidEntityRef ->
         // {"uuid":"<uuid>","entityClass":"de.xima.fc.entities.DatenbankZugriff"}
-        //   query: String (the SQL text — the property shown in the node editor)
+        //   databaseQuery: UuidEntityRef ->
+        // {"uuid":"<uuid>","entityClass":"de.xima.fc.entities.Datenquelle"}
+        //   query: String (the SQL text — the "SQL-Query" field shown in the node editor)
         //   queryParameters: List<Setting<String>>
-        //   useClientDatabaseQuery: boolean
-        // The AI provides nodeParams: {"connection":"<connection name>","sql":"<SQL text>"}.
+        //   useClientDatabaseQuery: boolean (true → run the CONFIGURED databaseQuery; false →
+        // custom
+        //   query typed into the "SQL-Query" field, i.e. the "Use configured database query" box is
+        //   UNCHECKED)
+        // The AI provides nodeParams:
+        //   custom query  : {"connection":"<connection name>","sql":"<SQL text>"}
+        //   configured    : {"connection":"<connection name>","query":"<configured query name>"}
+        // RULE — when the USER gives an EXPLICIT SQL statement (e.g. "SELECT * FROM JOJO"), the
+        // node
+        // must use a CUSTOM query (useClientDatabaseQuery:false) with that SQL in the "SQL-Query"
+        // field, EVEN IF configured queries exist. Only when the user refers to a
+        // NAMED/pre-existing
+        // "DB query" (no SQL text, chosen by MEANING from the available CONFIGURED QUERIES) does it
+        // use the configured path (useClientDatabaseQuery:true + databaseQuery).
         val connectionName = spec.nodeParams["connection"] as? String ?: ""
-        val rawQuery =
-            spec.nodeParams["sql"] as? String ?: spec.nodeParams["query"] as? String ?: ""
-        // Block destructive DDL / multi-statement SQL before it is persisted: the effective query
-        // becomes a placeholder and the node is flagged, so no destructive statement reaches the
-        // DB.
-        val sanitizedSql = sanitizeSqlQuery(rawQuery)
-        val query = sanitizedSql.sanitized
+        val customSql = spec.nodeParams["sql"] as? String ?: ""
+        val queryParam = spec.nodeParams["query"] as? String ?: ""
         val connectionUuid =
             if (connectionName.isNotBlank() && workflowVersion != null)
                 resolveDatabaseConnectionUuid(workflowVersion, connectionName)
@@ -22612,17 +22718,145 @@ class AICodBiAssistant : IPluginServletAction {
             if (connectionUuid != null) {
               """{"uuid":${gson.toJson(connectionUuid.toString())},"entityClass":"de.xima.fc.entities.DatenbankZugriff"}"""
             } else "null"
+        // Resolve a configured query (Datenquelle) the AI selected by name →
+        // useClientDatabaseQuery:true.
+        // An explicit custom SQL (customSql) takes precedence over the configured path: whether the
+        // model put the SQL in "sql" or (loosely) in "query", if it is a literal SQL statement
+        // rather
+        // than a resolvable configured-query name, it must run as a custom query.
+        val queryUuid =
+            if (queryParam.isNotBlank() && workflowVersion != null && customSql.isBlank())
+                resolveDatabaseQueryUuid(workflowVersion, queryParam)
+            else null
+        // The effective custom SQL: prefer explicit "sql", otherwise a non-resolvable "query" value
+        // the user wrote as a literal statement (e.g. "SELECT * FROM JOJO").
+        val rawQuery = if (customSql.isNotBlank()) customSql else queryParam
+        // Block destructive DDL / multi-statement SQL before it is persisted: the effective query
+        // becomes a placeholder and the node is flagged, so no destructive statement reaches the
+        // DB.
+        val sanitizedSql = sanitizeSqlQuery(rawQuery)
         val blockedJson =
             if (sanitizedSql.blocked) {
               ""","codbiSqlBlocked":true,"codbiSqlBlockedReasons":${gson.toJson(sanitizedSql.blockedReasons)}"""
             } else ""
-        logger.info(
-            "[AICodBiAssistant] buildNodeParams FC_SQL_STATEMENT: connection='{}' resolved={} query='{}' blocked={}",
-            connectionName,
-            connectionUuid != null,
-            query,
-            sanitizedSql.blocked)
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"databaseConnection":$connectionJson,"query":${gson.toJson(query)},"queryParameters":[],"useClientDatabaseQuery":false$blockedJson}"""
+        if (queryUuid != null) {
+          // Use the configured database query.
+          val queryJson =
+              """{"uuid":${gson.toJson(queryUuid.toString())},"entityClass":"de.xima.fc.entities.Datenquelle"}"""
+          logger.info(
+              "[AICodBiAssistant] buildNodeParams FC_SQL_STATEMENT: connection='{}' resolved={} configuredQuery='{}' resolved={} (useClientDatabaseQuery=true)",
+              connectionName,
+              connectionUuid != null,
+              queryParam,
+              queryUuid != null)
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"databaseConnection":$connectionJson,"databaseQuery":$queryJson,"query":${gson.toJson(queryParam)},"queryParameters":[],"useClientDatabaseQuery":true$blockedJson}"""
+        } else {
+          // Custom SQL statement: "Use configured database query" unchecked, SQL in the "SQL-Query"
+          // field.
+          val query = sanitizedSql.sanitized
+          logger.info(
+              "[AICodBiAssistant] buildNodeParams FC_SQL_STATEMENT (custom): connection='{}' resolved={} query='{}' blocked={}",
+              connectionName,
+              connectionUuid != null,
+              query,
+              sanitizedSql.blocked)
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"databaseConnection":$connectionJson,"query":${gson.toJson(query)},"queryParameters":[],"useClientDatabaseQuery":false$blockedJson}"""
+        }
+      }
+      "FC_LDAP_QUERY" -> {
+        // FC_LDAP_QUERY runs an LDAP query against a configured LDAP connection.
+        // CUSTOM_PARAMS stores FcLdapQueryProps:
+        //   ldapConnection: UuidEntityRef ->
+        // {"uuid":"<uuid>","entityClass":"de.xima.fc.entities.LDAPZugriff"}
+        //   ldapQuery: UuidEntityRef ->
+        // {"uuid":"<uuid>","entityClass":"de.xima.fc.entities.LDAPAbfrage"}
+        //   query: String (the custom LDAP filter text — the "LDAP-Abfrage"/filter field shown in
+        // the
+        //   node editor when "Use configured LDAP query" is UNCHECKED)
+        //   baseDN: String (the LDAP base DN used with the custom query)
+        //   queryParameters: List<Setting<String>>
+        //   resultAttributes: List<GenericStringModel>
+        //   useClientLdapQuery: boolean (true → run the CONFIGURED ldapQuery; false → custom LDAP
+        //   filter typed into the "query" field, i.e. the "Use configured LDAP query" box is
+        //   UNCHECKED)
+        //   useClientLdapConnection: boolean (true → use the client/mandant default LDAP
+        // connection;
+        //   false → use the explicit ldapConnection ref)
+        // The AI provides nodeParams:
+        //   custom LDAP    : {"connection":"<connection name>","filter":"<LDAP filter
+        // text>","baseDN":"<base DN>"}
+        //   configured     : {"connection":"<connection name>","query":"<configured LDAP query
+        // name>"}
+        // RULE — when the USER gives an EXPLICIT LDAP filter/query text (e.g. "soll die
+        // LDAP-Abfrage
+        // (uid=...) ausgeführt werden"), the node must use a CUSTOM query
+        // (useClientLdapQuery:false)
+        // with that text in the "query" field, EVEN IF configured LDAP queries exist. Only when the
+        // user refers to a NAMED/pre-existing "LDAP-Abfrage" (no filter text, chosen by MEANING
+        // from
+        // the available CONFIGURED LDAP QUERIES) does it use the configured path
+        // (useClientLdapQuery:true + ldapQuery).
+        val ldapConnectionName = spec.nodeParams["connection"] as? String ?: ""
+        val customFilter = spec.nodeParams["filter"] as? String ?: ""
+        val ldapQueryParam = spec.nodeParams["query"] as? String ?: ""
+        val ldapBaseDN = spec.nodeParams["baseDN"] as? String ?: ""
+        // Resolve the connection the node must run against:
+        // 1. When the user/AI named a specific connection — resolve it
+        // (useClientLdapConnection:false).
+        // 2. Otherwise auto-select the ONLY available connection so the "LDAP connection" selection
+        // is
+        //    set automatically (when several exist WITHOUT an explicit name,
+        // resolveSingleLdapConnectionUuid
+        //    returns null and the model is responsible for having asked the user which one to use).
+        // 3. Last resort (no name, multiple/unknown connections) — fall back to the client/mandant
+        //    default connection (useClientLdapConnection:true) so the node still runs.
+        val ldapConnectionUuid =
+            if (ldapConnectionName.isNotBlank() && workflowVersion != null) {
+              resolveLdapConnectionUuid(workflowVersion, ldapConnectionName)
+                  ?: resolveSingleLdapConnectionUuid(workflowVersion)
+            } else if (workflowVersion != null) {
+              resolveSingleLdapConnectionUuid(workflowVersion)
+            } else null
+        val ldapConnectionJson =
+            if (ldapConnectionUuid != null) {
+              """{"uuid":${gson.toJson(ldapConnectionUuid.toString())},"entityClass":"de.xima.fc.entities.LDAPZugriff"}"""
+            } else "null"
+        val useClientLdapConnection = ldapConnectionUuid == null
+        // Resolve a configured LDAP query (LDAPAbfrage) the AI selected by name →
+        // useClientLdapQuery:true. An explicit custom filter (customFilter) takes precedence over
+        // the
+        // configured path: whether the model put the filter in "filter" or (loosely) in "query", if
+        // it
+        // is a literal LDAP filter rather than a resolvable configured-query name, it must run as a
+        // custom query.
+        val ldapQueryUuid =
+            if (ldapQueryParam.isNotBlank() && workflowVersion != null && customFilter.isBlank())
+                resolveLdapQueryUuid(workflowVersion, ldapQueryParam)
+            else null
+        // The effective custom LDAP filter: prefer explicit "filter", otherwise a non-resolvable
+        // "query" value the user wrote as a literal filter/statement.
+        val effectiveFilter = if (customFilter.isNotBlank()) customFilter else ldapQueryParam
+        if (ldapQueryUuid != null) {
+          // Use the configured LDAP query.
+          val ldapQueryJson =
+              """{"uuid":${gson.toJson(ldapQueryUuid.toString())},"entityClass":"de.xima.fc.entities.LDAPAbfrage"}"""
+          logger.info(
+              "[AICodBiAssistant] buildNodeParams FC_LDAP_QUERY: connection='{}' resolved={} configuredQuery='{}' resolved={} (useClientLdapQuery=true)",
+              ldapConnectionName,
+              ldapConnectionUuid != null,
+              ldapQueryParam,
+              ldapQueryUuid != null)
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"ldapConnection":$ldapConnectionJson,"ldapQuery":$ldapQueryJson,"query":${gson.toJson(ldapQueryParam)},"baseDN":${gson.toJson(ldapBaseDN)},"queryParameters":[],"resultAttributes":[],"useClientLdapQuery":true,"useClientLdapConnection":$useClientLdapConnection}"""
+        } else {
+          // Custom LDAP filter: "Use configured LDAP query" unchecked, filter in the "query" field.
+          logger.info(
+              "[AICodBiAssistant] buildNodeParams FC_LDAP_QUERY (custom): connection='{}' resolved={} filter='{}' baseDN='{}'",
+              ldapConnectionName,
+              ldapConnectionUuid != null,
+              effectiveFilter,
+              ldapBaseDN)
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"ldapConnection":$ldapConnectionJson,"query":${gson.toJson(effectiveFilter)},"baseDN":${gson.toJson(ldapBaseDN)},"queryParameters":[],"resultAttributes":[],"useClientLdapQuery":false,"useClientLdapConnection":$useClientLdapConnection}"""
+        }
       }
       "de.xima.akdb.epay.logic.plugin.node.PaymentInitPlugin" -> {
         // AKDB E-Payment (ePayBL) — initializes a payment for the current form record and
@@ -24175,6 +24409,612 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Builds the DATABASE SQL context block injected into the workflow system prompt: the available
+   * configured DATABASE CONNECTIONS (DatenbankZugriff / ZUGRIFF_DB) and the available configured
+   * DATABASE QUERIES (Datenquelle / DATENQUELLE) — each as name + uuid — for the request's client
+   * (mandant). Lets FC_SQL_STATEMENT run an EXISTING configured query
+   * (useClientDatabaseQuery:true + databaseQuery = the query's UuidEntityRef) instead of the AI
+   * inventing a custom SQL statement, and lets it pick the single available Connection WITHOUT
+   * asking (asking only when several fit). Returns null when no connections AND no queries can be
+   * determined (the prompt section is then dropped entirely, so the model never invents a query
+   * name against an empty list).
+   */
+  private fun buildAvailableDatabaseSqlContext(params: IPluginServletActionParams): String? {
+    return try {
+      val emf = CodbiEntities.entityManagerFactory ?: return null
+      val mandantId = mandantIdOf(InstalledFormcycleElements.mandantFor(params))
+      val em = emf.createEntityManager()
+      try {
+        // QUERIES: native SQL against the Datenquelle table(s) with column discovery.
+        val queries = mutableListOf<Pair<String, String>>()
+        for (table in listOf("DATENQUELLE", "DATENQUELLEN")) {
+          val nameCol =
+              discoverDatasourceColumn(em, table, listOf("NAME", "BEZEICHNUNG", "BEZ")) ?: continue
+          val uuidCol =
+              discoverDatasourceColumn(em, table, listOf("UUID", "UUID_OBJ", "IDENT")) ?: continue
+          val clientCol =
+              discoverDatasourceColumn(
+                  em, table, listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+          val sql =
+              if (clientCol != null && mandantId != null)
+                  "SELECT $nameCol, $uuidCol FROM $table WHERE $clientCol = :mid"
+              else "SELECT $nameCol, $uuidCol FROM $table"
+          val query = em.createNativeQuery(sql)
+          if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+          for (row in query.resultList) {
+            val cols = row as? Array<*> ?: continue
+            if (cols.size < 2) continue
+            val name = cols[0]?.toString()?.trim()
+            val rawUuid = cols[1]?.toString()?.trim()
+            if (name.isNullOrBlank() || rawUuid.isNullOrBlank()) continue
+            val uuid =
+                try {
+                  UUID.fromString(rawUuid)
+                } catch (_: Exception) {
+                  null
+                }
+            if (uuid != null) queries.add(name to uuid.toString())
+          }
+          if (queries.isNotEmpty()) break
+        }
+        // CONNECTIONS: native SQL against ZUGRIFF_DB with column discovery.
+        val connections = mutableListOf<Pair<String, String>>()
+        try {
+          run {
+            val nameCol =
+                discoverDatasourceColumn(em, "ZUGRIFF_DB", listOf("NAME", "BEZEICHNUNG"))
+                    ?: return@run
+            val uuidCol =
+                discoverDatasourceColumn(em, "ZUGRIFF_DB", listOf("UUID", "UUID_OBJ", "IDENT"))
+                    ?: return@run
+            val clientCol =
+                discoverDatasourceColumn(
+                    em, "ZUGRIFF_DB", listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+            val sql =
+                if (clientCol != null && mandantId != null)
+                    "SELECT $nameCol, $uuidCol FROM ZUGRIFF_DB WHERE $clientCol = :mid"
+                else "SELECT $nameCol, $uuidCol FROM ZUGRIFF_DB"
+            val query = em.createNativeQuery(sql)
+            if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+            for (row in query.resultList) {
+              val cols = row as? Array<*> ?: continue
+              if (cols.size < 2) continue
+              val name = cols[0]?.toString()?.trim()
+              val rawUuid = cols[1]?.toString()?.trim()
+              if (name.isNullOrBlank() || rawUuid.isNullOrBlank()) continue
+              val uuid =
+                  try {
+                    UUID.fromString(rawUuid)
+                  } catch (_: Exception) {
+                    null
+                  }
+              if (uuid != null) connections.add(name to uuid.toString())
+            }
+          }
+        } catch (_: Exception) {
+          // connections are optional; a missing ZUGRIFF_DB fallback is fine
+        }
+        if (connections.isEmpty() && queries.isEmpty()) return null
+        // Also set the workflow-version connection UUID back onto the resolver cache isn't needed —
+        // buildNodeParams re-resolves via resolveDatabaseConnectionUuid.
+        buildString {
+              if (connections.isNotEmpty()) {
+                appendLine("CONNECTIONS (name → uuid):")
+                for ((name, uuid) in connections) appendLine("- $name → $uuid")
+              }
+              if (queries.isNotEmpty()) {
+                if (connections.isNotEmpty()) appendLine()
+                appendLine(
+                    "CONFIGURED QUERIES (name → uuid — choose 'query' from THESE by meaning):")
+                for ((name, uuid) in queries) appendLine("- $name → $uuid")
+              }
+            }
+            .trim()
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load available database SQL context: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Builds the LDAP context block injected into the workflow system prompt: the available
+   * configured LDAP CONNECTIONS (LDAPZugriff / connection_ldap) and the available configured LDAP
+   * QUERIES (LDAPAbfrage / query_ldap) — each as name + uuid — for the request's client (mandant).
+   * Lets an FC_LDAP_QUERY run an EXISTING configured LDAP query (useClientLdapQuery:true +
+   * ldapQuery = the query's UuidEntityRef) instead of the AI inventing a custom LDAP filter, lets
+   * it pick the single available Connection WITHOUT asking, and lets it use a CUSTOM LDAP query
+   * (useClientLdapQuery:false
+   * + query/baseDN) when the user provides an explicit LDAP filter. Returns null when no
+   *   connections AND no queries can be determined (the prompt section is then dropped entirely, so
+   *   the model never invents a query name against an empty list).
+   */
+  private fun buildAvailableLdapContext(params: IPluginServletActionParams): String? {
+    return try {
+      val emf = CodbiEntities.entityManagerFactory ?: return null
+      val mandantId = mandantIdOf(InstalledFormcycleElements.mandantFor(params))
+      val em = emf.createEntityManager()
+      try {
+        // QUERIES: native SQL against the LDAPAbfrage table (query_ldap) with column discovery.
+        val queries = mutableListOf<Pair<String, String>>()
+        run {
+          val nameCol =
+              discoverDatasourceColumn(em, "query_ldap", listOf("NAME", "BEZEICHNUNG", "BEZ"))
+                  ?: return@run
+          val uuidCol =
+              discoverDatasourceColumn(em, "query_ldap", listOf("UUID", "UUID_OBJ", "IDENT"))
+                  ?: return@run
+          val clientCol =
+              discoverDatasourceColumn(
+                  em, "query_ldap", listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+          val sql =
+              if (clientCol != null && mandantId != null)
+                  "SELECT $nameCol, $uuidCol FROM query_ldap WHERE $clientCol = :mid"
+              else "SELECT $nameCol, $uuidCol FROM query_ldap"
+          val query = em.createNativeQuery(sql)
+          if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+          for (row in query.resultList) {
+            val cols = row as? Array<*> ?: continue
+            if (cols.size < 2) continue
+            val name = cols[0]?.toString()?.trim()
+            val rawUuid = cols[1]?.toString()?.trim()
+            if (name.isNullOrBlank() || rawUuid.isNullOrBlank()) continue
+            val uuid =
+                try {
+                  UUID.fromString(rawUuid)
+                } catch (_: Exception) {
+                  null
+                }
+            if (uuid != null) queries.add(name to uuid.toString())
+          }
+        }
+        // CONNECTIONS: native SQL against the LDAPZugriff table (connection_ldap) with column
+        // discovery.
+        val connections = mutableListOf<Pair<String, String>>()
+        try {
+          run {
+            val nameCol =
+                discoverDatasourceColumn(em, "connection_ldap", listOf("NAME", "BEZEICHNUNG"))
+                    ?: return@run
+            val uuidCol =
+                discoverDatasourceColumn(em, "connection_ldap", listOf("UUID", "UUID_OBJ", "IDENT"))
+                    ?: return@run
+            val clientCol =
+                discoverDatasourceColumn(
+                    em,
+                    "connection_ldap",
+                    listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+            val sql =
+                if (clientCol != null && mandantId != null)
+                    "SELECT $nameCol, $uuidCol FROM connection_ldap WHERE $clientCol = :mid"
+                else "SELECT $nameCol, $uuidCol FROM connection_ldap"
+            val query = em.createNativeQuery(sql)
+            if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+            for (row in query.resultList) {
+              val cols = row as? Array<*> ?: continue
+              if (cols.size < 2) continue
+              val name = cols[0]?.toString()?.trim()
+              val rawUuid = cols[1]?.toString()?.trim()
+              if (name.isNullOrBlank() || rawUuid.isNullOrBlank()) continue
+              val uuid =
+                  try {
+                    UUID.fromString(rawUuid)
+                  } catch (_: Exception) {
+                    null
+                  }
+              if (uuid != null) connections.add(name to uuid.toString())
+            }
+          }
+        } catch (_: Exception) {
+          // connections are optional; a missing connection_ldap fallback is fine
+        }
+        if (connections.isEmpty() && queries.isEmpty()) return null
+        buildString {
+              if (connections.isNotEmpty()) {
+                appendLine("LDAP CONNECTIONS (name → uuid):")
+                for ((name, uuid) in connections) appendLine("- $name → $uuid")
+              }
+              if (queries.isNotEmpty()) {
+                if (connections.isNotEmpty()) appendLine()
+                appendLine(
+                    "CONFIGURED LDAP QUERIES (name → uuid — choose 'query' from THESE by meaning):")
+                for ((name, uuid) in queries) appendLine("- $name → $uuid")
+              }
+            }
+            .trim()
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load available LDAP context: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Resolves a configured LDAP CONNECTION (LDAPZugriff / connection_ldap) by its display name to
+   * its UUID — the value used for FcLdapQueryProps.ldapConnection (a UuidEntityRef to
+   * `de.xima.fc.entities.LDAPZugriff`) when the AI picks a specific connection
+   * (useClientLdapConnection:false). Best-effort: any failure returns null so the caller falls back
+   * to the client-default connection path.
+   */
+  private fun resolveLdapConnectionUuid(workflowVersion: Any?, connectionName: String): UUID? {
+    if (connectionName.isBlank()) return null
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      var mandantId: Long? = null
+      try {
+        val project = workflowVersion?.javaClass?.getMethod("getProject")?.invoke(workflowVersion)
+        val mandant = project?.javaClass?.getMethod("getMandant")?.invoke(project)
+        mandantId = mandant?.javaClass?.getMethod("getId")?.invoke(mandant) as? Long
+      } catch (_: Exception) {
+        mandantId = null
+      }
+      // Strategy 1: JPQL against the LDAPZugriff entity (scoped to the client when known).
+      try {
+        val jpql =
+            if (mandantId != null)
+                "SELECT c FROM de.xima.fc.entities.LDAPZugriff c WHERE c.name = :name AND c.mandant.id = :mid"
+            else "SELECT c FROM de.xima.fc.entities.LDAPZugriff c WHERE c.name = :name"
+        val query = em.createQuery(jpql)
+        query.setParameter("name", connectionName)
+        if (mandantId != null) query.setParameter("mid", mandantId)
+        val results = query.resultList
+        if (results.isNotEmpty()) {
+          val conn = results[0] ?: return null
+          val uuid =
+              try {
+                conn.javaClass.getMethod("getUUIDObject").invoke(conn) as? UUID
+              } catch (_: Exception) {
+                try {
+                  conn.javaClass.getMethod("getUuid").invoke(conn) as? UUID
+                } catch (_: Exception) {
+                  null
+                }
+              }
+          if (uuid != null) {
+            logger.info(
+                "[AICodBiAssistant] Resolved LDAP connection '{}' to UUID {} via JPQL",
+                connectionName,
+                uuid)
+            return uuid
+          }
+        }
+      } catch (_: Exception) {
+        // fall through to native SQL
+      }
+      // Strategy 2: Native SQL against connection_ldap with schema discovery.
+      try {
+        val nameCol =
+            discoverDatasourceColumn(em, "connection_ldap", listOf("NAME", "BEZEICHNUNG"))
+                ?: return null
+        val clientCol =
+            discoverDatasourceColumn(
+                em, "connection_ldap", listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+        val sql =
+            if (clientCol != null && mandantId != null)
+                "SELECT UUID FROM connection_ldap WHERE $nameCol = :name AND $clientCol = :mid"
+            else "SELECT UUID FROM connection_ldap WHERE $nameCol = :name"
+        val query = em.createNativeQuery(sql)
+        query.setParameter("name", connectionName)
+        if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+        val results = query.resultList
+        if (results.isNotEmpty()) {
+          val raw = results[0].toString()
+          val uuid =
+              try {
+                UUID.fromString(raw)
+              } catch (_: Exception) {
+                null
+              }
+          if (uuid != null) {
+            logger.info(
+                "[AICodBiAssistant] Resolved LDAP connection '{}' to UUID {} via native SQL",
+                connectionName,
+                uuid)
+            return uuid
+          }
+        }
+      } catch (_: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] Could not resolve LDAP connection '{}' (native SQL failed)",
+            connectionName)
+      }
+    } finally {
+      em.close()
+    }
+    logger.warn("[AICodBiAssistant] LDAP connection '{}' not found", connectionName)
+    return null
+  }
+
+  /**
+   * Returns the UUID of the ONLY configured LDAP connection (LDAPZugriff / connection_ldap) for the
+   * workflow version's client, or null when there are ZERO or SEVERAL connections. This lets an
+   * FC_LDAP_QUERY node auto-select the SINGLE available connection in the "LDAP connection"
+   * dropdown even when the AI did not name a specific connection in nodeParams (the prompt tells
+   * the model to use the single connection without asking; when several exist the model asks the
+   * user instead). Best-effort: any failure returns null so the caller keeps current behavior.
+   */
+  private fun resolveSingleLdapConnectionUuid(workflowVersion: Any?): UUID? {
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      var mandantId: Long? = null
+      try {
+        val project = workflowVersion?.javaClass?.getMethod("getProject")?.invoke(workflowVersion)
+        val mandant = project?.javaClass?.getMethod("getMandant")?.invoke(project)
+        mandantId = mandant?.javaClass?.getMethod("getId")?.invoke(mandant) as? Long
+      } catch (_: Exception) {
+        mandantId = null
+      }
+      val uuids = mutableListOf<UUID>()
+      // Strategy 1: native SQL against connection_ldap with schema discovery (most reliable — the
+      // entity is not guaranteed to be mapped in this plugin's persistence unit).
+      try {
+        val nameCol = discoverDatasourceColumn(em, "connection_ldap", listOf("NAME", "BEZEICHNUNG"))
+        val uuidCol =
+            discoverDatasourceColumn(em, "connection_ldap", listOf("UUID", "UUID_OBJ", "IDENT"))
+        if (nameCol != null && uuidCol != null) {
+          val clientCol =
+              discoverDatasourceColumn(
+                  em,
+                  "connection_ldap",
+                  listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+          val sql =
+              if (clientCol != null && mandantId != null)
+                  "SELECT $uuidCol FROM connection_ldap WHERE $clientCol = :mid"
+              else "SELECT $uuidCol FROM connection_ldap"
+          val query = em.createNativeQuery(sql)
+          if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+          for (row in query.resultList) {
+            val raw = row?.toString()?.trim()
+            if (raw.isNullOrBlank()) continue
+            val uuid =
+                try {
+                  UUID.fromString(raw)
+                } catch (_: Exception) {
+                  null
+                }
+            if (uuid != null) uuids.add(uuid)
+          }
+        }
+      } catch (_: Exception) {
+        // fall through
+      }
+      // Strategy 2: JPQL against the LDAPZugriff entity when native SQL found nothing.
+      if (uuids.isEmpty()) {
+        try {
+          val jpql =
+              if (mandantId != null)
+                  "SELECT c FROM de.xima.fc.entities.LDAPZugriff c WHERE c.mandant.id = :mid"
+              else "SELECT c FROM de.xima.fc.entities.LDAPZugriff c"
+          val query = em.createQuery(jpql)
+          if (mandantId != null) query.setParameter("mid", mandantId)
+          for (c in query.resultList) {
+            if (c == null) continue
+            val uuid =
+                try {
+                  c.javaClass.getMethod("getUUIDObject").invoke(c) as? UUID
+                } catch (_: Exception) {
+                  try {
+                    c.javaClass.getMethod("getUuid").invoke(c) as? UUID
+                  } catch (_: Exception) {
+                    null
+                  }
+                }
+            if (uuid != null) uuids.add(uuid)
+          }
+        } catch (_: Exception) {
+          // fall through
+        }
+      }
+      if (uuids.size == 1) {
+        val uuid = uuids[0]
+        logger.info(
+            "[AICodBiAssistant] Auto-selected the single LDAP connection UUID {} ({} configured)",
+            uuid,
+            uuids.size)
+        return uuid
+      }
+      if (uuids.size > 1) {
+        logger.info(
+            "[AICodBiAssistant] {} LDAP connections configured — not auto-selecting (AI must ask which to use)",
+            uuids.size)
+      }
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Resolves a configured LDAP QUERY (LDAPAbfrage / query_ldap) by its display name to its UUID —
+   * the value used for FcLdapQueryProps.ldapQuery (a UuidEntityRef to
+   * `de.xima.fc.entities.LDAPAbfrage`) when the AI picks an existing configured LDAP query
+   * (useClientLdapQuery:true). Best-effort: any failure returns null so the caller falls back to
+   * the custom-LDAP-filter path.
+   */
+  private fun resolveLdapQueryUuid(workflowVersion: Any?, queryName: String): UUID? {
+    if (queryName.isBlank()) return null
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      var mandantId: Long? = null
+      try {
+        val project = workflowVersion?.javaClass?.getMethod("getProject")?.invoke(workflowVersion)
+        val mandant = project?.javaClass?.getMethod("getMandant")?.invoke(project)
+        mandantId = mandant?.javaClass?.getMethod("getId")?.invoke(mandant) as? Long
+      } catch (_: Exception) {
+        mandantId = null
+      }
+      // Strategy 1: JPQL against the LDAPAbfrage entity (scoped to the client when known). The
+      // query
+      // entity has a `getUUIDObject()` because it implements IUUIDEntity.
+      try {
+        val jpql =
+            if (mandantId != null)
+                "SELECT q FROM de.xima.fc.entities.LDAPAbfrage q WHERE q.name = :name AND q.mandant.id = :mid"
+            else "SELECT q FROM de.xima.fc.entities.LDAPAbfrage q WHERE q.name = :name"
+        val query = em.createQuery(jpql)
+        query.setParameter("name", queryName)
+        if (mandantId != null) query.setParameter("mid", mandantId)
+        val results = query.resultList
+        if (results.isNotEmpty()) {
+          val q = results[0] ?: return null
+          val uuid =
+              try {
+                q.javaClass.getMethod("getUUIDObject").invoke(q) as? UUID
+              } catch (_: Exception) {
+                try {
+                  q.javaClass.getMethod("getUuid").invoke(q) as? UUID
+                } catch (_: Exception) {
+                  null
+                }
+              }
+          if (uuid != null) {
+            logger.info(
+                "[AICodBiAssistant] Resolved LDAP query '{}' to UUID {} via JPQL", queryName, uuid)
+            return uuid
+          }
+        }
+      } catch (_: Exception) {
+        // fall through to native SQL
+      }
+      // Strategy 2: Native SQL against query_ldap with schema discovery.
+      try {
+        val nameCol =
+            discoverDatasourceColumn(em, "query_ldap", listOf("NAME", "BEZEICHNUNG", "BEZ"))
+                ?: return null
+        val clientCol =
+            discoverDatasourceColumn(
+                em, "query_ldap", listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+        val sql =
+            if (clientCol != null && mandantId != null)
+                "SELECT UUID FROM query_ldap WHERE $nameCol = :name AND $clientCol = :mid"
+            else "SELECT UUID FROM query_ldap WHERE $nameCol = :name"
+        val query = em.createNativeQuery(sql)
+        query.setParameter("name", queryName)
+        if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+        val results = query.resultList
+        if (results.isNotEmpty()) {
+          val raw = results[0].toString()
+          val uuid =
+              try {
+                UUID.fromString(raw)
+              } catch (_: Exception) {
+                null
+              }
+          if (uuid != null) {
+            logger.info(
+                "[AICodBiAssistant] Resolved LDAP query '{}' to UUID {} via native SQL",
+                queryName,
+                uuid)
+            return uuid
+          }
+        }
+      } catch (_: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] Could not resolve LDAP query '{}' (native SQL failed)", queryName)
+      }
+    } finally {
+      em.close()
+    }
+    logger.warn("[AICodBiAssistant] LDAP query '{}' not found", queryName)
+    return null
+  }
+
+  /**
+   * Resolves a configured database QUERY (Datenquelle) by its display name to its UUID — the value
+   * used for FcSqlStatementProps.databaseQuery (a UuidEntityRef to
+   * `de.xima.fc.entities.Datenquelle`) when the AI picks an existing configured query
+   * (useClientDatabaseQuery:true). Best-effort: any failure returns null so the caller falls back
+   * to the custom-SQL path.
+   */
+  private fun resolveDatabaseQueryUuid(workflowVersion: Any?, queryName: String): UUID? {
+    if (queryName.isBlank()) return null
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      var mandantId: Long? = null
+      try {
+        val project = workflowVersion?.javaClass?.getMethod("getProject")?.invoke(workflowVersion)
+        val mandant = project?.javaClass?.getMethod("getMandant")?.invoke(project)
+        mandantId = mandant?.javaClass?.getMethod("getId")?.invoke(mandant) as? Long
+      } catch (_: Exception) {
+        mandantId = null
+      }
+      // Strategy 1: JPQL against the Datenquelle entity.
+      try {
+        val jpql =
+            if (mandantId != null)
+                "SELECT q FROM de.xima.fc.entities.Datenquelle q WHERE q.name = :name AND q.mandant.id = :mid"
+            else "SELECT q FROM de.xima.fc.entities.Datenquelle q WHERE q.name = :name"
+        val query = em.createQuery(jpql)
+        query.setParameter("name", queryName)
+        if (mandantId != null) query.setParameter("mid", mandantId)
+        val results = query.resultList
+        if (results.isNotEmpty()) {
+          val q = results[0] ?: return null
+          val uuid = q.javaClass.getMethod("getUUIDObject").invoke(q) as? UUID
+          if (uuid != null) {
+            logger.info(
+                "[AICodBiAssistant] Resolved database query '{}' to UUID {} via JPQL",
+                queryName,
+                uuid)
+            return uuid
+          }
+        }
+      } catch (_: Exception) {
+        // fall through to native SQL
+      }
+      // Strategy 2: Native SQL against the Datenquelle table(s).
+      for (table in listOf("DATENQUELLE", "DATENQUELLEN")) {
+        try {
+          val nameCol =
+              discoverDatasourceColumn(em, table, listOf("NAME", "BEZEICHNUNG", "BEZ")) ?: continue
+          val uuidCol =
+              discoverDatasourceColumn(em, table, listOf("UUID", "UUID_OBJ", "IDENT")) ?: continue
+          val clientCol =
+              discoverDatasourceColumn(
+                  em, table, listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+          val sql =
+              if (clientCol != null && mandantId != null)
+                  "SELECT $uuidCol FROM $table WHERE $nameCol = :name AND $clientCol = :mid"
+              else "SELECT $uuidCol FROM $table WHERE $nameCol = :name"
+          val query = em.createNativeQuery(sql)
+          query.setParameter("name", queryName)
+          if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+          val results = query.resultList
+          if (results.isNotEmpty()) {
+            val uuid =
+                try {
+                  UUID.fromString(results[0].toString())
+                } catch (_: Exception) {
+                  null
+                }
+            if (uuid != null) {
+              logger.info(
+                  "[AICodBiAssistant] Resolved database query '{}' to UUID {} via native SQL",
+                  queryName,
+                  uuid)
+              return uuid
+            }
+          }
+        } catch (_: Exception) {
+          // try next table
+        }
+      }
+    } finally {
+      em.close()
+    }
+    logger.warn("[AICodBiAssistant] Database query '{}' not found", queryName)
+    return null
+  }
+
+  /**
    * Reads a mandant (client) numeric id reflectively, tolerating Long / Integer / numeric string.
    */
   private fun mandantIdOf(mandant: Any?): Long? {
@@ -24350,36 +25190,81 @@ class AICodBiAssistant : IPluginServletAction {
     val em = emf.createEntityManager()
     val byName = LinkedHashMap<String, String>()
     try {
-      val tables =
-          listOf(
-              "RESOURCE_PROJECT",
-              "FILE_RESOURCE_PROJECT",
-              "FILE_PROJECT",
-              "PROJEKTRESSOURCE",
-              "PROJEKT_RESSOURCE",
-              "PROJECT_RESOURCE",
-              "RESSOURCE_PROJEKT",
-              "PROJEKT_DATEI")
-      for (table in tables) {
-        for (nameCol in listOf("name", "filename", "bezeichnung", "dateiname")) {
-          for (projCol in listOf("project_id", "projekt_id", "fk_projekt")) {
-            for (idCol in listOf("uuid", "id")) {
-              try {
-                val query =
-                    em.createNativeQuery("SELECT $nameCol, $idCol FROM $table WHERE $projCol = ?1")
-                query.setParameter(1, projectId)
-                @Suppress("UNCHECKED_CAST") val rows = query.resultList as? List<Any?> ?: continue
-                for (row in rows) {
-                  val cells = row as? Array<*> ?: continue
-                  val name = cells.getOrNull(0)?.toString()?.trim() ?: continue
-                  val id = cells.getOrNull(1)?.toString()?.trim() ?: continue
-                  if (name.isNotEmpty() && id.isNotEmpty()) byName.putIfAbsent(name, id)
+      // Strategy 1 (preferred): JPQL against the mapped Formcycle entity. When the entity is in the
+      // plugin's persistence unit this is a single, silent query — Hibernate does NOT log the noisy
+      // `SqlExceptionHelper` WARN/ERROR for non-existent tables/columns that the old brute-force
+      // native probes produced. Property/collection names vary between Formcycle versions, so we
+      // try
+      // several forms and read the values via reflection.
+      try {
+        val entityClass =
+            runCatching { Class.forName("de.xima.fc.entities.ProjektRessource") }.getOrNull()
+        if (entityClass != null) {
+          val candidateJpqLs =
+              listOf(
+                  "SELECT r FROM de.xima.fc.entities.ProjektRessource r WHERE r.projekt.id = :pid",
+                  "SELECT r FROM de.xima.fc.entities.ProjektRessource r WHERE r.project.id = :pid")
+          for (jpql in candidateJpqLs) {
+            try {
+              val query = em.createQuery(jpql)
+              query.setParameter("pid", projectId)
+              query.maxResults = 500
+              @Suppress("UNCHECKED_CAST") val results = query.resultList as? List<*> ?: continue
+              if (results.isEmpty()) continue
+              var added = false
+              for (r in results) {
+                if (r == null) continue
+                val name = extractResourceName(r) ?: continue
+                val uuid = extractResourceUuid(r) ?: continue
+                if (name.isNotEmpty() && uuid.isNotEmpty()) {
+                  byName.putIfAbsent(name, uuid)
+                  added = true
                 }
-              } catch (_: Exception) {
-                // This table/column combination does not exist in this FORMCYCLE version.
               }
+              if (added) {
+                logger.debug(
+                    "[AICodBiAssistant] listProjectFileResources: found {} via JPQL ProjektRessource for project {}",
+                    byName.size,
+                    projectId)
+                return byName.entries.map { it.key to it.value }
+              }
+            } catch (_: Exception) {
+              // This JPQL form is not supported in this Formcycle version; try the next.
             }
           }
+          // Entity is mapped but returned no rows for this project.
+        }
+      } catch (_: Exception) {
+        // Entity not mapped / persistence-unit mismatch (HHH000183) -> native fallback below.
+      }
+
+      // Strategy 2 (fallback): schema-aware native SQL. Discover the table/column names once via
+      // information_schema and only issue a SELECT when the combination actually exists. This keeps
+      // the fallback functional for Formcycle versions where ProjektRessource is not in the
+      // plugin's
+      // persistence unit, but avoids the previous 192 probes that logged an error per miss.
+      val sources = discoverProjectFileTables(em)
+      for (src in sources) {
+        try {
+          val query =
+              em.createNativeQuery(
+                  "SELECT ${src.nameCol}, ${src.idCol} FROM ${src.table} WHERE ${src.projCol} = ?1")
+          query.setParameter(1, projectId)
+          query.maxResults = 500
+          @Suppress("UNCHECKED_CAST") val rows = query.resultList as? List<Any?> ?: continue
+          var added = false
+          for (row in rows) {
+            val cells = row as? Array<*> ?: continue
+            val name = cells.getOrNull(0)?.toString()?.trim() ?: continue
+            val id = cells.getOrNull(1)?.toString()?.trim() ?: continue
+            if (name.isNotEmpty() && id.isNotEmpty()) {
+              byName.putIfAbsent(name, id)
+              added = true
+            }
+          }
+          if (added) break
+        } catch (_: Exception) {
+          // Column/table vanished since discovery; ignore.
         }
       }
     } catch (e: Exception) {
@@ -24388,6 +25273,103 @@ class AICodBiAssistant : IPluginServletAction {
       em.close()
     }
     return byName.entries.map { it.key to it.value }
+  }
+
+  /** A discovered, existing table + column combination that can hold project file resources. */
+  private data class ProjectFileSource(
+      val table: String,
+      val nameCol: String,
+      val projCol: String,
+      val idCol: String
+  )
+
+  /**
+   * Reads the human-readable name off a [ProjektRessource]-typed JPQL result via reflection. The
+   * exact getter differs between Formcycle versions/entities, so several candidates are tried.
+   */
+  private fun extractResourceName(r: Any): String? {
+    for (m in
+        listOf("getName", "getUploadFileName", "getFilename", "getBezeichnung", "getDateiname")) {
+      try {
+        val v = r.javaClass.getMethod(m).invoke(r) as? String
+        if (!v.isNullOrBlank()) return v
+      } catch (_: Exception) {
+        // getter not present on this entity type
+      }
+    }
+    return null
+  }
+
+  /**
+   * Reads the UUID off a [ProjektRessource]-typed JPQL result via reflection. Prefers the UUID
+   * object, else the id.
+   */
+  private fun extractResourceUuid(r: Any): String? {
+    return try {
+          r.javaClass.getMethod("getUUIDObject").invoke(r) as? UUID
+        } catch (_: Exception) {
+          null
+        }
+        ?.toString()
+        ?: runCatching { r.javaClass.getMethod("getUuid").invoke(r)?.toString() }.getOrNull()
+        ?: runCatching { r.javaClass.getMethod("getId").invoke(r)?.toString() }.getOrNull()
+  }
+
+  /**
+   * Discovers tables and column combinations that actually exist and could hold project file
+   * resources *without running any failing SELECT*. Returns the confirmed (table, nameCol, projCol,
+   * idCol) tuples, or an empty list when nothing matches.
+   */
+  private fun discoverProjectFileTables(em: EntityManager): List<ProjectFileSource> {
+    return try {
+      val schemaQuery =
+          em.createNativeQuery(
+              "SELECT UPPER(table_name), LOWER(column_name) FROM information_schema.columns " +
+                  "WHERE LOWER(table_name) LIKE '%resource%' OR LOWER(table_name) LIKE '%file%' " +
+                  // Formcycle's German tables persist project files as "PROJEKT_DATEI" ("datei" =
+                  // file) — covered by the old hardcoded list but NOT by the English resource/file
+                  // patterns above. Include the German 'datei'/'ressource' terms too so the schema
+                  // discovery does not silently drop the form's actual file-resource table (which
+                  // previously made pdfTemplates come back null and starved the workflow prompt).
+                  " OR LOWER(table_name) LIKE '%datei%' OR LOWER(table_name) LIKE '%ressource%' " +
+                  "ORDER BY table_name, ordinal_position")
+      val byTable = LinkedHashMap<String, MutableSet<String>>()
+      for (row in schemaQuery.resultList) {
+        if (row is Array<*>) {
+          val table = row[0]?.toString()?.uppercase() ?: continue
+          val col = row[1]?.toString()?.lowercase() ?: continue
+          byTable.getOrPut(table) { linkedSetOf() }.add(col)
+        }
+      }
+      buildList {
+        for ((table, cols) in byTable) {
+          val nameCol =
+              when {
+                "name" in cols -> "NAME"
+                "filename" in cols -> "FILENAME"
+                "bezeichnung" in cols -> "BEZEICHNUNG"
+                "dateiname" in cols -> "DATEINAME"
+                else -> null
+              } ?: continue
+          val projCol =
+              when {
+                "project_id" in cols -> "PROJECT_ID"
+                "projekt_id" in cols -> "PROJEKT_ID"
+                "fk_projekt" in cols -> "FK_PROJEKT"
+                else -> null
+              } ?: continue
+          val idCol =
+              when {
+                "uuid" in cols -> "UUID"
+                "id" in cols -> "ID"
+                else -> null
+              } ?: continue
+          add(ProjectFileSource(table, nameCol, projCol, idCol))
+        }
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
   }
 
   /**
@@ -24433,142 +25415,57 @@ class AICodBiAssistant : IPluginServletAction {
       val emf = CodbiEntities.entityManagerFactory ?: return null
       val em = emf.createEntityManager()
       try {
-        // Try RESOURCE_PROJECT table (project-level file resources â€” form's file management
-        // section)
-        // Try schema discovery first: find tables with project_id + name columns
-        var foundUuid: UUID? = null
-        val schemaTables = mutableListOf<String>()
-        try {
-          val schemaQuery =
-              em.createNativeQuery(
-                  "SELECT LOWER(table_name), LOWER(column_name) FROM information_schema.columns " +
-                      "WHERE LOWER(table_name) LIKE '%resource%' OR LOWER(table_name) LIKE '%file%' " +
-                      "ORDER BY table_name, ordinal_position")
-          val schemaRows = schemaQuery.resultList
-          val tableCols = mutableMapOf<String, MutableList<String>>()
-          for (row in schemaRows) {
-            if (row is Array<*>) {
-              val t = row[0]?.toString() ?: continue
-              val col = row[1]?.toString() ?: continue
-              tableCols.getOrPut(t) { mutableListOf() }.add(col)
-            }
-          }
-          // DEBUG: Log all discovered table schemas for file resource debugging
-          for ((tbl, cols) in tableCols) {
-            logger.warn(
-                "[AICodBiAssistant] DEBUG resolveProjectFileUuid: table='{}' columns={}",
-                tbl,
-                cols.joinToString(", "))
-          }
-          // Fallback: log ALL tables matching resource/file patterns even without expected columns
-          logger.warn(
-              "[AICodBiAssistant] DEBUG resolveProjectFileUuid: discovered {} resource/file tables",
-              tableCols.size)
-          for ((tbl, cols) in tableCols) {
-            val hasProjId =
-                cols.any { it == "project_id" || it == "projekt_id" || it == "fk_projekt" }
-            val hasName =
-                cols.any {
-                  it == "name" || it == "filename" || it == "bezeichnung" || it == "dateiname"
-                }
-            val idCol =
-                when {
-                  "uuid" in cols -> "uuid"
-                  "id" in cols -> "id"
-                  else -> null
-                }
-            val nameCol =
-                when {
-                  "name" in cols -> "name"
-                  "filename" in cols -> "filename"
-                  "bezeichnung" in cols -> "bezeichnung"
-                  "dateiname" in cols -> "dateiname"
-                  else -> null
-                }
-            val projCol =
-                when {
-                  "project_id" in cols -> "project_id"
-                  "projekt_id" in cols -> "projekt_id"
-                  "fk_projekt" in cols -> "fk_projekt"
-                  else -> null
-                }
-            if (hasProjId && nameCol != null && idCol != null && projCol != null) {
-              schemaTables.add(tbl)
-              try {
-                val sql = "SELECT $idCol FROM $tbl WHERE $projCol = ?1 AND $nameCol = ?2"
-                val q = em.createNativeQuery(sql)
-                q.setParameter(1, projectId)
-                q.setParameter(2, fileName)
-                val results = q.resultList
-                if (results.isNotEmpty()) {
-                  val idStr = results[0]?.toString() ?: continue
-                  foundUuid =
-                      try {
-                        UUID.fromString(idStr)
-                      } catch (_: Exception) {
-                        if (idCol == "id") UUID.nameUUIDFromBytes(idStr.toByteArray()) else null
-                      }
-                  if (foundUuid != null) break
-                }
-              } catch (_: Exception) {
-                continue
-              }
-            }
-          }
-        } catch (_: Exception) {}
-        if (foundUuid != null) return foundUuid
-        // Fallback: table registry + query combinations
-        val nameCols = listOf("name", "filename", "bezeichnung", "dateiname")
-        val projCols = listOf("project_id", "projekt_id", "fk_projekt")
-        val tableNames =
-            if (schemaTables.isNotEmpty()) schemaTables
-            else
-                listOf(
-                    "RESOURCE_PROJECT",
-                    "FILE_RESOURCE_PROJECT",
-                    "FILE_PROJECT",
-                    "PROJEKTRESSOURCE",
-                    "PROJEKT_RESSOURCE",
-                    "PROJECT_RESOURCE",
-                    "RESSOURCE_PROJEKT",
-                    "RESOURCE_PROJECT",
-                    "PROJEKT_DATEI")
-        for (tableName in tableNames) {
-          for (nameCol in nameCols) {
-            for (projCol in projCols) {
-              for (idCol in listOf("uuid", "id")) {
-                try {
-                  val sql = "SELECT $idCol FROM $tableName WHERE $projCol = ?1 AND $nameCol = ?2"
-                  val q = em.createNativeQuery(sql)
-                  q.setParameter(1, projectId)
-                  q.setParameter(2, fileName)
-                  val results = q.resultList
-                  if (results.isNotEmpty()) {
-                    val idStr = results[0]?.toString() ?: continue
-                    return try {
-                      UUID.fromString(idStr)
-                    } catch (_: Exception) {
-                      if (idCol == "id") UUID.nameUUIDFromBytes(idStr.toByteArray()) else null
-                    }
+        // Strategy 1 (preferred): match through the project file resources.
+        // listProjectFileResources
+        // is itself JPQL-first against de.xima.fc.entities.ProjektRessource (silent) with a
+        // schema-aware native fallback, so this path emits no spurious SqlExceptionHelper errors
+        // regardless of whether that entity is in the plugin's persistence unit.
+        val wanted = fileName.trim()
+        val byExact = listProjectFileResources(projectId).firstOrNull { it.first == wanted }
+        if (byExact != null) {
+          val exactUuid = runCatching { UUID.fromString(byExact.second) }.getOrNull()
+          if (exactUuid != null) return exactUuid
+        }
+        // Strategy 2 (fallback): schema-aware direct native lookup by (project, name). Only issues
+        // a
+        // SELECT against table/column combinations that information_schema confirmed to exist, so
+        // the
+        // noisy brute-force probe cross-product is gone.
+        val sources = discoverProjectFileTables(em)
+        for (src in sources) {
+          try {
+            val sql =
+                "SELECT ${src.idCol} FROM ${src.table} WHERE ${src.projCol} = ?1 AND ${src.nameCol} = ?2"
+            val q = em.createNativeQuery(sql)
+            q.setParameter(1, projectId)
+            q.setParameter(2, wanted)
+            q.maxResults = 1
+            val results = q.resultList
+            if (results.isNotEmpty()) {
+              val idStr = results[0]?.toString() ?: continue
+              val uuid =
+                  try {
+                    UUID.fromString(idStr)
+                  } catch (_: Exception) {
+                    if (src.idCol == "ID") UUID.nameUUIDFromBytes(idStr.toByteArray()) else null
                   }
-                } catch (_: Exception) {
-                  continue
-                }
-              }
+              if (uuid != null) return uuid
             }
+          } catch (_: Exception) {
+            // table/column vanished since discovery; ignore
           }
         }
         // Fuzzy fallback: the request (and therefore the AI) names the template by TOPIC
         // ("Gehaltsabrechnung") while the resource is stored as "Gehaltsabrechnung.pdf" (or with a
         // suffix/prefix). Match the normalised names so the node gets the REAL file instead of
         // falling back to an attachment search.
-        val wanted = fileName.trim().lowercase().substringBeforeLast('.').trim()
-        if (wanted.isNotEmpty()) {
+        val wantedTopic = wanted.lowercase().substringBeforeLast('.').trim()
+        if (wantedTopic.isNotEmpty()) {
           val resources = listProjectFileResources(projectId)
           val best =
               resources.firstOrNull {
-                it.first.lowercase().substringBeforeLast('.').trim() == wanted
-              } ?: resources.firstOrNull { it.first.lowercase().contains(wanted) }
+                it.first.lowercase().substringBeforeLast('.').trim() == wantedTopic
+              } ?: resources.firstOrNull { it.first.lowercase().contains(wantedTopic) }
           val parsed = best?.let { runCatching { UUID.fromString(it.second) }.getOrNull() }
           if (best != null && parsed != null) {
             logger.info(
@@ -26093,6 +26990,8 @@ class AICodBiAssistant : IPluginServletAction {
       completionPages: String?,
       htmlTemplates: String?,
       pdfTemplates: String? = null,
+      databaseSql: String? = null,
+      databaseLdap: String? = null,
       inboxes: String?,
       messageServices: String?,
       triggers: String?,
@@ -26150,6 +27049,15 @@ class AICodBiAssistant : IPluginServletAction {
     // PDF / WORD TEMPLATE FILES of this form (name + uuid). The PDF block is dropped when the form
     // has no file resources, so the model is never told to pick from an empty list.
     out = applyWorkflowSection(out, "PDF_TEMPLATES", pdfTemplates)
+    // Available configured DATABASE CONNECTIONS + DATABASE QUERIES (name + uuid) for
+    // FC_SQL_STATEMENT.
+    // The block is dropped when neither connections nor queries can be determined, so the model is
+    // never told to invent a query name when there is no configured query to reference.
+    out = applyWorkflowSection(out, "DATABASE_SQL", databaseSql)
+    // Available configured LDAP CONNECTIONS + LDAP QUERIES (name + uuid) for FC_LDAP_QUERY. The
+    // block is dropped when neither connections nor queries can be determined, so the model is
+    // never told to invent an LDAP query name or guess a connection when there is nothing to pick.
+    out = applyWorkflowSection(out, "LDAP_QUERY", databaseLdap)
     // URL templates are NOT fetched in THIS flow (no URL-template source exists here, unlike
     // AIWorkflowAssistant which has a real `urlTemplates`). The block used to be filled with the
     // HTML-template list, which (a) KEPT the large URL-TEMPLATES instruction block — it is dropped

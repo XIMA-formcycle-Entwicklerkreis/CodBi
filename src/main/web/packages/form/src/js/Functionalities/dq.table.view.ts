@@ -759,60 +759,58 @@ export class DQ_Table_View {
     if (exportButton) {
       exportButton.addEventListener("click", () => {
         try {
-          // Build a clean temporary table from the stored result rows (the on-screen cells contain the foldable
-          // JSON-viewer markup, so the sheet is NOT read from the DOM table). JSON columns export their
-          // (pretty-printed) JSON content as text; every other value is coerced to a string/number.
-          // Columns listed in ExcludeColumns are left out of the export (they remain visible in the table).
+          // Build the sheet cell-by-cell from the stored result rows so every value is written as a **string**
+          // cell. The on-screen cells are NOT read (they contain the foldable JSON-viewer markup), and SheetJS's
+          // type-inference helpers are NOT used: given a bare phone number like "012345", `table_to_book` /
+          // `aoa_to_sheet` would first coerce the text to the number `12345` (dropping the leading zero) before
+          // the value is ever written, so merely re-typing the cell afterwards cannot restore the lost zero. By
+          // writing an explicit `{ t: "s", v: "012345" }` cell the exact text — including the leading zero — is
+          // preserved. JSON columns export their (pretty-printed) JSON content as text; Columns listed in
+          // ExcludeColumns are left out of the export (they remain visible in the table).
           // SheetJS is bundled via the npm package "xlsx" (see the import at the top of this file).
           const exportColumns = columns.filter((column) => !DQ_Table_View.isColumnExcluded(column, excludedColumns));
-          const exportTable = document.createElement("table");
-          const thead = document.createElement("thead");
-          const headRow = document.createElement("tr");
+          const defaultColumnWidth = 12;
+          const wb = XLSX.utils.book_new();
+          // The sheet is built as a plain cell-map (addressed by their A1-style cell reference); every cell is a
+          // **string**-typed cell (`t: "s"`), which preserves the exact source text — including leading zeros —
+          // on export instead of letting SheetJS re-infer/coerce the value to a number.
+          const ws: XLSX.WorkSheet = {};
 
-          for (const column of exportColumns) {
-            const th = document.createElement("th");
+          // Header row (A1, B1, ...): every header is written as a text cell as well.
+          const rowNumberToColumnName = (rowIndex: number): string => {
+            let colName = "";
 
-            th.textContent = column.label;
-            headRow.appendChild(th);
-          }
-
-          thead.appendChild(headRow);
-          exportTable.appendChild(thead);
-
-          const tbody = document.createElement("tbody");
-
-          for (const row of dataRows) {
-            const tr = document.createElement("tr");
-
-            for (const column of exportColumns) {
-              const td = document.createElement("td");
-              const raw = row[column.dataColumn] ?? "";
-
-              if (column.isJson) {
-                td.textContent = DQ_Table_View.prettyPrintJson(raw);
-              } else {
-                td.textContent = typeof raw === "string" || typeof raw === "number" ? raw : String(raw);
-              }
-
-              tr.appendChild(td);
+            for (let n = rowIndex + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+              colName = String.fromCharCode(65 + ((n - 1) % 26)) + colName;
             }
 
-            tbody.appendChild(tr);
-          }
+            return colName;
+          };
 
-          exportTable.appendChild(tbody);
-          // Build the workbook from the table.
-          const wb = XLSX.utils.table_to_book(exportTable, { sheet: sheetName });
+          exportColumns.forEach((column, columnIndex) => {
+            ws[`${rowNumberToColumnName(columnIndex)}1`] = { t: "s", v: column.label };
+          });
+
+          dataRows.forEach((row, rowIndex) => {
+            const excelRow = rowIndex + 2; // row 1 holds the header.
+
+            exportColumns.forEach((column, columnIndex) => {
+              const raw = row[column.dataColumn] ?? "";
+              const value = column.isJson ? DQ_Table_View.prettyPrintJson(raw) : String(raw);
+
+              ws[`${rowNumberToColumnName(columnIndex)}${excelRow}`] = { t: "s", v: value };
+            });
+          });
+
+          ws["!ref"] = `A1:${rowNumberToColumnName(exportColumns.length - 1)}${dataRows.length + 1}`;
           // Apply the defined column widths; columns without an explicit width get a standard default width
           // (a plain `undefined` entry would make SheetJS fall back to a very narrow column).
-          const defaultColumnWidth = 12;
-          const sheet = wb.Sheets[sheetName];
+          ws["!cols"] = exportColumns.map((column) => ({
+            width: column.width ?? defaultColumnWidth,
+          }));
+          wb.SheetNames.push(sheetName);
+          wb.Sheets[sheetName] = ws;
 
-          if (sheet) {
-            sheet["!cols"] = exportColumns.map((column) => ({
-              width: column.width ?? defaultColumnWidth,
-            }));
-          }
           XLSX.writeFile(wb, `${fileName}.xlsx`);
         } catch (error: unknown) {
           console.error(`[DQ.Table.View] Failed to export "${fileName}.xlsx":`, error);

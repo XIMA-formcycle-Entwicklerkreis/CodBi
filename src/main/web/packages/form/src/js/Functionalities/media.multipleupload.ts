@@ -51,8 +51,34 @@ export class Media_MultipleUpload {
     // Resolve the label text element: prefer a <span> inside the <label>. If no <span> exists,
     // create one and move the label's text nodes into it (so we never risk wiping out the <input>
     // by writing innerHTML on the <label> itself).
+    //
+    // The <label> is located robustly: the tagged <input> may itself be nested in the <label> or
+    // live alongside it in the same container. The Leitfaden-Plugin wraps Formcycle upload fields in
+    // a <div class="xm-upl-wrapper">, which can sit between the <input> and the <label> (either
+    // around the label or around the input), so the search climbs up a few container levels to still
+    // find the label.
+    const getLabel = (): HTMLElement | null => {
+      // 1. The <input> is directly nested inside the <label>.
+      const directLabel = toProcess.closest("label");
+      if (directLabel) {
+        return directLabel as HTMLElement;
+      }
+      // 2. The <input> lives alongside a <label> — walk up (skipping any "xm-upl-wrapper" divs) until
+      //    a container holding a <label> is found (bounded, so we don't escape the field's container).
+      let container: Element | null = toProcess.parentElement;
+      let depth = 0;
+      while (container && depth < 4) {
+        const label = container.querySelector("label");
+        if (label) {
+          return label as HTMLElement;
+        }
+        container = container.parentElement;
+        depth++;
+      }
+      return null;
+    };
     const label = DEFINED.tsCheck<HTMLElement>(
-      toProcess.parentElement.querySelector("label"),
+      getLabel(),
       'Isn\'t there a <label> for the tagged <input type="file">?',
     );
     let labelTextEl = label.querySelector("span");

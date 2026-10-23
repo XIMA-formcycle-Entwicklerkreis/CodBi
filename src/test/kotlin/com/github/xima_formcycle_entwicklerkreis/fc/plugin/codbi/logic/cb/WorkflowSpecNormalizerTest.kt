@@ -38,6 +38,16 @@ class WorkflowSpecNormalizerTest {
   }
 
   @Test
+  fun `the pluralised import node type is canonicalised`() {
+    assertEquals(
+        "FC_IMPORT_FORM_VALUE_FROM_XML",
+        WorkflowSpecNormalizer.canonicalNodeType("FC_IMPORT_FORM_VALUES_FROM_XML"))
+    assertEquals(
+        "FC_IMPORT_FORM_VALUE_FROM_XML",
+        WorkflowSpecNormalizer.canonicalNodeType("Import form values from XML"))
+  }
+
+  @Test
   fun `unrelated node types are left untouched`() {
     assertEquals("FC_EMAIL", WorkflowSpecNormalizer.canonicalNodeType("FC_EMAIL"))
     assertEquals("FC_MULTIPLE_CONDITION", WorkflowSpecNormalizer.canonicalNodeType(" FC_MULTIPLE_CONDITION "))
@@ -113,5 +123,39 @@ class WorkflowSpecNormalizerTest {
 
     val child = ((email["nodeParams"] as Map<*, *>)["_childNodes"] as List<*>).first() as Map<*, *>
     assertEquals(WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE, child["nodeType"])
+  }
+
+  @Test
+  fun `a chained provide-resource download is rewritten to FC_RETURN_FILE`() {
+    val spec: Map<String, Any> =
+        mapOf(
+            "nodeType" to "FC_EXPORT_TO_PERSISTENCE",
+            "nodeParams" to mapOf("exportName" to "formularzustand.xml"),
+            "chainedNodes" to
+                listOf(
+                    mapOf(
+                        "nodeType" to "FC_PROVIDE_RESOURCE",
+                        "nodeParams" to
+                            mapOf(
+                                "exportName" to "formularzustand.xml",
+                                "sourceNode" to "%prev%"))))
+
+    val normalized = WorkflowSpecNormalizer.normalizeNode(spec, emptyMap())
+    val chained = (normalized["chainedNodes"] as List<*>).first() as Map<*, *>
+    assertEquals(
+        "FC_RETURN_FILE",
+        chained["nodeType"],
+        "a download of a preceding node's output must be an FC_RETURN_FILE")
+  }
+
+  @Test
+  fun `a standalone provide-resource node keeps its own node type`() {
+    val spec: Map<String, Any> =
+        mapOf(
+            "nodeType" to "FC_PROVIDE_RESOURCE",
+            "nodeParams" to mapOf("exportName" to "x.txt"))
+
+    val normalized = WorkflowSpecNormalizer.normalizeNode(spec, emptyMap())
+    assertEquals("FC_PROVIDE_RESOURCE", normalized["nodeType"])
   }
 }

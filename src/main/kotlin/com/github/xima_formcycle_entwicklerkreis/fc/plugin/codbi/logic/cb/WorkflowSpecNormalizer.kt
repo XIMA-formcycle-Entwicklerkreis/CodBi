@@ -16,6 +16,10 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
  *    its persisted name, and that name is sanitized (punctuation is stripped, so a taskName `"Mail
  *    an A@B.C senden"` becomes `"Mail an ABC senden"`). The placeholder kept the raw name and
  *    therefore resolved to nothing.
+ * 3. **Wrong download node.** For an explicit DOWNLOAD intent the model sometimes emitted the older
+ *    `FC_PROVIDE_RESOURCE` instead of `FC_RETURN_FILE`. A chained provide-resource node that
+ *    targets a preceding node (`sourceNode`) is rewritten to `FC_RETURN_FILE`, which is the node
+ *    that returns the produced file to the user's browser.
  *
  * Both repairs are pure string/map normalisation and are applied once, right after the AI response
  * is parsed — so every downstream path (creation, chained nodes, nested `_childNodes`) sees the
@@ -57,6 +61,22 @@ internal object WorkflowSpecNormalizer {
       type.endsWith(".CodbiExtendedAccessorNodePlugin") -> EXTENDED_ACCESSOR_NODE_TYPE
       type.equals("Extended Accessor", ignoreCase = true) -> EXTENDED_ACCESSOR_NODE_TYPE
       type.equals("Erweiterter Zugriff", ignoreCase = true) -> EXTENDED_ACCESSOR_NODE_TYPE
+      // Common misspelling of the import node: models often pluralise "VALUES". formcycle only
+      // resolves the registered singular type.
+      type.equals("FC_IMPORT_FORM_VALUES_FROM_XML", ignoreCase = true) ->
+          "FC_IMPORT_FORM_VALUE_FROM_XML"
+      type.equals("Import form values from XML", ignoreCase = true) ->
+          "FC_IMPORT_FORM_VALUE_FROM_XML"
+      type.equals("XML importieren", ignoreCase = true) -> "FC_IMPORT_FORM_VALUE_FROM_XML"
+      // FC_RENEW_PROCESS_ID — the registered type plus its display labels in the four shipped
+      // languages; a label used as a node type would create an unresolvable node.
+      type.equals("FC_RENEW_PROCESSID", ignoreCase = true) -> "FC_RENEW_PROCESS_ID"
+      type.equals("FC_RENEW_PROCESS_ID", ignoreCase = true) -> "FC_RENEW_PROCESS_ID"
+      type.equals("Create new process ID", ignoreCase = true) -> "FC_RENEW_PROCESS_ID"
+      type.equals("Neue Prozess-ID vergeben", ignoreCase = true) -> "FC_RENEW_PROCESS_ID"
+      type.equals("Maak nieuw Process ID van formulier record", ignoreCase = true) ->
+          "FC_RENEW_PROCESS_ID"
+      type.equals("Assegnare un nuovo ID di processo", ignoreCase = true) -> "FC_RENEW_PROCESS_ID"
       else -> type
     }
   }
@@ -98,7 +118,25 @@ internal object WorkflowSpecNormalizer {
       val key = rawKey?.toString() ?: continue
       out[key] =
           when {
-            key == "nodeType" && value is String -> canonicalNodeType(value)
+            key == "nodeType" && value is String -> {
+              val canonical = canonicalNodeType(value)
+              // DOWNLOAD INTENT = FC_RETURN_FILE. Models occasionally still emit the older
+              // FC_PROVIDE_RESOURCE when the user asked for a download; when it targets a
+              // PRECEDING node its params carry sourceNode "%prev%" (either flat or inside
+              // nodeParams), so it is a download node — rewrite it to FC_RETURN_FILE (the node that
+              // returns the file to the browser). A standalone provide-resource node (no
+              // sourceNode anywhere) keeps its own semantics.
+              val params = node["nodeParams"] as? Map<*, *>
+              val targetsPrevious =
+                  listOf("sourceNode", "sourceNodeId", "sourceNodeUuid").any { key ->
+                    node.containsKey(key) || params?.containsKey(key) == true
+                  }
+              if (canonical == "FC_PROVIDE_RESOURCE" && targetsPrevious) {
+                "FC_RETURN_FILE"
+              } else {
+                canonical
+              }
+            }
             value is String -> rewritePlaceholders(value, renames)
             value is Map<*, *> -> normalizeNode(value, renames)
             value is List<*> ->

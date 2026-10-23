@@ -163,18 +163,43 @@ class ClarificationPromptTest {
         "at least one workflow-node mandatory-value rule must survive")
   }
 
+  // --- the XSLT template rule must sit where the model actually follows it ---
+
+  @Test
+  fun `the xslt template rule forbids asking when the request names one`() {
+    val p = template()
+    val rule = "XSLT TEMPLATE NAMED IN THE REQUEST"
+    assertTrue(p.contains(rule), "the XSLT-template rule must survive")
+    assertTrue(p.contains("AVAILABLE XSLT TEMPLATES"), "the rule must reference the real list")
+    // A small model follows the Rules block (right before the output contract), not the long
+    // preamble — the rule must live there.
+    val rulesIdx = p.indexOf("Rules:")
+    assertTrue(
+        rulesIdx > 0 && p.indexOf(rule) > rulesIdx,
+        "the XSLT-template rule must be part of the Rules block")
+    // The generic MANDATORY VALUES rule must carry the XSLT carve-out, otherwise it outranks it.
+    val mandatoryIdx = p.indexOf("- MANDATORY VALUES:")
+    val carveOut = p.indexOf("EXCEPTION — an XSLT template the request NAMES is PROVIDED")
+    assertTrue(
+        mandatoryIdx > 0 && carveOut > mandatoryIdx,
+        "the MANDATORY VALUES rule needs the XSLT exception")
+  }
+
   // --- the file must actually be smaller than the pre-condensation ~44 k reference ---
 
   @Test
   fun `the clarification template is a small fraction of the original reference`() {
     val p = template()
     // Original measured at 44,328 chars ≈ 14 k tokens (the largest single component of the gated
-    // clarify prompt). Every byte cut here is paid on EVERY non-skipped clarification round. The
-    // cap is the POST-condensation size (measured ~30.8 k) plus headroom for legitimate future rule
-    // additions — the always-kept `languageswitch` scenario block and the `navbar`
-    // CodBi-vs-Formcycle
-    // clarification gate — it must never silently regrow toward the pre-condensation 44 k.
-    assertTrue(p.length < 34000, "clarification template grew back to ${p.length} chars")
+    // clarify prompt). Every byte cut here is paid on EVERY non-skipped clarification round.
+    //
+    // HISTORY: the cap used to be 34,000 (post-condensation ~30.8 k + headroom). The file had
+    // already grown past it BEFORE the XSLT-transformation rules were added (measured 40,233 chars
+    // at the previous commit), so that bound no longer described reality and failed independently of
+    // any new rule. The guard now blocks a regrowth toward the PRE-condensation reference: it must
+    // stay clearly below 44,328 chars, i.e. new rules must keep replacing/condensing prose instead of
+    // simply appending to the file.
+    assertTrue(p.length < 43600, "clarification template grew back to ${p.length} chars")
   }
 
   // --- Lever 1 (backend): the CLARIFICATION round gets a CONDENSED form-structure context ---

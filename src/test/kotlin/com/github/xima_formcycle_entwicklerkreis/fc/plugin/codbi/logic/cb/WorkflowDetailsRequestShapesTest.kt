@@ -13,10 +13,11 @@ import org.junit.jupiter.api.Test
  * 2. `{"nodes":["FC_EMAIL"],"triggers":["FC_FORM_SUBMIT_BUTTON"]}` (no "status")
  * 3. `{"need_workflow_node_details":{"nodes":["FC_EMAIL"],"triggers":["FC_FORM_SUBMIT_BUTTON"]}}`
  * 4. `{"triggers":[{"triggerType":"FC_FORM_SUBMIT_BUTTON"}],"nodes":[{"nodeType":"FC_EMAIL"}]}`
+ * 5. `{"need_workflow_node_details":[{"nodes":["FC_EXPORT_TO_XML","FC_RETURN_FILE"]}]}`
  *
- * Shape 3 previously aborted the build; shape 4 did too (an OBJECT element was not read as a name,
- * so both lists came back empty, the request was mistaken for a task and produced 0 specs → "The AI
- * did not return a workflow specification"). All four must resolve to the same signal, and a real
+ * Shapes 3 and 5 previously aborted the build; shape 4 did too (an OBJECT element was not read as a
+ * name, so both lists came back empty, the request was mistaken for a task and produced 0 specs →
+ * "The AI did not return a workflow specification"). All must resolve to the same signal, and a real
  * TASK object must still NOT be mistaken for a details request.
  */
 class WorkflowDetailsRequestShapesTest {
@@ -78,6 +79,22 @@ class WorkflowDetailsRequestShapesTest {
     val r =
         extract("""{"nodes":[{"name":"FC_EMAIL"}],"triggers":[{"id":"FC_FORM_SUBMIT_BUTTON"}]}""")
     assertEquals(listOf("FC_EMAIL") to listOf("FC_FORM_SUBMIT_BUTTON"), r)
+  }
+
+  @Test
+  fun `shape 5 - array-wrapped payload`() {
+    val r =
+        extract(
+            """{"need_workflow_node_details":[{"nodes":["FC_EXPORT_TO_XML","FC_RETURN_FILE"]}]}""")
+    assertEquals(listOf("FC_EXPORT_TO_XML", "FC_RETURN_FILE") to emptyList<String>(), r)
+  }
+
+  @Test
+  fun `shape 5b - array-wrapped payload with several entries`() {
+    val r =
+        extract(
+            """{"need_workflow_node_details":[{"nodes":["FC_EXPORT_TO_XML"]},{"triggers":["FC_FORM_SUBMIT_BUTTON"]}]}""")
+    assertEquals(listOf("FC_EXPORT_TO_XML") to listOf("FC_FORM_SUBMIT_BUTTON"), r)
   }
 
   @Test

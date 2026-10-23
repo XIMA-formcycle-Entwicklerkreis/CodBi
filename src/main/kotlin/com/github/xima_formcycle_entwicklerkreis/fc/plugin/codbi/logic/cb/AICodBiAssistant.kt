@@ -2155,6 +2155,20 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] Clarification workflow mail nodes loaded: {} chars",
         clarificationWorkflowMails?.length ?: 0)
+    // AVAILABLE XSLT TEMPLATES (Textbausteine, category XSL) for the clarify round. A request that
+    // needs an XML transformation often NAMES the template ("... und zuvor mit XXX transformiert
+    // werden"); the AI must MATCH that name against this real list and not ask which template to
+    // use. Asking is only correct when the request names none — or names one that matches nothing.
+    val clarificationXslTemplates: String? =
+        if (intent == "workflow" || intent == "both") {
+          params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()?.let { wid ->
+            fetchXslTemplateNames(getUserContext(params), wid)
+          }
+        } else null
+    logger.info(
+        "[AICodBiAssistant] Clarification XSLT templates loaded: {} chars, names=[{}]",
+        clarificationXslTemplates?.length ?: 0,
+        clarificationXslTemplates ?: "")
     // Lever 2 (input-token reduction): give the WORKFLOW branch of the clarify round the same
     // decision-core split the form branch already has. This is a CONDENSED workflow structure
     // (task name + trigger type + each existing node's name/type in its parent/child tree, NO node
@@ -2350,6 +2364,7 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationFormVariables,
                 clarificationWorkflowMails,
                 availableDatasources,
+                clarificationXslTemplates,
                 chatAnswerResult?.topics ?: emptySet(),
                 countAssistUsage)
           } catch (e: Exception) {
@@ -5589,11 +5604,18 @@ class AICodBiAssistant : IPluginServletAction {
       val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any>
       if (obj == null) return null
       // Strict form: the prompt asks for the full {"status":"need_workflow_node_details",...}.
+      // Only return when the request actually names something — some models combine the status with
+      // an ARRAY-wrapped payload (handled below), and an empty signal would skip pass-2 entirely.
       if ((obj["status"] as? String) == "need_workflow_node_details") {
-        return WorkflowDetailsSignal(
-            nodes = detailsNameList(obj["nodes"] as? List<*>),
-            triggers = detailsNameList(obj["triggers"] as? List<*>),
-            instanceIds = detailsInstanceIds(obj["instanceIds"] as? List<*>))
+        val strictNodes = detailsNameList(obj["nodes"] as? List<*>)
+        val strictTriggers = detailsNameList(obj["triggers"] as? List<*>)
+        val strictInstanceIds = detailsInstanceIds(obj["instanceIds"] as? List<*>)
+        if (strictNodes.isNotEmpty() ||
+            strictTriggers.isNotEmpty() ||
+            strictInstanceIds.isNotEmpty()) {
+          return WorkflowDetailsSignal(
+              nodes = strictNodes, triggers = strictTriggers, instanceIds = strictInstanceIds)
+        }
       }
       // Nested-wrapper form — many models emit the signal NAME as a KEY whose value is the request
       // object:
@@ -5610,6 +5632,33 @@ class AICodBiAssistant : IPluginServletAction {
         if (nodes.isNotEmpty() || triggers.isNotEmpty() || instanceIds.isNotEmpty()) {
           return WorkflowDetailsSignal(
               nodes = nodes, triggers = triggers, instanceIds = instanceIds)
+        }
+      }
+      // ARRAY-wrapper form — observed from the external specialist model:
+      // {"need_workflow_node_details":[{"nodes":["FC_EXPORT_TO_XML","FC_RETURN_FILE"]}]}.
+      // Without unwrapping this, the object parses to zero task specs and the whole workflow build
+      // aborts with "The AI did not return a workflow specification". Merge every entry.
+      if (nested is List<*>) {
+        val arrayNodes = mutableListOf<String>()
+        val arrayTriggers = mutableListOf<String>()
+        val arrayInstanceIds = mutableListOf<String>()
+        for (entry in nested) {
+          when (entry) {
+            is Map<*, *> -> {
+              arrayNodes += detailsNameList(entry["nodes"] as? List<*>)
+              arrayTriggers += detailsNameList(entry["triggers"] as? List<*>)
+              arrayInstanceIds += detailsInstanceIds(entry["instanceIds"] as? List<*>)
+            }
+            is String -> entry.trim().takeIf { it.isNotEmpty() }?.let { arrayNodes += it }
+          }
+        }
+        if (arrayNodes.isNotEmpty() ||
+            arrayTriggers.isNotEmpty() ||
+            arrayInstanceIds.isNotEmpty()) {
+          return WorkflowDetailsSignal(
+              nodes = arrayNodes.distinct(),
+              triggers = arrayTriggers.distinct(),
+              instanceIds = arrayInstanceIds.distinct())
         }
       }
       // Tolerant form — many models omit the "status" field and return only
@@ -12842,7 +12891,8 @@ class AICodBiAssistant : IPluginServletAction {
             userGroups = userGroupsJson,
             pdfTemplates = pdfTemplatesJson,
             databaseSql = databaseSqlContext,
-            databaseLdap = databaseLdapContext)
+            databaseLdap = databaseLdapContext,
+            xslTemplates = fetchXslTemplateNames(userContext, workflowVersionId))
 
     var messagesJson = buildString {
       append("[")
@@ -15885,7 +15935,13 @@ class AICodBiAssistant : IPluginServletAction {
       // run an EXISTING configured LDAP query (useClientLdapQuery/ldapQuery) or a custom LDAP
       // filter/query (useClientLdapQuery=false, query+baseDN) and pick the single Connection
       // without asking, instead of the AI inventing a query name or guessing a connection.
-      databaseLdap: String? = null
+      databaseLdap: String? = null,
+      // AVAILABLE XSL/XSLT TEMPLATES (names) — the ONLY valid "xslTemplate" values for
+      // FC_EXPORT_TO_XML / FC_IMPORT_FORM_VALUE_FROM_XML. Without the list the model could only ask
+      // for the template or invent one, which is exactly why "transformiert von XXX" produced a
+      // node
+      // whose template stayed empty.
+      xslTemplates: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -15945,6 +16001,7 @@ class AICodBiAssistant : IPluginServletAction {
               pdfTemplates = workflowPdfTemplates,
               databaseSql = databaseSql,
               databaseLdap = databaseLdap,
+              xslTemplates = xslTemplates,
               inboxes = inboxes,
               messageServices = messageServices,
               triggers = triggers,
@@ -21669,45 +21726,280 @@ class AICodBiAssistant : IPluginServletAction {
         val contentType = (spec.nodeParams["contentType"] as? String ?: "PLAIN_TEXT").uppercase()
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fileName":${gson.toJson(fileName)},"fileContent":${gson.toJson(fileContent)},"contentType":${gson.toJson(contentType)}}"""
       }
-      "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
-        // Collect every attribute (key -> value) from WHATEVER shape the model emitted:
-        //   - "attributes": [{name,value}, ...]                 (documented schema)
-        //   - "attributes": {name,value}                        (single object instead of a list)
-        //   - single-key convenience: {"attributeKey":k,"value":v} / {"attribute":k,"value":v} /
-        //     {"key":k,"value":v} / {"name":k,"value":v}        (frequently emitted by the AI)
-        // Without this normalization an FC_WRITE_FORM_RECORD_ATTRIBUTES would be created but write
-        // nothing (empty customAttributes), so the server attribute referenced by an email body
-        // ([%$RECORD_ATTR.key%]) would stay empty at runtime.
-        val collected = LinkedHashMap<String, String>()
-        fun addAttribute(name: Any?, value: Any?) {
-          val key = name?.toString()?.takeIf { it.isNotBlank() } ?: return
-          collected.putIfAbsent(key, value?.toString() ?: "")
-        }
-        when (val raw = spec.nodeParams["attributes"]) {
-          is List<*> -> {
-            for (a in raw.filterIsInstance<Map<*, *>>()) {
-              addAttribute(a["name"] ?: a["key"], a["value"])
+      "FC_EXPORT_TO_XML" -> {
+        // CUSTOM_PARAMS stores FcExportToXmlProps (fc-workflow-processor):
+        //   exportName              -> output file name; blank = the record subject + ".xml"
+        //   xslTemplate             -> UuidEntityRef to a Textbaustein (TEMPLATE_CLIENT row) whose
+        //                              category must be XSL; null = export the RAW form XML
+        //   enableConfig + export*  -> the "Erweiterte Einstellungen" flags; ALL default to false
+        //   xmlFileProvision        -> FileProvision{attachToFormRecord,
+        //                              attachmentAccessibleToEndUser}
+        // The node writes the file to the node's output dir and passes it on; it does NOT send it
+        // to the browser (that is a chained FC_PROVIDE_RESOURCE).
+        val exportName =
+            workflowParamString(spec.nodeParams, "exportName").ifBlank {
+              workflowParamString(spec.nodeParams, "fileName")
             }
-          }
-          is Map<*, *> -> {
-            addAttribute(raw["name"] ?: raw["key"], raw["value"])
-          }
-          else -> {}
-        }
-        addAttribute(
-            spec.nodeParams["attributeKey"]
-                ?: spec.nodeParams["attribute"]
-                ?: spec.nodeParams["key"]
-                ?: spec.nodeParams["name"],
-            spec.nodeParams["value"])
-        val attributesJson =
-            collected.map { (n, v) -> """{"name":${gson.toJson(n)},"value":${gson.toJson(v)}}""" }
-        val writeAttributesToForm = spec.nodeParams["writeAttributesToForm"] as? Boolean ?: false
+        // Tolerate every shape the model emits for the template: a plain name, a nested object
+        // ({"name":...} / {"uuid":...}), a one-element list, or one of the common alternative keys.
+        fun templateParam(key: String): String =
+            when (val raw = spec.nodeParams[key]) {
+              is String -> raw
+              is Map<*, *> ->
+                  (raw["name"] ?: raw["value"] ?: raw["uuid"] ?: raw["id"])?.toString() ?: ""
+              is List<*> -> raw.firstOrNull()?.toString() ?: ""
+              else -> ""
+            }
+        val xslTemplateName =
+            listOf(
+                    "xslTemplate",
+                    "xsltTemplate",
+                    "xslTemplateName",
+                    "xslt",
+                    "xlsTemplate",
+                    "transformationTemplate",
+                    "template")
+                .map(::templateParam)
+                .firstOrNull { it.isNotBlank() } ?: ""
+        val xslUuid =
+            if (xslTemplateName.isNotBlank() && workflowVersion != null && userContext != null) {
+              resolveXslTemplateUuid(userContext, workflowVersion, xslTemplateName)
+            } else null
         logger.info(
-            "[AICodBiAssistant] buildNodeParams FC_WRITE_FORM_RECORD_ATTRIBUTES: {} attributes, writeAttributesToForm={}",
-            collected.size,
-            writeAttributesToForm)
-        """{"name":${gson.toJson(nodeName)},"customAttributes":[${attributesJson.joinToString(",")}],"writeAttributesToForm":$writeAttributesToForm}"""
+            "[AICodBiAssistant] buildNodeParams FC_EXPORT_TO_XML: xslTemplate='{}' -> {}",
+            xslTemplateName,
+            xslUuid?.toString() ?: "raw XML")
+        if (xslTemplateName.isNotBlank() && xslUuid == null) {
+          logger.warn(
+              "[AICodBiAssistant] buildNodeParams FC_EXPORT_TO_XML: XSLT template '{}' not found — the node will export the RAW form XML",
+              xslTemplateName)
+        }
+        val xslJson =
+            if (xslUuid != null) {
+              val u = xslUuid.toString()
+              ""","xslTemplate":{"entityClass":"de.xima.fc.entities.Textbaustein","id":${gson.toJson(u)},"type":"Textbaustein","uuid":${gson.toJson(u)}}"""
+            } else ""
+        // Extended export flags — only meaningful when "enableConfig" is on (the designer disables
+        // the whole fieldset otherwise). Any requested flag implies enableConfig.
+        val flagKeys =
+            listOf(
+                "exportId",
+                "exportProcessId",
+                "exportSubject",
+                "exportStatus",
+                "exportInbox",
+                "exportCreationDate",
+                "exportModificationDate",
+                "exportVariables",
+                "exportTechnicalFields",
+                "exportExportMetaData")
+        val flags = flagKeys.map { key -> key to workflowParamBoolean(spec.nodeParams, key) }
+        val enableConfig =
+            workflowParamBoolean(spec.nodeParams, "enableConfig") || flags.any { it.second }
+        val flagsJson = flags.joinToString("") { (key, value) -> ""","$key":$value""" }
+        // FileProvision — accept the documented nested object, a generic "fileProvision", or flat
+        // booleans (the model emits all three shapes).
+        @Suppress("UNCHECKED_CAST")
+        val provisionMap =
+            (spec.nodeParams["xmlFileProvision"] as? Map<*, *>)
+                ?: (spec.nodeParams["fileProvision"] as? Map<*, *>)
+        fun provisionFlag(key: String, fallback: Boolean): Boolean =
+            when (val v = provisionMap?.get(key)) {
+              is Boolean -> v
+              is Number -> v.toInt() != 0
+              is String -> v.trim().lowercase() in setOf("true", "1", "yes", "ja", "on")
+              else -> fallback
+            }
+        val attachToFormRecord =
+            provisionFlag(
+                "attachToFormRecord", workflowParamBoolean(spec.nodeParams, "attachToFormRecord"))
+        val attachmentAccessibleToEndUser =
+            provisionFlag(
+                "attachmentAccessibleToEndUser",
+                workflowParamBoolean(spec.nodeParams, "attachmentAccessibleToEndUser") ||
+                    attachToFormRecord)
+        val exportNameJson =
+            if (exportName.isNotBlank()) ""","exportName":${gson.toJson(exportName)}""" else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"enableConfig":$enableConfig$exportNameJson$flagsJson$xslJson,"xmlFileProvision":{"attachToFormRecord":$attachToFormRecord,"attachmentAccessibleToEndUser":$attachmentAccessibleToEndUser}}"""
+      }
+      "FC_EXPORT_TO_PERSISTENCE" -> {
+        // CUSTOM_PARAMS stores FcExportToPersistenceProps (fc-workflow-processor):
+        //   exportName               -> output file name; blank = record subject + ".xml"
+        //   persistenceFileProvision -> FileProvision{attachToFormRecord,
+        //                               attachmentAccessibleToEndUser}
+        // The executor writes IVorgangDao.getFormData(...) — the record's PERSISTED form state
+        // (formcycle persistence XML) — as a UTF-8 file. It has NO xslTemplate and NO export flags.
+        val exportName =
+            workflowParamString(spec.nodeParams, "exportName").ifBlank {
+              workflowParamString(spec.nodeParams, "fileName")
+            }
+        @Suppress("UNCHECKED_CAST")
+        val provisionMap =
+            (spec.nodeParams["persistenceFileProvision"] as? Map<*, *>)
+                ?: (spec.nodeParams["fileProvision"] as? Map<*, *>)
+        fun provisionFlag(key: String, fallback: Boolean): Boolean =
+            when (val v = provisionMap?.get(key)) {
+              is Boolean -> v
+              is Number -> v.toInt() != 0
+              is String -> v.trim().lowercase() in setOf("true", "1", "yes", "ja", "on")
+              else -> fallback
+            }
+        val attachToFormRecord =
+            provisionFlag(
+                "attachToFormRecord", workflowParamBoolean(spec.nodeParams, "attachToFormRecord"))
+        val attachmentAccessibleToEndUser =
+            provisionFlag(
+                "attachmentAccessibleToEndUser",
+                workflowParamBoolean(spec.nodeParams, "attachmentAccessibleToEndUser") ||
+                    attachToFormRecord)
+        val exportNameJson =
+            if (exportName.isNotBlank()) ""","exportName":${gson.toJson(exportName)}""" else ""
+        logger.info(
+            "[AICodBiAssistant] buildNodeParams FC_EXPORT_TO_PERSISTENCE: exportName='{}', attach={}, accessible={}",
+            exportName,
+            attachToFormRecord,
+            attachmentAccessibleToEndUser)
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}$exportNameJson,"persistenceFileProvision":{"attachToFormRecord":$attachToFormRecord,"attachmentAccessibleToEndUser":$attachmentAccessibleToEndUser}}"""
+      }
+      "FC_IMPORT_FORM_VALUE_FROM_XML" -> {
+        // CUSTOM_PARAMS stores FcImportFormValueFromXmlProps (fc-workflow-processor):
+        //   xmlSource: SingleFile -> {"resource":{"type":"UPLOAD","identifier":"<uploadFieldId>"}}
+        //                            (also a FORM resource or a previous node's
+        // FILE_PROVIDE_ACTION)
+        //   xslTemplate: UuidEntityRef (category XSL, optional)
+        //   xpathMapping: List<Setting<String>> ->
+        //                 [{"name":"<target field technicalId>","value":"<XPath>"}, ...]
+        // The executor resolves the file, optionally transforms it, evaluates each XPath against
+        // the
+        // result and writes the string into the named form field, then persists the record. The
+        // node
+        // has NO file output and NO attachment flags.
+        val uploadField =
+            workflowParamString(spec.nodeParams, "uploadField")
+                .ifBlank { workflowParamString(spec.nodeParams, "fileField") }
+                .ifBlank { workflowParamString(spec.nodeParams, "uploadFieldTechnicalId") }
+        val fileName = workflowParamString(spec.nodeParams, "fileName")
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST") val rawSource = spec.nodeParams["xmlSource"] as? Map<*, *>
+        val rawSourceLooksLikeSingleFile =
+            rawSource != null &&
+                (rawSource.containsKey("resource") ||
+                    rawSource.containsKey("searchFilename") ||
+                    rawSource.containsKey("url"))
+        val rawSourceUploadId =
+            (rawSource?.get("uploadField") ?: rawSource?.get("identifier"))?.toString()?.trim()
+        val xmlSourceJson =
+            when {
+              uploadField.isNotBlank() ->
+                  """{"resource":{"type":"UPLOAD","identifier":${gson.toJson(uploadField)}}}"""
+              rawSourceLooksLikeSingleFile -> gson.toJson(rawSource)
+              !rawSourceUploadId.isNullOrBlank() ->
+                  """{"resource":{"type":"UPLOAD","identifier":${gson.toJson(rawSourceUploadId)}}}"""
+              fileName.isNotBlank() -> {
+                val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+                if (fileUuid != null) {
+                  """{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$fileUuid"}}}"""
+                } else {
+                  """{"searchFilename":${gson.toJson(fileName)}}"""
+                }
+              }
+              nodeUuid.isNotBlank() && taskUuid.isNotBlank() ->
+                  """{"resource":{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}}"""
+              else -> {
+                logger.warn(
+                    "[AICodBiAssistant] buildNodeParams FC_IMPORT_FORM_VALUE_FROM_XML: no xmlSource (uploadField/fileName/previous node) — the node will fail with NO_SOURCE_FILE_FOUND")
+                "null"
+              }
+            }
+        // Any "transform" wording maps to an XSLT template; accept the model's alternative keys.
+        fun templateParam(key: String): String =
+            when (val raw = spec.nodeParams[key]) {
+              is String -> raw
+              is Map<*, *> ->
+                  (raw["name"] ?: raw["value"] ?: raw["uuid"] ?: raw["id"])?.toString() ?: ""
+              else -> ""
+            }
+        val xslTemplateName =
+            listOf(
+                    "xslTemplate",
+                    "xsltTemplate",
+                    "xslTemplateName",
+                    "xslt",
+                    "transformationTemplate",
+                    "transformation",
+                    "template")
+                .map(::templateParam)
+                .firstOrNull { it.isNotBlank() } ?: ""
+        val xslUuid =
+            if (xslTemplateName.isNotBlank() && workflowVersion != null && userContext != null) {
+              resolveXslTemplateUuid(userContext, workflowVersion, xslTemplateName)
+            } else null
+        val xslJson =
+            if (xslUuid != null) {
+              val u = xslUuid.toString()
+              ""","xslTemplate":{"entityClass":"de.xima.fc.entities.Textbaustein","id":${gson.toJson(u)},"type":"Textbaustein","uuid":${gson.toJson(u)}}"""
+            } else ""
+        // Accept the documented array of {name,value}, the flat map {field: xpath} and the
+        // array-of-objects-with-alternative-keys shapes the model emits.
+        val rawMappings = spec.nodeParams["xpathMapping"] ?: spec.nodeParams["mappings"]
+        @Suppress("UNCHECKED_CAST")
+        val mappings: List<String> =
+            when (rawMappings) {
+              is List<*> ->
+                  rawMappings.filterIsInstance<Map<*, *>>().mapNotNull { m ->
+                    val target =
+                        (m["name"] ?: m["field"] ?: m["fieldName"] ?: m["technicalId"])
+                            ?.toString()
+                            ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val xpath =
+                        (m["value"] ?: m["xpath"] ?: m["expression"] ?: m["path"])?.toString() ?: ""
+                    """{"name":${gson.toJson(target)},"value":${gson.toJson(xpath)}}"""
+                  }
+              is Map<*, *> ->
+                  rawMappings.entries.mapNotNull { (k, v) ->
+                    val target = k?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val xpath =
+                        when (v) {
+                          is Map<*, *> ->
+                              (v["value"] ?: v["xpath"] ?: v["expression"])?.toString() ?: ""
+                          else -> v?.toString() ?: ""
+                        }
+                    """{"name":${gson.toJson(target)},"value":${gson.toJson(xpath)}}"""
+                  }
+              else -> emptyList()
+            }
+        if (mappings.isEmpty()) {
+          logger.warn(
+              "[AICodBiAssistant] buildNodeParams FC_IMPORT_FORM_VALUE_FROM_XML: no xpathMapping — the node will import nothing")
+        }
+        logger.info(
+            "[AICodBiAssistant] buildNodeParams FC_IMPORT_FORM_VALUE_FROM_XML: xmlSource={}, xslTemplate='{}' -> {}, mappings={}",
+            xmlSourceJson,
+            xslTemplateName,
+            xslUuid?.toString() ?: "none",
+            mappings.size)
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"xmlSource":$xmlSourceJson$xslJson,"xpathMapping":[${mappings.joinToString(",")}]}"""
+      }
+      "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
+        // FcWriteFormRecordAttrProps has ONE list, "customAttributes" (the designer's
+        // "Modifications"
+        // table). The model also emits "attributes", "modifications", a name→value object or a flat
+        // key/value pair — see [RecordAttributesParams], which always emits "customAttributes" so
+        // the
+        // table is never left empty.
+        val fragment = RecordAttributesParams.fragmentJson(spec.nodeParams)
+        if (fragment == null) {
+          logger.warn(
+              "[AICodBiAssistant] FC_WRITE_FORM_RECORD_ATTRIBUTES: no attribute in nodeParams — the node would write nothing")
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+        } else {
+          val resultJson =
+              """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},$fragment}"""
+          logger.info(
+              "[AICodBiAssistant] FC_WRITE_FORM_RECORD_ATTRIBUTES generated: {}", resultJson)
+          resultJson
+        }
       }
       "FC_PROVIDE_RESOURCE" -> {
         val exportName = spec.nodeParams["exportName"] as? String ?: ""
@@ -22195,25 +22487,19 @@ class AICodBiAssistant : IPluginServletAction {
         pluginResult
       }
       "FC_DELETE_ATTACHMENT" -> {
-        val attachments = extractAttachmentIdentifiers(spec.nodeParams["attachments"])
+        // The model emits the REAL props shape (`attachmentsToDelete` with SEARCH/UPLOAD items and
+        // searchFilenamePattern); a flat shape is also accepted. See [DeleteAttachmentParams].
+        val fragment = DeleteAttachmentParams.fragmentJson(spec.nodeParams)
         val resultJson =
-            if (attachments.isNotEmpty()) {
-              // Use attachmentsToDelete with MultiAttachment structure (decompiled from
-              // FcDeleteAttachmentProps)
-              // Property key must be "attachmentsToDelete" matching the field in
-              // FcDeleteAttachmentProps class
-              val attachmentItemsJson =
-                  attachments.joinToString(",") { id ->
-                    """{"type":"UPLOAD","identifier":${gson.toJson(id)}}"""
-                  }
-              val json =
-                  """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"attachmentsToDelete":{"attachments":[$attachmentItemsJson]}}"""
-              logger.info(
-                  "[AICodBiAssistant] FC_DELETE_ATTACHMENT generated (attachmentsToDelete): {}",
-                  json)
-              json
-            } else {
+            if (fragment == null) {
+              logger.warn(
+                  "[AICodBiAssistant] FC_DELETE_ATTACHMENT: no file name and no upload field in nodeParams — the node would delete nothing")
               """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+            } else {
+              val json =
+                  """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},$fragment}"""
+              logger.info("[AICodBiAssistant] FC_DELETE_ATTACHMENT generated: {}", json)
+              json
             }
         // Query existing FC_DELETE_ATTACHMENT nodes for structure reference
         try {
@@ -22592,6 +22878,21 @@ class AICodBiAssistant : IPluginServletAction {
               ""","customExpression":${gson.toJson(customExpression)}"""
             } else ""
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"combinationType":${gson.toJson(combinationType)},"conditions":$conditionsJson$customExprJson}"""
+      }
+      "FC_RENEW_PROCESS_ID" -> {
+        // FcRenewProcessIdProps has NO configuration of its own (it only inherits name/description
+        // from BaseActionProps): the executor always mints a fresh full UUID for the record's
+        // process ID, so there is nothing to configure and nothing to ask the user for.
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+      }
+      "FC_SET_FORM_RECORD_PASSWORD" -> {
+        // "Secure the form with a password" = GENERATED mode with the requested character rules.
+        // See [SetRecordPasswordParams] for the mapping and the length/rule-count guard.
+        val paramsJson = SetRecordPasswordParams.propsJson(spec.nodeParams)
+        val resultJson =
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},$paramsJson}"""
+        logger.info("[AICodBiAssistant] FC_SET_FORM_RECORD_PASSWORD generated: {}", resultJson)
+        resultJson
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
@@ -24232,6 +24533,199 @@ class AICodBiAssistant : IPluginServletAction {
       workflowVersion: Any,
       templateName: String
   ): UUID? = resolveHtmlTemplateUuid(userContext, workflowVersion, templateName)
+
+  /**
+   * Loads the XSL/XSLT text templates — `de.xima.fc.entities.Textbaustein` rows (table
+   * TEMPLATE_CLIENT) whose category is XSL — for the client (Mandant) of the given workflow
+   * version. These are the ONLY templates an FC_EXPORT_TO_XML node may reference in `xslTemplate`.
+   *
+   * MUST run on a FORMCYCLE-managed EntityManager (`EntityContextFactory`): the CodBi plugin's own
+   * EMF only knows the plugin tables, so a `Textbaustein` JPQL query there always fails and every
+   * `xslTemplate` would silently be dropped.
+   */
+  private fun loadXslTemplateEntities(userContext: Any, workflowVersion: Any): List<Any> {
+    var entityContext: Any? = null
+    return try {
+      val project =
+          try {
+            workflowVersion.javaClass.getMethod("getProjekt").invoke(workflowVersion)
+          } catch (_: Exception) {
+            workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion)
+          }
+      val mandant =
+          try {
+            project?.javaClass?.getMethod("getMandant")?.invoke(project)
+          } catch (_: Exception) {
+            null
+          }
+      val mandantId =
+          try {
+            (mandant?.javaClass?.getMethod("getId")?.invoke(mandant) as? Number)?.toLong()
+          } catch (_: Exception) {
+            null
+          }
+      val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val ctx =
+          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+      entityContext = ctx
+      val em = ctx.javaClass.getMethod("getEm").invoke(ctx)
+      /** Runs a JPQL query on the Formcycle EM and returns the raw result list. */
+      fun queryRows(jpql: String): List<Any> {
+        val query = em.javaClass.getMethod("createQuery", String::class.java).invoke(em, jpql)
+        @Suppress("UNCHECKED_CAST")
+        return (query.javaClass.getMethod("getResultList").invoke(query) as? List<Any>)
+            ?: emptyList()
+      }
+      val rows =
+          try {
+            queryRows("SELECT t FROM de.xima.fc.entities.Textbaustein t")
+          } catch (_: Exception) {
+            // Hibernate also accepts the simple entity name; some versions reject the FQCN.
+            queryRows("SELECT t FROM Textbaustein t")
+          }
+      rows.filter { row ->
+        val category =
+            try {
+              row.javaClass.getMethod("getKategorie").invoke(row)?.toString()
+            } catch (_: Exception) {
+              null
+            }
+        if (category == null || !category.equals("XSL", ignoreCase = true)) {
+          return@filter false
+        }
+        if (mandantId != null) {
+          val rowMandant =
+              try {
+                row.javaClass.getMethod("getMandant").invoke(row)
+              } catch (_: Exception) {
+                null
+              }
+          val rowMandantId =
+              try {
+                (rowMandant?.javaClass?.getMethod("getId")?.invoke(rowMandant) as? Number)?.toLong()
+              } catch (_: Exception) {
+                null
+              }
+          if (rowMandantId != null && rowMandantId != mandantId) return@filter false
+        }
+        true
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load XSLT templates: {}", e.message)
+      emptyList()
+    } finally {
+      try {
+        entityContext?.javaClass?.getMethod("close")?.invoke(entityContext)
+      } catch (_: Exception) {}
+    }
+  }
+
+  /**
+   * Lists the NAMES of the XSL/XSLT text templates (Textbaustein, category XSL) available to the
+   * client of the given workflow version, as a comma-separated digest.
+   *
+   * Injected into the CLARIFICATION prompt so the AI can match a template the user's request
+   * already names ("... und zuvor mit XXX transformiert werden") against the REAL list instead of
+   * asking "Welches XSLT-Template soll … verwendet werden?". Names are enough there: the build pass
+   * resolves the matched name to the template's UUID itself. Returns null when the client has no
+   * XSL template (or the lookup fails), so the block is simply omitted.
+   */
+  private fun fetchXslTemplateNames(userContext: Any, workflowVersionId: Long): String? {
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return null
+      val names =
+          loadXslTemplateEntities(userContext, workflowVersion)
+              .mapNotNull { row ->
+                try {
+                  (row.javaClass.getMethod("getName").invoke(row) as? String)?.trim()
+                } catch (_: Exception) {
+                  null
+                }
+              }
+              .filter { it.isNotEmpty() }
+              .distinct()
+              .sortedBy { it.lowercase() }
+      if (names.isEmpty()) null else names.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to list XSLT templates: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Resolves the UUID of an XSL/XSLT text template (Textbaustein, category XSL) by the name the AI
+   * took from the user's request.
+   *
+   * The matching itself lives in [XslTemplateNameMatcher] (case/separator/umlaut tolerant, one
+   * clear partial match accepted, ambiguity never guessed), so "Anschriften-Report" finds the
+   * stored "Anschriften Report". Returns null when nothing matches unambiguously — the node then
+   * keeps exporting/importing the RAW XML instead of using a wrong stylesheet.
+   */
+  private fun resolveXslTemplateUuid(
+      userContext: Any,
+      workflowVersion: Any,
+      templateName: String
+  ): UUID? {
+    if (templateName.isBlank()) return null
+    // The model sometimes emits the template UUID instead of its name — accept that as well.
+    val wantedUuid =
+        try {
+          UUID.fromString(templateName.trim())
+        } catch (_: Exception) {
+          null
+        }
+    val entries =
+        loadXslTemplateEntities(userContext, workflowVersion)
+            .mapNotNull { row ->
+              try {
+                val uuid = row.javaClass.getMethod("getUUIDObject").invoke(row) as? UUID
+                val name = row.javaClass.getMethod("getName").invoke(row) as? String
+                if (uuid == null || name.isNullOrBlank()) null else name.trim() to uuid
+              } catch (_: Exception) {
+                null
+              }
+            }
+            .distinctBy { it.second }
+    if (wantedUuid != null) {
+      val uuid = entries.firstOrNull { it.second == wantedUuid }?.second
+      if (uuid != null) {
+        logger.info("[AICodBiAssistant] Resolved XSLT template UUID {} by id", templateName)
+      }
+      return uuid
+    }
+    val result = XslTemplateNameMatcher.resolve(templateName, entries.map { it.first })
+    val match = result.match
+    if (match == null) {
+      if (result.candidates.isNotEmpty()) {
+        logger.warn(
+            "[AICodBiAssistant] XSLT template '{}' is ambiguous — candidates: {}",
+            templateName,
+            result.candidates.joinToString(" | "))
+      } else {
+        logger.warn(
+            "[AICodBiAssistant] XSLT template '{}' matches no available template ({} known)",
+            templateName,
+            entries.size)
+      }
+      return null
+    }
+    val uuid = entries.firstOrNull { it.first == match.name }?.second
+    if (uuid != null) {
+      logger.info(
+          "[AICodBiAssistant] Resolved XSLT template '{}' to '{}' ({})",
+          templateName,
+          match.name,
+          if (match.exact) "exact" else "unique partial match")
+    }
+    return uuid
+  }
 
   // endregion Workflow Creation
 
@@ -26526,6 +27020,7 @@ class AICodBiAssistant : IPluginServletAction {
       formVariables: String? = null,
       workflowMails: String? = null,
       availableDatasources: String? = null,
+      xslTemplates: String? = null,
       clarificationTopics: Set<String> = emptySet()
   ): String {
     val action =
@@ -26680,6 +27175,27 @@ class AICodBiAssistant : IPluginServletAction {
       // with an invented EP — ASK the user, offering these names as the question's options.
       val availableDatasourcesBlock =
           if (!availableDatasources.isNullOrBlank()) availableDatasources.trim() + "\n" else ""
+      // AVAILABLE XSLT TEMPLATES (the client's XSL text templates). Injected so the AI can MATCH a
+      // template the request already names against the real list instead of asking which XSLT
+      // template to use — a template named in the request IS the answer to that question. Only when
+      // the request names none (or names one that matches nothing here) may it ask.
+      val xslTemplatesBlock =
+          if (!xslTemplates.isNullOrBlank()) {
+            // Instruction FIRST, data SECOND — the small clarify model acts on the line next to the
+            // data.
+            "\nXSLT TEMPLATE — THE REQUEST OFTEN NAMES IT ALREADY: when a transformation is requested, find the name " +
+                "the user attached to it (ANY wording/language: \"zuvor mit X transformiert\", \"transformiert " +
+                "von/mit X\", \"mit der XSLT-Vorlage X\", \"transformed by/with X\") and MATCH it to the list below — " +
+                "case, spaces, underscores, hyphens, umlauts/ß and a trailing .xsl/.xslt are irrelevant and one clear " +
+                "partial match is enough (\"Anschriften-Report\" → \"Anschriftenreport\"). A match means the question " +
+                "is ANSWERED: your answer is NO_CLARIFICATION — the build pass writes the matched name into " +
+                "\"xslTemplate\". NEVER ask \"Welches XSLT-Template …?\" when the request names one, and NEVER ask which " +
+                "KIND of transformation (it is always XSLT). Ask only when NO template is named (offer these names) or " +
+                "when the named one matches nothing here (offer the closest candidates).\n" +
+                "AVAILABLE XSLT TEMPLATES: " +
+                xslTemplates.trim() +
+                "\n"
+          } else ""
       // Diagnosis for Request 3: confirm at runtime whether the loaded template actually contained
       // the
       //   {{TEXT_SPAN_CONTENT}} placeholder (i.e. the DB-seeded prompt matches the .md) and whether
@@ -26707,7 +27223,8 @@ class AICodBiAssistant : IPluginServletAction {
               completionPagesBlock +
               formVariablesBlock +
               workflowMailsBlock +
-              availableDatasourcesBlock
+              availableDatasourcesBlock +
+              xslTemplatesBlock
       // Optionally drop the SCENARIO-SPECIFIC blocks that do not apply to this request (payment /
       // live-data / HTTP / approval), so the clarification prompt stays small for the common case
       // (a
@@ -26720,12 +27237,15 @@ class AICodBiAssistant : IPluginServletAction {
           applyClarificationSections(
               finalPrompt, prompt + "\n" + clarificationContext, clarificationTopics)
       logger.info(
-          "[AICodBiAssistant] clarification prompt assembly: placeholderPresent={}, workflowStructBlockLen={}, textSpanBlockLen={}, digestInFinalPrompt={}, templateLen={}, finalLen={}, gatedLen={}",
+          "[AICodBiAssistant] clarification prompt assembly: placeholderPresent={}, workflowStructBlockLen={}, textSpanBlockLen={}, digestInFinalPrompt={}, xslBlockLen={}, xslInGatedPrompt={}, xslRuleInGatedPrompt={}, templateLen={}, finalLen={}, gatedLen={}",
           hasPlaceholder,
           workflowStructureBlock.length,
           textSpanContentBlock.length,
           (!textSpanContentBlock.isNullOrBlank() &&
               gatedPrompt.contains(textSpanContentBlock.trim().take(40))),
+          xslTemplatesBlock.length,
+          gatedPrompt.contains("AVAILABLE XSLT TEMPLATES"),
+          gatedPrompt.contains("XSLT TEMPLATE NAMED IN THE REQUEST"),
           template.length,
           finalPrompt.length,
           gatedPrompt.length)
@@ -26992,6 +27512,7 @@ class AICodBiAssistant : IPluginServletAction {
       pdfTemplates: String? = null,
       databaseSql: String? = null,
       databaseLdap: String? = null,
+      xslTemplates: String? = null,
       inboxes: String?,
       messageServices: String?,
       triggers: String?,
@@ -27066,6 +27587,10 @@ class AICodBiAssistant : IPluginServletAction {
     // pass.
     // Drop the block instead.
     out = applyWorkflowSection(out, "URL_TEMPLATES", null)
+    // XSL/XSLT templates for FC_EXPORT_TO_XML and FC_IMPORT_FORM_VALUE_FROM_XML (names only). The
+    // workflow step RUNS with a workflow-version id, so the client's real templates are available:
+    // the model can then MATCH a template the request names instead of inventing or asking for one.
+    out = applyWorkflowSection(out, "XSL_TEMPLATES", xslTemplates)
     out = applyWorkflowSection(out, "INBOXES", inboxes)
     out = applyWorkflowSection(out, "MESSAGE_SERVICES", messageServices)
     out = applyWorkflowSection(out, "TRIGGERS", triggers)
@@ -27646,6 +28171,7 @@ class AICodBiAssistant : IPluginServletAction {
       formVariables: String? = null,
       workflowMails: String? = null,
       availableDatasources: String? = null,
+      xslTemplates: String? = null,
       clarificationTopics: Set<String> = emptySet(),
       onUsage: ((Int, Int) -> Unit)? = null
   ): ClarificationCheck? {
@@ -27670,6 +28196,7 @@ class AICodBiAssistant : IPluginServletAction {
             formVariables,
             workflowMails,
             availableDatasources,
+            xslTemplates,
             clarificationTopics)
     val messagesJson = buildString {
       append("[")

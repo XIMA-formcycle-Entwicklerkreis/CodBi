@@ -3446,136 +3446,44 @@ class AIWorkflowAssistant : IPluginServletAction {
         val changeType = (spec.nodeParams["changeType"] as? String ?: "SET_OFFLINE").uppercase()
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"changeType":${gson.toJson(changeType)}}"""
       }
-      "de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin" -> {
+      // Cross-form record creation — the INSTALLED handler plus its legacy (non-installed)
+      // spelling,
+      // which formcycle cannot resolve as a node type.
+      //
+      // The properties come from the installed plugin's `CreateRemoteFormRecordProps` and are built
+      // by
+      // [RemoteFormRecordParams]: `projectRef` (the "Formular" property, @NotNull), `statusRef`
+      // (the
+      // "Ziel-Status", a `de.xima.fc.entities.Status` — NOT a workflow state), `useNewWf` (mirrors
+      // the
+      // target form's `isUsesNewWorkflow()`), `copyAll`/`elementsToCopy` and
+      // `transferAttachments`/`attachmentFilter`. The keys this branch emitted before (`project`,
+      // `stateNewRecord`, `otherAttachments`) do not exist on that class, so the designer showed an
+      // EMPTY "Formular" property.
+      "de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin",
+      WorkflowSpecNormalizer.LEGACY_CREATE_RECORD_NODE_TYPE -> {
         val projectName = spec.nodeParams["projectName"] as? String ?: ""
         val stateName = spec.nodeParams["stateName"] as? String ?: ""
-        val copyAll = spec.nodeParams["copyAll"] as? Boolean ?: false
-        @Suppress("UNCHECKED_CAST")
-        val elementsToCopy =
-            (spec.nodeParams["elementsToCopy"] as? List<*>)
-                ?.filterIsInstance<Map<*, *>>()
-                ?.mapNotNull { m ->
-                  val name = m["name"] as? String ?: return@mapNotNull null
-                  val value = m["value"] as? String ?: ""
-                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)},"deletable":true,"nameEditable":true,"valueEditable":true,"required":false}"""
-                } ?: emptyList()
-        val elementsToCopyJson =
-            if (elementsToCopy.isNotEmpty())
-                ""","elementsToCopy":[${elementsToCopy.joinToString(",")}]"""
-            else ""
-        @Suppress("UNCHECKED_CAST")
-        val files =
-            (spec.nodeParams["files"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-        val multiFileJson =
-            if (files.isNotEmpty()) {
-              val resourcesJson =
-                  files.joinToString(",") { f ->
-                    """{"type":"UPLOAD","identifier":${gson.toJson(f)}}"""
-                  }
-              ""","otherAttachments":{"resources":[$resourcesJson],"attachmentFilter":[]},"copyOtherAttachments":true"""
-            } else ""
-        // Resolve project UUID via native SQL (H2 uppercases unquoted identifiers)
-        var projectUuid: UUID? = null
-        if (projectName.isNotBlank() && userContext != null) {
-          try {
-            val entityContextFactoryClass =
-                Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
-            val ucClass = Class.forName("de.xima.fc.user.UserContext")
-            val entityContext =
-                entityContextFactoryClass
-                    .getMethod("newEntityContext", ucClass)
-                    .invoke(null, userContext)
-            val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
-            val q =
-                em.javaClass
-                    .getMethod("createNativeQuery", String::class.java)
-                    .invoke(em, "SELECT UUID FROM PROJEKT WHERE LOWER(NAME) = LOWER(?1)")
-            q.javaClass
-                .getMethod("setParameter", Int::class.java, Any::class.java)
-                .invoke(q, 1, projectName)
-            @Suppress("UNCHECKED_CAST")
-            val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
-            if (results.isNotEmpty()) {
-              val raw = results[0]?.toString()
-              if (raw != null) projectUuid = UUID.fromString(raw)
-            }
-            entityContext.javaClass.getMethod("close").invoke(entityContext)
-          } catch (e: Exception) {
-            val causeMsg =
-                if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
-                  "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
-                } else {
-                  "${e::class.simpleName}: ${e.message ?: "null"}"
-                }
-            logger.warn(
-                "[AIWorkflowAssistant] Could not resolve project UUID for '{}': {}",
-                projectName,
-                causeMsg)
-          }
+        val projectUuid = RemoteFormRecordParams.resolveProjectUuid(userContext, projectName)
+        if (projectUuid == null && projectName.isNotBlank()) {
+          logger.warn(
+              "[AIWorkflowAssistant] CreateRemoteFormRecordPlugin: no form titled '{}' — the target form stays unbound",
+              projectName)
         }
-        val projectJson =
-            if (projectUuid != null)
-                ""","project":{"uuid":${gson.toJson(projectUuid.toString())},"entityClass":"de.xima.fc.entities.Projekt"}"""
-            else ""
-        // Resolve state UUID via native SQL
-        var stateUuid: UUID? = null
-        if (stateName.isNotBlank() && projectUuid != null && userContext != null) {
-          try {
-            val entityContextFactoryClass =
-                Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
-            val ucClass = Class.forName("de.xima.fc.user.UserContext")
-            val entityContext =
-                entityContextFactoryClass
-                    .getMethod("newEntityContext", ucClass)
-                    .invoke(null, userContext)
-            val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
-            val q =
-                em.javaClass
-                    .getMethod("createNativeQuery", String::class.java)
-                    .invoke(
-                        em,
-                        "SELECT ws.UUID FROM WORKFLOW_STATE ws " +
-                            "JOIN WORKFLOW_VERSION wv ON ws.VERSION_ID = wv.ID " +
-                            "JOIN PROJEKT p ON wv.PROJECT_ID = p.ID OR wv.PROJEKT_ID = p.ID " +
-                            "WHERE p.UUID = ?1 AND LOWER(ws.NAME) = LOWER(?2)")
-            q.javaClass
-                .getMethod("setParameter", Int::class.java, Any::class.java)
-                .invoke(q, 1, projectUuid.toString())
-            q.javaClass
-                .getMethod("setParameter", Int::class.java, Any::class.java)
-                .invoke(q, 2, stateName)
-            @Suppress("UNCHECKED_CAST")
-            val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
-            if (results.isNotEmpty()) {
-              val raw = results[0]?.toString()
-              if (raw != null) stateUuid = UUID.fromString(raw)
-            }
-            entityContext.javaClass.getMethod("close").invoke(entityContext)
-          } catch (e: Exception) {
-            val causeMsg =
-                if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
-                  "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
-                } else {
-                  "${e::class.simpleName}: ${e.message ?: "null"}"
-                }
-            logger.warn(
-                "[AIWorkflowAssistant] Could not resolve state UUID for '{}': {}",
-                stateName,
-                causeMsg)
-          }
-        }
-        val stateJson =
-            if (stateUuid != null)
-                ""","stateNewRecord":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}"""
-            else ""
+        // The inbox ("im Postfach FOR 308") is the plugin's OWN "Postfach" property — the record is
+        // created there, so no separate FC_MOVE_FORM_RECORD_TO_INBOX node is needed.
+        val inboxName = RemoteFormRecordParams.requestedInboxName(spec.nodeParams)
+        val target =
+            RemoteFormRecordParams.resolveTarget(userContext, projectUuid, stateName, inboxName)
         val pluginResult =
-            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$projectJson$stateJson$elementsToCopyJson$multiFileJson}"""
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},${RemoteFormRecordParams.propsJson(spec.nodeParams, projectUuid, target)}}"""
         logger.info(
-            "[AIWorkflowAssistant] CreateRecordNodePlugin JSON: projectName='{}', stateName='{}', projectUuid={}, stateUuid={}, result_len={}",
+            "[AIWorkflowAssistant] CreateRemoteFormRecordPlugin JSON: projectName='{}', projectUuid={}, useNewWf={}, status='{}', inbox='{}', result_len={}",
             projectName,
-            stateName,
             projectUuid,
-            stateUuid,
+            target?.usesNewWorkflow ?: false,
+            target?.statusName ?: "",
+            target?.inboxName ?: "",
             pluginResult.length)
         pluginResult
       }
@@ -3682,7 +3590,26 @@ class AIWorkflowAssistant : IPluginServletAction {
         val errorMessage = spec.nodeParams["errorMessage"] as? String ?: ""
         val errorType =
             spec.nodeParams["errorType"] as? String ?: spec.nodeParams["errorCode"] as? String ?: ""
-        val errorData = spec.nodeParams["errorData"] as? String ?: ""
+        // FcThrowExceptionProps.errorData is edited as JSON by the designer's "Error data"
+        // (Fehlerdaten) field, so a BARE value or placeholder ("[%tf1%]") is invalid there — wrap
+        // anything that is not already a JSON document into {"Data": <value>}. (Mirrors
+        // AICodBiAssistant.normalizeThrowExceptionErrorData().)
+        val rawErrorData = spec.nodeParams["errorData"]
+        val errorData =
+            when (rawErrorData) {
+              null -> ""
+              is Map<*, *>,
+              is List<*> -> gson.toJson(rawErrorData)
+              else -> {
+                val text = rawErrorData.toString().trim()
+                when {
+                  text.isEmpty() -> ""
+                  (text.startsWith("{") && text.endsWith("}")) ||
+                      (text.startsWith("[") && text.endsWith("]")) -> text
+                  else -> """{"Data":${gson.toJson(text)}}"""
+                }
+              }
+            }
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"errorMessage":${gson.toJson(errorMessage)},"errorType":${gson.toJson(errorType)},"errorData":${gson.toJson(errorData)}}"""
       }
       "FC_MULTIPLE_CONDITION" -> {

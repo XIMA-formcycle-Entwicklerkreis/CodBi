@@ -38,6 +38,27 @@ class WorkflowSpecNormalizerTest {
   }
 
   @Test
+  fun `the non-installed create-record handler is canonicalised to the installed plugin`() {
+    // formcycle has no handler for the old fc_plugin_create_record class — persisting it produces
+    // "Cannot validate node of kind …, no handler was registered for that node".
+    assertEquals(
+        WorkflowSpecNormalizer.REMOTE_FORM_RECORD_NODE_TYPE,
+        WorkflowSpecNormalizer.canonicalNodeType(
+            "de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin"))
+    assertEquals(
+        WorkflowSpecNormalizer.REMOTE_FORM_RECORD_NODE_TYPE,
+        WorkflowSpecNormalizer.canonicalNodeType("some.other.package.CreateRecordNodePlugin"))
+    assertEquals(
+        WorkflowSpecNormalizer.REMOTE_FORM_RECORD_NODE_TYPE,
+        WorkflowSpecNormalizer.canonicalNodeType("CreateRecordNodePlugin"))
+    // The installed class itself is left untouched.
+    assertEquals(
+        WorkflowSpecNormalizer.REMOTE_FORM_RECORD_NODE_TYPE,
+        WorkflowSpecNormalizer.canonicalNodeType(
+            "de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin"))
+  }
+
+  @Test
   fun `the pluralised import node type is canonicalised`() {
     assertEquals(
         "FC_IMPORT_FORM_VALUE_FROM_XML",

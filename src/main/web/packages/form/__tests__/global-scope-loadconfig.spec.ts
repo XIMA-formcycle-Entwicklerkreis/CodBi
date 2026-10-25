@@ -139,6 +139,49 @@ describe("CodBi.loadConfig and loadConfigs", () => {
     }
   });
 
+  it("writes the configuration attributes to the control INSIDE a wrapper the class matched", async () => {
+    // `CodBi_NoFutureDate` & co. are CSS classes on the FORM ELEMENT; if the class ends up on a
+    // wrapper, the functionality (which needs an <input>) must still get the attributes.
+    codbi.registerFunctionality("test.func", () => {});
+
+    const wrapper = document.createElement("div");
+    wrapper.classList.add("my-target");
+    const input = document.createElement("input");
+    input.type = "text";
+    wrapper.appendChild(input);
+    document.body.appendChild(wrapper);
+
+    await codbi.loadConfig({
+      targets: ".my-target",
+      FUNC: "Test.Func",
+      Minimum: 0,
+    } as any);
+
+    expect(input.getAttribute("data-cb-FUNC")).toBe("Test.Func");
+    expect(input.getAttribute("data-cb-Minimum")).toBe("0");
+    // The wrapper itself is not a control and must not carry the functionality.
+    expect(wrapper.hasAttribute("data-cb-func")).toBe(false);
+  });
+
+  it("never leaks a container class onto the controls it spans", async () => {
+    codbi.registerFunctionality("test.func", () => {});
+
+    const fieldset = document.createElement("fieldset");
+    fieldset.classList.add("my-target");
+    for (let i = 0; i < 3; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      fieldset.appendChild(input);
+    }
+    document.body.appendChild(fieldset);
+
+    await codbi.loadConfig({ targets: ".my-target", FUNC: "Test.Func" } as any);
+
+    // A fieldset-scoped class (panel/accordion) stays on the container.
+    expect(fieldset.getAttribute("data-cb-FUNC")).toBe("Test.Func");
+    expect(fieldset.querySelector("input")?.hasAttribute("data-cb-func")).toBe(false);
+  });
+
   it("loadConfig handles tilde-separated targets", async () => {
     codbi.registerFunctionality("test.func", () => {});
 

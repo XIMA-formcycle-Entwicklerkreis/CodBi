@@ -10,7 +10,23 @@
         "description": {
           "en": "A property of the directory, for example \"bezeichnung\".",
           "de": "Eine Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
-        }
+        },
+        "options": [
+          "anrede",
+          "vorname",
+          "nachname",
+          "funktion",
+          "stellenbezeichnung",
+          "email",
+          "website",
+          "zimmer",
+          "sortierreihenfolge",
+          "behoerdeId",
+          "behoerdeBezeichnung",
+          "gebaeudeId",
+          "gebaeudeBezeichnung",
+          "ansprechpartnerId"
+        ]
       }
     ],
     "returnType": "any",

@@ -12759,12 +12759,22 @@ class AICodBiAssistant : IPluginServletAction {
     // DIAGNOSTIC: dump the DECRYPTED params + version of every FC_POST_REQUEST node so we can
     // compare an AI-created node with a manually-created one.
     logPostRequestNodeStates(userContext)
+    // DIAGNOSTIC: same for the cross-form record node. Its props are known now (see
+    // [RemoteFormRecordParams]:
+    // projectRef/statusRef/useNewWf/transferAttachments/attachmentFilter),
+    // so this dump exists to VERIFY on the next run that the "Formular" reference really landed in
+    // an
+    // AI-created node — and to compare it with one configured by hand in the designer.
+    logWorkflowNodeStates(userContext, WorkflowSpecNormalizer.REMOTE_FORM_RECORD_NODE_TYPE)
+    logWorkflowNodeStates(userContext, WorkflowSpecNormalizer.LEGACY_CREATE_RECORD_NODE_TYPE)
     val workflowStatesJson = fetchWorkflowStates(userContext, workflowVersionId)
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: workflowStates={}",
         workflowStatesJson ?: "null (no states found or query failed)")
     val inboxesJson = fetchInboxes(userContext, workflowVersionId)
-    logger.debug(
+    // INFO (not debug): the cross-form creation node binds its "Postfach" by this list, so a run
+    // must show whether the AI even received the names ("FOR 0308" vs the user's "FOR 308").
+    logger.info(
         "[AICodBiAssistant] runWorkflowCreation: inboxes={}",
         inboxesJson ?: "null (no inboxes found or query failed)")
     val messageServicesJson = fetchMessageServices(userContext, workflowVersionId)
@@ -12779,6 +12789,15 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: userGroups={}",
         userGroupsJson ?: "null (no groups found or query failed)")
+    // AVAILABLE FORMS (titles + their STATUS names). A cross-form request names the TARGET form
+    // approximately ("im Streuobstbeförderungsformular"), so the model gets the list and matches it
+    // itself instead of asking for the exact name or answering with an error. The statuses are
+    // listed
+    // too because the record node's "Ziel-Status" must be one of the TARGET form's real statuses.
+    val availableForms = renderFormsForCrossForm(fetchAllForms(userContext, includeStatuses = true))
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: availableForms={}",
+        availableForms ?: "null (no forms found or query failed)")
     // Existing workflow nodes — lets the AI reference concrete nodes (by numeric id) for
     // remove/replace operations instead of only creating new ones.
     val existingWorkflowNodes = fetchExistingWorkflowNodes(userContext, workflowVersionId)
@@ -12892,7 +12911,8 @@ class AICodBiAssistant : IPluginServletAction {
             pdfTemplates = pdfTemplatesJson,
             databaseSql = databaseSqlContext,
             databaseLdap = databaseLdapContext,
-            xslTemplates = fetchXslTemplateNames(userContext, workflowVersionId))
+            xslTemplates = fetchXslTemplateNames(userContext, workflowVersionId),
+            forms = availableForms)
 
     var messagesJson = buildString {
       append("[")
@@ -12966,7 +12986,8 @@ class AICodBiAssistant : IPluginServletAction {
               userGroups = userGroupsJson,
               pdfTemplates = pdfTemplatesJson,
               databaseSql = databaseSqlContext,
-              databaseLdap = databaseLdapContext)
+              databaseLdap = databaseLdapContext,
+              forms = availableForms)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -13087,7 +13108,8 @@ class AICodBiAssistant : IPluginServletAction {
                 userGroups = userGroupsJson,
                 pdfTemplates = pdfTemplatesJson,
                 databaseSql = databaseSqlContext,
-                databaseLdap = databaseLdapContext)
+                databaseLdap = databaseLdapContext,
+                forms = availableForms)
         messagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -15941,7 +15963,11 @@ class AICodBiAssistant : IPluginServletAction {
       // for the template or invent one, which is exactly why "transformiert von XXX" produced a
       // node
       // whose template stayed empty.
-      xslTemplates: String? = null
+      xslTemplates: String? = null,
+      // AVAILABLE FORMS (titles of this client's forms). A cross-form record creation names the
+      // target form APPROXIMATELY ("im Streuobstbeförderungsformular"); without the list the model
+      // could only ask for the exact name (or answer with an error) instead of matching it itself.
+      forms: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -16012,7 +16038,8 @@ class AICodBiAssistant : IPluginServletAction {
               changeHistoryContext = changeHistoryContext,
               changeLogSchema = loadChangeLogSchema(),
               formVariables = formVariables,
-              userGroups = userGroups)
+              userGroups = userGroups,
+              forms = forms)
       // Token instrument: the workflow step has no size log (only the FORM passes do), so its cost
       // was invisible. Prints the total AND the biggest dynamic contributors, so a 143 k-token run
       // can be attributed to a specific block instead of guessed at — mirror of the form's
@@ -17347,14 +17374,24 @@ class AICodBiAssistant : IPluginServletAction {
    * gemäß Inhalt" (DYNAMIC) although the persisted httpRequestType is "CUSTOM".
    */
   private fun logPostRequestNodeStates(userContext: Any) {
+    logWorkflowNodeStates(userContext, "FC_POST_REQUEST")
+  }
+
+  /**
+   * DIAGNOSTIC: logs the DECRYPTED custom parameters of every node of [nodeType], AI-created AND
+   * manually-created. Used to compare an AI-written node with one the user configured in the
+   * designer, which reveals the property names / reference shapes a plugin really reads — e.g. the
+   * cross-form record node whose "Formular" property stayed empty although `project` was written.
+   */
+  private fun logWorkflowNodeStates(userContext: Any, nodeType: String) {
     try {
       val em = formcycleEntityManager(userContext) ?: return
       val rows =
           runJpqlOn(
               em,
-              "SELECT n.id FROM de.xima.fc.entities.WorkflowNode n WHERE n.type = 'FC_POST_REQUEST'",
-              null,
-              null)
+              "SELECT n.id FROM de.xima.fc.entities.WorkflowNode n WHERE n.type = :t",
+              "t",
+              nodeType)
       if (rows.isEmpty()) return
       val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
       val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
@@ -17369,18 +17406,20 @@ class AICodBiAssistant : IPluginServletAction {
           val ver = node.javaClass.getMethod("getCustomParametersVersion").invoke(node) as? String
           val params = node.javaClass.getMethod("getCustomParameters").invoke(node) as? String
           logger.info(
-              "[AICodBiAssistant] DIAG FC_POST_REQUEST id={} name='{}' customParamsVer='{}' customParams={}",
+              "[AICodBiAssistant] DIAG {} id={} name='{}' customParamsVer='{}' customParams={}",
+              nodeType,
               id,
               name,
               ver,
               params)
         } catch (e: Exception) {
           logger.warn(
-              "[AICodBiAssistant] DIAG: could not read FC_POST_REQUEST node {}: {}", id, e.message)
+              "[AICodBiAssistant] DIAG: could not read {} node {}: {}", nodeType, id, e.message)
         }
       }
     } catch (e: Exception) {
-      logger.warn("[AICodBiAssistant] DIAG logPostRequestNodeStates failed: {}", e.message)
+      logger.warn(
+          "[AICodBiAssistant] DIAG logWorkflowNodeStates({}) failed: {}", nodeType, e.message)
     }
   }
 
@@ -17554,6 +17593,42 @@ class AICodBiAssistant : IPluginServletAction {
     // Capture the top-level loop node UUID for symbolic breakTarget resolution
     val rootLoopUuid =
         savedActionNode.javaClass.getMethod("getUuid").invoke(savedActionNode) as? java.util.UUID
+    /**
+     * Creates an EMPTY branch `SEQUENCE` (`FcSequenceHandler`) as a child of [parent] at the branch
+     * index [childIndex] and returns the persisted node.
+     *
+     * FORMCYCLE addresses the branches of a conditional node via `parent_order_idx` (0 =
+     * YES/consequent, 1 = NO/alternate — see [forceChildIndex]). An if/else is therefore ONE lane
+     * with ONE condition node that owns BOTH branches; the caller fills each branch with its
+     * children via [processBranchChildren].
+     *
+     * @param parent The persisted conditional node.
+     * @param childIndex 0 for the YES branch, 1 for the NO branch.
+     * @param indent Log indentation of the enclosing level.
+     * @return The persisted branch SEQUENCE.
+     */
+    fun createBranchSequence(parent: Any, childIndex: Int, indent: String): Any {
+      val sequence = workflowNodeClass.getDeclaredConstructor().newInstance()
+      workflowNodeClass
+          .getMethod("setName", String::class.java)
+          .invoke(sequence, "FcSequenceHandler")
+      workflowNodeClass.getMethod("setType", String::class.java).invoke(sequence, "SEQUENCE")
+      workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(sequence, true)
+      workflowNodeClass
+          .getMethod("setUUIDObject", UUID::class.java)
+          .invoke(sequence, UUID.randomUUID())
+      workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(sequence, savedTask)
+      workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(sequence, parent)
+      trySetParentOrderIndex(workflowNodeClass, sequence, childIndex)
+      val savedSequence = createNodeMethod.invoke(workflowNodeApi, userContext, sequence)
+      verifyChildIndex(savedSequence, parent, childIndex, userContext)
+      logger.info(
+          "[AICodBiAssistant]{} Created branch SEQUENCE id={} at parent_order_idx={}",
+          indent,
+          savedSequence.javaClass.getMethod("getId").invoke(savedSequence),
+          childIndex)
+      return savedSequence
+    }
     fun processBranchChildren(
         parentSpec: WorkflowTaskSpec,
         savedParentNode: Any,
@@ -17704,6 +17779,17 @@ class AICodBiAssistant : IPluginServletAction {
               depth)
           processBranchChildren(childSpec, savedNestedSeq, nestedChildNodes, depth + 1)
         }
+        // A condition INSIDE a lane owns its NO/ELSE branch too — same single-lane if/else rule.
+        val nestedElseChildren = elseChildNodesOf(childSpec.nodeParams)
+        if (nestedElseChildren != null && hasAlternateBranch(childSpec.nodeType)) {
+          logger.info(
+              "[AICodBiAssistant]{} Creating NO-branch SEQUENCE wrapper for nested nodeType={} ({} child node(s))",
+              indent,
+              childSpec.nodeType,
+              nestedElseChildren.size)
+          val savedNoSeq = createBranchSequence(savedChildNode, 1, indent)
+          processBranchChildren(childSpec, savedNoSeq, nestedElseChildren, depth + 1)
+        }
       }
     }
 
@@ -17750,6 +17836,16 @@ class AICodBiAssistant : IPluginServletAction {
             savedBranchSeq.javaClass.getMethod("getId").invoke(savedBranchSeq),
             childSpec.nodeType)
         processBranchChildren(childSpec, savedBranchSeq, childNodes, depth)
+      }
+      // …and the matching NO/ELSE branch (an if/else lives in ONE lane, not in two lanes).
+      val elseChildren = elseChildNodesOf(childSpec.nodeParams)
+      if (elseChildren != null && hasAlternateBranch(childSpec.nodeType)) {
+        logger.info(
+            "[AICodBiAssistant] Creating NO-branch SEQUENCE wrapper for nested nodeType={} ({} child node(s))",
+            childSpec.nodeType,
+            elseChildren.size)
+        val savedNoSeq = createBranchSequence(savedNode, 1, "")
+        processBranchChildren(childSpec, savedNoSeq, elseChildren, depth)
       }
     }
     @Suppress("UNCHECKED_CAST")
@@ -17798,9 +17894,10 @@ class AICodBiAssistant : IPluginServletAction {
           endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
         } catch (_: Exception) {}
         val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+        val branchEndpointName = endpointNodeDisplayName(effectiveEndpointType, stateName)
         workflowNodeClass
             .getMethod("setName", String::class.java)
-            .invoke(endpointNode, effectiveEndpointType)
+            .invoke(endpointNode, branchEndpointName)
         workflowNodeClass
             .getMethod("setType", String::class.java)
             .invoke(endpointNode, effectiveEndpointType)
@@ -17810,8 +17907,15 @@ class AICodBiAssistant : IPluginServletAction {
             .invoke(endpointNode, UUID.randomUUID())
         if (endpointStateUuid != null) {
           val uuidStr = endpointStateUuid.toString()
+          // name/description/icon must live in the params — the designer renders the label and the
+          // icon from there (see withNodeDisplayParams).
           val epJson =
-              """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+              withNodeDisplayParams(
+                  """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}""",
+                  branchEndpointName,
+                  spec.taskDescription ?: "",
+                  effectiveEndpointType,
+                  params.contextPath)
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(endpointNode, epJson)
@@ -17826,6 +17930,20 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info(
             "[AICodBiAssistant] Created endpoint '{}' inside YES-branch SEQUENCE", stateName)
       }
+    }
+
+    // 9c-1b. NO / ELSE branch of the top-level branching node. An if/else described for ONE trigger
+    // must live in ONE lane: the single condition node owns both branches. A second LANE for the
+    // "else" case carries NO condition and would therefore fire ALWAYS (the reported "mail is sent
+    // although a file was uploaded" bug).
+    val topLevelElseChildNodes = elseChildNodesOf(spec.nodeParams)
+    if (topLevelElseChildNodes != null && hasAlternateBranch(spec.nodeType)) {
+      logger.info(
+          "[AICodBiAssistant] Creating NO-branch SEQUENCE wrapper for nodeType={} ({} child node(s))",
+          spec.nodeType,
+          topLevelElseChildNodes.size)
+      val savedNoSeq = createBranchSequence(savedActionNode, 1, "")
+      processBranchChildren(spec, savedNoSeq, topLevelElseChildNodes, 1)
     }
 
     // 9c-2. FC_SWITCH handler: creates a multi-branch switch/case structure.
@@ -18221,6 +18339,25 @@ class AICodBiAssistant : IPluginServletAction {
       // FC_RETURN is a terminal node that ends the workflow process without a state transition.
       // It does NOT need a target state â€” just create the node and attach it to the task.
       if (effectiveEndpointType == "FC_RETURN") {
+        // The designer renders the endpoint's LABEL + ICON from its customParameters, never from
+        // the entity columns — a node named after the raw type ("FC_RETURN") without params shows
+        // the generic placeholder ("Next action") and no icon until it is clicked. Give the
+        // endpoint a readable name and stamp name/description/icon into its params.
+        val endpointName = endpointNodeDisplayName(effectiveEndpointType, "")
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(endpointNode, endpointName)
+        val returnParamsJson =
+            withNodeDisplayParams(
+                "{}",
+                endpointName,
+                spec.taskDescription ?: "",
+                effectiveEndpointType,
+                params.contextPath)
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(endpointNode, returnParamsJson)
+        stampCustomParamsVersion(workflowNodeClass, endpointNode)
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
         workflowNodeClass
             .getMethod("setParent", workflowNodeClass)
@@ -18228,7 +18365,8 @@ class AICodBiAssistant : IPluginServletAction {
         val savedEndpointNode = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
         fixParentOrderIndex(savedEndpointNode, savedRootNode, userContext)
         logger.info(
-            "[AICodBiAssistant] Created FC_RETURN endpoint node (process ends without state change)")
+            "[AICodBiAssistant] Created FC_RETURN endpoint node '{}' (process ends without state change)",
+            endpointName)
       } else {
         // FC_CHANGE_STATE: Resolve the state UUID and create the endpoint with target state
         val stateName = spec.endpointState.ifBlank { "Received" }
@@ -18565,8 +18703,19 @@ class AICodBiAssistant : IPluginServletAction {
             endpointStateUuid?.toString() ?: "null")
 
         if (endpointStateUuid != null) {
+          // Label + icon come from the customParameters (see withNodeDisplayParams) — without them
+          // the designer shows the generic placeholder until the node is opened.
+          val endpointName = endpointNodeDisplayName("FC_CHANGE_STATE", stateName)
+          workflowNodeClass
+              .getMethod("setName", String::class.java)
+              .invoke(endpointNode, endpointName)
           val endpointParamsJson =
-              """{"targetState":{"uuid":${gson.toJson(endpointStateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+              withNodeDisplayParams(
+                  """{"targetState":{"uuid":${gson.toJson(endpointStateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}""",
+                  endpointName,
+                  spec.taskDescription ?: "",
+                  "FC_CHANGE_STATE",
+                  params.contextPath)
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(endpointNode, endpointParamsJson)
@@ -19741,6 +19890,47 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * `nodeParams` keys a branching node may use for its NO / ELSE branch. The primary key is
+   * `_elseChildNodes` (the mirror of `_childNodes`); the aliases are accepted because models rarely
+   * agree on one spelling.
+   */
+  private val ELSE_CHILD_NODE_KEYS =
+      listOf(
+          "_elseChildNodes",
+          "_noChildNodes",
+          "_falseChildNodes",
+          "_alternateChildNodes",
+          "_noBranchChildNodes",
+          "_elseNodes")
+
+  /**
+   * The NO / ELSE branch children of a branching node, accepting every alias in
+   * [ELSE_CHILD_NODE_KEYS]; `null` when the node declares none.
+   *
+   * An if/else belongs in ONE lane: a single condition node owns BOTH branches (see
+   * [forceChildIndex]). A separate lane for the "else" case carries no condition at all and
+   * therefore ALWAYS fires — the exact failure behind "the mail is sent although a file was
+   * uploaded".
+   */
+  private fun elseChildNodesOf(nodeParams: Map<String, Any>): List<Map<String, Any>>? {
+    for (key in ELSE_CHILD_NODE_KEYS) {
+      @Suppress("UNCHECKED_CAST")
+      val children = (nodeParams[key] as? List<Map<String, Any>>)?.ifEmpty { null }
+      if (children != null) return children
+    }
+    return null
+  }
+
+  /**
+   * Whether [nodeType] is a conditional node that owns BOTH a YES and a NO branch, i.e. one whose
+   * branches are addressed by `parent_order_idx` (`0` = YES/consequent, `1` = NO/alternate). Loops
+   * only have a body and are therefore excluded.
+   */
+  private fun hasAlternateBranch(nodeType: String): Boolean =
+      nodeType == "FC_MULTIPLE_CONDITION" ||
+          nodeType == "de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin"
+
+  /**
    * Forces [childNode] (persisted under [parentNode]) to have [childIndex] as its
    * `parent_order_idx`. This is needed for condition/branching nodes (e.g. CheckTrustLevelPlugin)
    * which use `parent_order_idx` to distinguish YES branch (consequentChildIndex=0) from NO branch
@@ -20171,24 +20361,50 @@ class AICodBiAssistant : IPluginServletAction {
       contextPath: String? = null
   ): String? {
     val base = buildNodeParamsJson(spec, workflowVersion, userContext) ?: return null
+    return withNodeDisplayParams(
+        base, deriveNodeName(spec), spec.taskDescription ?: "", nodeType, contextPath)
+  }
+
+  /**
+   * Stamps the DISPLAY metadata the workflow designer renders onto an element's customParameters
+   * JSON ([paramsJson]):
+   * - `$version` — the node-handler params-schema version. Match formcycle's own node
+   *   serialization: WorkflowCustomParametersHelper.updateCustomParams() (which checks "$version"
+   *   in the params JSON) skips the node-handler migration — for FC_POST_REQUEST that migration
+   *   would otherwise re-derive httpRequestType to DYNAMIC ("Automatisch gemäß Inhalt") instead of
+   *   keeping "CUSTOM". "8.5.3" is the current formcycle node-handler version (verified from a
+   *   manually created node's decrypted "$version":"8.5.3"); it MUST match the formcycle release
+   *   version. The entity-level customParametersVersion="8.5.3" ([stampCustomParamsVersion]) covers
+   *   the entity-based path; this covers the JSON-based path. The runtime ignores the extra
+   *   "$version" key (fastjson maps only the props fields).
+   * - `name` / `description` — the element's LABEL/TEXT. The designer reads them via
+   *   WorkflowCustomParametersHelper.findName/findDescription, which fall back to
+   *   customParameters["name"]/["description"]; the WorkflowNode ENTITY columns are merely
+   *   re-derived from these on load. Without them the element is drawn with the generic placeholder
+   *   label ("Next action") and only shows its real name after it has been opened/edited in the
+   *   designer.
+   * - `icon` — the per-type default GUI icon (see [resolveNodeIconJson]), so the node is drawn with
+   *   its icon immediately instead of only after the first click.
+   */
+  private fun withNodeDisplayParams(
+      paramsJson: String,
+      nodeName: String,
+      nodeDescription: String,
+      nodeType: String,
+      contextPath: String? = null
+  ): String {
     return try {
-      val obj = gson.fromJson(base, JsonObject::class.java)
-      // Match formcycle's own node serialization: stamp the params-schema version key so
-      // WorkflowCustomParametersHelper.updateCustomParams() (which checks "$version" in the params
-      // JSON) skips the node-handler migration — for FC_POST_REQUEST that migration would otherwise
-      // re-derive httpRequestType to DYNAMIC ("Automatisch gemäß Inhalt") instead of keeping
-      // "CUSTOM". "8.5.3" is the current formcycle node-handler version (verified from a manually
-      // created node's decrypted "$version":"8.5.3"); it MUST match the formcycle release version.
-      // The entity-level customParametersVersion="8.5.3" (stampCustomParamsVersion) covers the
-      // entity-based path; this covers the JSON-based path. The runtime ignores the extra
-      // "$version" key (fastjson maps only the FcHttpRequestProps fields).
+      val obj = gson.fromJson(paramsJson, JsonObject::class.java)
       obj.addProperty("\$version", "8.5.3")
+      val safeName = sanitizeWorkflowName(nodeName)
+      if (safeName.isNotBlank()) obj.addProperty("name", safeName)
+      if (nodeDescription.isNotBlank()) obj.addProperty("description", nodeDescription)
       resolveNodeIconJson(nodeType, contextPath)?.let {
         obj.add("icon", JsonParser.parseString(it))
       }
       obj.toString()
     } catch (_: Exception) {
-      base
+      paramsJson
     }
   }
 
@@ -20219,7 +20435,9 @@ class AICodBiAssistant : IPluginServletAction {
       // shows them (like every node).
       val triggerDescription = spec.taskDescription ?: ""
       if (triggerDescription.isNotBlank()) obj.addProperty("description", triggerDescription)
-      val triggerName = spec.taskName.trim()
+      // The name must be sanitized exactly like the WorkflowTrigger ENTITY name, otherwise the
+      // displayed label (read from the params) and the entity column diverge.
+      val triggerName = sanitizeWorkflowName(spec.taskName)
       if (triggerName.isNotBlank()) obj.addProperty("name", triggerName)
       resolveTriggerIconJson(spec.triggerType)?.let { obj.add("icon", JsonParser.parseString(it)) }
       obj.toString()
@@ -22355,60 +22573,46 @@ class AICodBiAssistant : IPluginServletAction {
         val changeType = (spec.nodeParams["changeType"] as? String ?: "SET_OFFLINE").uppercase()
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"changeType":${gson.toJson(changeType)}}"""
       }
-      "de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin" -> {
+      // Cross-form record creation. The INSTALLED handler is
+      // `de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin`; the old
+      // `…fc_plugin_create_record…CreateRecordNodePlugin` has NO registered handler in formcycle
+      // ("Cannot validate node of kind …, no handler was registered for that node"), so it is only
+      // kept as an accepted alias here (WorkflowSpecNormalizer rewrites it before this point).
+      //
+      // The property names come from the INSTALLED plugin's props class
+      // (`CreateRemoteFormRecordProps`) and are built by [RemoteFormRecordParams]:
+      // `projectRef` (the "Formular" property, @NotNull), `statusRef` (the "Ziel-Status", a
+      // `de.xima.fc.entities.Status` — NOT a workflow state), `useNewWf` (mirrors the target form's
+      // `isUsesNewWorkflow()`), `copyAll`/`elementsToCopy`,
+      // `transferAttachments`/`attachmentFilter`.
+      // The previously emitted keys `project`, `stateNewRecord`, `otherAttachments` and
+      // `copyOtherAttachments` do not exist on that class — which is exactly why the designer's
+      // "Formular" property stayed empty after the node had been created.
+      "de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin",
+      WorkflowSpecNormalizer.LEGACY_CREATE_RECORD_NODE_TYPE -> {
         val projectName = spec.nodeParams["projectName"] as? String ?: ""
         val stateName = spec.nodeParams["stateName"] as? String ?: ""
-        val copyAll = spec.nodeParams["copyAll"] as? Boolean ?: false
-        @Suppress("UNCHECKED_CAST")
-        val elementsToCopy =
-            (spec.nodeParams["elementsToCopy"] as? List<*>)
-                ?.filterIsInstance<Map<*, *>>()
-                ?.mapNotNull { m ->
-                  val name = m["name"] as? String ?: return@mapNotNull null
-                  val value = m["value"] as? String ?: ""
-                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)},"deletable":true,"nameEditable":true,"valueEditable":true,"required":false}"""
-                } ?: emptyList()
-        val elementsToCopyJson =
-            if (elementsToCopy.isNotEmpty())
-                ""","elementsToCopy":[${elementsToCopy.joinToString(",")}]"""
-            else ""
-        @Suppress("UNCHECKED_CAST")
-        val files =
-            (spec.nodeParams["files"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-        val multiFileJson =
-            if (files.isNotEmpty()) {
-              val resourcesJson =
-                  files.joinToString(",") { f ->
-                    """{"type":"UPLOAD","identifier":${gson.toJson(f)}}"""
-                  }
-              ""","otherAttachments":{"resources":[$resourcesJson],"attachmentFilter":[]},"copyOtherAttachments":true"""
-            } else ""
-        // Resolve project UUID via native SQL (H2 uppercases unquoted identifiers)
+        // Resolve the TARGET form (project) to its UUID. WHICH form is meant is decided by the AI:
+        // it
+        // receives the full AVAILABLE FORMS list and copies the matched title into "projectName".
+        // This
+        // code only turns that title into the UUID the node needs (exact, case-insensitive
+        // comparison
+        // against the stored title/name — no fuzzy scoring, no guessing).
         var projectUuid: UUID? = null
         if (projectName.isNotBlank() && userContext != null) {
           try {
-            val entityContextFactoryClass =
-                Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
-            val ucClass = Class.forName("de.xima.fc.user.UserContext")
-            val entityContext =
-                entityContextFactoryClass
-                    .getMethod("newEntityContext", ucClass)
-                    .invoke(null, userContext)
-            val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
-            val q =
-                em.javaClass
-                    .getMethod("createNativeQuery", String::class.java)
-                    .invoke(em, "SELECT UUID FROM PROJEKT WHERE LOWER(NAME) = LOWER(?1)")
-            q.javaClass
-                .getMethod("setParameter", Int::class.java, Any::class.java)
-                .invoke(q, 1, projectName)
-            @Suppress("UNCHECKED_CAST")
-            val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
-            if (results.isNotEmpty()) {
-              val raw = results[0]?.toString()
-              if (raw != null) projectUuid = UUID.fromString(raw)
+            projectUuid = resolveProjectUuidByTitle(userContext, projectName)
+            if (projectUuid == null) {
+              logger.warn(
+                  "[AICodBiAssistant] CreateRemoteFormRecordPlugin: no form titled '{}' — the target form stays unbound (the AI must copy an EXACT title from the AVAILABLE FORMS list)",
+                  projectName)
+            } else {
+              logger.info(
+                  "[AICodBiAssistant] CreateRemoteFormRecordPlugin: target form '{}' bound to project {}",
+                  projectName,
+                  projectUuid)
             }
-            entityContext.javaClass.getMethod("close").invoke(entityContext)
           } catch (e: Exception) {
             val causeMsg =
                 if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
@@ -22422,68 +22626,61 @@ class AICodBiAssistant : IPluginServletAction {
                 causeMsg)
           }
         }
-        val projectJson =
-            if (projectUuid != null)
-                ""","project":{"uuid":${gson.toJson(projectUuid.toString())},"entityClass":"de.xima.fc.entities.Projekt"}"""
-            else ""
-        // Resolve state UUID via native SQL
-        var stateUuid: UUID? = null
-        if (stateName.isNotBlank() && projectUuid != null && userContext != null) {
-          try {
-            val entityContextFactoryClass =
-                Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
-            val ucClass = Class.forName("de.xima.fc.user.UserContext")
-            val entityContext =
-                entityContextFactoryClass
-                    .getMethod("newEntityContext", ucClass)
-                    .invoke(null, userContext)
-            val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
-            val q =
-                em.javaClass
-                    .getMethod("createNativeQuery", String::class.java)
-                    .invoke(
-                        em,
-                        "SELECT ws.UUID FROM WORKFLOW_STATE ws " +
-                            "JOIN WORKFLOW_VERSION wv ON ws.VERSION_ID = wv.ID " +
-                            "JOIN PROJEKT p ON wv.PROJECT_ID = p.ID OR wv.PROJEKT_ID = p.ID " +
-                            "WHERE p.UUID = ?1 AND LOWER(ws.NAME) = LOWER(?2)")
-            q.javaClass
-                .getMethod("setParameter", Int::class.java, Any::class.java)
-                .invoke(q, 1, projectUuid.toString())
-            q.javaClass
-                .getMethod("setParameter", Int::class.java, Any::class.java)
-                .invoke(q, 2, stateName)
-            @Suppress("UNCHECKED_CAST")
-            val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
-            if (results.isNotEmpty()) {
-              val raw = results[0]?.toString()
-              if (raw != null) stateUuid = UUID.fromString(raw)
-            }
-            entityContext.javaClass.getMethod("close").invoke(entityContext)
-          } catch (e: Exception) {
-            val causeMsg =
-                if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
-                  "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
-                } else {
-                  "${e::class.simpleName}: ${e.message ?: "null"}"
-                }
+        // Read the TARGET form's workflow flavour, its STATUSES and the client's INBOXES and match
+        // the
+        // AI's requested names against them. The "Ziel-Status" property is filled from
+        // `IStatusDao.getAllByProjekt` (a `de.xima.fc.entities.Status`, NOT a workflow state) and
+        // the
+        // "Postfach" property from `InboxChoiceProvider` (`de.xima.fc.entities.Postfach`) — the
+        // inbox
+        // therefore belongs to THIS node, not to a following FC_MOVE_FORM_RECORD_TO_INBOX node. No
+        // column names are assumed — see [RemoteFormRecordParams].
+        val inboxName = RemoteFormRecordParams.requestedInboxName(spec.nodeParams)
+        val target =
+            RemoteFormRecordParams.resolveTarget(userContext, projectUuid, stateName, inboxName)
+        if (target != null && inboxName.isNotBlank()) {
+          if (target.inboxUuid != null) {
+            logger.info(
+                "[AICodBiAssistant] CreateRemoteFormRecordPlugin: inbox '{}' bound to {}",
+                target.inboxName,
+                target.inboxUuid)
+          } else {
             logger.warn(
-                "[AICodBiAssistant] Could not resolve state UUID for '{}': {}", stateName, causeMsg)
+                "[AICodBiAssistant] CreateRemoteFormRecordPlugin: inbox '{}' does not exist in this client — the record is created in the default inbox (available: {})",
+                inboxName,
+                target.availableInboxes)
           }
         }
-        val stateJson =
-            if (stateUuid != null)
-                ""","stateNewRecord":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}"""
-            else ""
+        if (target == null) {
+          logger.warn(
+              "[AICodBiAssistant] CreateRemoteFormRecordPlugin: could not read the target form's statuses/inboxes — projectRef is set, statusRef/inboxRef stay unset")
+        } else if (target.usesNewWorkflow) {
+          logger.info(
+              "[AICodBiAssistant] CreateRemoteFormRecordPlugin: the target form uses the NEW workflow — its status cannot be preset (requested '{}', statuses={})",
+              stateName,
+              target.availableStatuses)
+        } else if (stateName.isNotBlank() && !target.requestedStatusFound) {
+          logger.info(
+              "[AICodBiAssistant] CreateRemoteFormRecordPlugin: status '{}' does not exist in the target form — using its first status '{}' (available: {})",
+              stateName,
+              target.statusName ?: "none",
+              target.availableStatuses)
+        } else {
+          logger.info(
+              "[AICodBiAssistant] CreateRemoteFormRecordPlugin: status '{}' -> '{}'",
+              stateName,
+              target.statusName ?: "none")
+        }
         val pluginResult =
-            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$projectJson$stateJson$elementsToCopyJson$multiFileJson}"""
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},${RemoteFormRecordParams.propsJson(spec.nodeParams, projectUuid, target)}}"""
         logger.info(
-            "[AICodBiAssistant] CreateRecordNodePlugin JSON: projectName='{}', stateName='{}', projectUuid={}, stateUuid={}, result_len={}",
+            "[AICodBiAssistant] CreateRemoteFormRecordPlugin JSON: projectName='{}', projectUuid={}, useNewWf={}, status='{}', inbox='{}', result={}",
             projectName,
-            stateName,
             projectUuid,
-            stateUuid,
-            pluginResult.length)
+            target?.usesNewWorkflow ?: false,
+            target?.statusName ?: "",
+            target?.inboxName ?: "",
+            pluginResult)
         pluginResult
       }
       "FC_DELETE_ATTACHMENT" -> {
@@ -22638,7 +22835,12 @@ class AICodBiAssistant : IPluginServletAction {
         val errorMessage = spec.nodeParams["errorMessage"] as? String ?: ""
         val errorType =
             spec.nodeParams["errorType"] as? String ?: spec.nodeParams["errorCode"] as? String ?: ""
-        val errorData = spec.nodeParams["errorData"] as? String ?: ""
+        // FcThrowExceptionProps.errorData is a String that the node's "Error data" (Fehlerdaten)
+        // field edits as JSON — a BARE value or placeholder (`[%tf1%]`) is invalid there, which is
+        // what the AI keeps emitting ("... es soll der Inhalt von Popel als Fehlerdaten übergeben
+        // werden" → errorData="[%tf1%]"). Wrap anything that is not already JSON into a JSON
+        // object.
+        val errorData = normalizeThrowExceptionErrorData(spec.nodeParams["errorData"])
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"errorMessage":${gson.toJson(errorMessage)},"errorType":${gson.toJson(errorType)},"errorData":${gson.toJson(errorData)}}"""
       }
       "FC_MULTIPLE_CONDITION" -> {
@@ -22898,12 +23100,16 @@ class AICodBiAssistant : IPluginServletAction {
       "FC_DELETE_FORM_RECORD",
       "FC_EMPTY",
       "FC_EXPERIMENT" -> {
-        // These nodes do not have CUSTOM_PARAMS or are handled at a higher level.
-        // FC_EMPTY: no-op, no params needed.
-        // FC_EXPERIMENT: handled by createWorkflowTask (builds the try-catch-finally structure).
-        // FC_SET_SAVED_FLAG: simple flag, no params needed.
-        // FC_DELETE_FORM_RECORD: simple delete, no params needed.
-        null
+        // These node types have NO configuration of their own beyond BaseActionProps
+        // (name/description) — FC_EXPERIMENT's body/handler/finalizer branches are created by
+        // createWorkflowTask, FC_SET_SAVED_FLAG/FC_DELETE_FORM_RECORD/FC_EMPTY take no settings.
+        // Their params JSON must NOT be omitted (returning null skipped setCustomParameters): the
+        // workflow designer renders a node's LABEL and ICON from its customParameters
+        // (WorkflowCustomParametersHelper.findName/findDescription fall back to
+        // customParameters["name"]/["description"], the icon comes from customParameters["icon"] —
+        // see withNodeDisplayParams). A node persisted with EMPTY params is drawn as the generic
+        // placeholder ("Next action") without an icon until it is opened/edited in the designer.
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
       }
       "FC_BREAK" -> {
         // FC_BREAK breaks out of a loop. By default (no breakTarget) it breaks the nearest
@@ -26060,6 +26266,9 @@ class AICodBiAssistant : IPluginServletAction {
           "FC_CHANGE_FORM_RECORD_ACTIVENESS" -> "Toggle record activeness"
           "FC_SET_FORM_RECORD_PASSWORD" -> "Set record password"
           "FC_COPY_FORM_RECORD" -> "Copy form record"
+          "de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin" ->
+              "Create record in another form"
+          WorkflowSpecNormalizer.LEGACY_CREATE_RECORD_NODE_TYPE -> "Create record in another form"
           "FC_EXPERIMENT" -> "Experiment (try-catch-finally)"
           "FC_FOR_EACH_LOOP" -> "For each loop"
           "FC_WITH_FORM_ELEMENT_CONTEXT" -> "With form element context"
@@ -26077,9 +26286,65 @@ class AICodBiAssistant : IPluginServletAction {
           "FC_BREAK" -> "Break out of loop"
           "FC_CONTINUE" -> "Continue to next iteration"
           "FC_EMPTY" -> "Empty placeholder"
+          "FC_RETURN" -> "End process"
+          "FC_QUEUE_TASK" -> "Queue task"
           else -> spec.nodeType
         }
     return sanitizeWorkflowName(result).ifBlank { spec.nodeType }
+  }
+
+  /**
+   * Human-readable display name of a lane ENDPOINT node. The workflow designer draws the endpoint's
+   * LABEL from its customParameters `name`; naming it after the raw node type ("FC_CHANGE_STATE" /
+   * "FC_RETURN") is meaningless, so the target state is folded in for state transitions.
+   */
+  private fun endpointNodeDisplayName(nodeType: String, stateName: String): String =
+      sanitizeWorkflowName(
+              when {
+                nodeType == "FC_RETURN" -> "End process"
+                stateName.isNotBlank() -> "Set status to $stateName"
+                else -> "Change form state"
+              })
+          .ifBlank { nodeType }
+
+  /**
+   * Normalises the AI's `errorData` of an `FC_THROW_EXCEPTION` node into the JSON TEXT the node's
+   * "Error data" (Fehlerdaten) field expects.
+   *
+   * `FcThrowExceptionProps.errorData` is a String, but the designer edits it as a JSON document and
+   * the value is handed to the thrown error as its data — so a BARE value or placeholder is
+   * unusable. The AI regularly emits the raw placeholder when the user says the CONTENT of a field
+   * should become the error data ("… es soll der Inhalt von Popel als Fehlerdaten übergeben werden"
+   * → `errorData: "[%tf1%]"`). Anything that is not already a JSON object/array is therefore
+   * wrapped into `{"Data": <value>}`, so `[%tf1%]` becomes `{"Data":"[%tf1%]"}`. An AI-emitted
+   * object/array (map/list in the spec) is accepted as-is and serialised canonically.
+   *
+   * @param raw The `errorData` node param as the AI emitted it (String, Map, List, or null).
+   * @returns The JSON text to persist in `errorData`, or an empty string when nothing was given.
+   */
+  private fun normalizeThrowExceptionErrorData(raw: Any?): String {
+    val text =
+        when (raw) {
+          null -> return ""
+          is String -> raw.trim()
+          is Map<*, *>,
+          is List<*> -> return gson.toJson(raw)
+          else -> raw.toString().trim()
+        }
+    if (text.isEmpty()) return ""
+    // Already JSON? Keep the AI's structure (re-serialised, so the stored text is canonical).
+    val looksLikeJson =
+        (text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))
+    if (looksLikeJson) {
+      try {
+        val parsed = JsonParser.parseString(text)
+        if (parsed.isJsonObject || parsed.isJsonArray) return gson.toJson(parsed)
+      } catch (_: Exception) {
+        // Not valid JSON after all — fall through and wrap it.
+      }
+    }
+    // A bare value / placeholder: wrap it so the field contains a JSON document.
+    return """{"Data":${gson.toJson(text)}}"""
   }
 
   /**
@@ -27523,7 +27788,10 @@ class AICodBiAssistant : IPluginServletAction {
       changeHistoryContext: String?,
       changeLogSchema: String,
       formVariables: String? = null,
-      userGroups: String? = null
+      userGroups: String? = null,
+      // AVAILABLE FORMS (titles of the client's forms) — the target of a cross-form record creation
+      // is named only approximately, so the model must see the list to match it itself.
+      forms: String? = null
   ): String {
     // SINGLE-PASS substitution with sentinels: the inserted VALUES must never be re-scanned.
     // The general block itself carries two {{WORKFLOW_REFERENCE}} markers, so the previous
@@ -27595,6 +27863,8 @@ class AICodBiAssistant : IPluginServletAction {
     out = applyWorkflowSection(out, "MESSAGE_SERVICES", messageServices)
     out = applyWorkflowSection(out, "TRIGGERS", triggers)
     out = applyWorkflowSection(out, "WORKFLOW_STATES", workflowStates)
+    // AVAILABLE FORMS (titles) for the target form of a cross-form node (record creation).
+    out = applyWorkflowSection(out, "FORMS", forms)
     out = applyWorkflowSection(out, "USER_GROUPS", userGroups)
     out = applyWorkflowSection(out, "EXISTING_WORKFLOW_NODES", existingWorkflowNodes)
     out = applyWorkflowSection(out, "USER_CLARIFICATION", clarificationContext)
@@ -28031,7 +28301,11 @@ class AICodBiAssistant : IPluginServletAction {
    * `[{"id":<id>,"key":"project-<id>","name":"<name>","current":bool}]`. The Hibernate mandant
    * filter of the user's session scopes the query to the current client.
    */
-  private fun fetchAllForms(userContext: Any, formKey: String? = null): String? {
+  private fun fetchAllForms(
+      userContext: Any,
+      formKey: String? = null,
+      includeStatuses: Boolean = false
+  ): String? {
     return try {
       val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
       val ucClass = Class.forName("de.xima.fc.user.UserContext")
@@ -28039,6 +28313,10 @@ class AICodBiAssistant : IPluginServletAction {
           entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
       try {
         val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+        // Opt-in: the STATUS names of each form. A cross-form record node needs one of THEM ("Ziel-
+        // Status" = `de.xima.fc.entities.Status`), so the AI can only make a valid choice when it
+        // sees which statuses the target form actually has.
+        val statusesByProject = if (includeStatuses) loadStatusNamesByProject(em) else emptyMap()
         // Formcycle's project entity is the German "Projekt" (table PROJEKT), not "Project".
         val jpql = "SELECT p FROM de.xima.fc.entities.Projekt p ORDER BY p.id"
         val query = em.javaClass.getMethod("createQuery", String::class.java).invoke(em, jpql)
@@ -28058,6 +28336,25 @@ class AICodBiAssistant : IPluginServletAction {
             // "name" and "title" both carry the form's TITLE — users refer to forms by title.
             o.addProperty("name", title)
             o.addProperty("title", title)
+            // The form's UUID — lets callers bind a cross-form node to the form the AI picked by
+            // its title (see resolveProjectUuidByTitle); consumers that only read name/key ignore
+            // it.
+            runCatching {
+                  val uuid = row.javaClass.getMethod("getUUIDObject").invoke(row) as? UUID
+                  if (uuid != null) o.addProperty("uuid", uuid.toString())
+                }
+                .onFailure { logger.debug("no UUID on project {}: {}", id, it.message) }
+            if (includeStatuses) {
+              val formUuid =
+                  runCatching { row.javaClass.getMethod("getUUIDObject").invoke(row) as? UUID }
+                      .getOrNull()
+              val statuses = formUuid?.let { statusesByProject[it] } ?: emptyList()
+              if (statuses.isNotEmpty()) {
+                val statusArr = JsonArray()
+                statuses.forEach { statusArr.add(it) }
+                o.add("statuses", statusArr)
+              }
+            }
             o.addProperty("current", "project-$id" == formKey)
             arr.add(o)
           } catch (_: Exception) {
@@ -28109,6 +28406,95 @@ class AICodBiAssistant : IPluginServletAction {
         ?.let { m -> runCatching { m.invoke(project) as? String }.getOrNull() }
         ?.takeIf { it.isNotBlank() }
   }
+
+  /**
+   * Collects the STATUS names of every form, keyed by the form's UUID.
+   *
+   * These are `de.xima.fc.entities.Status` rows (`IStatusDao.getAllByProjekt` fills the
+   * "Ziel-Status" selector of the cross-form record node), NOT workflow states. Used to show the AI
+   * which statuses a target form actually has, so its choice can be valid — and
+   * [RemoteFormRecordParams] then matches that exact name.
+   */
+  private fun loadStatusNamesByProject(em: Any): Map<UUID, List<String>> {
+    return try {
+      val query =
+          em.javaClass
+              .getMethod("createQuery", String::class.java)
+              .invoke(em, "SELECT s FROM de.xima.fc.entities.Status s")
+      @Suppress("UNCHECKED_CAST")
+      val rows =
+          query.javaClass.getMethod("getResultList").invoke(query) as? List<*> ?: emptyList<Any>()
+      val byProject = LinkedHashMap<UUID, MutableList<String>>()
+      for (row in rows) {
+        if (row == null) continue
+        val projekt =
+            runCatching { row.javaClass.getMethod("getProjekt").invoke(row) }.getOrNull()
+                ?: continue
+        val formUuid =
+            runCatching { projekt.javaClass.getMethod("getUUIDObject").invoke(projekt) }.getOrNull()
+                as? UUID ?: continue
+        val name =
+            runCatching { row.javaClass.getMethod("getName").invoke(row) as? String }.getOrNull()
+                ?: continue
+        if (name.isBlank()) continue
+        byProject.getOrPut(formUuid) { mutableListOf() }.add(name)
+      }
+      byProject
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] loadStatusNamesByProject failed: {}", e.message)
+      emptyMap()
+    }
+  }
+
+  /**
+   * Renders the `AVAILABLE FORMS` block for the workflow prompt as one line per form: `- <title> —
+   * Status: <a>, <b>`. Falls back to the raw JSON of [fetchAllForms] when the list cannot be parsed
+   * (fail open — the AI then at least sees the titles).
+   */
+  private fun renderFormsForCrossForm(formsJson: String?): String? {
+    if (formsJson.isNullOrBlank()) return formsJson
+    return try {
+      val arr = JsonParser.parseString(formsJson).asJsonArray
+      val lines = mutableListOf<String>()
+      for (el in arr) {
+        if (!el.isJsonObject) continue
+        val o = el.asJsonObject
+        val title = o.get("title")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+        if (title.isEmpty()) continue
+        val statuses =
+            o.getAsJsonArray("statuses")
+                ?.mapNotNull { s -> s.takeIf { it.isJsonPrimitive }?.asString?.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+        lines.add(
+            if (statuses.isEmpty()) "- $title"
+            else "- $title — statuses: ${statuses.joinToString(", ")}")
+      }
+      if (lines.isEmpty()) formsJson else lines.joinToString("\n")
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] renderFormsForCrossForm failed: {}", e.message)
+      formsJson
+    }
+  }
+
+  /**
+   * Resolves the TARGET form of a cross-form workflow node (e.g. the record-creation plugin) to its
+   * UUID.
+   *
+   * WHICH form is meant is the AI's decision: it receives the full `AVAILABLE FORMS` list in the
+   * workflow prompt and copies the MATCHED title into the node's `projectName` — no fuzzy scoring,
+   * no similarity thresholds and no guessing happens here. This method only performs the mechanical
+   * translation of that title into the UUID the node parameters need, comparing it EXACTLY
+   * (case-insensitive, trimmed) against each form's stored title and technical name, because the
+   * title shown in the selector (`getTitel()`-based) and the technical `PROJEKT.NAME` may differ.
+   *
+   * @param userContext The current FORMCYCLE user context.
+   * @param wanted The form title the AI put into the node's `projectName`.
+   * @returns The UUID of the form with that exact title/name, or **null** when no form carries it
+   *   (the caller logs a warning; the AI then has to pick an exact title from the list).
+   */
+  private fun resolveProjectUuidByTitle(userContext: Any, wanted: String): UUID? =
+      RemoteFormRecordParams.resolveProjectUuid(userContext, wanted)
 
   /**
    * Makes a dedicated AI call asking whether it needs more information from the user and/or the

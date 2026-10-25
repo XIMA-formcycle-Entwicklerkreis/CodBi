@@ -10,6 +10,11 @@ interface CodbiEPParamSpec {
   optional?: boolean;
   /** Whether further trailing parameters may follow. */
   variadic?: boolean;
+  /**
+   * Known, valid literal values of this parameter (e.g. the directory properties the BayVIS EPs
+   * accept). The EP builder offers them as suggestions while still allowing free-form values.
+   */
+  options?: Array<string>;
   /** A short human readable description. */
   description?: string;
 }

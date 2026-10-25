@@ -89,6 +89,41 @@ function To-OneSentence {
   return $t.Trim()
 }
 
+function Get-OptionsFromDescription {
+  # Extracts candidate literal values a parameter description enumerates: parenthesized
+  # comma-separated token lists (e.g. the state abbreviations of Date.Holidays) and quoted
+  # single-word tokens (e.g. "THIS_YEAR", "Friedensfest", "bezeichnung"). Deduplicated, order kept.
+  param([string]$Text)
+  if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+  $options = New-Object System.Collections.Generic.List[string]
+  $seen = @{}
+  $add = {
+    param([string]$value)
+    $trimmed = $value.Trim()
+    if ($trimmed -match "^[A-Za-z][A-Za-z0-9_]{1,}$" -and -not $seen.ContainsKey($trimmed.ToLowerInvariant())) {
+      $seen[$trimmed.ToLowerInvariant()] = $true
+      $options.Add($trimmed)
+    }
+  }
+  foreach ($m in [regex]::Matches($Text, "\(([A-Za-z0-9_]{2}(?:\s*,\s*[A-Za-z0-9_]{2,})+)\)")) {
+    foreach ($part in ($m.Groups[1].Value -split ",")) { & $add $part }
+  }
+  foreach ($m in [regex]::Matches($Text, '"([A-Za-z][A-Za-z0-9_]{1,})"')) { & $add $m.Groups[1].Value }
+  return @($options)
+}
+
+function Get-RegexOptionList {
+  # Returns the alternatives of the FIRST/LONGEST static `stdExp` alternation regex of the simple
+  # /^(a|b|c)$/ form — the BayVIS EPs declare their valid directory properties that way.
+  param([string]$Content)
+  $best = @()
+  foreach ($m in [regex]::Matches($Content, "/\^\(([^()]*)\)\$/")) {
+    $values = @($m.Groups[1].Value -split "\|" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^[A-Za-z][A-Za-z0-9_]*$" })
+    if ($values.Count -ge 2 -and $values.Count -gt $best.Count) { $best = $values }
+  }
+  return $best
+}
+
 function Get-Summary {
   # Derives a very short (first-sentence) description of the EP from its class-level TSDoc,
   # skipping parameter lists, headings, tables and @-tags. Prose that wraps over several lines is
@@ -113,22 +148,26 @@ function Get-Summary {
 }
 
 function New-EPParam {
-  # Builds one signature parameter entry, applying the curated datatype overrides and German translations.
+  # Builds one signature parameter entry, applying the curated datatype overrides, German translations
+  # and the enum values its description enumerates (quoted tokens / parenthesized lists).
   param([string]$BaseName, [int]$Index, [string]$Type, [string]$Desc)
   $overrideKey = "$BaseName.$Index"
   if ($typeOverrides.ContainsKey($overrideKey)) { $Type = $typeOverrides[$overrideKey] }
   $de = Get-DeTranslation -BaseName $BaseName -Index "$Index"
-  return [ordered]@{
-    index       = $Index
-    type        = $Type
-    optional    = [bool]($Desc -match "(?i)\boptional\b")
-    variadic    = [bool]($Desc -match "(?i)\bup to\b|\bvariadic\b|\band beyond\b")
-    description = if ($de) { [ordered]@{ en = $Desc; de = $de } } else { $Desc }
+  $options = Get-OptionsFromDescription -Text $Desc
+  $entry = [ordered]@{
+    index    = $Index
+    type     = $Type
+    optional = [bool]($Desc -match "(?i)\boptional\b")
+    variadic = [bool]($Desc -match "(?i)\bup to\b|\bvariadic\b|\band beyond\b")
   }
+  if ($options.Count -ge 2) { $entry["options"] = @($options) }
+  $entry["description"] = if ($de) { [ordered]@{ en = $Desc; de = $de } } else { $Desc }
+  return $entry
 }
 
 function Get-Signature {
-  param([string]$Doc, [string]$BaseName)
+  param([string]$Doc, [string]$BaseName, [string]$Content = "")
   $params = @()
   $seen = @{}
   $lines = $Doc -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
@@ -183,19 +222,38 @@ function Get-Signature {
     $type = if ($m.Groups[2].Success -and $m.Groups[2].Value) { $m.Groups[2].Value.ToLowerInvariant() } else { "any" }
     $desc = ($m.Groups[4].Value).Trim()
     $de = Get-DeTranslation -BaseName $BaseName -Index "$idx"
-    $params += [ordered]@{
-      index       = $idx
-      type        = $type
-      optional    = ($m.Groups[3].Value -eq "optional")
-      variadic    = ($m.Groups[3].Value -eq "variadic")
-      description = if ($de) { [ordered]@{ en = $desc; de = $de } } else { $desc }
+    $options = Get-OptionsFromDescription -Text $desc
+    $entry = [ordered]@{
+      index    = $idx
+      type     = $type
+      optional = ($m.Groups[3].Value -eq "optional")
+      variadic = ($m.Groups[3].Value -eq "variadic")
     }
+    if ($options.Count -ge 2) { $entry["options"] = @($options) }
+    $entry["description"] = if ($de) { [ordered]@{ en = $desc; de = $de } } else { $desc }
+    $params += $entry
   }
 
   if ($params.Count -eq 0) { return $null }
 
+  $sorted = @($params | Sort-Object { $_.index })
+
+  # The BayVIS EPs declare their valid directory properties as a stdExp alternation regex. Attach
+  # that list as `options` to the parameter whose description mentions a "property" (else the last).
+  $regexOptions = Get-RegexOptionList -Content $Content
+  if ($regexOptions.Count -ge 2 -and $sorted.Count -gt 0) {
+    $target = $null
+    foreach ($p in $sorted) {
+      $desc = $p["description"]
+      $en = if ($desc -is [string]) { $desc } elseif ($null -ne $desc.en) { [string]$desc.en } else { "" }
+      if ($en -match "(?i)propert") { $target = $p }
+    }
+    if ($null -eq $target) { $target = $sorted[$sorted.Count - 1] }
+    $target["options"] = @($regexOptions)
+  }
+
   return [ordered]@{
-    params     = @($params | Sort-Object { $_.index })
+    params     = $sorted
     returnType = "any"
     source     = "tsdoc"
   }
@@ -210,7 +268,7 @@ Get-ChildItem $epDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   $jsonPath = [System.IO.Path]::ChangeExtension($_.FullName, ".json")
   if (-not (Test-Path $jsonPath)) { Write-Output "skip (no json): $baseName"; return }
 
-  $signature = Get-Signature -Doc $doc -BaseName $baseName
+  $signature = Get-Signature -Doc $doc -BaseName $baseName -Content $ts
   $summary = Get-Summary $doc
   if ($null -eq $signature -and [string]::IsNullOrWhiteSpace($summary)) { return }
 

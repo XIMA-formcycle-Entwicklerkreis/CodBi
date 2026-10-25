@@ -1,6 +1,7 @@
 // #region Imports
 import {
   $,
+  Callbacks,
   Editors,
   type IPropertyDescriptor,
   type TEditorCfg,
@@ -21,11 +22,15 @@ import {
 import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
   elementCssClasses,
+  flushElementCssClassChange,
+  notifyFormPreviewChanged,
   refreshCodbiElementMarkers,
   removeFuncAttributeQuiet,
+  resumeElementPreviews,
   setElementCssClass,
   setItemAttributeValueQuiet,
   setItemPropertyValueQuiet,
+  suspendElementPreviews,
 } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import {
@@ -120,6 +125,17 @@ declare module "@de-xima/fc-form-designer" {
 /** Category id grouping the per-element CodBi property (the existing "CodBi" category). */
 export const ELEMENT_FUNCTIONALITY_CATEGORY_ID = "codbi-cat-main";
 
+/**
+ * One CSS class a standard configuration provides, together with the SHORT DESCRIPTION shown when the
+ * class is hovered (e.g. `Appointments › Prevents selecting future dates.`).
+ */
+export interface IStandardConfigClassEntry {
+  /** The CSS class name (e.g. `CodBi_NoFutureDate`). */
+  cssClass: string;
+  /** The class's short description, prefixed with the owning configuration's path. */
+  description: string;
+}
+
 /** Platform-available `designer.element.property.funcs` (the CSV of applied functionality ids). */
 export const ELEMENT_FUNCS_PROPERTY = String(Constants["designer.element.property.funcs"]);
 /** Platform-available `designer.element.property.funcs_name` (cached display names). */
@@ -152,8 +168,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private readonly funcOptions: HTMLDivElement;
   /** The inline filter input of the functionality listing. */
   private readonly funcFilter: HTMLInputElement;
+  /** The "only checked" toggle sitting RIGHT OF the functionality listing's filter input. */
+  private readonly funcOnlyCheckedButton: HTMLButtonElement;
+  /** Whether the functionality listing shows only the entries APPLIED (checked) on the element. */
+  private onlyCheckedFunc = false;
   /** The inline filter input of the SECOND (non-applicable) functionality listing. */
   private readonly allFuncFilter: HTMLInputElement;
+  /** The "only checked" toggle right of the SECOND functionality listing's filter input. */
+  private readonly allFuncOnlyCheckedButton: HTMLButtonElement;
+  /** Whether the SECOND functionality listing shows only the entries APPLIED (checked) on the element. */
+  private onlyCheckedFuncAll = false;
   /** The container of the SECOND list: functionalities NOT applicable to the element. */
   private readonly funcOptionsAll: HTMLDivElement;
   /** The wrapper of the second list (its visibility is toggled by {@link allToggleButton}). */
@@ -182,8 +206,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private readonly stdOptions: HTMLDivElement;
   /** The inline filter input of the applicable standard-configuration listing. */
   private readonly stdFilter: HTMLInputElement;
+  /** The "only checked" toggle sitting RIGHT OF the standard-configuration filter input. */
+  private readonly stdOnlyCheckedButton: HTMLButtonElement;
+  /** Whether the standard-configuration listing shows only the APPLIED (checked) entries. */
+  private onlyCheckedStd = false;
   /** The inline filter input of the SECOND (non-applicable) standard-configuration listing. */
   private readonly stdAllFilter: HTMLInputElement;
+  /** The "only checked" toggle right of the SECOND standard-configuration filter input. */
+  private readonly stdAllOnlyCheckedButton: HTMLButtonElement;
+  /** Whether the SECOND standard-configuration listing shows only the entries APPLIED (checked). */
+  private onlyCheckedStdAll = false;
   /** The container of the SECOND standard-config listing: configurations NOT applicable to the element. */
   private readonly stdOptionsAll: HTMLDivElement;
   /** The wrapper of the second standard-config listing (its visibility is toggled by {@link stdToggleButton}). */
@@ -201,6 +233,13 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
    * any. Used to ignore `mouseleave` events of unrelated rows when deciding whether to dismiss it.
    */
   private docAnchorRow: HTMLElement | undefined;
+  /**
+   * Standard configurations activated through THIS panel (see {@link activateStandardConfig}), in their
+   * original casing. Merged into {@link currentStandards} so the listing reflects an activation
+   * immediately — even when the `codbi-prop-standards` property cannot be read back yet (no standards
+   * editor mounted, running element preview, …).
+   */
+  private readonly locallyActivatedStandards = new Set<string>();
   /** The standard-configuration section, hidden while the form-level CodBi enable checkbox is unchecked. */
   private readonly stdSection: HTMLElement;
   /** The functionality section, hidden while the form-level CodBi enable checkbox is unchecked. */
@@ -253,14 +292,28 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     funcFilter.className = "codbi-func-config__filter";
     funcFilter.placeholder = kI18n("designer.widget.functionality.filterFuncs");
     funcFilter.value = this.funcQuery;
-    funcFilter.style.cssText = "width:100%;box-sizing:border-box;margin:0 0 4px;";
+    funcFilter.style.cssText = "flex:1 1 auto;min-width:0;box-sizing:border-box;margin:0;";
     funcFilter.addEventListener("input", () => {
       this.funcQuery = funcFilter.value;
       this.renderFunctionalityList();
     });
+    // The "only checked" toggle right of the filter: narrows the listing to the functionalities
+    // currently APPLIED to the element (the same control the form-level standards tree offers).
+    const funcOnlyCheckedButton = this.buildOnlyCheckedButton(
+      "designer.element.functionality.onlyChecked",
+      () => this.onlyCheckedFunc,
+      () => {
+        this.onlyCheckedFunc = !this.onlyCheckedFunc;
+        this.renderFunctionalityList();
+      },
+    );
+    // One row: the filter input takes the remaining width, the toggle keeps its natural size.
+    const funcFilterRow = document.createElement("div");
+    funcFilterRow.className = "codbi-func-config__filterrow";
+    funcFilterRow.append(funcFilter, funcOnlyCheckedButton);
     const funcOptions = document.createElement("div");
     funcOptions.className = "codbi-func-config__options";
-    funcList.append(funcFilter, funcOptions);
+    funcList.append(funcFilterRow, funcOptions);
     // The SECOND list: functionalities NOT applicable to the currently selected element. It is hidden
     // until the user clicks the show-all toggle (placed BELOW the list). It exists so a functionality whose applicability is not
     // (yet) declared for this element — e.g. a future plugin-provided widget type that IS in fact
@@ -274,14 +327,27 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     allFuncFilter.className = "codbi-func-config__filter";
     allFuncFilter.placeholder = kI18n("designer.widget.functionality.filterFuncs");
     allFuncFilter.value = this.allQuery;
-    allFuncFilter.style.cssText = "width:100%;box-sizing:border-box;margin:0 0 4px;";
+    allFuncFilter.style.cssText = "flex:1 1 auto;min-width:0;box-sizing:border-box;margin:0;";
     allFuncFilter.addEventListener("input", () => {
       this.allQuery = allFuncFilter.value;
       this.renderFunctionalityList();
     });
+    // The SAME "only checked" toggle right of this listing's filter — the switch belongs to EVERY
+    // listing, not just the applicable one.
+    const allFuncOnlyCheckedButton = this.buildOnlyCheckedButton(
+      "designer.element.functionality.onlyChecked",
+      () => this.onlyCheckedFuncAll,
+      () => {
+        this.onlyCheckedFuncAll = !this.onlyCheckedFuncAll;
+        this.renderFunctionalityList();
+      },
+    );
+    const allFuncFilterRow = document.createElement("div");
+    allFuncFilterRow.className = "codbi-func-config__filterrow";
+    allFuncFilterRow.append(allFuncFilter, allFuncOnlyCheckedButton);
     const funcOptionsAll = document.createElement("div");
     funcOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
-    funcAllList.append(allFuncFilter, funcOptionsAll);
+    funcAllList.append(allFuncFilterRow, funcOptionsAll);
     // The two toggles (the section's "Funktionalitäten" opener and the "more" opener below it) form
     // ONE stacked double button split into a TOP part and a BOTTOM part (see frame.css). The top part
     // holds the "Funktionalitäten" half AND its applicability listing (which therefore sits above the
@@ -298,7 +364,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     funcSection.append(funcToggles);
     this.funcSection = funcSection;
     this.funcFilter = funcFilter;
+    this.funcOnlyCheckedButton = funcOnlyCheckedButton;
     this.allFuncFilter = allFuncFilter;
+    this.allFuncOnlyCheckedButton = allFuncOnlyCheckedButton;
     this.funcOptions = funcOptions;
     this.funcList = funcList;
     this.mainToggleButton = mainToggleButton;
@@ -338,11 +406,25 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     stdFilter.className = "codbi-func-config__filter";
     stdFilter.placeholder = kI18n("designer.element.standardConfig.filter");
     stdFilter.value = this.stdQuery;
-    stdFilter.style.cssText = "width:100%;box-sizing:border-box;margin:0 0 4px;";
+    stdFilter.style.cssText = "flex:1 1 auto;min-width:0;box-sizing:border-box;margin:0;";
     stdFilter.addEventListener("input", () => {
       this.stdQuery = stdFilter.value;
       this.renderStandardConfigList();
     });
+    // The "only checked" toggle right of the filter: narrows the listing to the standard-configuration
+    // classes currently APPLIED to the element (mirrors the functionality listing and the
+    // form-level standards tree).
+    const stdOnlyCheckedButton = this.buildOnlyCheckedButton(
+      "designer.element.standardConfig.onlyChecked",
+      () => this.onlyCheckedStd,
+      () => {
+        this.onlyCheckedStd = !this.onlyCheckedStd;
+        this.renderStandardConfigList();
+      },
+    );
+    const stdFilterRow = document.createElement("div");
+    stdFilterRow.className = "codbi-func-config__filterrow";
+    stdFilterRow.append(stdFilter, stdOnlyCheckedButton);
     // The toggle of the APPLICABLE standard-configuration list, placed between the section title and
     // the list (mirrors the functionality section). Same `.codbi-func-config__show-all` style; the
     // list starts COLLAPSED like the second one.
@@ -355,7 +437,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     stdMainToggleButton.title = kI18n("designer.element.standardConfig.label.hint");
     const stdOptions = document.createElement("div");
     stdOptions.className = "codbi-func-config__options";
-    stdList.append(stdFilter, stdOptions);
+    stdList.append(stdFilterRow, stdOptions);
     // The SECOND list: available standard configurations NOT applicable to the selected element.
     const stdAllList = document.createElement("div");
     stdAllList.className = "codbi-func-config__funclist codbi-func-config__funclist--all";
@@ -366,14 +448,26 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     stdAllFilter.className = "codbi-func-config__filter";
     stdAllFilter.placeholder = kI18n("designer.element.standardConfig.filter");
     stdAllFilter.value = this.stdAllQuery;
-    stdAllFilter.style.cssText = "width:100%;box-sizing:border-box;margin:0 0 4px;";
+    stdAllFilter.style.cssText = "flex:1 1 auto;min-width:0;box-sizing:border-box;margin:0;";
     stdAllFilter.addEventListener("input", () => {
       this.stdAllQuery = stdAllFilter.value;
       this.renderStandardConfigList();
     });
+    // The SAME "only checked" toggle right of this listing's filter — every listing has it.
+    const stdAllOnlyCheckedButton = this.buildOnlyCheckedButton(
+      "designer.element.standardConfig.onlyChecked",
+      () => this.onlyCheckedStdAll,
+      () => {
+        this.onlyCheckedStdAll = !this.onlyCheckedStdAll;
+        this.renderStandardConfigList();
+      },
+    );
+    const stdAllFilterRow = document.createElement("div");
+    stdAllFilterRow.className = "codbi-func-config__filterrow";
+    stdAllFilterRow.append(stdAllFilter, stdAllOnlyCheckedButton);
     const stdOptionsAll = document.createElement("div");
     stdOptionsAll.className = "codbi-func-config__options codbi-func-config__options--all";
-    stdAllList.append(stdAllFilter, stdOptionsAll);
+    stdAllList.append(stdAllFilterRow, stdOptionsAll);
     // Same stacked double-button wrapper as the functionality section (see the comment there): a TOP
     // part (opener + its applicability listing, above the divider) and a BOTTOM part (the "Weitere"
     // opener + the complement listing).
@@ -390,7 +484,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.stdSection = stdSection;
     this.stdOptions = stdOptions;
     this.stdFilter = stdFilter;
+    this.stdOnlyCheckedButton = stdOnlyCheckedButton;
     this.stdAllFilter = stdAllFilter;
+    this.stdAllOnlyCheckedButton = stdAllOnlyCheckedButton;
     this.stdList = stdList;
     this.stdMainToggleButton = stdMainToggleButton;
     this.stdAllList = stdAllList;
@@ -631,11 +727,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       // them (via `@SupportedFormelementtype`), property constraints such as `datatype`.
       const applicable = isSelected || functionalityAppliesTo(id, target);
       // Each listing has its OWN inline filter. Selected entries are never hidden by a filter
-      // mismatch so a selection cannot silently disappear.
-      const matches =
+      // mismatch so a selection cannot silently disappear — UNLESS the "only checked" view is
+      // active, which deliberately hides everything that is not applied to the element. The switch
+      // is per LISTING: the applicable list uses `onlyCheckedFunc`, the complement uses
+      // `onlyCheckedFuncAll`.
+      const filterMatches =
         (applicable
           ? query.length === 0 || id.toLowerCase().includes(query)
           : allQuery.length === 0 || id.toLowerCase().includes(allQuery)) || isSelected;
+      const onlyChecked = applicable ? this.onlyCheckedFunc : this.onlyCheckedFuncAll;
+      const matches = filterMatches && (!onlyChecked || isSelected);
       if (!matches) {
         continue;
       }
@@ -661,6 +762,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     }
     this.funcOptions.replaceChildren(mainFragment);
     this.funcOptionsAll.replaceChildren(otherFragment);
+    // Keep BOTH "only checked" toggles truthful even when a state changed programmatically.
+    this.syncOnlyCheckedButton(this.funcOnlyCheckedButton, this.onlyCheckedFunc);
+    this.syncOnlyCheckedButton(this.allFuncOnlyCheckedButton, this.onlyCheckedFuncAll);
   }
 
   /** Builds one functionality option row (checkbox + id) wired to {@link toggleFunctionality}. */
@@ -781,6 +885,56 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   }
 
   /**
+   * Builds the **“only checked”** toggle that sits RIGHT OF a listing's filter input.
+   *
+   * It is the same control the form-level standard-configuration tree (`MultiSelect`) offers: a
+   * compact `✓` button that narrows the listing to the entries currently APPLIED to the selected
+   * element. The state is exposed through `aria-pressed` (and the `--active` modifier that
+   * `frame.css` paints darkorange), so it is both accessible and visually unmistakable. The button
+   * calls back into the OWNING listing's render method, so the current filter query and the checked
+   * state are always re-evaluated together — the filter input stays usable while the view is narrowed.
+   *
+   * @param labelKey The message key of the tooltip / accessible label.
+   * @param isActive Reads whether the "only checked" view is currently on.
+   * @param toggle   Flips the state and re-renders the owning listing.
+   */
+  private buildOnlyCheckedButton(labelKey: string, isActive: () => boolean, toggle: () => void): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "codbi-func-config__only";
+    // The check mark is decorative: the accessible name comes from the tooltip / aria-label below.
+    button.textContent = "\u2713";
+    const label = kI18n(labelKey);
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.setAttribute("aria-pressed", String(isActive()));
+    button.classList.toggle("codbi-func-config__only--active", isActive());
+    button.addEventListener("click", (event) => {
+      // The button lives INSIDE the listing's `<label>`-free filter row but a click must never
+      // bubble up to the collapsible double button that frames the whole listing.
+      event.preventDefault();
+      event.stopPropagation();
+      toggle();
+      const active = isActive();
+      button.setAttribute("aria-pressed", String(active));
+      button.classList.toggle("codbi-func-config__only--active", active);
+    });
+    return button;
+  }
+
+  /**
+   * Re-applies the current "only checked" state to a listing's toggle button (`aria-pressed` plus the
+   * `--active` modifier that `frame.css` paints darkorange), so the button never lies about the view.
+   *
+   * @param button The toggle button of a listing.
+   * @param active Whether that listing currently shows only the checked entries.
+   */
+  private syncOnlyCheckedButton(button: HTMLButtonElement, active: boolean): void {
+    button.setAttribute("aria-pressed", String(active));
+    button.classList.toggle("codbi-func-config__only--active", active);
+  }
+
+  /**
    * Sets a toggle button's `▾`/`▸` state indicator, its `aria-expanded` attribute and its
    * state-INDEPENDENT label resolved from `labelKey` — the text never changes with the state, only
    * the arrow does (e.g. "▸ Funktionalitäten" / "▾ Funktionalitäten").
@@ -856,6 +1010,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const element = this.targetElement();
     // The classes already on the element decide every checkbox's initial state.
     const applied = new Set(element ? elementCssClasses(element as never) : []);
+    // The standard configurations ACTIVE for the form decide whether a class row is dimmed and gets an
+    // "activate" button: a class whose configuration is not active is only a marker.
+    const activeIds = new Set(this.currentStandards().map((id) => id.toLowerCase()));
     const mainFragment = document.createDocumentFragment();
     const otherFragment = document.createDocumentFragment();
     let mainShown = 0;
@@ -865,6 +1022,12 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       // real CSS class is applicable per element, so an id-only row stays informational.
       const hasClasses = classes != null && Object.keys(classes).length > 0;
       const labels = hasClasses ? Object.keys(classes as Record<string, unknown>) : [id];
+      // EVERY class of this configuration with its short description (prefixed with the configuration
+      // path). Used by the activation question, which lists the classes that become available.
+      const configClasses = Object.keys(classes ?? {}).map((cssClass) => ({
+        cssClass,
+        description: this.standardConfigTooltip(id, cssClass, classes?.[cssClass], funcs?.[cssClass], true),
+      }));
       for (const label of labels) {
         // A class the element already carries is ALWAYS shown (and checked) in the main list, so an
         // applied class cannot silently disappear even when its declared applicability excludes this
@@ -876,11 +1039,15 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         const applicable = isSelected || this.standardConfigClassApplies(funcs, classes, spec, label, target);
         const lower = label.toLowerCase();
         // Each listing has its OWN inline filter. Selected entries are never hidden by a filter
-        // mismatch so a selection cannot silently disappear.
-        const matches =
+        // mismatch so a selection cannot silently disappear — UNLESS the "only checked" view is
+        // active, which deliberately hides every class the element does not carry. The switch is per
+        // LISTING: the applicable list uses `onlyCheckedStd`, the complement uses `onlyCheckedStdAll`.
+        const filterMatches =
           (applicable
             ? query.length === 0 || lower.includes(query)
             : allQuery.length === 0 || lower.includes(allQuery)) || isSelected;
+        const onlyChecked = applicable ? this.onlyCheckedStd : this.onlyCheckedStdAll;
+        const matches = filterMatches && (!onlyChecked || isSelected);
         if (!matches) {
           continue;
         }
@@ -888,9 +1055,17 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         // configuration's CSS class (under the optimised `classes` shape). Fall back to the id so the
         // row always has a meaningful tooltip.
         const classSpec = hasClasses ? classes?.[label] : undefined;
-        const classDescription = typeof classSpec === "string" ? classSpec : classSpec?.description;
-        const tooltip = this.standardConfigTooltip(id, label, classDescription, funcs?.[label]);
-        const row = this.buildStandardConfigRow(id, label, isSelected, hasClasses, tooltip);
+        const configActive = activeIds.has(id.toLowerCase());
+        const tooltip = this.standardConfigTooltip(id, label, classSpec, funcs?.[label], configActive);
+        const row = this.buildStandardConfigRow({
+          id,
+          label,
+          isSelected,
+          hasCheckbox: hasClasses,
+          tooltip,
+          configActive,
+          configClasses,
+        });
         if (applicable) {
           mainShown += 1;
           mainFragment.appendChild(row);
@@ -913,6 +1088,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     }
     this.stdOptions.replaceChildren(mainFragment);
     this.stdOptionsAll.replaceChildren(otherFragment);
+    // Keep BOTH "only checked" toggles truthful even when a state changed programmatically.
+    this.syncOnlyCheckedButton(this.stdOnlyCheckedButton, this.onlyCheckedStd);
+    this.syncOnlyCheckedButton(this.stdAllOnlyCheckedButton, this.onlyCheckedStdAll);
   }
 
   /**
@@ -965,6 +1143,20 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
    * runtime hook of a standard configuration: each configuration's `loadConfig({ targets: ".<class>",
    * FUNC })` matches elements by that class, so adding/removing the class enables/disables the
    * configuration for THIS element — no `data-cb-func` needs to be written (the class carries it).
+   *
+   * The class alone is only a MARKER, though: the behaviour (e.g. `Date.Min`, max = today, for
+   * `CodBi_NoFutureDate`) is applied by the owning configuration's script. Applying a class whose
+   * configuration is NOT active for the form therefore ASKS whether to activate it (see
+   * {@link confirmStandardConfigActivation}) and lists the classes that become available — instead of
+   * silently activating it (the user never saw which configuration was switched on) and instead of
+   * leaving a dead marker behind. A configuration is never DEACTIVATED here, because other elements of
+   * the form may still use one of its classes.
+   *
+   * While the activation question is OPEN, the change is written WITHOUT the persist-differ nudge and
+   * without the preview refresh: re-rendering the canvas under the modal clips the element preview and
+   * brings FORMCYCLE's own preview menu back, and the user has not even decided yet. Both are flushed
+   * once when the question is answered (see {@link confirmStandardConfigActivation}).
+   *
    * The listing is re-rendered afterwards so the checkbox state and the list ordering stay in sync.
    */
   private toggleStandardConfigClass(label: string, on: boolean): void {
@@ -972,36 +1164,353 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     if (!item) {
       return;
     }
-    setElementCssClass(item as never, label, on);
+    const owner = on ? this.standardConfigOwner(label) : undefined;
+    const askForActivation = owner !== undefined && !this.isStandardConfigActive(owner);
+    setElementCssClass(item as never, label, on, { deferNotify: askForActivation });
+    if (askForActivation && owner !== undefined) {
+      // Freeze ALL element previews while the question is open: every draft sync / badge refresh /
+      // preview (re)fit makes FORMCYCLE re-render the cell, and a preview rebuilt under the modal comes
+      // back clipped with the platform's own preview chrome visible — for a decision the user has not
+      // even taken yet. The freeze is released in the dialog's `close()`.
+      suspendElementPreviews();
+      this.confirmStandardConfigActivation(owner, this.standardConfigClassEntries(owner));
+    }
     this.renderStandardConfigList();
+  }
+
+  /**
+   * The id of the standard CONFIGURATION that provides the CSS class `cssClass`.
+   *
+   * @param cssClass The standard-configuration CSS class.
+   * @returns The owning configuration id, or **undefined** when no configuration provides that class.
+   */
+  private standardConfigOwner(cssClass: string): string | undefined {
+    try {
+      const standards = window.CodbiPluginData?.detStandards ?? {};
+      return Object.keys(standards).find((id) => {
+        const classes = standards[id]?.classes;
+        return classes != null && Object.prototype.hasOwnProperty.call(classes, cssClass);
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Whether the standard configuration `configId` is currently active for the edited form.
+   *
+   * @param configId The standard-configuration id (case-insensitive).
+   */
+  private isStandardConfigActive(configId: string): boolean {
+    const wanted = String(configId ?? "")
+      .trim()
+      .toLowerCase();
+    return wanted !== "" && this.currentStandards().some((id) => id.toLowerCase() === wanted);
+  }
+
+  /**
+   * Every CSS class a standard configuration provides, together with the SHORT DESCRIPTION used by the
+   * listing tooltips (`Appointments › Prevents selecting future dates.`).
+   *
+   * @param configId The standard-configuration id.
+   * @returns The class entries (empty when the configuration provides none or is unknown).
+   */
+  private standardConfigClassEntries(configId: string): IStandardConfigClassEntry[] {
+    try {
+      const def = window.CodbiPluginData?.detStandards?.[configId];
+      const classes = def?.classes;
+      if (classes == null) {
+        return [];
+      }
+      return Object.keys(classes).map((cssClass) => ({
+        cssClass,
+        description: this.standardConfigTooltip(configId, cssClass, classes[cssClass], def?.funcs?.[cssClass], true),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Makes the standard CONFIGURATION `configId` active for the edited form, so its script is injected
+   * for the form and every class it provides does what it promises.
+   *
+   * Three paths, most reliable first:
+   *
+   * 1. `CodbiPluginData.setStandardsValue` — the form-level standards editor, which persists
+   *    `codbi-prop-standards`, updates the `Active` flags and re-applies running element previews.
+   * 2. The designer's own `set-property` callback (the very callback the standards tree fires) plus
+   *    the `Active` flag — needed because the standards editor only publishes path 1 once it has been
+   *    MOUNTED, i.e. after the CodBi form options were opened.
+   * 3. The standards tree's checkbox, if it happens to be rendered.
+   *
+   * A configuration activated here is remembered locally ({@link locallyActivatedStandards}) so the
+   * listing reflects the new state immediately, even when the property cannot be read back.
+   *
+   * @param configId The standard-configuration id to activate.
+   * @returns **True** when the configuration was activated, **false** when it already was or could not
+   *   be activated.
+   */
+  private activateStandardConfig(configId: string): boolean {
+    const id = String(configId ?? "").trim();
+    if (id === "") {
+      return false;
+    }
+    try {
+      if (this.isStandardConfigActive(id)) {
+        return false; // Already active — nothing to do.
+      }
+      const next = [...this.currentStandards(), id].join(",");
+      const apply = window.CodbiPluginData?.setStandardsValue;
+      if (typeof apply === "function") {
+        apply(next);
+        this.locallyActivatedStandards.add(id);
+        refreshCodbiElementMarkers();
+        return true;
+      }
+      // No standards editor instance this session: persist the property through the designer's own
+      // callback and mark the configuration ACTIVE (the canvas badges read that flag).
+      const standardsDef = window.CodbiPluginData?.detStandards?.[id];
+      if (standardsDef) {
+        standardsDef.Active = true;
+      }
+      const setPropertyCallback = Callbacks["set-property"];
+      if (setPropertyCallback && typeof setPropertyCallback.fire === "function") {
+        // Called as a METHOD so the callback keeps its own `this`.
+        setPropertyCallback.fire(Constants["designer.property.standards"], next, this as never);
+        this.locallyActivatedStandards.add(id);
+        notifyFormPreviewChanged();
+        refreshCodbiElementMarkers();
+        return true;
+      }
+      // Last resort: tick the form-level tree's checkbox; its `change` handler persists the selection.
+      const checkbox = document.getElementById(`CodBi-StandardConfigSelector_${id}`);
+      if (checkbox instanceof HTMLInputElement && !checkbox.checked) {
+        checkbox.checked = true;
+        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+        this.locallyActivatedStandards.add(id);
+        return true;
+      }
+      console.warn(
+        `[CodBi] Element: standard configuration "${id}" is not active for this form and could not be activated automatically.`,
+      );
+      return false;
+    } catch (x) {
+      console.warn("[CodBi] Element: could not activate the standard configuration", x);
+      return false;
+    }
+  }
+
+  /**
+   * Asks the user whether the standard configuration `configId` — whose class was just applied to the
+   * element, or whose activate button was clicked — shall be activated for the form.
+   *
+   * The dialog names the configuration and lists every class it provides — each entry with the class's
+   * short description as its tooltip — so it is clear what becomes available. Confirming activates the
+   * configuration; dismissing leaves everything as it is (the class stays applied and the row keeps its
+   * dimmed "not activated" state plus the activate button).
+   *
+   * @param configId The standard-configuration id.
+   * @param classes  The classes that configuration provides, with their short descriptions.
+   */
+  private confirmStandardConfigActivation(configId: string, classes: IStandardConfigClassEntry[]): void {
+    // Only ONE question at a time: a leftover dialog (e.g. from a previous element selection) is
+    // replaced instead of stacking a second overlay on top of it.
+    for (const stale of Array.from(document.querySelectorAll(".codbi-std-activate-overlay"))) {
+      stale.remove();
+    }
+    const overlay = document.createElement("div");
+    overlay.className = "codbi-std-activate-overlay";
+    const dialog = document.createElement("div");
+    dialog.className = "codbi-std-activate-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+
+    const title = document.createElement("h3");
+    title.textContent = kI18n("designer.element.standardConfig.dialog.title");
+    const message = document.createElement("p");
+    message.textContent = this.formatMessage(kI18n("designer.element.standardConfig.dialog.message"), configId);
+    dialog.append(title, message);
+
+    if (classes.length > 0) {
+      const classesLabel = document.createElement("p");
+      classesLabel.textContent = kI18n("designer.element.standardConfig.dialog.classes");
+      const list = document.createElement("ul");
+      list.className = "codbi-std-activate-dialog__list";
+      for (const { cssClass, description } of classes) {
+        const entry = document.createElement("li");
+        entry.textContent = cssClass;
+        // The short description (prefixed with the configuration path) is shown on hover, exactly like
+        // the listing rows do it — the dialog must not be the only place without it.
+        if (description) {
+          entry.title = description;
+        }
+        list.append(entry);
+      }
+      dialog.append(classesLabel, list);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "codbi-std-activate-dialog__actions";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "codbi-std-activate-dialog__cancel";
+    cancel.textContent = kI18n("designer.element.standardConfig.dialog.cancel");
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "codbi-std-activate-dialog__confirm";
+    confirm.textContent = kI18n("designer.element.standardConfig.dialog.confirm");
+    actions.append(cancel, confirm);
+    dialog.append(actions);
+
+    /**
+     * Closes the question.
+     *
+     * @param refresh **True** when the answer ACTIVATES the configuration (the canvas/previews then
+     *   have to catch up exactly once); **false** when the question is dismissed — the user declined,
+     *   so nothing may be re-actualised: the class is still saved (persist-differ nudge only), the
+     *   designer's `cssclasses` editor and the previews stay exactly as they are.
+     */
+    const close = (refresh: boolean): void => {
+      document.removeEventListener("keydown", onKeyDown);
+      overlay.remove();
+      flushElementCssClassChange({ refreshPreview: refresh });
+      resumeElementPreviews(refresh);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(false);
+      }
+    };
+    cancel.addEventListener("click", () => close(false));
+    confirm.addEventListener("click", () => {
+      close(true);
+      if (this.activateStandardConfig(configId)) {
+        this.renderStandardConfigList();
+      }
+    });
+    // A click on the backdrop (not inside the dialog) dismisses the question.
+    overlay.addEventListener("mousedown", (event) => {
+      if (event.target === overlay) {
+        close(false);
+      }
+    });
+    document.addEventListener("keydown", onKeyDown);
+    overlay.append(dialog);
+    document.body.append(overlay);
+    // The primary action is focused, so ENTER confirms and ESC cancels.
+    confirm.focus();
+  }
+
+  /**
+   * The standard-configuration ids currently active for the edited form: the persisted
+   * `codbi-prop-standards` CSV merged with every configuration the form-level standards tree has
+   * flagged `Active` (the latter also covers a toggle that was not persisted yet).
+   *
+   * The ids are kept in their ORIGINAL casing and order — the runtime resolves them as file names
+   * (`Appointments.js`), which is case-sensitive.
+   */
+  private currentStandards(): string[] {
+    const result: string[] = [];
+    const add = (raw: unknown): void => {
+      for (const entry of String(raw ?? "").split(",")) {
+        const id = entry.trim();
+        if (id !== "" && !result.some((existing) => existing.toLowerCase() === id.toLowerCase())) {
+          result.push(id);
+        }
+      }
+    };
+    try {
+      const designer = instance() as unknown as
+        | { getFormPropertyValueForCurrentLang?: (property: string) => unknown }
+        | undefined;
+      add(designer?.getFormPropertyValueForCurrentLang?.(Constants["designer.property.standards"]));
+    } catch {
+      // No form-property model available — the `Active` flags below still provide the selection.
+    }
+    try {
+      for (const [id, def] of Object.entries(window.CodbiPluginData?.detStandards ?? {})) {
+        if (def?.Active) {
+          add(id);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    // Activations performed through this panel — visible immediately, before the property round-trip.
+    for (const id of this.locallyActivatedStandards) {
+      add(id);
+    }
+    return result;
   }
 
   /**
    * Tooltip text of one standard-configuration row.
    *
-   * The class descriptions published by the configuration `.json` files are currently English-only.
-   * For other designer languages, derive the tooltip from the LOCALIZED short summaries of the
-   * functionalities that class applies. When no functionality summary is available, keep the
-   * published class description as the fallback.
+   * The text is LOCALIZED, most specific source first:
+   *
+   * 1. the class's own translated description (`classes[class].descriptionDe` / `.descriptionIt`,
+   *    hand-authored in the configuration metadata) — the only source for the classes that apply NO
+   *    functionality (e.g. the marker classes of a date/time pair);
+   * 2. for any other language, the localized short summaries of the functionalities the class applies;
+   * 3. the published (English) class description.
+   *
+   * The text is PREFIXED with the owning standard configuration's full path (`Appointments › …`),
+   * because that is what the user has to activate in the form's CodBi section for the class to have its
+   * effect. An inactive configuration additionally appends an explicit hint.
+   *
+   * @param id           The owning standard-configuration id (its full path).
+   * @param label        The CSS class name.
+   * @param classSpec    The class's published entry (description + optional localized descriptions).
+   * @param funcsCsv     The comma-separated FUNC list the class applies.
+   * @param configActive Whether the owning configuration is ACTIVE for the form.
    */
   private standardConfigTooltip(
     id: string,
     label: string,
-    classDescription: string | undefined,
+    classSpec: TStandardConfigClassSpec | undefined,
     funcsCsv: string | undefined,
+    configActive: boolean,
   ): string {
-    const base = classDescription || id;
-    if (getDesignerLanguage().toLowerCase() === "en") {
-      return base;
+    const spec = classSpec != null && typeof classSpec === "object" ? classSpec : undefined;
+    const published = typeof classSpec === "string" ? classSpec : spec?.description;
+    const language = getDesignerLanguage().toLowerCase();
+    // The class's OWN translation wins (it describes the class, not a functionality).
+    const translated = language.startsWith("de")
+      ? spec?.descriptionDe
+      : language.startsWith("it")
+        ? spec?.descriptionIt
+        : undefined;
+    let body = translated || published || id;
+    if (!translated && language !== "en") {
+      const summaries = String(funcsCsv ?? "")
+        .split(",")
+        .map((func) => func.trim())
+        .filter(Boolean)
+        .map((func) => functionalitySummary(func))
+        .filter(Boolean);
+      const unique = [...new Set(summaries)];
+      if (unique.length > 0) {
+        body = unique.join(" · ");
+      }
     }
-    const summaries = String(funcsCsv ?? "")
-      .split(",")
-      .map((func) => func.trim())
-      .filter(Boolean)
-      .map((func) => functionalitySummary(func))
-      .filter(Boolean);
-    const unique = [...new Set(summaries)];
-    return unique.length > 0 ? unique.join(" · ") : base;
+    const lines = [`${id} › ${body}`];
+    if (!configActive) {
+      lines.push(this.formatMessage(kI18n("designer.element.standardConfig.inactiveHint"), id));
+    }
+    return lines.join("\n");
+  }
+
+  /**
+   * Replaces the `{0}`, `{1}`, … placeholders of an i18n message with the given values.
+   *
+   * @param message The localized message (may contain `{n}` placeholders).
+   * @param values  The replacement values, in placeholder order.
+   * @returns The message with every present placeholder replaced.
+   */
+  private formatMessage(message: string, ...values: Array<string>): string {
+    return values.reduce((text, value, index) => text.split(`{${index}}`).join(value), String(message ?? ""));
   }
 
   /**
@@ -1017,18 +1526,24 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
    * `detStandards[id].Description`) in the shared API-Doc viewer — independent of the CSS class shown,
    * since the doc lives with the configuration, not the class.
    *
-   * @param id          The owning standard-configuration id (the `detStandards` key).
-   * @param label       The CSS class name (or the config id for an id-only row).
-   * @param isSelected  Whether the element already carries the class.
-   * @param hasCheckbox **True** for a real CSS class (checkbox), **false** for an id-only row.
+   * A class whose owning configuration is NOT active for the form is dimmed (`.5` opacity, see
+   * `frame.css`) and gets an ACTIVATE button on its right, so the missing activation can be fixed
+   * right from the listing instead of having to find the configuration in the form's CodBi section.
+   *
+   * @param options Everything the row needs: the owning configuration id, the class label, whether the
+   *   element carries it, whether a checkbox is shown, the tooltip and the configuration's ACTIVE state
+   *   (plus the classes that configuration provides, shown in the activate button's tooltip).
    */
-  private buildStandardConfigRow(
-    id: string,
-    label: string,
-    isSelected: boolean,
-    hasCheckbox: boolean,
-    tooltip: string,
-  ): HTMLElement {
+  private buildStandardConfigRow(options: {
+    id: string;
+    label: string;
+    isSelected: boolean;
+    hasCheckbox: boolean;
+    tooltip: string;
+    configActive: boolean;
+    configClasses: IStandardConfigClassEntry[];
+  }): HTMLElement {
+    const { id, label, isSelected, hasCheckbox, tooltip, configActive, configClasses } = options;
     if (!hasCheckbox) {
       const readOnly = document.createElement("div");
       readOnly.className = "codbi-func-config__option codbi-func-config__option--readonly";
@@ -1038,6 +1553,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       readOnlyText.textContent = label;
       readOnlyText.title = tooltip;
       readOnly.append(readOnlyText);
+      if (!configActive) {
+        readOnly.classList.add("codbi-func-config__option--inactive");
+        readOnly.append(this.buildStandardConfigActivateButton(id, configClasses));
+      }
       // Right-clicking the row opens its configuration's documentation in the shared API-Doc viewer;
       // leaving the row without reaching the viewer closes it again.
       readOnly.addEventListener("contextmenu", (event) => this.openDocsOnRightClick(event, "standard", id, readOnly));
@@ -1058,11 +1577,52 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     text.textContent = label;
     text.title = tooltip;
     row.append(checkbox, text);
+    if (!configActive) {
+      // Dimmed marker: the owning configuration is not activated for this form yet.
+      row.classList.add("codbi-func-config__option--inactive");
+      row.append(this.buildStandardConfigActivateButton(id, configClasses));
+    }
     // Right-clicking the row opens its configuration's documentation in the shared API-Doc viewer;
     // leaving the row without reaching the viewer closes it again.
     row.addEventListener("contextmenu", (event) => this.openDocsOnRightClick(event, "standard", id, row));
     row.addEventListener("mouseleave", () => this.onRowPointerLeave(row));
     return row;
+  }
+
+  /**
+   * Builds the compact "activate this standard configuration" button that sits on the right of every
+   * class row whose configuration is not active for the form.
+   *
+   * The row is a `<label>` (clicking it toggles the class checkbox), so the button must swallow the
+   * click — otherwise activating the configuration would also apply the class to the element.
+   *
+   * @param configId      The standard-configuration id to activate.
+   * @param configClasses The classes that configuration provides (named in the button's tooltip).
+   */
+  private buildStandardConfigActivateButton(
+    configId: string,
+    configClasses: IStandardConfigClassEntry[],
+  ): HTMLButtonElement {
+    const activate = document.createElement("button");
+    activate.type = "button";
+    activate.className = "codbi-func-config__std-activate";
+    activate.textContent = "+";
+    const hint = this.formatMessage(kI18n("designer.element.standardConfig.activate"), configId);
+    activate.title =
+      configClasses.length > 0
+        ? `${hint}\n${kI18n("designer.element.standardConfig.dialog.classes")}\n${configClasses
+            .map((entry) => entry.cssClass)
+            .join("\n")}`
+        : hint;
+    activate.setAttribute("aria-label", hint);
+    activate.addEventListener("click", (event) => {
+      // Never toggle the class of the surrounding `<label>` when activating the configuration.
+      event.preventDefault();
+      event.stopPropagation();
+      this.activateStandardConfig(configId);
+      this.renderStandardConfigList();
+    });
+    return activate;
   }
 
   /**

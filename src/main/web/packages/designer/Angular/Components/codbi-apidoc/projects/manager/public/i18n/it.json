@@ -32,6 +32,7 @@
   "Input.Parameter.phDescription": "Descrizione",
   "Input.Parameter.Type": "Tipo",
   "Input.Parameter.phType": "Tipo di dato",
+  "Input.Parameter.phOptions": "Opzioni (separate da virgola, ad es. Central, Unity, Outskirts)",
   "Input.Parameter.Name.Name": "Nome parametro",
   "Input.Parameter.Name.Description": "Descrizione parametro",
   "Add.Panel.Button": "Aggiungi",

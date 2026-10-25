@@ -20,7 +20,19 @@
         "description": {
           "en": "An optional property of the directory, like e.g. \"bezeichnung\".",
           "de": "Eine optionale Eigenschaft des Verzeichnisses, z. B. \"bezeichnung\"."
-        }
+        },
+        "options": [
+          "bezeichnungBehoerde",
+          "behoerdenart",
+          "behoerdengruppe",
+          "bezeichnung",
+          "email",
+          "id",
+          "sortierreihenfolge",
+          "logo",
+          "behoerdeZuordnungen",
+          "behoerdenGebaeudeZuordnungen"
+        ]
       }
     ],
     "returnType": "any",

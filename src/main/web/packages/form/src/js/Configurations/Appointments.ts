@@ -43,10 +43,17 @@
  *  form. */
 export function loadConfig(): void {
   // #region .CodBi_NoFutureDate
+  // "No future date" = the entered date must not be LATER than today (today itself stays valid).
+  // `Date.Min` expresses that with the default (NOT reversed) direction and `Minimum = 0`. The
+  // parameters are written EXPLICITLY (`Reverse`/`Unit` included) so the configuration does not rely
+  // on the functionality's defaults: the applied `data-cb-*` attributes then document the whole
+  // contract on the element itself, and a missing parameter can never silently disable the check.
   window.codbi.loadConfig({
     targets: ".CodBi_NoFutureDate",
     FUNC: "Date.Min",
     Minimum: 0,
+    Reverse: "false",
+    Unit: "d",
     MsgHigher: "Das Datum darf nicht in der Zukunft liegen.",
   });
   // #endregion .CodBi_NoFutureDate

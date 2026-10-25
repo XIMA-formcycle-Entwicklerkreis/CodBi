@@ -1,7 +1,7 @@
 // Tests for ElementFunctionalityConfigEditor's two functionality lists: the applicable "main" list and
 // the toggle-only "not declared for this element" second list.
 
-import { afterEach, describe, expect, it } from "@jest/globals";
+import { afterEach, describe, expect, it, jest } from "@jest/globals";
 import type { TEditorCfg } from "@de-xima/fc-form-designer";
 
 import {
@@ -17,16 +17,13 @@ import { resetTestState, TestState } from "./test-state.js";
 
 /** Builds the editor under test with a designer instance reporting the given element. */
 function buildEditor(className: string, properties: Record<string, unknown>): HTMLElement {
-  // Preserve any `getFormPropertyValueForCurrentLang` a test placed on the fake designer (used to
-  // gate the panel's visibility on the form-level "CodBi aktiviert" checkbox).
-  const prior = TestState.designerInstance as
-    | { getFormPropertyValueForCurrentLang?: (property: string) => unknown }
-    | undefined;
+  // Preserve every other member a test placed on the fake designer — `getFormPropertyValueForCurrentLang`
+  // (the form-level "CodBi aktiviert" checkbox) and `getPersistDiffer` (the draft sync the CSS-class
+  // writers nudge) — and only replace the selected-item lookup.
+  const prior = (TestState.designerInstance ?? {}) as Record<string, unknown>;
   TestState.designerInstance = {
+    ...prior,
     getSelectedMasterItem: () => ({ className, getPersist: () => ({ properties }) }),
-    ...(prior?.getFormPropertyValueForCurrentLang
-      ? { getFormPropertyValueForCurrentLang: prior.getFormPropertyValueForCurrentLang }
-      : {}),
   };
 
   const config = { designer: {} } as unknown as TEditorCfg<IElementFunctionalityConfigDescriptor>;
@@ -45,6 +42,11 @@ function optionIds(root: HTMLElement, selector: string): string[] {
 afterEach(() => {
   resetTestState();
   delete (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData;
+  // Applying a class of a NOT activated configuration opens the activation dialog — never let it leak
+  // into the next test (the editor renders into detached elements, the dialog goes to `document.body`).
+  for (const overlay of Array.from(document.querySelectorAll(".codbi-std-activate-overlay"))) {
+    overlay.remove();
+  }
 });
 
 describe("ElementFunctionalityConfigEditor functionality lists", () => {
@@ -75,6 +77,56 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
       (section) => !section.classList.contains("codbi-func-config__section--standards"),
     ) as HTMLElement;
   }
+
+  it("narrows BOTH functionality listings to the applied functionalities (only checked)", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {
+        "Any.Thing": {},
+        "Date.Min": {},
+        // Declared for containers only → lands in the second (not-applicable) listing.
+        "Html.Panel": { supportedFormelementtypes: ["XContainer"] },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", { "codbi-prop-element-funcs": "Date.Min" });
+    const section = funcSection(rootEl);
+    const mainList = ".codbi-func-config__options:not(.codbi-func-config__options--all)";
+    const allList = ".codbi-func-config__options--all";
+    // EVERY listing has its own "only checked" toggle, sitting RIGHT OF its filter input.
+    const filterRows = section.querySelectorAll<HTMLElement>(".codbi-func-config__filterrow");
+    expect(filterRows.length).toBe(2);
+    const only = filterRows[0].querySelector<HTMLButtonElement>(".codbi-func-config__only");
+    const onlyAll = filterRows[1].querySelector<HTMLButtonElement>(".codbi-func-config__only");
+    expect(only?.textContent).toBe("\u2713");
+    expect(onlyAll?.textContent).toBe("\u2713");
+
+    expect(only?.getAttribute("aria-pressed")).toBe("false");
+    // Everything is listed while the toggles are off.
+    expect(optionIds(rootEl, mainList)).toEqual(["Any.Thing", "Date.Min"]);
+    expect(optionIds(rootEl, allList)).toEqual(["Html.Panel"]);
+
+    only?.click();
+
+    // Only the functionality APPLIED to the element survives in the applicable list.
+    expect(optionIds(rootEl, mainList)).toEqual(["Date.Min"]);
+    expect(only?.getAttribute("aria-pressed")).toBe("true");
+    expect(only?.classList.contains("codbi-func-config__only--active")).toBe(true);
+    // The OTHER listing keeps its own (still off) state and is unaffected.
+    expect(optionIds(rootEl, allList)).toEqual(["Html.Panel"]);
+    expect(onlyAll?.getAttribute("aria-pressed")).toBe("false");
+
+    only?.click();
+
+    expect(optionIds(rootEl, mainList)).toEqual(["Any.Thing", "Date.Min"]);
+    expect(only?.getAttribute("aria-pressed")).toBe("false");
+
+    // The second listing's own toggle narrows THAT listing: nothing there is applied → empty.
+    onlyAll?.click();
+    expect(optionIds(rootEl, allList)).toEqual([]);
+    expect(onlyAll?.getAttribute("aria-pressed")).toBe("true");
+    expect(optionIds(rootEl, mainList)).toEqual(["Any.Thing", "Date.Min"]);
+  });
 
   it("keeps the second list hidden until the toggle button is clicked", () => {
     TestState.language = "en";
@@ -602,6 +654,291 @@ describe("ElementFunctionalityConfigEditor standard-configuration lists", () => 
     checkbox!.checked = false;
     checkbox!.dispatchEvent(new Event("change"));
     expect(properties.cssclasses).toEqual(["MyOwnClass"]);
+  });
+
+  it("narrows BOTH standard-configuration listings to the applied classes (only checked)", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        Appointments: {
+          classes: { CodBi_NoFutureDate: { description: "x", formelementtypes: ["XTextField"] } },
+        },
+        "Text.Box": {
+          classes: { CodBi_TextRegex: { description: "y", formelementtypes: ["XTextField"] } },
+        },
+        // Declared for containers only → lands in the second (not-applicable) listing.
+        "Panel.Wrap": {
+          classes: { CodBi_Panel: { description: "Panel.", formelementtypes: ["XContainer"] } },
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", { cssclasses: ["CodBi_NoFutureDate"] });
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const mainList = ".codbi-func-config__options:not(.codbi-func-config__options--all)";
+    const allList = ".codbi-func-config__options--all";
+    // EVERY listing has its own "only checked" toggle, right of its filter input.
+    const filterRows = section.querySelectorAll<HTMLElement>(".codbi-func-config__filterrow");
+    expect(filterRows.length).toBe(2);
+    expect(filterRows[0].firstElementChild?.classList.contains("codbi-func-config__filter")).toBe(true);
+    const only = filterRows[0].querySelector<HTMLButtonElement>(".codbi-func-config__only");
+    const onlyAll = filterRows[1].querySelector<HTMLButtonElement>(".codbi-func-config__only");
+
+    expect(only?.textContent).toBe("\u2713");
+    expect(onlyAll?.textContent).toBe("\u2713");
+    expect(only?.getAttribute("aria-pressed")).toBe("false");
+    // Everything is listed while the toggles are off.
+    expect(stdOptionIds(rootEl, mainList)).toEqual(["CodBi_NoFutureDate", "CodBi_TextRegex"]);
+    expect(stdOptionIds(rootEl, allList)).toEqual(["CodBi_Panel"]);
+
+    only?.click();
+
+    // Only the class APPLIED to the element survives in the applicable list.
+    expect(stdOptionIds(rootEl, mainList)).toEqual(["CodBi_NoFutureDate"]);
+    expect(only?.getAttribute("aria-pressed")).toBe("true");
+    expect(only?.classList.contains("codbi-func-config__only--active")).toBe(true);
+    // The other listing keeps its own (still off) state.
+    expect(stdOptionIds(rootEl, allList)).toEqual(["CodBi_Panel"]);
+    expect(onlyAll?.getAttribute("aria-pressed")).toBe("false");
+
+    only?.click();
+
+    expect(stdOptionIds(rootEl, mainList)).toEqual(["CodBi_NoFutureDate", "CodBi_TextRegex"]);
+    expect(only?.getAttribute("aria-pressed")).toBe("false");
+
+    // The second listing's own toggle narrows THAT listing: nothing there is applied → empty.
+    onlyAll?.click();
+    expect(stdOptionIds(rootEl, allList)).toEqual([]);
+    expect(onlyAll?.getAttribute("aria-pressed")).toBe("true");
+    expect(stdOptionIds(rootEl, mainList)).toEqual(["CodBi_NoFutureDate", "CodBi_TextRegex"]);
+  });
+
+  it("asks before activating a NOT activated configuration when its class is applied", () => {
+    TestState.language = "en";
+    const setStandardsValue = jest.fn();
+    // The draft sync the CSS-class writer normally nudges: while the question is OPEN it must NOT run,
+    // otherwise FORMCYCLE re-renders the element preview under the modal (clipped preview + its own
+    // preview menu reappearing).
+    const checkForChanges = jest.fn();
+    TestState.designerInstance = { getPersistDiffer: () => ({ checkForChanges }) };
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        Appointments: {
+          classes: { CodBi_NoFutureDate: { description: "x", formelementtypes: ["XTextField"] } },
+        },
+      },
+      setStandardsValue,
+    };
+
+    const properties: Record<string, unknown> = { cssclasses: [] };
+    const rootEl = buildEditor("XTextField", properties);
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const mainCheckbox = ".codbi-func-config__options:not(.codbi-func-config__options--all) input[type=checkbox]";
+
+    // Applying the class applies it right away (it stays a marker until the configuration is active) …
+    const checkbox = section.querySelector<HTMLInputElement>(mainCheckbox);
+    checkbox!.checked = true;
+    checkbox!.dispatchEvent(new Event("change"));
+    expect(properties.cssclasses).toEqual(["CodBi_NoFutureDate"]);
+
+    // … and a dialog ASKS whether the owning configuration shall be activated, naming the classes it
+    // provides. Nothing is activated before the user confirms.
+    // Nothing was synced/re-rendered yet — the user has not answered the question.
+    expect(checkForChanges).not.toHaveBeenCalled();
+
+    const dialog = document.querySelector(".codbi-std-activate-dialog") as HTMLElement;
+    expect(dialog).not.toBeNull();
+    expect(Array.from(dialog.querySelectorAll("li")).map((entry) => entry.textContent)).toEqual(["CodBi_NoFutureDate"]);
+    // Every listed class carries its SHORT DESCRIPTION as a tooltip (prefixed with the config path).
+    const listedClass = dialog.querySelector("li") as HTMLElement;
+    expect(listedClass.title.startsWith("Appointments › ")).toBe(true);
+    expect(listedClass.title).toContain("x");
+    expect(setStandardsValue).not.toHaveBeenCalled();
+
+    (dialog.querySelector(".codbi-std-activate-dialog__confirm") as HTMLButtonElement).click();
+    expect(setStandardsValue).toHaveBeenCalledWith("Appointments");
+    expect(document.querySelector(".codbi-std-activate-overlay")).toBeNull();
+    // Answering the question flushes the deferred draft sync exactly once.
+    expect(checkForChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not activate the configuration when the dialog is dismissed", () => {
+    TestState.language = "en";
+    const setStandardsValue = jest.fn();
+    const checkForChanges = jest.fn();
+    TestState.designerInstance = { getPersistDiffer: () => ({ checkForChanges }) };
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        Appointments: {
+          classes: { CodBi_NoFutureDate: { description: "x", formelementtypes: ["XTextField"] } },
+        },
+      },
+      setStandardsValue,
+    };
+
+    const properties: Record<string, unknown> = { cssclasses: [] };
+    const rootEl = buildEditor("XTextField", properties);
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const checkbox = section.querySelector<HTMLInputElement>(
+      ".codbi-func-config__options:not(.codbi-func-config__options--all) input[type=checkbox]",
+    );
+    checkbox!.checked = true;
+    checkbox!.dispatchEvent(new Event("change"));
+
+    const cancel = document.querySelector(".codbi-std-activate-dialog__cancel") as HTMLButtonElement;
+    expect(cancel).not.toBeNull();
+    cancel.click();
+
+    // Dismissed: the configuration stays inactive, the class stays applied (the row stays dimmed) …
+    expect(setStandardsValue).not.toHaveBeenCalled();
+    expect(document.querySelector(".codbi-std-activate-overlay")).toBeNull();
+    expect(properties.cssclasses).toEqual(["CodBi_NoFutureDate"]);
+    // … and the deferred draft sync runs when the question is dismissed, not while it was open.
+    expect(checkForChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("dims the classes of NOT activated configurations and offers an activate button", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        // Not active for the form (neither persisted nor flagged `Active`).
+        Appointments: {
+          classes: { CodBi_NoFutureDate: { description: "x", formelementtypes: ["XTextField"] } },
+        },
+        // Active for the form.
+        "Text.Box": {
+          Active: true,
+          classes: { CodBi_TextRegex: { description: "y", formelementtypes: ["XTextField"] } },
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", {});
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const rowOf = (label: string): HTMLElement | undefined =>
+      Array.from(section.querySelectorAll<HTMLElement>(".codbi-func-config__option")).find(
+        (row) => row.querySelector("span")?.textContent === label,
+      );
+
+    const inactiveRow = rowOf("CodBi_NoFutureDate");
+    expect(inactiveRow?.classList.contains("codbi-func-config__option--inactive")).toBe(true);
+    expect(inactiveRow?.querySelector(".codbi-func-config__std-activate")).not.toBeNull();
+
+    const activeRow = rowOf("CodBi_TextRegex");
+    expect(activeRow?.classList.contains("codbi-func-config__option--inactive")).toBe(false);
+    expect(activeRow?.querySelector(".codbi-func-config__std-activate")).toBeNull();
+  });
+
+  it("prefixes the row tooltip with the full standard-configuration path", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        Appointments: {
+          classes: {
+            CodBi_NoFutureDate: { description: "Prevents future dates.", formelementtypes: ["XTextField"] },
+          },
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", {});
+    const row = rootEl.querySelector<HTMLElement>(".codbi-func-config__section--standards .codbi-func-config__option");
+
+    // The user must see WHICH configuration has to be activated for the class to work.
+    expect(row?.title.startsWith("Appointments › ")).toBe(true);
+    expect(row?.title).toContain("Prevents future dates.");
+    expect(row?.title).toContain("NOT activated");
+  });
+
+  it("localizes the row tooltip from the class's own descriptionDe (classes without a functionality)", () => {
+    TestState.language = "de";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        Appointments: {
+          classes: {
+            // A MARKER class: it applies no functionality, so there is no localized functionality
+            // summary to fall back to — only the hand-authored `descriptionDe` translates it.
+            CodBi_Date_Time_Join_Date: {
+              description: "Apply to the DATE input field of a date/time pair.",
+              descriptionDe: "Auf das DATUMS-Eingabefeld eines Datum/Zeit-Paares anwenden.",
+              descriptionIt: "Applicare al campo data di una coppia data/ora.",
+              formelementtypes: ["XTextField"],
+            },
+          },
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", {});
+    const row = rootEl.querySelector<HTMLElement>(".codbi-func-config__section--standards .codbi-func-config__option");
+
+    expect(row?.title).toContain("Appointments › Auf das DATUMS-Eingabefeld eines Datum/Zeit-Paares anwenden.");
+    expect(row?.title).not.toContain("Apply to the DATE input field");
+  });
+
+  it("falls back to the localized functionality summary, and keeps English for an English designer", () => {
+    TestState.language = "de";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {
+        "date.min": { Summary: { en: "EN summary.", de: "DE Zusammenfassung." } },
+      },
+      detStandards: {
+        Appointments: {
+          classes: {
+            CodBi_NoFutureDate: { description: "Prevents future dates.", formelementtypes: ["XTextField"] },
+          },
+          funcs: { CodBi_NoFutureDate: "Date.Min" },
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XTextField", {});
+    const germanRow = rootEl.querySelector<HTMLElement>(
+      ".codbi-func-config__section--standards .codbi-func-config__option",
+    );
+    // No `descriptionDe` → the LOCALIZED functionality summary is used instead of the English text.
+    expect(germanRow?.title).toContain("Appointments › DE Zusammenfassung.");
+
+    // The same class in an ENGLISH designer keeps the published (English) class description.
+    TestState.language = "en";
+    const englishRoot = buildEditor("XTextField", {});
+    const englishRow = englishRoot.querySelector<HTMLElement>(
+      ".codbi-func-config__section--standards .codbi-func-config__option",
+    );
+    expect(englishRow?.title).toContain("Appointments › Prevents future dates.");
+  });
+
+  it("activates the configuration through the row's activate button without applying the class", () => {
+    TestState.language = "en";
+    const setStandardsValue = jest.fn();
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detStandards: {
+        Appointments: {
+          classes: { CodBi_NoFutureDate: { description: "x", formelementtypes: ["XTextField"] } },
+        },
+      },
+      setStandardsValue,
+    };
+
+    const properties: Record<string, unknown> = { cssclasses: [] };
+    const rootEl = buildEditor("XTextField", properties);
+    const section = rootEl.querySelector(".codbi-func-config__section--standards") as HTMLElement;
+    const activate = section.querySelector<HTMLButtonElement>(".codbi-func-config__std-activate");
+
+    expect(activate).not.toBeNull();
+    expect(activate?.title).toContain("CodBi_NoFutureDate");
+    activate!.click();
+
+    expect(setStandardsValue).toHaveBeenCalledWith("Appointments");
+    // The button must never toggle the surrounding row's checkbox.
+    expect(properties.cssclasses).toEqual([]);
+
+    // The listing reflects the activation immediately: the row is no longer dimmed.
+    const row = Array.from(section.querySelectorAll<HTMLElement>(".codbi-func-config__option")).find(
+      (candidate) => candidate.querySelector("span")?.textContent === "CodBi_NoFutureDate",
+    );
+    expect(row?.classList.contains("codbi-func-config__option--inactive")).toBe(false);
+    expect(row?.querySelector(".codbi-func-config__std-activate")).toBeNull();
   });
 
   it("keeps a class the element already carries in the applicable list (checked) although its type excludes it", () => {

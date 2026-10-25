@@ -46,11 +46,19 @@ export type TStandardConfigSupportedSpec =
  * map). `formelementtypes` absent/empty ⇒ that class applies to **any** element (fail-open).
  *
  * The plain-`string` form is the legacy/manager shape (a description only) — treated as fail-open.
+ *
+ * `description` is the base (English) text. `descriptionDe`/`descriptionIt` carry the localized
+ * variants (same shape as a functionality's `Summary` map / a parameter's `descriptionDe`), so the
+ * designer can show a translated tooltip for the class itself — needed for the classes that apply
+ * NO functionality (e.g. the marker classes of a date/time pair), which have no localized
+ * functionality summary to fall back to.
  */
 export type TStandardConfigClassSpec =
   | string
   | Readonly<{
       description?: string;
+      descriptionDe?: string;
+      descriptionIt?: string;
       formelementtypes?: readonly string[];
     }>;
 

@@ -15,6 +15,8 @@
     },
     "CodBi_OpenPLZ_AC_SET_BuildingNumber": {
       "description": "Apply to an XTextField representing a building number in an OpenPLZ address autocomplete set.",
+      "descriptionDe": "Auf ein XTextField anwenden, das die Hausnummer in einem OpenPLZ-Adress-Autocomplete-Set darstellt.",
+      "descriptionIt": "Applicare a un XTextField che rappresenta il numero civico in un set di completamento automatico degli indirizzi OpenPLZ.",
       "formelementtypes": ["XTextField"]
     }
   },

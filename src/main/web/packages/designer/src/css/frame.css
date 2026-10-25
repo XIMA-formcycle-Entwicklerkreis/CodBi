@@ -714,12 +714,207 @@
   color: darkorange;
 }
 
+/* A standard-configuration class whose owning configuration is NOT activated for the form is only a
+   marker: it is painted with .5 opacity so the user sees at a glance that something has to be
+   activated first. The activate button added to such a row stays fully opaque (it is the fix). */
+.codbi-func-config__option--inactive > span,
+.codbi-func-config__option--inactive > input[type="checkbox"] {
+  opacity: 0.5;
+}
+.codbi-func-config__option--inactive:hover > span {
+  opacity: 0.85;
+}
+
+/* The compact "activate the owning standard configuration" button on the right of an inactive row. */
+.codbi-func-config__std-activate {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid darkorange;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.7);
+  color: darkorange;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.codbi-func-config__std-activate:hover {
+  background: darkorange;
+  color: #fff;
+}
+
+/* Confirmation dialog shown when a class of a NOT activated standard configuration is applied (or its
+   activate button is clicked): names the configuration and lists the classes that become available. */
+.codbi-std-activate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(60, 30, 0, 0.28);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  color: #3a2200;
+}
+/* The dialog carries the CodBi logo as a CENTRED WATERMARK, exactly like the element panel does; its
+   content is lifted above the watermark and keeps a transparent background so the logo shows through. */
+.codbi-std-activate-dialog {
+  position: relative;
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid darkorange;
+  border-top: 3px solid darkorange;
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+.codbi-std-activate-dialog::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 120px;
+  height: 120px;
+  background: var(--codbi-logo-url, none) no-repeat center / contain;
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: 0;
+}
+.codbi-std-activate-dialog > * {
+  position: relative;
+  z-index: 1;
+}
+.codbi-std-activate-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: darkorange;
+}
+.codbi-std-activate-dialog p {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+/* The class listing stays TRANSPARENT so the watermark keeps showing through it. */
+.codbi-std-activate-dialog__list {
+  margin: 0 0 12px;
+  padding: 0 0 0 18px;
+  max-height: 180px;
+  overflow: auto;
+  background: transparent;
+}
+.codbi-std-activate-dialog li {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+/* Every listed class carries its short description as a native tooltip — show that it is hoverable. */
+.codbi-std-activate-dialog li[title] {
+  cursor: help;
+}
+.codbi-std-activate-dialog li[title]:hover {
+  color: darkorange;
+}
+.codbi-std-activate-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.codbi-std-activate-dialog__actions button {
+  padding: 4px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #3a2200;
+  font: inherit;
+  cursor: pointer;
+}
+.codbi-std-activate-dialog__actions button:hover {
+  border-color: darkorange;
+  color: darkorange;
+}
+.codbi-std-activate-dialog__actions button.codbi-std-activate-dialog__confirm {
+  background: darkorange;
+  border-color: darkorange;
+  color: #fff;
+}
+.codbi-std-activate-dialog__actions button.codbi-std-activate-dialog__confirm:hover {
+  background: #c96a00;
+  border-color: #c96a00;
+  color: #fff;
+}
+
 /* Inline filter box inside the listing — translucent to show the watermark. */
 .codbi-func-config__filter {
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid #d0d5dd;
   border-left: 3px solid darkorange;
   border-radius: 4px;
+}
+
+/* One row per listing: the filter input takes the remaining width, the "only checked" toggle sits
+   RIGHT OF it (mirrors the form-level standards tree in `MultiSelect`). */
+.codbi-func-config__filterrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 4px;
+}
+.codbi-func-config__filterrow > .codbi-func-config__filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+/* The "only checked" toggle — a compact check-mark button that narrows the listing to the entries
+   currently applied to the element. Same look as the standards tree's toggle; darkorange while on. */
+.codbi-func-config__only {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #667085;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+.codbi-func-config__only:hover {
+  border-color: darkorange;
+  color: darkorange;
+  background: #fff;
+}
+.codbi-func-config__only--active {
+  background: darkorange;
+  border-color: darkorange;
+  color: #fff;
+}
+.codbi-func-config__only--active:hover {
+  background: #c96a00;
+  border-color: #c96a00;
+  color: #fff;
 }
 
 /* The "show all / hide all" toggle. Placed below the list (see the TS), darkorange-bordered,

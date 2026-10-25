@@ -47,7 +47,8 @@ class ClarifyWorkflowStructureCoreTest {
                 String::class.java, // chatContext
                 String::class.java, // changeHistoryContext
                 String::class.java, // formListContext
-                String::class.java, // formKey
+                String::class.java, // formElementsContext
+                String::class.java, // currentFormKey
                 String::class.java, // currentFormTitle
                 Boolean::class.javaPrimitiveType, // useCodbi
                 Boolean::class.javaPrimitiveType, // askAllQuestions
@@ -55,6 +56,7 @@ class ClarifyWorkflowStructureCoreTest {
                 String::class.java, // formVariables
                 String::class.java, // workflowMails
                 String::class.java, // availableDatasources
+                String::class.java, // xslTemplates
                 Set::class.java) // clarificationTopics
     method.isAccessible = true
     return method.invoke(
@@ -71,8 +73,10 @@ class ClarifyWorkflowStructureCoreTest {
         null,
         null,
         null,
+        null,
         true,
         false,
+        null,
         null,
         null,
         null,
@@ -98,8 +102,11 @@ class ClarifyWorkflowStructureCoreTest {
   @Test
   fun `blank or null workflow structure injects no workflow block`() {
     val promptNonNull = buildSystemPrompt("   ")
+    // The templates themselves mention "CURRENT WORKFLOW STRUCTURE" in an inline cross-reference
+    // ("see CURRENT WORKFLOW STRUCTURE"), so the assertion pins the BLOCK HEADER — only the injected
+    // block carries the "(existing triggers and nodes)" suffix.
     assertFalse(
-        promptNonNull.contains("CURRENT WORKFLOW STRUCTURE"),
+        promptNonNull.contains("CURRENT WORKFLOW STRUCTURE (existing triggers and nodes)"),
         "blank workflow structure must inject no workflow block")
     assertFalse(
         promptNonNull.contains("parent/child tree"),
@@ -114,7 +121,8 @@ class ClarifyWorkflowStructureCoreTest {
     assertTrue(
         prompt.contains("need_clarification"), "the system prompt must still assemble its contract")
     assertFalse(
-        prompt.contains("CURRENT WORKFLOW STRUCTURE"), "null workflow must not inject its block")
+        prompt.contains("CURRENT WORKFLOW STRUCTURE (existing triggers and nodes)"),
+        "null workflow must not inject its block")
   }
 
   @Test

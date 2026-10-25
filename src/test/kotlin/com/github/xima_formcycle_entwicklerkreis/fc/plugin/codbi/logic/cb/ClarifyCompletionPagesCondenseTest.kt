@@ -63,7 +63,8 @@ class ClarifyCompletionPagesCondenseTest {
                 String::class.java, // chatContext
                 String::class.java, // changeHistoryContext
                 String::class.java, // formListContext
-                String::class.java, // formKey
+                String::class.java, // formElementsContext
+                String::class.java, // currentFormKey
                 String::class.java, // currentFormTitle
                 Boolean::class.javaPrimitiveType, // useCodbi
                 Boolean::class.javaPrimitiveType, // askAllQuestions
@@ -71,6 +72,7 @@ class ClarifyCompletionPagesCondenseTest {
                 String::class.java, // formVariables
                 String::class.java, // workflowMails
                 String::class.java, // availableDatasources
+                String::class.java, // xslTemplates
                 Set::class.java) // clarificationTopics
     method.isAccessible = true
     return method.invoke(
@@ -87,11 +89,13 @@ class ClarifyCompletionPagesCondenseTest {
         null,
         null,
         null,
+        null,
         true,
         false,
         completionPages,
         formVariables,
         workflowMails,
+        null,
         null,
         emptySet<Any>()) as String
   }

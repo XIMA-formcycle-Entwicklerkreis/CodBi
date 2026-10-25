@@ -30,15 +30,44 @@ internal object WorkflowSpecNormalizer {
   /** The workflow-node type the Extended Accessor handler is REGISTERED under. */
   const val EXTENDED_ACCESSOR_NODE_TYPE = "CodbiExtendedAccessor"
 
+  /**
+   * The workflow-node type of the INSTALLED "create a record in another form" plugin
+   * (`de.xima.advanced.plugin`), i.e. the value that must end up in `WorkflowNode.ITEM_TYPE`.
+   */
+  const val REMOTE_FORM_RECORD_NODE_TYPE =
+      "de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin"
+
+  /**
+   * Legacy/non-installed spelling of the same node that the workflow reference used to document
+   * (`fc_plugin_create_record`). formcycle has no handler registered for it — creating a node with
+   * this type produces an invalid workflow ("Cannot validate node of kind …, no handler was
+   * registered for that node"), so it is rewritten to [REMOTE_FORM_RECORD_NODE_TYPE].
+   */
+  const val LEGACY_CREATE_RECORD_NODE_TYPE =
+      "de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin"
+
   /** The handler class — an accepted alias only; never valid as a persisted `ITEM_TYPE`. */
   const val EXTENDED_ACCESSOR_HANDLER_CLASS =
       "com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin"
 
-  /** Node collections that may hold further node objects (nested maps). */
+  /**
+   * Node collections that may hold further node objects (nested maps).
+   *
+   * `_elseChildNodes` is the NO/ELSE branch of a conditional node (`FC_MULTIPLE_CONDITION`,
+   * `CheckTrustLevelPlugin`) — the mirror of `_childNodes`. It must be normalised exactly like
+   * every other branch, otherwise a download/provider node inside the ELSE branch keeps a
+   * non-installed node type or an unresolved `%prev%` source.
+   */
   private val CHILD_COLLECTIONS =
       listOf(
           "chainedNodes",
           "_childNodes",
+          "_elseChildNodes",
+          "_noChildNodes",
+          "_falseChildNodes",
+          "_alternateChildNodes",
+          "_noBranchChildNodes",
+          "_elseNodes",
           "_handlerChildNodes",
           "nodes",
           "cases",
@@ -61,6 +90,16 @@ internal object WorkflowSpecNormalizer {
       type.endsWith(".CodbiExtendedAccessorNodePlugin") -> EXTENDED_ACCESSOR_NODE_TYPE
       type.equals("Extended Accessor", ignoreCase = true) -> EXTENDED_ACCESSOR_NODE_TYPE
       type.equals("Erweiterter Zugriff", ignoreCase = true) -> EXTENDED_ACCESSOR_NODE_TYPE
+      // Cross-form record creation: the OLD documented handler class has no registered handler in
+      // formcycle, so every spelling of it (and its display labels) is rewritten to the installed
+      // remote-form-record plugin.
+      type == LEGACY_CREATE_RECORD_NODE_TYPE -> REMOTE_FORM_RECORD_NODE_TYPE
+      type == REMOTE_FORM_RECORD_NODE_TYPE -> REMOTE_FORM_RECORD_NODE_TYPE
+      type.endsWith(".CreateRecordNodePlugin") -> REMOTE_FORM_RECORD_NODE_TYPE
+      type.equals("CreateRecordNodePlugin", ignoreCase = true) -> REMOTE_FORM_RECORD_NODE_TYPE
+      type.equals("Create remote form record", ignoreCase = true) -> REMOTE_FORM_RECORD_NODE_TYPE
+      type.equals("Vorgang in anderem Formular erstellen", ignoreCase = true) ->
+          REMOTE_FORM_RECORD_NODE_TYPE
       // Common misspelling of the import node: models often pluralise "VALUES". formcycle only
       // resolves the registered singular type.
       type.equals("FC_IMPORT_FORM_VALUES_FROM_XML", ignoreCase = true) ->

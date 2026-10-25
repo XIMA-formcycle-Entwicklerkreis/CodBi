@@ -48,6 +48,12 @@ const HOLISTIC_FILE_PREFIX = "Holistic.";
 const KEY = "supportedFormelementtypes";
 
 /**
+ * The hand-authored LOCALIZED description keys of a `classes[class]` entry. They are preserved
+ * verbatim on every regeneration (see {@link TStandardConfigClassSpec} in `codbi-common`).
+ */
+const LOCALIZED_DESCRIPTION_KEYS = ["descriptionDe", "descriptionIt"];
+
+/**
  * Extracts the plain FORMCYCLE widget class names of a functionality's `supportedFormelementtypes`
  * spec (see `TSupportedFormelementtypeSpec` in `functionality-meta.ts`). The spec may be a single
  * class name, an array of class names, or an object mapping class name → property requirements (in
@@ -508,6 +514,17 @@ for (const file of readdirSync(configurationsDir)) {
     for (const [cls, rawEntry] of Object.entries(classesMap)) {
       const description =
         typeof rawEntry === "string" ? rawEntry : ((rawEntry && rawEntry.description) ?? "");
+      // Hand-authored LOCALIZED descriptions are carried through verbatim — they are the only way to
+      // translate the classes that apply NO functionality (e.g. the marker classes of a date/time
+      // pair), which have no localized functionality `Summary` to fall back to.
+      const localized = {};
+      for (const key of LOCALIZED_DESCRIPTION_KEYS) {
+        const value =
+          rawEntry != null && typeof rawEntry === "object" ? String(rawEntry[key] ?? "").trim() : "";
+        if (value.length > 0) {
+          localized[key] = value;
+        }
+      }
       // Per-class widget list, in order of precedence:
       //   1. DERIVED from the class's OWN `funcs[cls]` FUNC(s) (each referenced functionality's
       //      `supportedFormelementtypes`), the normal case;
@@ -523,8 +540,10 @@ for (const file of readdirSync(configurationsDir)) {
           ? typesOfSpec(rawEntry.formelementtypes)
           : [];
       const types = derived.length > 0 ? derived : explicit;
-      mergedClasses[cls] =
-        types.length > 0 ? { description, formelementtypes: types } : { description };
+      mergedClasses[cls] = { description, ...localized };
+      if (types.length > 0) {
+        mergedClasses[cls].formelementtypes = types;
+      }
     }
     if (Object.keys(mergedClasses).length > 0) {
       configJson.classes = mergedClasses;

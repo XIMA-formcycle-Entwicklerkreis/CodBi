@@ -417,8 +417,8 @@
     "Media.MultipleUpload": {
       "id": "Media.MultipleUpload",
       "type": "functionality",
-      "summary": "Provides the HTML_Select_Injection.functionality .",
-      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "summary": "Applicable on an XUpload field to accept several files: adds a drag & drop area, a styled upload button and an overlapping-card preview of the selected files (maximizable, with per-file removal).",
+      "tsdoc": "Provides the {@link Media_MultipleUpload.functionality }.",
       "parameters": {
         "Maximum": "The number of files that may be uploaded.",
         "PostfixTooMany": "The message that is displayed after the Maximum if too many files were selected.",
@@ -928,6 +928,22 @@
       "parameters": {},
       "classDescriptions": {}
     },
+    "Holistic.Media.MultipleUpload": {
+      "id": "Holistic.Media.MultipleUpload",
+      "type": "standard",
+      "summary": "Registers a standard configuration that applies the Media.MultipleUpload functionality onto every upload field of the form.",
+      "tsdoc": "Registers a standard configuration that applies the **Media.MultipleUpload** functionality onto\nevery upload field (`\u003cinput type=\"file\"\u003e`) of the form.\nThis makes each upload field accept several files, renders a drag & drop area with a styled upload\nbutton and shows an overlapping-card preview of the selected files (maximizable and with the\npossibility to remove single files again).\nGeneral excluding CSS-Class available (**CodBi_XCL**).\nExclusive excluding CSS-Class available (**CodBi_XCL_MultipleUpload**).\nUpload fields that already carry a `data-cb-func` attribute are left untouched.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Holistic.Media.MultipleUpload.Single": {
+      "id": "Holistic.Media.MultipleUpload.Single",
+      "type": "standard",
+      "summary": "Registers a standard configuration that applies Media.MultipleUpload with a single-file limit to every upload field of the form.",
+      "tsdoc": "Registers a standard configuration that applies the **Media.MultipleUpload** functionality onto\nevery upload field (`\u003cinput type=\"file\"\u003e`) of the form with `Maximum` set to `1`.\nIt renders the same drag & drop area, styled upload button and maximizable preview as\n**Holistic.Media.MultipleUpload**, but selecting or dropping more than one file is rejected.\nGeneral excluding CSS-Class available (**CodBi_XCL**).\nExclusive excluding CSS-Class available (**CodBi_XCL_MultipleUpload_Single**).\nUpload fields that already carry a `data-cb-func` attribute are left untouched.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
     "LDAP.Autofill": {
       "id": "LDAP.Autofill",
       "type": "standard",
@@ -1140,6 +1156,10 @@
     "holistic.media.input.speech": "Holistic.Media.Input.Speech",
     "codbi_xcl_speech_whisper": "Holistic.Media.Input.Speech.Whisper",
     "holistic.media.input.speech.whisper": "Holistic.Media.Input.Speech.Whisper",
+    "codbi_xcl_multipleupload": "Holistic.Media.MultipleUpload",
+    "holistic.media.multipleupload": "Holistic.Media.MultipleUpload",
+    "codbi_xcl_multipleupload_single": "Holistic.Media.MultipleUpload.Single",
+    "holistic.media.multipleupload.single": "Holistic.Media.MultipleUpload.Single",
     "codbi_ldap_ac_account": "LDAP.Autofill",
     "codbi_ldap_ac_commonname": "LDAP.Autofill",
     "codbi_ldap_ac_department": "LDAP.Autofill",

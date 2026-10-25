@@ -11,6 +11,25 @@
         "type": "any",
         "optional": false,
         "variadic": false,
+        "options": [
+          "bw",
+          "by",
+          "be",
+          "bb",
+          "hb",
+          "hh",
+          "he",
+          "mv",
+          "ni",
+          "nw",
+          "rp",
+          "sl",
+          "sn",
+          "st",
+          "sh",
+          "th",
+          "THIS_YEAR"
+        ],
         "description": "A state abbreviation (bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th) or \"THIS_YEAR\" for the current year."
       },
       {
@@ -18,6 +37,7 @@
         "type": "any",
         "optional": false,
         "variadic": false,
+        "options": ["THIS_YEAR", "Friedensfest", "KATHOLISCH"],
         "description": "A state abbreviation, a year, \"THIS_YEAR\" (optionally with +/- arithmetic like \"THIS_YEAR + 1\"), \"Friedensfest\" or \"KATHOLISCH\"."
       },
       {
@@ -25,6 +45,7 @@
         "type": "any",
         "optional": false,
         "variadic": true,
+        "options": ["THIS_YEAR", "Friedensfest", "KATHOLISCH"],
         "description": "and beyond: More states, years, \"THIS_YEAR\", \"Friedensfest\" or \"KATHOLISCH\" in any order."
       }
     ],

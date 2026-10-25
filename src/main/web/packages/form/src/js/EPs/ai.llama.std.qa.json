@@ -17,6 +17,7 @@
         "type": "any",
         "optional": false,
         "variadic": false,
+        "options": ["true", "false"],
         "description": {
           "en": "UseInternet — `\"true\"` to enable Brave Search internet access. Default: `\"false\"`.",
           "de": "UseInternet - \"true\" aktiviert den Brave-Search-Internetzugriff. Standard: \"false\"."
@@ -27,6 +28,7 @@
         "type": "any",
         "optional": false,
         "variadic": false,
+        "options": ["true", "false"],
         "description": {
           "en": "Location — `\"true\"` to enable geolocation access. Default: `\"false\"`.",
           "de": "Location - \"true\" aktiviert den Standortzugriff. Standard: \"false\"."
@@ -37,6 +39,7 @@
         "type": "any",
         "optional": false,
         "variadic": false,
+        "options": ["German", "English"],
         "description": {
           "en": "Language — Language for the AI response (e.g. `\"German\"`, `\"English\"`). Appends",
           "de": "Language - Sprache der KI-Antwort (z. B. \"Deutsch\", \"Englisch\")."
@@ -47,6 +50,7 @@
         "type": "any",
         "optional": false,
         "variadic": false,
+        "options": ["de", "fr"],
         "description": {
           "en": "ResponseLanguage — Two-letter ISO 639-1 code (e.g. `\"de\"`, `\"fr\"`). Forces the AI",
           "de": "ResponseLanguage - Zwei-Buchstaben-ISO-639-1-Code (z. B. \"de\", \"fr\")."
@@ -77,6 +81,7 @@
         "type": "any",
         "optional": false,
         "variadic": false,
+        "options": ["true", "false"],
         "description": {
           "en": "JsonParse — `\"true\"` to parse the AI response as JSON. Default: `\"false\"`.",
           "de": "JsonParse - \"true\" parst die KI-Antwort als JSON. Standard: \"false\"."

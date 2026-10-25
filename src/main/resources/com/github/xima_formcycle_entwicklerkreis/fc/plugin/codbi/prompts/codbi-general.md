@@ -173,7 +173,7 @@ Return the form JSON normally. Include a top-level "_codbiApplicability" field w
 - formElementsProcessed: number of form elements processed
 - codbiElementsEvaluated: number of CodBi elements evaluated
 - considered: [{"id":"CodBi.ID","targets":["formElementId",...]}] — functionality IDs with form element ids they could apply to
-- applied: [{"id":"CodBi.ID","targets":[]}] — ONLY the footprint-less HOLISTIC standard configurations, each with an EMPTY targets array: Holistic.CSS.Standard, Holistic.Matomo.Tracking, Holistic.Media.Input.Speech, Holistic.Media.Input.Speech.Whisper. Do NOT list any footprint-bearing CodBi function here — the server derives those automatically from the before/after form diff.
+- applied: [{"id":"CodBi.ID","targets":[]}] — ONLY the footprint-less HOLISTIC standard configurations, each with an EMPTY targets array: Holistic.CSS.Standard, Holistic.Matomo.Tracking, Holistic.Media.Input.Speech, Holistic.Media.Input.Speech.Whisper, Holistic.Media.MultipleUpload. Do NOT list any footprint-bearing CodBi function here — the server derives those automatically from the before/after form diff.
 - skipped: [{"id":"CodBi.ID","targets":["formElementId",...],"reason":"..."}]
 - codbiVerdict: ALWAYS include exactly one of these values:
   - "none" — you evaluated the CodBi elements and NONE is applicable to this form.

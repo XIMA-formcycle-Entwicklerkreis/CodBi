@@ -65,8 +65,13 @@ interface ApiParameter {
   id: number;
   /** An optional detailed prompt describing how the AI should implement this parameter/global/class. */
   Prompt?: string;
-  /** For **E**lement-**P**laceholder parameters: the datatype hint (e.g. "array", "string", "any"). */
+  /** For **E**lement-**P**laceholder parameters: the datatype hint (e.g. "array", "string", "enum"). */
   Type?: string;
+  /**
+   * The known values of an option/enum parameter, entered as a comma-separated list (e.g.
+   * "Central, Unity, Outskirts"). Persisted as the signature parameter's `options` array.
+   */
+  Options?: string;
   /** For **E**lement-**P**laceholder parameters: whether the parameter may be omitted. */
   Optional?: boolean;
   /** For **E**lement-**P**laceholder parameters: whether further trailing parameters may follow. */
@@ -84,6 +89,8 @@ interface ApiSignatureParam {
   optional?: boolean;
   /** Whether further trailing parameters may follow. */
   variadic?: boolean;
+  /** Known valid values of an option/enum parameter. */
+  options?: Array<string>;
   /** A short description. */
   description?: string;
 }
@@ -1818,6 +1825,7 @@ export class Manager implements AfterViewInit {
 
     for (const element of toConvert ?? []) {
       const parsedIndex = Number.parseInt(element.Name, 10);
+      const options = this.parseParameterOptions(element.Options);
 
       params.push({
         index: Number.isNaN(parsedIndex) ? params.length + 1 : parsedIndex,
@@ -1825,6 +1833,7 @@ export class Manager implements AfterViewInit {
         type: element.Type && element.Type !== "" ? element.Type : "any",
         optional: element.Optional ?? false,
         variadic: element.Variadic ?? false,
+        options,
         description: element.Description,
       });
     }
@@ -1832,6 +1841,24 @@ export class Manager implements AfterViewInit {
     params.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
 
     return { params, returnType: "any", source: "manager" };
+  }
+  /**
+   * Splits the option list of a parameter row into the persisted `options` array.
+   *
+   * The options are edited in a textarea, so the text is split on COMMAS **and** on line breaks
+   * (`\r\n`, `\r`, `\n`) — a list pasted or typed one-option-per-line therefore yields the same
+   * array as a comma-separated one, and no `\r`/`\n` can ever end up inside a persisted option.
+   *
+   * @param raw The raw options text (e.g. "Central, Unity, Outskirts" or "Central\nUnity\nOutskirts").
+   *
+   * @returns The trimmed, non-empty options, or **undefined** when none were entered. */
+  private parseParameterOptions(raw: string | undefined): Array<string> | undefined {
+    const options = String(raw ?? "")
+      .split(/[,\r\n]+/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== "");
+
+    return options.length > 0 ? options : undefined;
   }
   /**
    * Builds the per-parameter TYPE metadata (`parameters`) persisted alongside a CodBi-Functionality's
@@ -1842,11 +1869,14 @@ export class Manager implements AfterViewInit {
    * @param toConvert The {@link ApiParameter } array to scan.
    *
    * @returns The **name → { type }** map to persist. */
-  parametersToTypeMeta(toConvert: ApiParameter[] | undefined): { [name: string]: { type: string } } {
-    const result: { [name: string]: { type: string } } = {};
+  parametersToTypeMeta(toConvert: ApiParameter[] | undefined): {
+    [name: string]: { type: string; options?: Array<string> };
+  } {
+    const result: { [name: string]: { type: string; options?: Array<string> } } = {};
     for (const element of toConvert ?? []) {
       if (element?.Name && element.Type && element.Type !== "") {
-        result[element.Name] = { type: element.Type };
+        const options = this.parseParameterOptions(element.Options);
+        result[element.Name] = options ? { type: element.Type, options } : { type: element.Type };
       }
     }
     return result;
@@ -1876,6 +1906,7 @@ export class Manager implements AfterViewInit {
         param.Type = spec.type ?? "any";
         param.Optional = spec.optional ?? false;
         param.Variadic = spec.variadic ?? false;
+        param.Options = spec.options?.join(", ");
 
         if ((param.Description === undefined || param.Description === "") && spec.description) {
           param.Description = spec.description;
@@ -1890,7 +1921,10 @@ export class Manager implements AfterViewInit {
    *
    * @param params     The parameter rows to enrich.
    * @param typeMeta   The persisted per-parameter type metadata, if any. */
-  applyTypeMetaToParameters(params: ApiParameter[], typeMeta: { [name: string]: { type?: string } } | undefined): void {
+  applyTypeMetaToParameters(
+    params: ApiParameter[],
+    typeMeta: { [name: string]: { type?: string; options?: Array<string> } } | undefined,
+  ): void {
     if (!typeMeta) {
       return;
     }
@@ -1900,10 +1934,13 @@ export class Manager implements AfterViewInit {
       if (meta?.type) {
         param.Type = meta.type;
       }
+      if (meta?.options && meta.options.length > 0) {
+        param.Options = meta.options.join(", ");
+      }
     }
   }
   /** The datatypes selectable for **E**lement-**P**laceholder parameters. */
-  parameterTypes: Array<string> = ["any", "string", "number", "boolean", "array", "object", "date"];
+  parameterTypes: Array<string> = ["any", "string", "number", "boolean", "array", "object", "date", "enum"];
   /**
    * Convert a tree node reflecting a CodBi Standard Configuration into an {@link object } reflecting one.
    *
@@ -3790,6 +3827,38 @@ export class Manager implements AfterViewInit {
     this.currentDescriptionValid = value.length > 0 && value.length < 500;
   }
   /**
+   * States whether the parameter's datatype is **enum**, which is the only datatype the option list
+   * (that comma-separated list of allowed values) applies to — the options textarea is therefore only
+   * rendered for such a parameter. The comparison is case- and whitespace-insensitive so a value that
+   * was loaded in another casing still shows the editor.
+   *
+   * @param parameter The parameter row to inspect.
+   *
+   * @returns Whether the row's datatype is **enum**. */
+  protected isEnumParameter(parameter: ApiParameter | undefined): boolean {
+    return (
+      String(parameter?.Type ?? "")
+        .trim()
+        .toLowerCase() === "enum"
+    );
+  }
+  /**
+   * Keeps the option list of an **enum** parameter free of line breaks. The options are edited in a
+   * TEXTAREA (a single-line input was far too narrow for a realistic list), so pressing `ENTER` or
+   * pasting a multi-line list would otherwise store `\r`/`\n` characters inside the option names.
+   * Every line break is therefore turned into the comma separator (each line becomes one option) and
+   * repeated blank lines collapse, so the stored value is always a single, comma-separated line.
+   *
+   * @param value     The raw textarea value emitted by `ngModelChange`.
+   * @param parameter The parameter row being edited (its `Options` is updated in place). */
+  protected onInput_ParameterOptions(value: string, parameter: ApiParameter) {
+    parameter.Options = String(value ?? "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/[ \t]*\n\s*/g, ", ")
+      .replace(/(, ){2,}/g, ", ")
+      .replace(/^\s*,\s*/, "");
+  }
+  /**
    * Handles the click on the Parameter's save row button.
    *
    * @param toSave          The actual data to save.
@@ -3879,20 +3948,30 @@ export class Manager implements AfterViewInit {
    * @param nodeData The {@link TreeNodeData } to populate.
    * @param segment  The local API-Doc segment to read the prompts from. */
   protected populateNodePrompts(nodeData: TreeNodeData, segment: { [key: string]: unknown }): void {
-    nodeData.CondensedPrompt = (segment["CondensedPrompt"] as string) ?? "";
-    nodeData.DetailedPrompt = (segment["DetailedPrompt"] as string) ?? "";
-    // The short description (a plain string or a per-language map), normalized onto the node data.
-    nodeData.Summary = this.normalizeSummary((segment as { Summary?: unknown }).Summary);
+    // Typed view of the dynamic API-Doc segment (index-signature access needs bracket notation).
+    const prompts = segment as {
+      ClassPrompts?: { [name: string]: string };
+      CondensedPrompt?: unknown;
+      DetailedPrompt?: unknown;
+      GlobalPrompts?: { [name: string]: string };
+      ParameterPrompts?: { [name: string]: string };
+      Summary?: unknown;
+    };
 
-    const parameterPrompts = (segment["ParameterPrompts"] ?? {}) as { [name: string]: string };
+    nodeData.CondensedPrompt = (prompts.CondensedPrompt as string) ?? "";
+    nodeData.DetailedPrompt = (prompts.DetailedPrompt as string) ?? "";
+    // The short description (a plain string or a per-language map), normalized onto the node data.
+    nodeData.Summary = this.normalizeSummary(prompts.Summary);
+
+    const parameterPrompts = prompts.ParameterPrompts ?? {};
     for (const param of nodeData.Parameter ?? []) {
       param.Prompt = parameterPrompts[param.Name] ?? "";
     }
-    const globalPrompts = (segment["GlobalPrompts"] ?? {}) as { [name: string]: string };
+    const globalPrompts = prompts.GlobalPrompts ?? {};
     for (const global of nodeData.globals ?? []) {
       global.Prompt = globalPrompts[global.Name] ?? "";
     }
-    const classPrompts = (segment["ClassPrompts"] ?? {}) as { [name: string]: string };
+    const classPrompts = prompts.ClassPrompts ?? {};
     for (const cssClass of nodeData.classes ?? []) {
       cssClass.Prompt = classPrompts[cssClass.Name] ?? "";
     }
@@ -4404,6 +4483,8 @@ export class Manager implements AfterViewInit {
 
     // #region Parse file listing fields (handles both JSON arrays and legacy CSV strings).
     const parseFileList = (raw: string): string[] => {
+      let text = raw;
+
       try {
         const parsed = JSON.parse(raw);
 
@@ -4412,13 +4493,13 @@ export class Manager implements AfterViewInit {
         }
 
         if (typeof parsed === "string") {
-          raw = parsed;
+          text = parsed;
         }
       } catch {
         // Not valid JSON — fall back to CSV split.
       }
 
-      return raw
+      return text
         .split(",")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);

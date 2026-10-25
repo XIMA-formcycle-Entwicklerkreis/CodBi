@@ -39,22 +39,32 @@
     },
     "CodBi_Fotocropper_Board": {
       "description": "Apply to the container element that holds the cropper preview board.",
+      "descriptionDe": "Auf das Container-Element anwenden, das die Zuschneide-Vorschaufläche enthält.",
+      "descriptionIt": "Applicare all'elemento contenitore che ospita l'area di anteprima del ritaglio.",
       "formelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
     },
     "CodBi_Fotocropper_Uploader": {
       "description": "Apply to the file upload (XUpload) element for the photo cropper.",
+      "descriptionDe": "Auf das Datei-Upload-Element (XUpload) des Foto-Zuschneiders anwenden.",
+      "descriptionIt": "Applicare all'elemento di caricamento file (XUpload) del ritaglio foto.",
       "formelementtypes": ["XUpload"]
     },
     "CodBi_Fotocropper_Update": {
       "description": "Apply to the update button element for the photo cropper.",
+      "descriptionDe": "Auf die Aktualisieren-Schaltfläche des Foto-Zuschneiders anwenden.",
+      "descriptionIt": "Applicare al pulsante di aggiornamento del ritaglio foto.",
       "formelementtypes": ["XButtonList"]
     },
     "CodBi_Fotocropper_ImageURL": {
       "description": "Apply to a hidden field that receives the cropped image URL.",
+      "descriptionDe": "Auf ein verstecktes Feld anwenden, das die URL des zugeschnittenen Bildes erhält.",
+      "descriptionIt": "Applicare a un campo nascosto che riceve l'URL dell'immagine ritagliata.",
       "formelementtypes": ["XTextField"]
     },
     "CodBi_Fotocropper_Foto": {
       "description": "Apply to the target image element that shows the cropped photo.",
+      "descriptionDe": "Auf das Zielbild-Element anwenden, das das zugeschnittene Foto anzeigt.",
+      "descriptionIt": "Applicare all'elemento immagine di destinazione che mostra la foto ritagliata.",
       "formelementtypes": ["XImage"]
     },
     "CodBi_People_OpenPLZ_AC_SET_PLZ": {

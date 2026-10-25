@@ -20,6 +20,8 @@
     },
     "CodBi_HTML_Panel_NoCordion": {
       "description": "Apply to a container inside an accordion group to exclude it from accordion behavior.",
+      "descriptionDe": "Auf einen Container innerhalb einer Accordion-Gruppe anwenden, um ihn vom Accordion-Verhalten auszunehmen.",
+      "descriptionIt": "Applicare a un contenitore all'interno di un gruppo accordion per escluderlo dal comportamento accordion.",
       "formelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
     },
     "CodBi_Accordion_A": {

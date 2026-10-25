@@ -579,10 +579,10 @@
                 stripedRows >
         <ng-template #header >
             <tr>
-                <th style="width:22%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
+                <th style="width:20%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
                 <th style="width:26%">{{"Input.Parameter.Description" | transloco }}</th>
-                <th style="width:42%">{{"Input.Parameter.Prompt" | transloco }}</th>
-                <th *ngIf = "showType" style="width:10%">{{"Input.Parameter.Type" | transloco }}</th></tr></ng-template>
+                <th style="width:36%">{{"Input.Parameter.Prompt" | transloco }}</th>
+                <th *ngIf = "showType" style="width:18%">{{"Input.Parameter.Type" | transloco }}</th></tr></ng-template>
 
                 <ng-template   #body
 
@@ -643,9 +643,22 @@
                                                 <select [(ngModel)]       = "parameter.Type"
                                                         [attr.placeholder] = "'Input.Parameter.phType' | transloco"
                                                         class              = "CodBi_Parameter_Type_Select">
-                                                    <option *ngFor = "let parameterType of parameterTypes" [value] = "parameterType">{{ parameterType }}</option></select></ng-template>
+                                                    <option *ngFor = "let parameterType of parameterTypes" [value] = "parameterType">{{ parameterType }}</option></select>
+                                                <!-- The option list only applies to an ENUM parameter, so it is shown
+                                                     only once "enum" is selected in the type select above. It is a
+                                                     TEXTAREA (a single-line input was too narrow for a realistic
+                                                     option list); every line break the user enters or pastes is
+                                                     turned into the comma separator by onInput_ParameterOptions(),
+                                                     so no \r/\n character ever reaches the stored value. -->
+                                                <textarea *ngIf              = "isEnumParameter( parameter )"
+                                                          class              = "CodBi_Parameter_Options_Input"
+                                                          [attr.placeholder] = "'Input.Parameter.phOptions' | transloco"
+                                                          rows               = "3"
+                                                          style           = "font-size : 1em ; width : 100% ; min-height : 4.5em ; margin-top : 4px ; resize : vertical ; border-radius : .5em ; border : solid ; border-color: green ; color: darkorange ;"
+                                                          [ngModel]       = "parameter.Options"
+                                                          (ngModelChange) = "onInput_ParameterOptions( $event, parameter )"></textarea></ng-template>
 
-                                            <ng-template #output >{{ parameter.Type }}</ng-template></p-cellEditor></td>
+                                            <ng-template #output >{{ parameter.Type }}<ng-container *ngIf = "isEnumParameter( parameter ) && parameter.Options"> &middot; {{ parameter.Options }}</ng-container></ng-template></p-cellEditor></td>
                                     <td>
                                         <div class="flex items-center justify-center gap-2">
                                             <button *ngIf = "!editing"

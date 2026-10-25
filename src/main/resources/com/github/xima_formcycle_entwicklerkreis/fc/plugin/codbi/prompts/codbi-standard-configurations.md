@@ -236,9 +236,16 @@ EXCLUSION class (XCL prefix). When the FORM-LEVEL Holistic.Media.Input.Speech st
 ### CodBi_XCL_Speech_Whisper
 EXCLUSION class (XCL prefix). When the FORM-LEVEL Holistic.Media.Input.Speech.Whisper standard is active, this class EXCLUDES THIS ONE FIELD from Whisper speech via a CSS `:not(.CodBi_XCL_Speech_Whisper)` selector. NEVER place it to REQUEST/ENABLE speech on a field — it does the opposite.
 
+### CodBi_XCL_MultipleUpload
+EXCLUSION class (XCL prefix). When the FORM-LEVEL Holistic.Media.MultipleUpload standard is active (multiple upload with drag & drop and file preview on all upload fields), this class EXCLUDES THIS ONE upload field from it via a CSS `:not(.CodBi_XCL_MultipleUpload)` selector. NEVER place it to REQUEST/ENABLE multiple upload on a field — it does the opposite.
+
 ## Speech Input Activation (HOLISTIC.MEDIA.INPUT.SPEECH)
 
 To ENABLE speech-to-text input on ALL text fields (a HOLISTIC standard configuration), do NOT place any CSS class on any element. Instead include {"id":"Holistic.Media.Input.Speech","targets":[]} in _codbiApplicability.applied (and likewise {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} for Whisper) — the server reads this and activates the standard configuration, which applies speech to every text field at render time.
+
+## Multiple Upload Activation (HOLISTIC.MEDIA.MULTIPLEUPLOAD)
+
+To ENABLE multiple-file upload (with drag & drop area, styled upload button and an overlapping-card preview that can be maximized and from which single files can be removed) on ALL upload fields (a HOLISTIC standard configuration), do NOT place `data-cb-func="Media.MultipleUpload"` on any upload element. Instead include {"id":"Holistic.Media.MultipleUpload","targets":[]} in _codbiApplicability.applied — the server activates the standard configuration, which applies the functionality to every upload field at render time. Use the per-element `data-cb-func="Media.MultipleUpload"` variant only when the request is explicitly about ONE upload field, or exclude a single field with the CodBi_XCL_MultipleUpload class.
 
 ## Matomo Tracking Activation
 
@@ -261,6 +268,9 @@ Server-side standard configuration that applies Speech-to-Text onto EVERY text f
 
 ### Holistic.Media.Input.Speech.Whisper
 Server-side standard configuration that applies Whisper Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} in _codbiApplicability.applied. Never place a CSS class on an element to enable it.
+
+### Holistic.Media.MultipleUpload
+Server-side standard configuration that applies Media.MultipleUpload onto EVERY upload field: drag & drop, a styled upload button and an overlapping-card preview of the selected files (maximizable, with per-file removal). Activated by reporting {"id":"Holistic.Media.MultipleUpload","targets":[]} in _codbiApplicability.applied. Never place `data-cb-func="Media.MultipleUpload"` on every upload field to achieve the form-wide behaviour — use the CodBi_XCL_MultipleUpload class only to exclude a single field.
 
 ### Holistic.Cleave.Date
 Server-side standard configuration that applies Cleave-based input formatting to date fields (datatype starting with "date"). The server activates it automatically based on the field datatypes present in the form.

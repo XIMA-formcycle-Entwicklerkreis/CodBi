@@ -62,11 +62,16 @@ internal class FormRenderProcessor {
       isModule: Boolean = true,
       prepend: Boolean = false
   ) {
+    // The lookup key may be the BARE element id (e.g. `Appointments.js`), while the descriptor is
+    // served under its folder-prefixed fileName (`Configurations/Appointments.js`). The URL must
+    // use
+    // the descriptor's own fileName, otherwise the resource servlet cannot resolve it.
+    val servedName = CodbiFormResourcesPlugin.formResources[filePath]?.fileName ?: filePath
     val node =
         if (renderConfig.isForceInline) {
           createScriptInline(id, readFormResourcePluginContent(filePath))
         } else {
-          createScriptExternal(id, createFormResourcesPluginUrl(filePath), isModule)
+          createScriptExternal(id, createFormResourcesPluginUrl(servedName), isModule)
         }
     if (prepend) {
       prependChild(form, node)
@@ -106,6 +111,23 @@ internal class FormRenderProcessor {
     appendChild(form, createScriptInline(id, code))
   }
 
+  /**
+   * Serialises the rendered `<form>` markup.
+   *
+   * Used to find out which elements the form ACTUALLY contains — in particular which
+   * standard-configuration CSS classes are in use (see [FormRenderCallback]) — because those are
+   * rendered onto the widgets and are not part of the persisted item attributes.
+   *
+   * @return The form's HTML markup, or an empty string when it cannot be serialised (a render must
+   *   never fail because of this inspection).
+   */
+  fun renderedFormMarkup(): String =
+      try {
+        form.write()
+      } catch (x: Exception) {
+        ""
+      }
+
   /** Inserts a child node before all existing children of the given parent. */
   private fun prependChild(parent: Node, child: Node) {
     (parent as FertileNode).children.add(0, child)
@@ -125,11 +147,13 @@ internal class FormRenderProcessor {
    */
   fun insertFormResourcePluginStyle(id: String, filePath: String) {
     val target = resolveStyleInsertionTarget()
+    // See insertFormResourcePluginScript: serve the descriptor's folder-prefixed fileName.
+    val servedName = CodbiFormResourcesPlugin.formResources[filePath]?.fileName ?: filePath
     if (renderConfig.isForceInline) {
       val content = readFormResourcePluginContent(filePath)
       appendChild(target, createStyle(id, content))
     } else {
-      val url = createFormResourcesPluginUrl(filePath)
+      val url = createFormResourcesPluginUrl(servedName)
       appendChild(target, createStylesheetLink(id, url))
     }
   }

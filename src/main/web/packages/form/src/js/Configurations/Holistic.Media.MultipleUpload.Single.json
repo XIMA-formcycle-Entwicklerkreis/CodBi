@@ -1,0 +1,9 @@
+{
+  "Description": "/functions/Configurations_Holistic.Media.MultipleUpload.loadConfig.html",
+  "classes": {
+    "CodBi_XCL_MultipleUpload_Single": ""
+  },
+  "targets": ".CXUpload input[type=\"file\"]:not(.CodBi_XCL):not(.CodBi_XCL_MultipleUpload_Single):not([data-cb-func])",
+  "func": "MEDIA.MULTIPLEUPLOAD",
+  "supportedFormelementtypes": ["Holistic"]
+}

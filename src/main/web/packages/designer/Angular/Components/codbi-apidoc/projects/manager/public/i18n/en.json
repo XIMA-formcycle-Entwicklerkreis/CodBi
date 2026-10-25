@@ -30,6 +30,7 @@
   "Input.Parameter.Prompt": "Prompt",
   "Input.Parameter.Type": "Type",
   "Input.Parameter.phType": "Datatype",
+  "Input.Parameter.phOptions": "Options (comma separated, e.g. Central, Unity, Outskirts)",
   "Input.Parameter.phName": "Name",
   "Input.Parameter.phIndex": "e.g. 0 or 0,1,2 or 1-5",
   "Input.Parameter.phDescription": "Description",

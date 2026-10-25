@@ -98,6 +98,15 @@ const previewApplied = new WeakMap<HTMLElement, string>();
 const previewAppliedById = new Map<string, string>();
 
 /**
+ * Monotonic revision of all **form-level** settings that influence every rendered widget — the active
+ * standard configurations (including holistic ones) and the form's global variables. It is folded into
+ * {@link elementPreviewSignature}, so bumping it re-applies every RUNNING element preview after the
+ * change. {@link notifyFormPreviewChanged} is called by the variables editor (ALT+V) and the
+ * standard-configuration selector of the CodBi form options.
+ */
+let formPreviewRevision = 0;
+
+/**
  * Delay before a RUNNING element preview is re-applied after a `data-cb-*` attribute change. The
  * preview page renders the SERVER-side draft, so the designer's persist differ needs time to sync the
  * change before the iframe reloads — otherwise the preview would re-render the OLD attribute values.
@@ -193,6 +202,15 @@ const BADGE_CSS = `
 .codbi-elem-marked:has(.codbi-holistic-item--open),
 .codbi-elem-marked:has(.codbi-func-item__params:hover),
 .codbi-elem-marked:has(.codbi-elem-badge--funcs:focus-within){z-index:9000}
+/* The SAME lift, driven by JS instead of the has() selector (see raiseMarkedWidget /
+   lowerMarkedWidget). The parameter table opens DOWNWARD and therefore overlaps the form elements
+   BELOW its own widget; those are marked widgets too and would otherwise paint OVER the table (each
+   marked widget is its own stacking context). The has() selector is not available in every browser
+   the designer runs in, and a form element may legitimately sit inside a container that forms its
+   own stacking context - so the owning widget is raised EXPLICITLY while its badge is hovered or
+   holds focus, above every other layer of the form. The two-class selector beats the base
+   z-index:2 rule regardless of the order. */
+.codbi-elem-marked.codbi-elem-marked--raised{z-index:2147483000}
 .codbi-mirror-icon{background-image:url("${MIRROR_ICON_URL}");background-repeat:no-repeat;background-position:center;background-size:contain}
 .codbi-mirror-icon svg{display:none}
 .codbi-elem-badge--funcs{overflow:visible;z-index:50}
@@ -454,8 +472,11 @@ interface IFunctionalityEntry {
 /** The badges injected so far, keyed by the Mirror item id. */
 const badges = new Map<string, HTMLElement>();
 
-/** The CodBi function badges injected so far, keyed by the item id. */
-const funcBadges = new Map<string, HTMLElement>();
+/**
+ * The CodBi function badges injected so far, keyed by the item id. Typed as `HTMLDivElement` because
+ * the badge is always created as a `<div>` and the parameter table builder expects that exact shape.
+ */
+const funcBadges = new Map<string, HTMLDivElement>();
 
 /** Widget cells whose badge-hover proximity listeners have already been installed. */
 const badgeHoverTracked = new WeakSet<HTMLElement>();
@@ -486,7 +507,11 @@ type TMarkerRoot = Document | ShadowRoot;
 
 /** Roots whose badge stylesheet was already injected / that are already observed. */
 const styledRoots = new WeakSet<TMarkerRoot>();
-const observedRoots = new WeakSet<TMarkerRoot>();
+/**
+ * Canvas roots whose `MutationObserver` is installed (keyed by root so the pending records can be
+ * drained, see {@link discardSelfMutations}).
+ */
+const observedRoots = new Map<TMarkerRoot, MutationObserver>();
 
 /** Foreign documents (e.g. the canvas iframe) that already received the ALT+V listener. */
 const keydownDocuments = new WeakSet<Document>();
@@ -633,6 +658,76 @@ function stringProp(props: TItemProperties | undefined, key: string): string {
 function notifyAttributeChange(): void {
   try {
     designerInstance()?.getPersistDiffer?.()?.checkForChanges?.();
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Whether the opt-in PREVIEW diagnostics are enabled (`window.CodbiPreviewDebug = true`).
+ *
+ * Prints one line per preview reload / fit / pin prune / loop heal, so a broken preview can be traced
+ * from the console instead of guessing: which element reloaded, into which generation, at which height,
+ * and whether the pin had to be corrected.
+ */
+function previewDebugEnabled(): boolean {
+  const enabled = (win: Window | null | undefined): boolean => {
+    try {
+      return Boolean((win as unknown as { CodbiPreviewDebug?: boolean } | null)?.CodbiPreviewDebug);
+    } catch {
+      return false;
+    }
+  };
+  if (enabled(window) || enabled(window.parent) || enabled(window.top)) {
+    return true;
+  }
+  // The designer panel runs inside its OWN iframe, so a flag set in the DevTools console of another
+  // frame may be invisible here. `localStorage` is shared by every same-origin frame — the most reliable
+  // switch: `localStorage.CodbiPreviewDebug = "1"` (and `= "0"`/`removeItem` to switch off).
+  try {
+    if (window.localStorage?.getItem("CodbiPreviewDebug") === "1") {
+      return true;
+    }
+  } catch {
+    /* ignore (storage disabled) */
+  }
+  // … and a URL switch for a quick check: `?CodbiPreviewDebug=1`.
+  try {
+    if (new URLSearchParams(window.location.search).get("CodbiPreviewDebug") === "1") {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/**
+ * Logs one preview diagnostic line when {@link previewDebugEnabled} is on.
+ *
+ * @param message The message, prefixed consistently.
+ * @param data    Optional values appended as JSON.
+ */
+function previewDebug(message: string, data?: unknown): void {
+  if (!previewDebugEnabled()) {
+    return;
+  }
+  previewTrace(message, data);
+}
+
+/**
+ * Logs one ALWAYS-ON preview trace line.
+ *
+ * Only the DECISIVE events use this (a reload was started / postponed, a clip gave up, a pin had to be
+ * corrected, a refresh pass summary) — a handful of lines per interaction and none while idle, so the
+ * information is available without a switch that may not reach the designer's own iframe.
+ *
+ * @param message The message, prefixed consistently.
+ * @param data    Optional values appended as JSON.
+ */
+function previewTrace(message: string, data?: unknown): void {
+  try {
+    console.info(`[[ CodBi / Preview ] ${message}`, data ?? "");
   } catch {
     /* ignore */
   }
@@ -1204,6 +1299,12 @@ export function elementHasCssClass(item: IMarkerItemLike, className: string): bo
 }
 
 /**
+ * The item whose `cssclasses` editor value was postponed by {@link setElementCssClass} with
+ * `deferNotify` — re-pushed into the designer's own editor on {@link flushElementCssClassChange}.
+ */
+let pendingCssClassEditorItem: IMarkerItemLike | null = null;
+
+/**
  * Adds (`on === true`) or removes (`on === false`) ONE CSS class on the element's `cssclasses`
  * property in every writable property bag, then nudges the persist differ so the change is synced.
  *
@@ -1215,9 +1316,19 @@ export function elementHasCssClass(item: IMarkerItemLike, className: string): bo
  * @param item      The target item.
  * @param className The CSS class to add/remove (e.g. `CodBi_NoFutureDate`).
  * @param on        **True** to apply the class, **false** to remove it.
+ * @param options   `deferNotify: true` writes the property bags ONLY — the persist-differ nudge (which
+ *   syncs the draft, so FORMCYCLE re-renders the element preview) and the debounced badge/preview
+ *   refresh are postponed until {@link flushElementCssClassChange} is called. Needed while a modal
+ *   question is open, because re-rendering the canvas under it clips the preview and brings
+ *   FORMCYCLE's own preview menu back.
  *
  * @returns **True** when at least one property bag was updated. */
-export function setElementCssClass(item: IMarkerItemLike, className: string, on: boolean): boolean {
+export function setElementCssClass(
+  item: IMarkerItemLike,
+  className: string,
+  on: boolean,
+  options: { deferNotify?: boolean } = {},
+): boolean {
   const name = className.trim();
   if (name === "") {
     return false;
@@ -1235,11 +1346,50 @@ export function setElementCssClass(item: IMarkerItemLike, className: string, on:
       : current.filter((entry) => entry !== name);
     props[CSS_CLASSES_PROPERTY] = next;
   }
+  previewDebug("cssclass write", {
+    name,
+    on,
+    deferred: Boolean(options.deferNotify),
+    classes: parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]),
+  });
+  if (options.deferNotify) {
+    // Everything that would make FORMCYCLE re-render the cell is postponed — including re-pushing the
+    // value into the designer's own `cssclasses` editor, whose `setValue` fires the property callback.
+    pendingCssClassEditorItem = item;
+    return true;
+  }
   notifyAttributeChange();
   // A standard-configuration class influences the rendered widget, so refresh a running preview.
   scheduleRefresh();
   refreshCssClassesEditor(item);
   return true;
+}
+
+/**
+ * Flushes what {@link setElementCssClass} postpones with `options.deferNotify`: the designer's
+ * `cssclasses` editor value, the persist-differ nudge (which syncs the changed draft) and the debounced
+ * badge/preview refresh.
+ *
+ * Used by the element CodBi panel when a class was written while the "activate this standard
+ * configuration?" question was OPEN — the canvas must not be rebuilt under the modal, but the change
+ * still has to reach the server (and the running preview) once the question is answered.
+ *
+ * @param options `refreshPreview: false` only nudges the persist differ (so the class is saved) and
+ *   skips everything that makes FORMCYCLE re-render the cell — the canvas then simply keeps showing
+ *   the previous preview. Used when the question is DISMISSED: the user declined, so nothing should be
+ *   re-actualised.
+ */
+export function flushElementCssClassChange(options: { refreshPreview?: boolean } = {}): void {
+  const pending = pendingCssClassEditorItem;
+  pendingCssClassEditorItem = null;
+  const refreshPreview = options.refreshPreview !== false;
+  if (pending && refreshPreview) {
+    refreshCssClassesEditor(pending);
+  }
+  notifyAttributeChange();
+  if (refreshPreview) {
+    scheduleRefresh();
+  }
 }
 
 /**
@@ -1251,14 +1401,19 @@ export function setElementCssClass(item: IMarkerItemLike, className: string, on:
  */
 function refreshCssClassesEditor(item: IMarkerItemLike): void {
   try {
-    if (designerInstance()?.getSelectedMasterItem?.() !== item) {
+    const selected = designerInstance()?.getSelectedMasterItem?.() === item;
+    if (!selected) {
+      previewDebug("cssclasses editor: item not selected — skipped");
       return;
     }
     const editor = findPropertyEditor(CSS_CLASSES_PROPERTY);
     if (!editor?.setValue) {
+      previewDebug("cssclasses editor: not mounted — skipped");
       return;
     }
-    editor.setValue(parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]));
+    const value = parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]);
+    previewDebug("cssclasses editor <- value", { value });
+    editor.setValue(value);
   } catch (x) {
     console.warn("[CodBi] Element markers: could not refresh the CSS-classes editor", x);
   }
@@ -1348,30 +1503,30 @@ function activeHolisticConfigs(): IActiveHolisticConfig[] {
  * with `Element.matches` (which natively handles comma-separated selectors inside one part). Returns
  * `false` on any selector error rather than throwing into the badge pipeline.
  *
- * The anchor in the designer is the item's CONTENT CELL (a `<td class="xm-item-content">` wrapper),
+ * The anchor in the designer is the item's CONTENT CELL (a wrapper such as `<td class="xm-item-content">`),
  * NOT the inner form `<input>`/`<fieldset>` the runtime selectors actually target. So besides testing
- * the anchor itself we also test the form controls nested inside it (via a descendant `querySelector`),
- * which is what makes selectors like `input[data-datepicker="1"]`, `input[data-vdt="time"]`,
- * `input[type="text"]` and `fieldset:...` resolve against the real widget even when the anchor is the
- * wrapper `<td>`.
+ * the anchor itself we also test the form control the item RENDERS — which is what makes selectors
+ * like `input[data-datepicker="1"]`, `input[data-vdt="time"]`, `input[type="text"]` and `fieldset:…`
+ * resolve against the real widget even when the anchor is the wrapper cell.
+ *
+ * Crucially a PAGE or CONTAINER cell contains the cells of its CHILD items, so a control of a child
+ * must never make the page look targeted: probing the plain first descendant made a page carry the
+ * green badge of e.g. `Holistic.Media.MultipleUpload` (whose targets are the upload FIELDS inside it)
+ * although the runtime never applies it to the page. Child items are recognised by their own
+ * `xm-item-container`, and controls living inside one are skipped — while the container's OWN
+ * rendered element (e.g. the item's `<fieldset>`, targeted by `Holistic.FieldsetsToPanel`) is still
+ * considered, because it sits inside ITS container, not inside a child one.
  */
-function holisticTargetsAnchor(anchor: HTMLElement, targets: string): boolean {
+export function holisticTargetsAnchor(anchor: HTMLElement, targets: string): boolean {
   if (!anchor || !targets) {
     return false;
   }
-  // The candidate elements to test: the anchor itself plus the form control(s) nested inside it.
-  // A `querySelector` (first match) is sufficient — the runtime targets one concrete control and the
-  // badge is bound to the owning wrapper, so a single control match grants the badge to the wrapper.
+  // The candidate elements to test: the anchor itself plus the form controls the item OWNS.
   const candidates: HTMLElement[] = [anchor];
-  try {
-    const inner = anchor.querySelector(
-      "input[type], textarea, select, fieldset, input, [role='presentation'] input, .xm-item-div input, .xm-item-div fieldset",
-    );
-    if (inner instanceof HTMLElement && !candidates.includes(inner)) {
+  for (const inner of holisticOwnControls(anchor)) {
+    if (!candidates.includes(inner)) {
       candidates.push(inner);
     }
-  } catch {
-    /* ignore invalid descendant selector */
   }
   for (const part of targets.split("~")) {
     const selector = part.trim();
@@ -1389,6 +1544,46 @@ function holisticTargetsAnchor(anchor: HTMLElement, targets: string): boolean {
     }
   }
   return false;
+}
+
+/** The designer's per-item container table (a nested one belongs to a CHILD item of the anchor). */
+const NESTED_ITEM_CONTAINER_SELECTOR = "table.xm-item-container, .xm-item-container";
+
+/**
+ * The form controls the anchor item itself renders — i.e. excluding every control that belongs to a
+ * NESTED (child) item. A leaf widget yields its own input(s)/textarea/select/fieldset; a page or
+ * container yields only the controls that are part of its own rendered element.
+ *
+ * @param anchor The item's content cell.
+ * @returns The controls owned by this item (possibly empty for a page/container).
+ */
+function holisticOwnControls(anchor: HTMLElement): HTMLElement[] {
+  const probe =
+    "input[type], textarea, select, fieldset, input, [role='presentation'] input, .xm-item-div input, .xm-item-div fieldset";
+  let found: Element[] = [];
+  try {
+    found = Array.from(anchor.querySelectorAll(probe));
+  } catch {
+    return [];
+  }
+  const own: HTMLElement[] = [];
+  for (const candidate of found) {
+    if (!(candidate instanceof HTMLElement)) {
+      continue;
+    }
+    let owner: Element | null = null;
+    try {
+      owner = candidate.closest(NESTED_ITEM_CONTAINER_SELECTOR);
+    } catch {
+      owner = null;
+    }
+    // A container INSIDE the anchor is a child item's: the control belongs to that child, not here.
+    if (owner && owner !== anchor && anchor.contains(owner)) {
+      continue;
+    }
+    own.push(candidate);
+  }
+  return own;
 }
 
 /**
@@ -1706,6 +1901,51 @@ function elementPreviewOn(item: IMarkerItemLike): boolean {
 }
 
 /**
+ * Forces a FRESH render of every per-element preview nested INSIDE `parentAnchor` (a page's or
+ * container's preview) that is still switched on. Closing a parent preview makes its child elements
+ * visible again, but a child iframe that was applied while the parent preview hid it can remain
+ * unclipped (showing the WHOLE page instead of the element). Dropping the applied signatures and
+ * re-applying the preview reloads the iframe and re-runs {@link clipPreviewToElement}, so the child
+ * keeps its preview — correctly clipped to the child element.
+ *
+ * Only called when the user explicitly switches a preview OFF (never during the periodic
+ * `refreshBadges` pass), so independently enabled previews are never lost on an unrelated refresh.
+ */
+function refreshNestedPreviews(parent: IMarkerItemLike, parentAnchor: HTMLElement): void {
+  try {
+    // Drop every preview iframe inside the closed parent first: this removes both the parent's own
+    // (about to be cleared) frame and any stale, unclipped child frame that currently shows the
+    // whole page. Each still-enabled child re-creates its frame below.
+    for (const frame of Array.from(parentAnchor.querySelectorAll<HTMLIFrameElement>(".codbi-func-preview-frame"))) {
+      frame.remove();
+    }
+
+    const items = designerInstance()?.items ?? {};
+    for (const other of Object.values(items)) {
+      if (other === parent) {
+        continue;
+      }
+      const otherAnchor = anchorFor(other);
+      if (!otherAnchor || otherAnchor === parentAnchor || !parentAnchor.contains(otherAnchor)) {
+        continue;
+      }
+      if (!elementPreviewOn(other)) {
+        continue;
+      }
+      const otherId = other.getId?.() ?? "";
+      cancelScheduledPreviewReapply(otherAnchor);
+      previewApplied.delete(otherAnchor);
+      if (otherId) {
+        previewAppliedById.delete(otherId);
+      }
+      applyElementPreview(other, otherAnchor, true);
+    }
+  } catch (x) {
+    console.warn("[CodBi] Preview: could not refresh the nested element previews", x);
+  }
+}
+
+/**
  * Signature of everything that influences an element's frontend preview: its identity PLUS every
  * `data-cb-*` attribute (the functionality list and its parameters) and its CSS classes (CodBi
  * standard configurations). The preview CONTROL attribute `data-cb-preview` is excluded — flipping
@@ -1727,7 +1967,10 @@ function elementPreviewSignature(item: IMarkerItemLike): string {
   }
   parts.sort();
   const cssClasses = parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]).sort();
-  return `elem\u0001${id}\u0001${parts.join("\u0002")}\u0001${cssClasses.join("\u0002")}`;
+  // The form-level revision makes a running preview reload after a change that is NOT visible on the
+  // element itself: a form global variable (fed into the CodBi parameters) or the activation state of
+  // a (holistic) standard configuration in the CodBi form options.
+  return `elem\u0001${id}\u0001${parts.join("\u0002")}\u0001${cssClasses.join("\u0002")}\u0001${formPreviewRevision}`;
 }
 
 /** Cancels a pending debounced re-apply of a running element preview. */
@@ -1757,9 +2000,20 @@ function schedulePreviewReapply(anchor: HTMLElement, item: IMarkerItemLike): voi
       if (!anchor.isConnected) {
         return;
       }
+      // A modal question is open: keep the preview untouched (the resume does a coalesced refresh, which
+      // re-derives this very re-apply with the then-current signature).
+      if (elementPreviewsSuspended()) {
+        return;
+      }
       const id = item.getId?.() ?? "";
       const live = resolveFuncItem(id, anchor, item);
       const signature = elementPreviewSignature(live);
+      previewDebug("reapply timer", {
+        id,
+        previous: previewApplied.get(anchor),
+        signature,
+        previewOn: elementPreviewOn(live),
+      });
       if (previewApplied.get(anchor) === signature) {
         return;
       }
@@ -1786,7 +2040,14 @@ function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boo
   try {
     const id = item.getId?.() ?? "";
     anchor.classList.toggle(ELEM_PREVIEW_CLASS, on);
+    // The preview SWITCH is always reflected (the class above), but no preview is (re)built or torn down
+    // while a modal question is open — see {@link suspendElementPreviews}.
+    if (elementPreviewsSuspended() && on) {
+      previewDebug("apply skipped (frozen)", { id });
+      return;
+    }
     if (!on) {
+      previewDebug("apply OFF", { id });
       cancelScheduledPreviewReapply(anchor);
       previewApplied.delete(anchor);
       if (id) {
@@ -1797,7 +2058,29 @@ function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boo
     }
     const signature = elementPreviewSignature(item);
     const previous = previewApplied.get(anchor);
+    // A signature match only means "applied" while the preview iframe is STILL THERE. The designer
+    // re-renders an element cell IN PLACE, which drops our iframe but keeps the cell element — and
+    // with it the `--rendered` class that hides the native element — so treating the stale signature
+    // as "already applied" left the cell permanently blank: no iframe, hidden content, no reload.
+    const hasFrame = anchor.querySelector(":scope > .codbi-func-preview-frame") !== null;
+    previewDebug("apply", {
+      id,
+      anchorConnected: anchor.isConnected,
+      signatureMatched: previous === signature,
+      knownById: previewAppliedById.get(id) !== undefined,
+      hasFrame,
+      signature,
+    });
     if (previous === signature) {
+      if (hasFrame) {
+        return;
+      }
+      // Same content, but the rendered DOM (with our iframe) was replaced → rebuild right away; there
+      // is nothing to sync, so the draft-sync delay of the reapply path does not apply.
+      previewTrace("rebuild preview after re-render", { id });
+      previewApplied.delete(anchor);
+      previewAppliedById.delete(id);
+      void renderServerPreview(anchor, item, signature);
       return;
     }
     // A preview is already running on this anchor, OR the element was previewed before and the
@@ -1862,6 +2145,12 @@ function ensureElementPreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement):
       // refreshBadges re-applies the preview (and the `after-set-property` callback refreshes).
       // `data-cb-preview` is the ONLY persistence for this setting — nothing else is written.
       setItemAttributeValue(live, ELEMENT_PREVIEW_ATTRIBUTE, current ? "0" : "1");
+      // Closing a page/container preview re-clips every preview nested inside it, so a child
+      // preview that was applied while the parent preview hid it does not keep showing the whole
+      // page (its own preview switch stays ON — see above).
+      if (current) {
+        refreshNestedPreviews(live, anchor);
+      }
       scheduleRefresh();
     });
     widget = button;
@@ -1890,6 +2179,29 @@ function ensureElementPreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement):
  *
  * The iframe is then clipped to the CONTAINED element (see {@link clipPreviewToElement}).
  */
+/**
+ * Minimum time between two reloads of the SAME preview iframe.
+ *
+ * A reload is expensive (the whole designer-preview page renders the form) and it can be requested from
+ * several places at once: an attribute change, the form-level revision, the designer re-rendering the
+ * cell and our own `resize`. Each reload resets the iframe to 360px and restarts the clip/fit loop, so
+ * an unthrottled burst compounds into a permanently broken cell — earlier reload requests are postponed
+ * instead of dropped.
+ */
+const MIN_PREVIEW_RELOAD_INTERVAL_MS = 1500;
+
+/** Timestamp of the last reload per preview iframe (see {@link MIN_PREVIEW_RELOAD_INTERVAL_MS}). */
+const previewLastReload = new WeakMap<HTMLIFrameElement, number>();
+
+/**
+ * The single queued retry of a postponed reload per preview iframe.
+ *
+ * At most ONE retry is queued: a burst of requests must not queue a burst of retries that then all fire
+ * together — each retry resets the iframe again, so a pile-up reproduces exactly the breakage the burst
+ * guard exists to prevent.
+ */
+const previewPostponedRetry = new WeakMap<HTMLIFrameElement, number>();
+
 async function renderServerPreview(
   wrapper: HTMLElement,
   child: IMarkerItemLike | undefined,
@@ -1914,8 +2226,53 @@ async function renderServerPreview(
       wrapper.appendChild(frame);
     }
     const target = frame;
+    // #region Burst guard — MUST run before ANY state is touched.
+    // A reload request can arrive several times at once (attribute change, form revision, the designer
+    // re-rendering the cell, our own `resize`). Postponing it AFTER resetting the iframe would leave the
+    // cell broken until the postponed call runs: the iframe was already shrunk to 360px, the height pin
+    // released, the fit record dropped and — worse — the clip generation bumped with `previewClipLoops`
+    // still marked alive, so even the self-healing pass would not restart the loop. That is exactly why
+    // the preview was wrecked immediately whenever the (slow) DevTools console produced more bursts.
+    const now = Date.now();
+    const lastReload = previewLastReload.get(target) ?? 0;
+    if (now - lastReload < MIN_PREVIEW_RELOAD_INTERVAL_MS) {
+      const wait = MIN_PREVIEW_RELOAD_INTERVAL_MS - (now - lastReload);
+      // Only ONE retry per iframe: a burst of requests must not queue a burst of retries that then fire
+      // together (each of them would reset the iframe again).
+      if (previewPostponedRetry.has(target)) {
+        previewTrace("reload postponed (already queued)", { elementRef, wait });
+        return;
+      }
+      previewTrace("reload postponed (burst guard)", { elementRef, wait });
+      const retry = window.setTimeout(() => {
+        previewPostponedRetry.delete(target);
+        if (target.isConnected && wrapper.isConnected) {
+          void renderServerPreview(wrapper, child, signature);
+          return;
+        }
+        // The designer re-rendered the cell while the request was queued: the captured wrapper is
+        // detached, so a direct reload would be a silent no-op. Re-resolve the CURRENT anchor instead —
+        // without this the cell could stay broken (360px iframe, no pin) forever.
+        previewTrace("postponed reload lost its anchor — refreshing", { elementRef });
+        previewApplied.delete(wrapper);
+        scheduleRefresh();
+      }, wait);
+      previewPostponedRetry.set(target, retry);
+      return;
+    }
+    previewLastReload.set(target, now);
+    // #endregion
+    // Every (re)pointing starts a NEW clip/fit generation, so the loop of the PREVIOUS load stops
+    // instead of continuing to clip the reloaded document. Without this each re-apply started yet
+    // another 16-step fit loop on the same frame; the loops accumulated and each step dispatches
+    // `resize` (which makes FORMCYCLE re-measure its cells), so the FIRST preview looked right while
+    // every later refresh left the cell clipped and the platform's own preview chrome visible.
+    const generation = nextPreviewClipGeneration(target);
+    // The loop counts as alive from the moment it is registered (not from its first step), so a refresh
+    // that lands while the preview is still LOADING does not start a competing loop.
+    previewClipLoops.set(target, true);
     // The preview page renders the form asynchronously, so the element may appear AFTER `load`.
-    target.addEventListener("load", () => scheduleClip(target, elementRef), { once: true });
+    target.addEventListener("load", () => scheduleClip(target, elementRef, 0, 0, generation), { once: true });
     // A failed request (e.g. an HTTP 404 because the derived URL is wrong on a live server) fires the
     // `error` event on the iframe — log the exact URL that was requested so the 404 is diagnosable.
     target.addEventListener(
@@ -1931,6 +2288,15 @@ async function renderServerPreview(
     // iframe before (re)pointing it at the preview so a later successful clip is actually visible.
     target.style.visibility = "";
     target.style.height = "360px";
+    // Drop a height pin left over from the PREVIOUS preview of this element: the pin belongs to the old
+    // content, and until the re-fit measures the reloaded preview it would clip it (too short) or leave
+    // a gaping area (too tall). It is re-applied by `fitPreviewHeight` once the element is there.
+    clearPreviewWrapperHeight(wrapper);
+    // The fit record (and a pending debounced fit) belongs to the OLD document as well — and the
+    // remembered height is reset so the first fit of the new document dispatches `resize` again.
+    unregisterPreviewFit(target);
+    delete target.dataset.codbiFitHeight;
+    previewTrace("reload", { elementRef, generation });
     target.src = fullUrl;
     wrapper.classList.add("codbi-func-preview--rendered");
     // Mark applied only once the iframe is pointed at the preview (a re-enable with the same target
@@ -1954,27 +2320,118 @@ async function renderServerPreview(
  */
 const PREVIEW_CLIP_MAX_ATTEMPTS = 60;
 
+/** How often a SUCCESSFUL clip is re-fitted (500 ms apart) so late-mounting editors settle. */
+const PREVIEW_CLIP_REFITS = 16;
+
+/**
+ * Generation counter per preview iframe, bumped every time the iframe is (re)pointed at a preview.
+ *
+ * A clip/fit loop belongs to exactly ONE load: without the counter every re-apply started ANOTHER
+ * 16-step loop on the same frame and the loops accumulated. Each step dispatches `resize`, which makes
+ * FORMCYCLE re-measure its cells, so repeated refreshes thrashed the canvas — the first preview was
+ * correct and every later one ended up clipped with the platform's own preview chrome visible.
+ */
+const previewClipGenerations = new WeakMap<HTMLIFrameElement, number>();
+
+/**
+ * Starts a new clip/fit generation for [frame].
+ *
+ * @param frame The preview iframe that is about to be (re)pointed at a preview.
+ * @returns The generation id the new loop has to carry.
+ */
+function nextPreviewClipGeneration(frame: HTMLIFrameElement): number {
+  const next = (previewClipGenerations.get(frame) ?? 0) + 1;
+  previewClipGenerations.set(frame, next);
+  return next;
+}
+
+/**
+ * Whether a clip/fit loop is currently alive for an iframe.
+ *
+ * A loop can end without completing — the preview was reloaded (new generation), the frame was removed,
+ * or the clip could not locate the element within the polling budget. The iframe then stays at its
+ * initial `360px`, while the cell keeps a `minHeight` pin from a previous, taller preview: the widget
+ * shows a large empty box and a clipped preview. {@link healRunningPreviews} restarts such a loop (and
+ * reconciles the pin) on the next refresh, so a stuck preview repairs itself instead of staying broken
+ * until the element is toggled.
+ */
+const previewClipLoops = new WeakMap<HTMLIFrameElement, boolean>();
+
 /**
  * Keeps the preview fitted to the element: retries until the element exists, then re-fits a few more
  * times AFTER success, because a functionality (e.g. `HTML.Input.TinyMCE`) mounts its editor
  * asynchronously AFTER the form rendered and thereby changes the element's height (and the preview
  * chrome settles late).
+ *
+ * While element previews are SUSPENDED (a modal question is open) every step is postponed instead of
+ * dropped: the fitting dispatches `resize`, which makes FORMCYCLE re-measure its cells and thereby
+ * rebuild the preview under the modal — and a preview rebuilt mid-question comes back clipped with the
+ * platform's own preview chrome visible.
  */
-function scheduleClip(frame: HTMLIFrameElement, elementRef: string, attempts = 0, fits = 0): void {
+function scheduleClip(
+  frame: HTMLIFrameElement,
+  elementRef: string,
+  attempts = 0,
+  fits = 0,
+  generation = previewClipGenerations.get(frame) ?? 0,
+): void {
+  // The iframe was removed (the designer re-rendered the cell, or the preview was switched off) …
+  if (!frame.isConnected) {
+    previewClipLoops.set(frame, false);
+    return;
+  }
+  // … or a NEWER load replaced the document this loop was started for: a stale loop must never touch
+  // the reloaded preview (it would clip it to the OLD element and keep dispatching `resize`).
+  if ((previewClipGenerations.get(frame) ?? 0) !== generation) {
+    previewClipLoops.set(frame, false);
+    return;
+  }
+  // Marks the loop as alive; every terminal path clears it again (see {@link previewClipLoops}).
+  previewClipLoops.set(frame, true);
+  if (elementPreviewsSuspended()) {
+    window.setTimeout(() => scheduleClip(frame, elementRef, attempts, fits, generation), 250);
+    return;
+  }
   const ok = clipPreviewToElement(frame, elementRef);
+  if (!ok && attempts === 0) {
+    // The element is not found on the FIRST poll after `load` — normal for a preview page whose form
+    // renders asynchronously, but THE decisive signal when a preview never recovers.
+    previewTrace("clip pending (element not rendered yet)", {
+      elementRef,
+      generation,
+      height: frame.style.height,
+      pin: frame.parentElement?.style.minHeight ?? "",
+    });
+  }
   if (ok) {
+    if (fits === 0) {
+      previewTrace("clip OK", {
+        elementRef,
+        generation,
+        attempts,
+        height: frame.style.height,
+        pin: frame.parentElement?.style.minHeight ?? "",
+      });
+    }
     // Re-fit after success so late-mounting editors (TinyMCE) and settling preview chrome are
     // reflected in the iframe height.
-    if (fits < 16) {
-      window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1, fits + 1), 500);
+    if (fits < PREVIEW_CLIP_REFITS) {
+      window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1, fits + 1, generation), 500);
     }
     return;
   }
   if (attempts >= PREVIEW_CLIP_MAX_ATTEMPTS) {
+    previewTrace("clip GAVE UP — preview collapsed", {
+      elementRef,
+      generation,
+      height: frame.style.height,
+      pin: frame.parentElement?.style.minHeight ?? "",
+    });
+    previewClipLoops.set(frame, false);
     collapseUnresolvedPreview(frame);
     return;
   }
-  window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1, fits), 250);
+  window.setTimeout(() => scheduleClip(frame, elementRef, attempts + 1, fits, generation), 250);
 }
 
 /** A form control — never a valid "item wrapper" (its siblings include the functionality's own UI). */
@@ -2157,12 +2614,31 @@ const PREVIEW_POPUP_SELECTORS = [
   "[role='listbox']",
 ];
 
-/** One active preview iframe + the element it shows, for pop-up-aware re-fitting. */
+/**
+ * Delay before the clip of a running preview is re-applied after its document re-rendered.
+ *
+ * The platform preview page inside the iframe re-renders the form when the draft changes — which is
+ * exactly what selecting a standard configuration does — and that re-render replaces the nodes whose
+ * siblings we had hidden, so the preview shows the WHOLE form page (with FORMCYCLE's preview tools)
+ * again. A small delay lets the re-render settle before we clip the fresh DOM.
+ */
+const PREVIEW_RECLIP_DELAY_MS = 250;
+
+/** One active preview iframe + the element it shows, for pop-up-aware re-fitting and re-clipping. */
 interface IPreviewFit {
   frame: HTMLIFrameElement;
   owner: Document;
   item: HTMLElement;
+  /** The designer element ref the preview is clipped to (`clipPreviewToElement`). */
+  elementRef: string;
   timer?: number;
+  reclipTimer?: number;
+  /** `true` while a clip is being applied — our own clip mutations must not trigger a re-clip. */
+  clipping?: boolean;
+  /** Failed re-clip attempts since the last success (see {@link scheduleReclip}). */
+  reclipAttempts?: number;
+  /** `true` when the last re-clip check found the preview document REPLACED (a navigation). */
+  docSwapped?: boolean;
 }
 
 /** Active previews (re-fitted whenever the preview document mutates). */
@@ -2171,16 +2647,25 @@ const previewFits = new Set<IPreviewFit>();
 const observedPreviewDocs = new WeakSet<Document>();
 
 /** Registers/updates the fit record for [frame] and returns it. */
-function registerPreviewFit(frame: HTMLIFrameElement, owner: Document, item: HTMLElement): IPreviewFit {
+function registerPreviewFit(
+  frame: HTMLIFrameElement,
+  owner: Document,
+  item: HTMLElement,
+  elementRef: string,
+): IPreviewFit {
   for (const entry of previewFits) {
     if (entry.frame === frame) {
       entry.owner = owner;
       entry.item = item;
+      entry.elementRef = elementRef;
+      entry.reclipAttempts = 0;
+      startPreviewWatchdog();
       return entry;
     }
   }
-  const entry: IPreviewFit = { frame, owner, item };
+  const entry: IPreviewFit = { frame, owner, item, elementRef };
   previewFits.add(entry);
+  startPreviewWatchdog();
   return entry;
 }
 
@@ -2191,9 +2676,157 @@ function unregisterPreviewFit(frame: HTMLIFrameElement): void {
       if (entry.timer !== undefined) {
         window.clearTimeout(entry.timer);
       }
+      if (entry.reclipTimer !== undefined) {
+        window.clearTimeout(entry.reclipTimer);
+      }
       previewFits.delete(entry);
     }
   }
+}
+
+/**
+ * @param frame - A preview iframe.
+ * @param clippedItem - The element the preview was clipped to (as returned by the last clip).
+ * @returns `true` when that element is no longer part of the preview document, i.e. the document
+ * re-rendered the form underneath us and the clip (the hidden siblings + hidden preview chrome) is
+ * gone — the preview then shows the WHOLE form page again.
+ *
+ * Exported so the watchdog's decision can be unit-tested without a live platform preview page.
+ */
+export function previewClipIsLost(frame: HTMLIFrameElement, clippedItem: HTMLElement | null | undefined): boolean {
+  if (!clippedItem) {
+    return false;
+  }
+  const cdoc = frame.contentDocument;
+  if (!cdoc?.body) {
+    return false;
+  }
+  return !cdoc.contains(clippedItem);
+}
+
+/**
+ * Re-applies the CLIP of a running preview whose clipped element is GONE from the preview document —
+ * the signature of the preview page having re-rendered the form.
+ *
+ * Switching ONE element's preview on and off never breaks: that path always creates a FRESH iframe and
+ * clips it from scratch. A re-render inside a live iframe is the case that used to leave the whole
+ * form page (and its preview tools) visible, so this runs from the preview document's observer AND
+ * from every refresh pass.
+ *
+ * @param entry - The preview to check.
+ * @returns `true` when a re-clip was performed.
+ */
+function reclipIfDetached(entry: IPreviewFit): boolean {
+  if (entry.clipping || !entry.frame.isConnected) {
+    return false;
+  }
+  // The preview page may have NAVIGATED (its own reload), which swaps the whole document: the
+  // observer then sits on a dead document and would never fire again. Re-observe the new one.
+  const cdoc = entry.frame.contentDocument;
+  entry.docSwapped = cdoc !== undefined && cdoc !== entry.owner;
+  if (cdoc && entry.docSwapped) {
+    entry.owner = cdoc;
+    observePreview(cdoc);
+  }
+  if (!previewClipIsLost(entry.frame, entry.item)) {
+    return false;
+  }
+  entry.clipping = true;
+  // Hide the iframe while re-clipping: the page currently shows the WHOLE form (the re-render wiped
+  // the hidden siblings), and the user must not see that flash.
+  entry.frame.style.visibility = "hidden";
+  try {
+    return clipPreviewToElement(entry.frame, entry.elementRef);
+  } finally {
+    entry.clipping = false;
+  }
+}
+
+/** Debounced {@link reclipIfDetached} (called from the preview document's DOM observer). */
+function scheduleReclip(entry: IPreviewFit): void {
+  if (entry.clipping || entry.reclipTimer !== undefined) {
+    return;
+  }
+  entry.reclipTimer = window.setTimeout(() => {
+    entry.reclipTimer = undefined;
+    if (!entry.frame.isConnected) {
+      unregisterPreviewFit(entry.frame);
+      return;
+    }
+    if (reclipIfDetached(entry)) {
+      previewTrace("re-clipped preview after re-render", {
+        elementRef: entry.elementRef,
+        docSwapped: entry.docSwapped === true,
+        readyState: entry.owner.readyState,
+        bodyChildren: entry.owner.body?.children.length ?? -1,
+      });
+      return;
+    }
+    // The element is still missing: retry a few times (the re-render may not be finished), then give
+    // up so a deleted element cannot keep the loop alive.
+    if (!previewClipIsLost(entry.frame, entry.item)) {
+      return;
+    }
+    entry.reclipAttempts = (entry.reclipAttempts ?? 0) + 1;
+    if (entry.reclipAttempts <= 10) {
+      scheduleReclip(entry);
+    } else {
+      previewTrace("re-clip gave up — preview collapsed", { elementRef: entry.elementRef });
+      collapseUnresolvedPreview(entry.frame);
+    }
+  }, PREVIEW_RECLIP_DELAY_MS);
+}
+
+/**
+ * Re-clips every running preview whose clipped element disappeared from its document.
+ *
+ * @returns The number of previews that were re-clipped.
+ */
+function resyncDetachedPreviewClips(): number {
+  let reclipped = 0;
+  for (const entry of Array.from(previewFits)) {
+    if (reclipIfDetached(entry)) {
+      reclipped++;
+    } else if (previewClipIsLost(entry.frame, entry.item)) {
+      // Still lost (the page is still rendering) — keep a retry alive instead of leaving the cell
+      // hidden until the next user interaction.
+      scheduleReclip(entry);
+    }
+  }
+  if (reclipped > 0) {
+    previewTrace("re-clipped previews after re-render", { count: reclipped });
+  }
+  return reclipped;
+}
+
+/**
+ * Interval of the preview watchdog (see {@link startPreviewWatchdog}).
+ *
+ * The preview page renders PROGRESSIVELY and re-renders itself whenever the draft changes — also late,
+ * when no designer event fires any more (the log showed the clip only becoming possible at the 10th/11th
+ * poll, i.e. after ~2.5 s of rendering). Such a late re-render silently throws the clip away, so a slow
+ * safety net re-checks the running previews instead of waiting for the next user interaction.
+ */
+const PREVIEW_WATCHDOG_INTERVAL_MS = 1000;
+
+/** Handle of the running watchdog interval, `null` while stopped. */
+let previewWatchdogHandle: number | null = null;
+
+/** Starts the preview watchdog (idempotent); it stops itself once no preview is running. */
+function startPreviewWatchdog(): void {
+  if (previewWatchdogHandle !== null) {
+    return;
+  }
+  previewWatchdogHandle = window.setInterval(() => {
+    if (previewFits.size === 0) {
+      if (previewWatchdogHandle !== null) {
+        window.clearInterval(previewWatchdogHandle);
+        previewWatchdogHandle = null;
+      }
+      return;
+    }
+    resyncDetachedPreviewClips();
+  }, PREVIEW_WATCHDOG_INTERVAL_MS);
 }
 
 /** Debounced re-fit of one preview (called from the DOM observer). */
@@ -2203,6 +2836,12 @@ function scheduleFit(entry: IPreviewFit): void {
   }
   entry.timer = window.setTimeout(() => {
     entry.timer = undefined;
+    // The designer re-renders cells itself (removing our iframe with them): a dead frame must not be
+    // re-fitted — that would dispatch `resize` for a preview that no longer exists.
+    if (!entry.frame.isConnected) {
+      unregisterPreviewFit(entry.frame);
+      return;
+    }
     fitPreviewHeight(entry);
   }, 60);
 }
@@ -2216,12 +2855,18 @@ function observePreview(owner: Document): void {
   try {
     const observer = new MutationObserver(() => {
       for (const entry of previewFits) {
-        if (entry.owner === owner) {
-          scheduleFit(entry);
+        if (entry.owner !== owner) {
+          continue;
         }
+        scheduleFit(entry);
+        // The preview page re-renders the form itself when the draft changes (a standard-configuration
+        // selection does exactly that) and drops the nodes we had hidden — see scheduleReclip.
+        scheduleReclip(entry);
       }
     });
-    observer.observe(owner.body, { childList: true, subtree: true });
+    // Observe the DOCUMENT ELEMENT, not the body: a re-render may replace the whole body node, and an
+    // observer on the old body would then never fire again.
+    observer.observe(owner.documentElement, { childList: true, subtree: true });
   } catch {
     /* ignore */
   }
@@ -2264,14 +2909,160 @@ function fitPreviewHeight(entry: IPreviewFit): number {
     }
   }
   const height = Math.max(60, Math.min(Math.ceil(bottom) + 12, 4000));
+  const unchanged = frame.dataset.codbiFitHeight === String(height);
+  previewDebug("fit", { height, unchanged });
   frame.style.height = `${height}px`;
-  // Ask the designer to recompute the item layout so the item grows to the iframe's new height.
-  try {
-    window.dispatchEvent(new Event("resize"));
-  } catch {
-    /* ignore */
+  applyPreviewWrapperHeight(frame, height);
+  // Ask the designer to recompute the item layout so the item grows to the iframe's new height — but
+  // ONLY when the height really changed. The fit runs up to 1 + {@link PREVIEW_CLIP_REFITS} times per
+  // apply; dispatching `resize` on every one of them made FORMCYCLE re-measure its cells again and
+  // again, which is what wrecked the canvas on repeated preview refreshes.
+  if (!unchanged) {
+    frame.dataset.codbiFitHeight = String(height);
+    try {
+      window.dispatchEvent(new Event("resize"));
+    } catch {
+      /* ignore */
+    }
   }
   return height;
+}
+
+/**
+ * Pins the fitted PREVIEW height on the preview wrapper (the element's own designer cell).
+ *
+ * The preview iframe carries an explicit height, but FORMCYCLE's designer re-measures a cell from its
+ * children whenever it re-renders — e.g. when the user switches to the workflow designer and back.
+ * Our own preview CSS hides those children, so that re-measurement restored the element's NATIVE
+ * (shorter) height and the taller preview was CUT OFF, although the preview switch was still on.
+ * Mirroring the fitted height onto the wrapper as `minHeight` makes the cell keep the preview height
+ * for as long as the preview runs; {@link clearPreviewWrapperHeight} removes it again when the
+ * preview is switched off, so an element always returns to its native height.
+ */
+function applyPreviewWrapperHeight(frame: HTMLIFrameElement, height: number): void {
+  const wrapper = frame.parentElement;
+  if (!wrapper || height <= 0) {
+    return;
+  }
+  wrapper.style.minHeight = `${height}px`;
+  wrapper.dataset.codbiPreviewHeight = String(height);
+  pinnedPreviewWrappers.add(wrapper);
+}
+
+/** Drops the preview-height pinning from a wrapper (see {@link applyPreviewWrapperHeight}). */
+function clearPreviewWrapperHeight(wrapper: HTMLElement | null): void {
+  if (!wrapper) {
+    return;
+  }
+  wrapper.style.minHeight = "";
+  delete wrapper.dataset.codbiPreviewHeight;
+  pinnedPreviewWrappers.delete(wrapper);
+}
+
+/**
+ * Wrappers that currently carry a preview height pin (see {@link applyPreviewWrapperHeight}).
+ *
+ * The pin must live exactly as long as the preview it belongs to. FORMCYCLE re-renders element cells
+ * IN PLACE, so a pin survived the removal/replacement of the preview inside it and every further
+ * refresh pinned yet another cell — after two or three refreshes the canvas layout was visibly wrong
+ * (tall gaps, wrongly clipped boxes). {@link prunePreviewPins} keeps the pins in sync with the
+ * previews that really exist.
+ */
+const pinnedPreviewWrappers = new Set<HTMLElement>();
+
+/**
+ * Releases every preview height pin that no longer belongs to a live preview: the wrapper was removed
+ * (the designer re-rendered the cell) or the preview iframe inside it is gone. Called from
+ * {@link refreshBadges}, so any refresh re-establishes a consistent layout instead of accumulating
+ * stale pins.
+ *
+ * The fit records are pruned the same way: a frame the designer removed must not keep a debounced fit
+ * alive, because that fit dispatches `resize` and makes FORMCYCLE re-measure cells for a preview that no
+ * longer exists.
+ */
+function prunePreviewPins(): void {
+  for (const wrapper of Array.from(pinnedPreviewWrappers)) {
+    const hasFrame = wrapper.querySelector(":scope > .codbi-func-preview-frame") !== null;
+    if (!wrapper.isConnected || !hasFrame) {
+      previewTrace("pin released", { connected: wrapper.isConnected, hasFrame });
+      clearPreviewWrapperHeight(wrapper);
+    }
+  }
+  for (const entry of Array.from(previewFits)) {
+    if (!entry.frame.isConnected) {
+      unregisterPreviewFit(entry.frame);
+    }
+  }
+}
+
+/**
+ * Makes the cell's height pin agree with the preview iframe inside it.
+ *
+ * The pin keeps FORMCYCLE from shrinking a taller preview, but the iframe's own height is the
+ * authoritative value: when the two disagree the cell shows a large empty gap (pin taller than the
+ * freshly reloaded 360px iframe) or clips the preview (pin shorter). A reload resets the iframe to
+ * 360px, so reconciling both on every refresh keeps the layout self-correcting.
+ *
+ * @param wrapper The element cell (the iframe's parent).
+ * @param frame   The preview iframe inside it.
+ */
+function reconcilePreviewPin(wrapper: HTMLElement, frame: HTMLIFrameElement): void {
+  const height = String(frame.style.height ?? "").trim();
+  if (height === "" || height === "0px") {
+    clearPreviewWrapperHeight(wrapper);
+    return;
+  }
+  if (wrapper.style.minHeight !== height) {
+    previewTrace("pin reconciled", { pin: wrapper.style.minHeight, frame: height });
+    wrapper.style.minHeight = height;
+  }
+  const pinValue = height.replace("px", "");
+  if (wrapper.dataset.codbiPreviewHeight !== pinValue) {
+    wrapper.dataset.codbiPreviewHeight = pinValue;
+  }
+  pinnedPreviewWrappers.add(wrapper);
+}
+
+/**
+ * Self-heals every RUNNING element preview (called from {@link refreshBadges}, i.e. after every refresh):
+ *
+ * 1. the cell's height pin is reconciled with the iframe's own height (see {@link reconcilePreviewPin});
+ * 2. a preview whose clip/fit loop died — e.g. its reload landed after the loop had already been
+ *    superseded, leaving the iframe stuck at the initial 360px — gets a fresh loop instead of staying
+ *    broken until the element is toggled by hand.
+ *
+ * @param items The designer's live items.
+ */
+function healRunningPreviews(items: Record<string, IMarkerItemLike>): void {
+  for (const item of Object.values(items ?? {})) {
+    try {
+      if (!item || !elementPreviewOn(item)) {
+        continue;
+      }
+      const anchor = anchorFor(item);
+      if (!anchor) {
+        continue;
+      }
+      const frame = anchor.querySelector<HTMLIFrameElement>(":scope > .codbi-func-preview-frame");
+      if (!frame || !frame.isConnected) {
+        // The designer re-rendered the cell and dropped our iframe: rebuild it instead of leaving the
+        // cell without a preview (see applyElementPreview — the stale signature must not count as
+        // "applied" once the iframe is gone).
+        if (!elementPreviewsSuspended()) {
+          applyElementPreview(item, anchor, true);
+        }
+        continue;
+      }
+      reconcilePreviewPin(anchor, frame);
+      if (previewClipLoops.get(frame) !== true) {
+        // Re-use the CURRENT generation: bumping it here would invalidate the loop the iframe's own
+        // `load` handler is about to start for exactly this document.
+        scheduleClip(frame, item.getId?.() ?? "", 0, 0, previewClipGenerations.get(frame) ?? 0);
+      }
+    } catch (x) {
+      console.warn("[CodBi] Preview: could not heal a running preview", x);
+    }
+  }
 }
 
 /**
@@ -2292,6 +3083,7 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     const el = elementRef ? findPreviewElement(cdoc, elementRef) : null;
     const owner = el?.ownerDocument;
     if (!el || !owner || !owner.body) {
+      previewDebug("clip miss", { elementRef, found: el !== null, readyState: cdoc.readyState });
       return false;
     }
     let item: HTMLElement = resolveItemWrapper(el, owner) ?? el;
@@ -2381,9 +3173,15 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     } catch {
       item.scrollIntoView();
     }
-    const fit = registerPreviewFit(frame, owner, item);
+    const fit = registerPreviewFit(frame, owner, item, elementRef);
     observePreview(owner);
     fitPreviewHeight(fit);
+    // A previous give-up hid the frame (and the document) — a successful clip must reveal it again.
+    // This runs last so the freshly clipped content is shown, never the unclipped page.
+    frame.style.visibility = "";
+    if (owner.documentElement) {
+      owner.documentElement.style.visibility = "";
+    }
     return true;
   } catch (x) {
     console.error("[CodBi] Preview: could not clip the preview to the element", x);
@@ -2535,6 +3333,9 @@ function collapseUnresolvedPreview(frame: HTMLIFrameElement): void {
   try {
     frame.style.visibility = "hidden";
     frame.style.height = "0";
+    // No element was found, so there is no preview height to hold — release the pin so the cell can
+    // shrink back to its native size instead of keeping a stale tall min-height.
+    clearPreviewWrapperHeight(frame.parentElement);
     const doc = frame.contentDocument;
     if (doc?.documentElement) {
       doc.documentElement.style.visibility = "hidden";
@@ -2666,6 +3467,8 @@ function clearServerPreview(wrapper: HTMLElement): void {
       frame.remove();
     }
     wrapper.classList.remove("codbi-func-preview--rendered");
+    // The preview is gone, so the cell must return to its native height.
+    clearPreviewWrapperHeight(wrapper);
   } catch {
     /* ignore */
   }
@@ -2757,10 +3560,125 @@ function installBadgeStyles(root: TMarkerRoot): void {
   }
 }
 
+/** Selector matching every node the element markers / element previews create and maintain themselves. */
+const OWN_NODE_SELECTOR = [
+  ".codbi-elem-badge",
+  ".codbi-func-badge",
+  ".codbi-func-preview-switch",
+  ".codbi-func-preview-frame",
+  ".codbi-elem-preview",
+  ".codbi-func-preview--rendered",
+  "#codbi-elem-marker-css",
+].join(", ");
+
+/** Attributes whose changes are worth reporting — everything else is designer noise. */
+const OBSERVED_ATTRIBUTES = [
+  "style",
+  "src",
+  "class",
+  "data-codbi-preview",
+  "data-codbi-preview-height",
+  "data-codbi-fit-height",
+];
+
+/**
+ * @param node - A mutated node (or the target of an attribute mutation).
+ * @returns `true` when the node is one of OUR OWN badge/preview nodes (or lives inside one).
+ */
+function isOwnNode(node: Node | null | undefined): boolean {
+  const el = node instanceof Element ? node : (node?.parentElement ?? null);
+  if (!el) {
+    return false;
+  }
+
+  try {
+    return el.matches(OWN_NODE_SELECTOR) || el.closest(OWN_NODE_SELECTOR) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param node - A mutated node.
+ * @returns `true` when the node IS a preview frame or HOSTS one (the cell whose height we pin).
+ */
+function isPreviewHost(node: Node | null | undefined): boolean {
+  const el = node instanceof Element ? node : null;
+  if (!el) {
+    return false;
+  }
+  if (el.classList.contains("codbi-func-preview-frame") || pinnedPreviewWrappers.has(el)) {
+    return true;
+  }
+
+  try {
+    return el.querySelector(":scope > .codbi-func-preview-frame") !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param record - A mutation record reported for the canvas root.
+ * @returns `true` when the record was caused by the element markers / previews THEMSELVES.
+ */
+function isOwnMutation(record: MutationRecord): boolean {
+  if (record.type === "attributes") {
+    if (isOwnNode(record.target)) {
+      return true;
+    }
+    // Fitting/pinning a preview resizes the FRAME and the cell that hosts it — both are ours.
+    const name = record.attributeName ?? "";
+    return (name === "style" || name === "src" || name.startsWith("data-codbi")) && isPreviewHost(record.target);
+  }
+
+  const nodes = [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)];
+  return nodes.length > 0 && nodes.every((node) => isOwnNode(node) || isPreviewHost(node));
+}
+
+/**
+ * @returns `true` when the designer replaced canvas DOM that carried one of OUR widgets, i.e. when a
+ * badge, a preview switch or a running preview frame was detached and has to be rebuilt.
+ *
+ * This is the ONLY reason a canvas mutation may trigger a refresh: the FORMCYCLE designer re-renders
+ * the canvas constantly (it swaps `<head>` styles, re-measures bodies, toggles classes), and reacting
+ * to that chatter kept restarting the refresh — the storm in the preview log. Everything else that
+ * changes what a badge shows (properties, attributes, the item set) already reaches us through the
+ * designer's own callbacks (`items-created`, `set-property`, …).
+ */
+function lostOwnWidgets(): boolean {
+  for (const widget of badges.values()) {
+    if (!widget.isConnected) {
+      return true;
+    }
+  }
+  for (const widget of funcBadges.values()) {
+    if (!widget.isConnected) {
+      return true;
+    }
+  }
+  for (const widget of previewSwitches.values()) {
+    if (!widget.isConnected) {
+      return true;
+    }
+  }
+  for (const wrapper of pinnedPreviewWrappers) {
+    if (!wrapper.isConnected || wrapper.querySelector(":scope > .codbi-func-preview-frame") === null) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Observes `root` for DOM changes (once). Also mirrors the ALT+V shortcut into a foreign document
  * (the canvas iframe), whose keydown events do not bubble to the designer frame. Shadow-root events
  * are composed and DO reach the designer document, so no extra listener is needed there.
+ *
+ * The callback ignores mutations of our OWN nodes: the clip/fit loops resize and re-pin the preview
+ * iframes on their own timers (i.e. BETWEEN two refresh passes, where draining the pass' own records
+ * cannot help), and reacting to that churn queued one refresh after another — the refresh storm that
+ * re-fitted every preview dozens of times and eventually broke the canvas layout.
  */
 function observeRoot(root: TMarkerRoot): void {
   const ownerDoc = root instanceof Document ? root : (root.ownerDocument ?? document);
@@ -2775,14 +3693,61 @@ function observeRoot(root: TMarkerRoot): void {
   if (observedRoots.has(root)) {
     return;
   }
-  observedRoots.add(root);
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((records) => {
     if (refreshing) {
       return;
     }
+    // Only a GENUINE designer re-render may schedule a refresh: neither the records a pass produced
+    // itself nor the churn of our badge/preview nodes between passes (the clip/fit loops resize the
+    // frames and pin the cells on their own timers) are a reason to re-render the badges again.
+    const external = records.filter((record) => !isOwnMutation(record));
+    if (records.length > 0 && external.length === 0) {
+      return;
+    }
+    const sample = external[0];
+    const sampleTarget = sample?.target as Element | null | undefined;
+    const sampleText = sample
+      ? `${sample.type}${sample.attributeName ? `:${sample.attributeName}` : ""} <${sampleTarget?.nodeName?.toLowerCase() ?? "?"}>`
+      : "";
+    // A designer re-render only matters when it took one of our widgets down with it.
+    if (!lostOwnWidgets()) {
+      previewDebug("canvas mutation ignored", {
+        records: records.length,
+        external: external.length,
+        sample: sampleText,
+      });
+      return;
+    }
+    previewTrace("canvas mutation → refresh", {
+      records: records.length,
+      external: external.length,
+      sample: sampleText,
+    });
     scheduleRefresh();
   });
-  observer.observe(root, { childList: true, subtree: true });
+  observer.observe(root, { attributes: true, attributeFilter: OBSERVED_ATTRIBUTES, childList: true, subtree: true });
+  observedRoots.set(root, observer);
+}
+
+/**
+ * Throws away the mutation records that a refresh pass produced ITSELF.
+ *
+ * A `MutationObserver` callback is a microtask, so it runs AFTER {@link refreshBadges} has reset its
+ * `refreshing` flag — the flag alone therefore cannot stop a pass from re-triggering itself. Every
+ * pass that touches the canvas (badges, preview switches, height pins) would queue another pass 60 ms
+ * later, which again touches the canvas: an endless refresh storm that keeps re-fitting the preview
+ * iframes while the user is working (the "layout breaks after the third toggle" symptom). Draining the
+ * pending records at the end of a pass cuts that feedback loop, while genuine designer mutations
+ * arriving AFTER the pass still schedule the next one.
+ */
+function discardSelfMutations(): void {
+  for (const observer of observedRoots.values()) {
+    try {
+      observer.takeRecords();
+    } catch {
+      /* the observed root may be gone (canvas iframe replaced) */
+    }
+  }
 }
 
 /**
@@ -3997,9 +4962,27 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
       badge.dataset.codbiFocusWired = "1";
       badge.addEventListener("focusin", () => {
         badge.classList.add("codbi-elem-badge--focus-active");
+        // A focused (opened) parameter table must stay in front of the elements it overlaps.
+        raiseMarkedWidget(badge.parentElement);
       });
-      badge.addEventListener("focusout", () => {
+      badge.addEventListener("focusout", (event) => {
         badge.classList.remove("codbi-elem-badge--focus-active");
+        // Only lower the widget when the focus LEAVES the badge: moving from a value input to the
+        // "+ Add" trigger must not drop the lift (the table would slide behind the next element).
+        const next = (event as FocusEvent).relatedTarget as Node | null;
+        if (!next || !badge.contains(next)) {
+          lowerMarkedWidget(badge.parentElement);
+        }
+      });
+      // The badge itself never captures the pointer (see the note after BADGE_CSS), but its sub-badges
+      // do — so entering one of them reaches these listeners. Raising the WHOLE marked widget for as
+      // long as the pointer is over (or in) the badge keeps the parameter table on top.
+      badge.addEventListener("mouseenter", () => raiseMarkedWidget(badge.parentElement));
+      badge.addEventListener("mouseleave", () => {
+        // `:focus-within` keeps the lift while a control inside the badge still holds focus.
+        if (!badge.matches(":focus-within")) {
+          lowerMarkedWidget(badge.parentElement);
+        }
       });
     }
   }
@@ -4055,9 +5038,41 @@ function removeAllFuncBadges(): void {
   }
   funcBadges.clear();
   for (const widget of markedFuncWidgets) {
-    widget.classList.remove("codbi-elem-marked");
+    // Drop the JS-driven lift as well — a stuck `--raised` would keep the element above every other
+    // form element even after the badges were removed.
+    widget.classList.remove("codbi-elem-marked", RAISED_CLASS);
   }
   markedFuncWidgets.clear();
+}
+
+/**
+ * The class that lifts a marked widget — and with it its parameter popup — above EVERY other layer of
+ * the form while the widget's badge is hovered or holds focus (see the `--raised` rules in
+ * {@link BADGE_CSS}). Toggled from JS rather than by `:has()`, so the popup is reliably readable on
+ * top of the form elements it overlaps, in every browser.
+ */
+const RAISED_CLASS = "codbi-elem-marked--raised";
+
+/** Raises a marked widget so its open parameter table paints over every neighbouring form element. */
+function raiseMarkedWidget(widget: HTMLElement | null): void {
+  widget?.classList.add(RAISED_CLASS);
+}
+
+/**
+ * Lowers a marked widget again — but only when its badge neither holds focus nor is still hovered:
+ * a control inside the table (a value input, the "+ Add" trigger) can keep the focus while the
+ * pointer briefly leaves the widget, and dropping the lift then would hide the table behind the
+ * neighbouring element mid-edit.
+ */
+function lowerMarkedWidget(widget: HTMLElement | null): void {
+  if (!widget) {
+    return;
+  }
+  const active = widget.ownerDocument?.activeElement ?? null;
+  if (active && widget.contains(active)) {
+    return;
+  }
+  widget.classList.remove(RAISED_CLASS);
 }
 
 /** Highlights one `data-cb-func` element with the darkorange "marked" border (idempotent). */
@@ -4083,10 +5098,16 @@ function pruneMarkedFuncWidgets(): void {
  * The canvas discovery (root detection + stylesheet injection) runs INDEPENDENT of the marker mode,
  * because the unconfigured Mirror placeholder must load `mirror-icon.svg` even when markers are off.
  */
+/** Counter of {@link refreshBadges} passes, used by the preview diagnostics. */
+let refreshPass = 0;
+
 function refreshBadges(): void {
   const enabled = isMarkEnabled();
   const elementPreview = previewElementsEnabled();
   refreshing = true;
+  refreshPass++;
+  const pass = refreshPass;
+  const stats = { previewsOn: 0, frames: 0, pinned: 0 };
   try {
     const designer = designerInstance();
     const items = designer?.items ?? {};
@@ -4170,6 +5191,26 @@ function refreshBadges(): void {
         dropPreviewSwitch(id);
       }
     }
+    // Release preview height pins whose preview is gone (the designer re-renders cells in place, so a
+    // pin used to outlive its preview and every further refresh pinned another cell – the canvas
+    // layout drifted apart after a couple of refreshes).
+    prunePreviewPins();
+    // … and make the remaining ones agree with their iframe again, restarting a preview whose clip/fit
+    // loop died (see healRunningPreviews).
+    healRunningPreviews(items);
+    // A preview whose document re-rendered itself lost the clip (the platform preview page re-renders
+    // the form on every draft change — i.e. on each standard-configuration selection) and would show
+    // the WHOLE form page again; re-clip it before anyone can see that.
+    resyncDetachedPreviewClips();
+    stats.previewsOn = livePreview.size;
+    // Count in the roots we actually manage: the canvas DOCUMENT or its SHADOW ROOT (a document query
+    // does not see into a shadow root — which is why this used to log `frames: 0` while previews ran).
+    stats.frames = 0;
+    for (const root of observedRoots.keys()) {
+      stats.frames += root.querySelectorAll("iframe.codbi-func-preview-frame").length;
+    }
+    stats.pinned = pinnedPreviewWrappers.size;
+    previewTrace("refresh pass", { pass, ...stats });
     if (enabled) {
       // Drop Mirror badges whose item no longer exists or is no longer a Mirror.
       for (const id of Array.from(badges.keys())) {
@@ -4191,6 +5232,8 @@ function refreshBadges(): void {
       removeAllFuncBadges();
     }
   } finally {
+    // Drop the records OUR OWN pass just produced, so the observer does not queue the next pass.
+    discardSelfMutations();
     refreshing = false;
   }
   // Fill in the human-readable names for linked Mirrors (async, cached, idempotent).
@@ -4220,6 +5263,63 @@ function scheduleRefresh(): void {
  * callback used to provide.
  */
 export function refreshCodbiElementMarkers(): void {
+  scheduleRefresh();
+}
+
+/**
+ * Nesting depth of {@link suspendElementPreviews}. While it is `> 0` NO element preview is (re)applied
+ * and the preview-fitted resizes are postponed, so the designer canvas is not rebuilt.
+ */
+let previewSuspendDepth = 0;
+
+/**
+ * Suspends every element-preview (re)application until the matching {@link resumeElementPreviews}.
+ *
+ * Used while a MODAL question is open (the "activate this standard configuration?" dialog): the draft
+ * sync, the badge refresh and the preview re-apply each make FORMCYCLE re-render the element cell, and
+ * a preview that is rebuilt/reloaded under the modal comes back clipped (its fitted height no longer
+ * matches) and with the platform's own preview chrome visible — even though the user has not decided
+ * anything yet. Badges are still painted, only the preview WORK is frozen. Calls nest.
+ */
+export function suspendElementPreviews(): void {
+  previewSuspendDepth++;
+}
+
+/**
+ * Ends a {@link suspendElementPreviews} suspension. When the last one ends, ONE coalesced refresh runs
+ * so the previews catch up with whatever changed while the modal was open.
+ *
+ * @param refresh `false` unfreezes WITHOUT re-applying anything — used when the modal question was
+ *   DISMISSED, where re-actualising the previews is exactly what the user does not want. The freeze is
+ *   still released, so a later refresh (any other change) picks the state up normally.
+ */
+export function resumeElementPreviews(refresh = true): void {
+  previewSuspendDepth = Math.max(0, previewSuspendDepth - 1);
+  if (previewSuspendDepth === 0 && refresh) {
+    scheduleRefresh();
+  }
+}
+
+/** Whether element previews are currently frozen (see {@link suspendElementPreviews}). */
+function elementPreviewsSuspended(): boolean {
+  return previewSuspendDepth > 0;
+}
+
+/**
+ * Notifies the overlay that a **form-level** setting changed which influences every rendered widget,
+ * so all RUNNING element previews are re-applied with the freshly synced draft:
+ * - a form global variable was (re)set — e.g. through the global-variable picker (ALT+V) in the
+ *   variables tab of the CodBi form options. Global variables feed the CodBi parameters
+ *   (`<functionality>_<parameter>`) and the standard configurations' `globals`.
+ * - a standard configuration (notably a **holistic** one, which resolves its targets by a runtime
+ *   selector) was activated/deactivated in the CodBi form options.
+ *
+ * The revision is folded into {@link elementPreviewSignature}, so `refreshBadges` reaches
+ * {@link applyElementPreview}, which detects the changed signature and debounces a reload of the
+ * preview iframe (the server-side draft needs time to sync — see {@link PREVIEW_REAPPLY_DELAY_MS}).
+ */
+export function notifyFormPreviewChanged(): void {
+  formPreviewRevision++;
   scheduleRefresh();
 }
 

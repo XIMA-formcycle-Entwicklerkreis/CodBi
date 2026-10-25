@@ -143,9 +143,9 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
               val relativePath = entryName.substring(BASE_RESOURCE_PACKAGE.length)
 
               if (relativePath.endsWith(".js") || relativePath.endsWith(".css")) {
-                dynamicResources[relativePath] =
-                    formResourceDescriptor(relativePath, entryName, version).second
+                val descriptor = formResourceDescriptor(relativePath, entryName, version).second
 
+                registerResource(dynamicResources, relativePath, descriptor)
                 LOG.info("Registered plugin resource: $relativePath")
               }
             }
@@ -164,11 +164,12 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
                     .replace("\\", "/") // Take windows path syntax into account.
 
             if (relativePath.endsWith(".js") || relativePath.endsWith(".css")) {
-              dynamicResources[relativePath] =
+              val descriptor =
                   formResourceDescriptor(
                           relativePath, BASE_RESOURCE_PACKAGE + relativePath, version)
                       .second
 
+              registerResource(dynamicResources, relativePath, descriptor)
               LOG.info("Registered plugin resource (dev): $relativePath")
             }
           }
@@ -290,6 +291,36 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
         .resource(resource)
         .includeInForm(true)
         .build()
+  }
+
+  /**
+   * Registers one scanned plugin resource under BOTH its folder-prefixed relative path (e.g.
+   * `Configurations/Appointments.js`) and its BARE file name (`Appointments.js`).
+   *
+   * The form render callback resolves a functionality / element placeholder / standard configuration
+   * by the element id, i.e. `<id>.js` (see `FormRenderCallback`), while the class path scan yields
+   * folder-prefixed paths. Without the bare-name alias every one of those lookups missed and the code
+   * was requested from the `codbi_local_apidoc` DB table instead — which is only filled by an
+   * explicit API-doc sync. On a form whose standard configuration was never synced that made
+   * class-based configurations (e.g. `CodBi_NoFutureDate`) silently do nothing, because neither the
+   * configuration script nor the functionality it applies was ever loaded. Registering the alias lets
+   * the shipped resource win (the DB stays a fallback via `nncHandler`).
+   *
+   * @param target The resource map to register the descriptor in.
+   * @param relativePath The folder-prefixed path of the resource within the plugin package.
+   * @param descriptor The descriptor to register.
+   */
+  private fun registerResource(
+      target: MutableMap<String, IPluginFormResourceDescriptor>,
+      relativePath: String,
+      descriptor: IPluginFormResourceDescriptor
+  ) {
+    target[relativePath] = descriptor
+    val bareName = relativePath.substringAfterLast('/')
+
+    if (bareName.isNotEmpty() && bareName != relativePath) {
+      target[bareName] = descriptor
+    }
   }
 
   /**

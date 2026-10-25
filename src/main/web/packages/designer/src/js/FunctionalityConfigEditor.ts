@@ -97,13 +97,21 @@ export function selectedProperty(name: string): string {
   }
 }
 
-/** Parses a CSV of functionality ids into a trimmed, de-duplicated, lowercase array. */
+/**
+ * Parses a CSV of functionality ids into a trimmed, de-duplicated, **lowercase** array.
+ *
+ * The lowercase form is the invariant of every selection list: the ids are rendered from the
+ * functionality registry (which is keyed case-insensitively) and compared against it with
+ * `id.toLowerCase()`. Normalizing HERE — not only on a toggle — keeps a selection that was persisted
+ * with the registry's original casing (e.g. `Date.Min`, written by the AI assistant or an older
+ * build) recognized as checked, so its checkbox starts checked and the "only checked" view lists it.
+ */
 export function parseCsv(value: string): string[] {
   return Array.from(
     new Set(
       String(value ?? "")
         .split(",")
-        .map((entry) => entry.trim())
+        .map((entry) => entry.trim().toLowerCase())
         .filter((entry) => entry.length > 0),
     ),
   );

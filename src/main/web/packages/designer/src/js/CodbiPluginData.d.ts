@@ -10,6 +10,11 @@ interface CodbiEPParamSpec {
   optional?: boolean;
   /** Whether further trailing parameters may follow. */
   variadic?: boolean;
+  /**
+   * Known, valid literal values of this parameter (e.g. the directory properties the BayVIS EPs
+   * accept). The EP builder offers them as suggestions while still allowing free-form values.
+   */
+  options?: Array<string>;
   /** A short human readable description (a plain string or a per-language map). */
   description?: string | { [lang: string]: string };
 }
@@ -44,11 +49,24 @@ interface Window {
          * shape each class's entry holds BOTH its human-readable description AND its FORMCYCLE
          * widget list (`formelementtypes`), so the class name is not repeated in a separate map:
          *
-         * `classes[cssClass] = { description, formelementtypes?: string[] }`
+         * `classes[cssClass] = { description, descriptionDe?, descriptionIt?, formelementtypes?: string[] }`
+         *
+         * `description` is the base (English) text; `descriptionDe`/`descriptionIt` carry the
+         * hand-authored translations shown as the row's tooltip in the matching designer language — the
+         * only localized source for classes that apply NO functionality.
          *
          * `formelementtypes` absent/empty ⇒ that class applies to **any** element (fail-open). The
          * legacy/manager form (`classes[cssClass]` = a plain description string) also remains valid. */
-        classes: { [key: string]: { description?: string; formelementtypes?: Array<string> } | string };
+        classes: {
+          [key: string]:
+            | {
+                description?: string;
+                descriptionDe?: string;
+                descriptionIt?: string;
+                formelementtypes?: Array<string>;
+              }
+            | string;
+        };
         /** Stores the global variables that this configuration provides. */
         globals: { [key: string]: string };
         /**

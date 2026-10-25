@@ -7,46 +7,68 @@
     },
     "AI_LLAMA_CHAT_Input": {
       "description": "Apply to the text input field of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf das Texteingabefeld eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare al campo di immissione testo di un widget chat AI LLAMA.",
       "formelementtypes": ["XTextArea"]
     },
     "AI_LLAMA_CHAT_Send": {
       "description": "Apply to the send button of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf die Senden-Schaltfläche eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare al pulsante di invio di un widget chat AI LLAMA.",
       "formelementtypes": ["XButtonList"]
     },
     "AI_LLAMA_CHAT_Stop": {
       "description": "Apply to the stop button of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf die Stopp-Schaltfläche eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare al pulsante di arresto di un widget chat AI LLAMA.",
       "formelementtypes": ["XButtonList"]
     },
     "AI_LLAMA_CHAT_Upload": {
       "description": "Apply to the file upload button of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf die Datei-Upload-Schaltfläche eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare al pulsante di caricamento file di un widget chat AI LLAMA.",
       "formelementtypes": ["XUpload"]
     },
     "AI_LLAMA_CHAT_Thinking": {
       "description": "Apply to the thinking indicator element of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf das Denk-Indikator-Element eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare all'elemento indicatore di elaborazione di un widget chat AI LLAMA.",
       "formelementtypes": ["XCheckbox"]
     },
     "AI_LLAMA_CHAT_Internet": {
       "description": "Apply to the internet search toggle of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf den Internet-Suche-Schalter eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare all'interruttore di ricerca su Internet di un widget chat AI LLAMA.",
       "formelementtypes": ["XCheckbox"]
     },
     "AI_LLAMA_CHAT_Location": {
       "description": "Apply to the location sharing button of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf die Standortfreigabe-Schaltfläche eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare al pulsante di condivisione posizione di un widget chat AI LLAMA.",
       "formelementtypes": ["XCheckbox"]
     },
     "AI_LLAMA_CHAT_MailForward": {
       "description": "Apply to the mail forward button of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf die Mail-Weiterleiten-Schaltfläche eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare al pulsante di inoltro e-mail di un widget chat AI LLAMA.",
       "formelementtypes": ["XCheckbox"]
     },
     "AI_LLAMA_CHAT_MailAddress": {
       "description": "Apply to the mail address input of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf das E-Mail-Adress-Eingabefeld eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare al campo dell'indirizzo e-mail di un widget chat AI LLAMA.",
       "formelementtypes": ["XTextField"]
     },
     "AI_LLAMA_CHAT_AlertOnFinish": {
       "description": "Apply to the alert-on-finish toggle of an AI LLAMA chat widget.",
+      "descriptionDe": "Auf den Benachrichtigen-bei-Fertigstellung-Schalter eines AI-LLAMA-Chat-Widgets anwenden.",
+      "descriptionIt": "Applicare all'interruttore di avviso al termine di un widget chat AI LLAMA.",
       "formelementtypes": ["XCheckbox"]
     },
     "AI_LLAMA_QA_Exclude": {
       "description": "Apply to a container (XContainer) element whose contents should be excluded from AI question search.",
+      "descriptionDe": "Auf ein Container-Element (XContainer) anwenden, dessen Inhalte von der KI-Fragesuche ausgeschlossen werden sollen.",
+      "descriptionIt": "Applicare a un elemento contenitore (XContainer) i cui contenuti devono essere esclusi dalla ricerca delle domande dell'IA.",
       "formelementtypes": ["XContainer", "XFieldSet"]
     },
     "AI_LLAMA_STANDARD_QA_Question": {
@@ -55,10 +77,14 @@
     },
     "AI_LLAMA_STANDARD_TXTQA_Question": {
       "description": "Apply to an XTextField that receives AI responses to questions based on source fields.",
+      "descriptionDe": "Auf ein XTextField anwenden, das die KI-Antworten auf Fragen zu den Quellfeldern erhält.",
+      "descriptionIt": "Applicare a un XTextField che riceve le risposte dell'IA alle domande basate sui campi di origine.",
       "formelementtypes": ["XTextField", "XTextArea"]
     },
     "AI_LLAMA_TXTQA_Source": {
       "description": "Apply to an XTextField whose value should be supplied as source context to the AI for question answering.",
+      "descriptionDe": "Auf ein XTextField anwenden, dessen Wert der KI als Quellkontext für die Fragebeantwortung übergeben werden soll.",
+      "descriptionIt": "Applicare a un XTextField il cui valore deve essere fornito all'IA come contesto di origine per la risposta alle domande.",
       "formelementtypes": ["XTextField", "XTextArea"]
     }
   },

@@ -551,6 +551,28 @@ describe("Date_Min edge cases", () => {
     expect($(input).data("error-msg")).toBeTruthy();
   });
 
+  it("treats a MISSING minimum as 0, so a future date is rejected (CodBi_NoFutureDate)", () => {
+    // The `CodBi_NoFutureDate` standard configuration applies Date.Min with `Minimum = 0` and the
+    // default (NOT reversed) direction. A missing/blank `Minimum` must behave the SAME way: it used to
+    // produce `NaN` and therefore an `Invalid Date`, which let EVERY value pass — the functionality
+    // looked applied but never rejected anything.
+    const input = createMinDOM();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const toText = (date: Date): string =>
+      `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
+
+    input.value = toText(tomorrow);
+    Date_Min.functionality({}, input);
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect($(input).data("error-msg")).toBeTruthy();
+
+    // TODAY itself stays a valid value — only FUTURE dates are rejected.
+    input.value = toText(new Date());
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect($(input).data("error-msg")).toBe("");
+  });
+
   it("uses custom msghigher message for reverse=true", () => {
     const input = createMinDOM();
     const pastDate = new Date();

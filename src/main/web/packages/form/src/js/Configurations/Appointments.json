@@ -87,26 +87,38 @@
     },
     "CodBi_Date_Time_Join_Date": {
       "description": "Apply to the DATE input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
+      "descriptionDe": "Auf das DATUMS-Eingabefeld eines Datum/Zeit-Paares anwenden. Das mit der Date.Time.Join-Funktionalität versehene Feld erhält Datum und Uhrzeit kombiniert.",
+      "descriptionIt": "Applicare al campo data di una coppia data/ora. Il campo con la funzionalità Date.Time.Join riceve data e ora combinate.",
       "formelementtypes": ["XTextField"]
     },
     "CodBi_Date_Time_Join_Time": {
       "description": "Apply to the TIME input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
+      "descriptionDe": "Auf das ZEIT-Eingabefeld eines Datum/Zeit-Paares anwenden. Das mit der Date.Time.Join-Funktionalität versehene Feld erhält Datum und Uhrzeit kombiniert.",
+      "descriptionIt": "Applicare al campo ora di una coppia data/ora. Il campo con la funzionalità Date.Time.Join riceve data e ora combinate.",
       "formelementtypes": ["XTextField"]
     },
     "CodBi_Date_Time_Join_Span_Begin": {
       "description": "Apply to the BEGIN date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-Begin parameter takes precedence.",
+      "descriptionDe": "Auf das BEGINN-Datumsfeld eines Datum/Zeit-Bereichs anwenden. Wird von der Date.Time.Join.Span-Funktionalität referenziert; der Parameter data-cb-Begin hat Vorrang.",
+      "descriptionIt": "Applicare al campo data di INIZIO di un intervallo data/ora. Referenziato dalla funzionalità Date.Time.Join.Span; il parametro data-cb-Begin ha la precedenza.",
       "formelementtypes": ["XTextField"]
     },
     "CodBi_Date_Time_Join_Span_Begin_Time": {
       "description": "Apply to the BEGIN time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-BeginTime parameter takes precedence.",
+      "descriptionDe": "Auf das BEGINN-Zeitfeld eines Datum/Zeit-Bereichs anwenden. Wird von der Date.Time.Join.Span-Funktionalität referenziert; der Parameter data-cb-BeginTime hat Vorrang.",
+      "descriptionIt": "Applicare al campo ora di INIZIO di un intervallo data/ora. Referenziato dalla funzionalità Date.Time.Join.Span; il parametro data-cb-BeginTime ha la precedenza.",
       "formelementtypes": ["XTextField"]
     },
     "CodBi_Date_Time_Join_Span_End": {
       "description": "Apply to the END date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-End parameter takes precedence.",
+      "descriptionDe": "Auf das ENDE-Datumsfeld eines Datum/Zeit-Bereichs anwenden. Wird von der Date.Time.Join.Span-Funktionalität referenziert; der Parameter data-cb-End hat Vorrang.",
+      "descriptionIt": "Applicare al campo data di FINE di un intervallo data/ora. Referenziato dalla funzionalità Date.Time.Join.Span; il parametro data-cb-End ha la precedenza.",
       "formelementtypes": ["XTextField"]
     },
     "CodBi_Date_Time_Join_Span_End_Time": {
       "description": "Apply to the END time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-EndTime parameter takes precedence.",
+      "descriptionDe": "Auf das ENDE-Zeitfeld eines Datum/Zeit-Bereichs anwenden. Wird von der Date.Time.Join.Span-Funktionalität referenziert; der Parameter data-cb-EndTime hat Vorrang.",
+      "descriptionIt": "Applicare al campo ora di FINE di un intervallo data/ora. Referenziato dalla funzionalità Date.Time.Join.Span; il parametro data-cb-EndTime ha la precedenza.",
       "formelementtypes": ["XTextField"]
     },
     "CodBi_Holidays_Listing": {

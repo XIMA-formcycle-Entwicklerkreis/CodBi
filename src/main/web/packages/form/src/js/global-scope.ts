@@ -27,6 +27,11 @@ export interface EPParamSpec {
   optional?: boolean;
   /** Whether further trailing parameters may follow (e.g. OpenPLZ's "up to four more params"). */
   variadic?: boolean;
+  /**
+   * Known, valid literal values of this parameter (e.g. the directory properties the BayVIS EPs
+   * accept). The designer's EP builder offers them as suggestions while still allowing free input.
+   */
+  options?: Array<string>;
   /** A short human readable description. */
   description?: string;
 }
@@ -709,6 +714,7 @@ export class CodBi implements CodbiGlobal {
       type: param.type ?? "any",
       optional: param.optional ?? false,
       variadic: param.variadic ?? false,
+      options: param.options,
       description: param.description,
     }));
 
@@ -853,8 +859,12 @@ export class CodBi implements CodbiGlobal {
     let openCount = 0;
     let closeCount = 0;
     for (let i = 0; i < toGetFrom.length; i++) {
-      if (toGetFrom[i] === "{" && (i === 0 || toGetFrom[i - 1] !== "°")) openCount++;
-      if (toGetFrom[i] === "}" && (i === 0 || toGetFrom[i - 1] !== "°")) closeCount++;
+      if (toGetFrom[i] === "{" && (i === 0 || toGetFrom[i - 1] !== "°")) {
+        openCount++;
+      }
+      if (toGetFrom[i] === "}" && (i === 0 || toGetFrom[i - 1] !== "°")) {
+        closeCount++;
+      }
     }
     if (openCount !== closeCount) {
       throw new EPCodBiError(toGetFrom, "Count of opening & closing nesting braces doesn't match");
@@ -1641,6 +1651,15 @@ export class CodBi implements CodbiGlobal {
                   error: () => resolve(),
                 });
               });
+              // A standard configuration whose functionality never became available would write its
+              // `data-cb-*` attributes onto the elements and STILL do nothing at runtime (the
+              // functionality is looked up in `checkAttributes`, which silently skips unknown ids).
+              // Report it instead of failing invisibly.
+              if (!this.functionalities.has(functionality.toLowerCase().trim())) {
+                console.warn(
+                  `[[ CodBi / Warning ] The functionality "${functionality.trim()}" required by the standard configuration targeting "${toLoad.targets}" could not be loaded. Neither the plugin resources nor the CodBi_LocalAPIDoc database provided its code — a stale build or a missing API-doc sync is the usual cause. ]`,
+                );
+              }
             }
           }
         } else {
@@ -1713,29 +1732,37 @@ export class CodBi implements CodbiGlobal {
               }
             }
             // #endregion Check for global overrides.
-            for (const key in toLoad) {
-              // Metadata keys (e.g. `supportedFormelementtypes`) must never be written as `data-cb-*`
-              // attributes on the targeted elements.
-              if (isStandardConfigMetadataKey(key)) {
-                continue;
-              }
-              if (key.toLowerCase() === "func" && target.hasAttribute("data-cb-func")) {
-                target.setAttribute(
-                  "data-cb-func",
-                  globals[key.toLowerCase()]
-                    ? `${globals[key.toLowerCase()]},${target.getAttribute("data-cb-func")}`
-                    : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                      `${(toLoad as any)[key]},${target.getAttribute("data-cb-func")}`,
-                );
+            // The attributes belong on the element the FUNC can actually process. A standard-configuration
+            // CSS class may be rendered onto a WRAPPER around the control, though (e.g.
+            // `CodBi_NoFutureDate` on the date field's container): the class then matched the wrapper
+            // and the functionality — `Date.Min` requires an `<input>` — was applied to an element that
+            // rejects it, so the configuration silently did nothing. See
+            // {@link configAttributeCarriers}.
+            for (const carrier of this.configAttributeCarriers(target)) {
+              for (const key in toLoad) {
+                // Metadata keys (e.g. `supportedFormelementtypes`) must never be written as `data-cb-*`
+                // attributes on the targeted elements.
+                if (isStandardConfigMetadataKey(key)) {
+                  continue;
+                }
+                if (key.toLowerCase() === "func" && carrier.hasAttribute("data-cb-func")) {
+                  carrier.setAttribute(
+                    "data-cb-func",
+                    globals[key.toLowerCase()]
+                      ? `${globals[key.toLowerCase()]},${carrier.getAttribute("data-cb-func")}`
+                      : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                        `${(toLoad as any)[key]},${carrier.getAttribute("data-cb-func")}`,
+                  );
 
-                continue;
-              }
+                  continue;
+                }
 
-              if (key !== "targets" && !target.hasAttribute(`data-cb-${key}`)) {
-                target.setAttribute(
-                  `data-cb-${key}`,
-                  globals[key.toLowerCase()] ? globals[key.toLowerCase()] : (toLoad as unknown)[key],
-                );
+                if (key !== "targets" && !carrier.hasAttribute(`data-cb-${key}`)) {
+                  carrier.setAttribute(
+                    `data-cb-${key}`,
+                    globals[key.toLowerCase()] ? globals[key.toLowerCase()] : (toLoad as unknown)[key],
+                  );
+                }
               }
             }
           }
@@ -1747,6 +1774,30 @@ export class CodBi implements CodbiGlobal {
       }
       resolve();
     });
+  }
+  /**
+   * The element(s) that receive a configuration's `data-cb-*` attributes.
+   *
+   * Normally the matched target itself. When a standard-configuration CSS class is rendered onto a
+   * WRAPPER around the actual control, though, that target is not a control at all — while most
+   * functionalities (e.g. `Date.Min`, `HTML.Input.Cleave`) require one, so the configuration would be
+   * applied to an element that rejects it and silently do nothing. In that case the SINGLE form
+   * control contained in the wrapper is used instead.
+   *
+   * Targets that ARE controls, and container-like targets (`fieldset`, `form`, `body`, `head`, `html`
+   * — e.g. the panel/accordion classes, which are scoped to a whole section), are returned unchanged,
+   * so a class spanning many fields never leaks its functionality onto unrelated controls.
+   *
+   * @param target The element matched by the configuration's `targets` selector.
+   * @returns The element(s) the configuration attributes are written to.
+   */
+  protected configAttributeCarriers(target: Element): Element[] {
+    const controlSelector = "input, select, textarea, button";
+    if (target.matches(controlSelector) || target.matches("fieldset, form, body, head, html")) {
+      return [target];
+    }
+    const controls = Array.from(target.querySelectorAll(controlSelector));
+    return controls.length === 1 ? [controls[0]] : [target];
   }
   /**
    * Performs a call to {@link DBC.loadConfig } for each {targets:string} in **toLoad**.
@@ -2148,6 +2199,12 @@ export class CodBi implements CodbiGlobal {
               },
               success: async (response) => {
                 if (response.result === "NONE") {
+                  // Neither a registered functionality nor database code: the element stays marked
+                  // with `data-cb-func` while NOTHING happens. That used to fail completely silently.
+                  console.warn(
+                    `[[ CodBi / Warning ] No code found for the functionality "${functionality.trim()}" tagged on <${toProcess.tagName.toLowerCase()}> — the functionality is ignored. Check that the plugin resources are up to date and that the CodBi API-doc was synced. ]`,
+                  );
+
                   return;
                 }
                 // #region Evaluate the response and replace all placeholders.

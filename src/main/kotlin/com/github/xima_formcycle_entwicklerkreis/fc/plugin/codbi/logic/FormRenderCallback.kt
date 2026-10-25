@@ -25,6 +25,16 @@ import java.util.Stack
 internal object FormRenderCallback : IFormRenderPluginCallback {
 
   /**
+   * Matches a `class` attribute of the rendered markup. The value is captured WITHOUT its quotes:
+   * group 1 holds a double-quoted value, group 2 a single-quoted one.
+   *
+   * The lookbehind keeps attributes such as `data-class="…"` out of the match — only a real `class`
+   * attribute describes the CSS classes an element actually carries.
+   */
+  private val CLASS_ATTRIBUTE =
+      Regex("""(?<![-\w])class\s*=\s*(?:"([^"]*)"|'([^']*)')""", RegexOption.IGNORE_CASE)
+
+  /**
    * Extracts all **E**lement **P**laceholders used within a CodBi-Attribute's value with nesting
    * supported. Those placeholders are of following format { Placeholder e.g. HTML.Text.Mapper >
    * Parameter SSV }.
@@ -147,10 +157,65 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
         }
       }
 
-      processCodeLib(renderProcessor, properties, usedFunctionalities, usedEPs)
+      // #region Standard-configuration CSS classes used by the RENDERED form.
+      // A standard configuration is applied by putting one of its CSS classes onto an element — the
+      // class is only a MARKER, the behaviour is applied by the configuration's own script. Those
+      // scripts used to be injected exclusively from the form-level `codbi-prop-standards` CSV, so
+      // a
+      // class that was applied without activating its configuration (e.g. typed into the element's
+      // CSS-classes property) did literally nothing: future dates stayed selectable although the
+      // field carried `CodBi_NoFutureDate`. A manually applied `data-cb-func="Date.Min"` worked in
+      // the SAME form, because the item scan above injects the functionality's script for it.
+      // Detecting the classes in the rendered markup closes that gap: the owning configuration AND
+      // the
+      // functionalities it applies are injected whenever the form actually uses the class.
+      // #endregion
+      val usedStandardClasses = extractClassNames(renderProcessor.renderedFormMarkup())
+      val standardProviders = StandardConfigClasses.providersOf(usedStandardClasses)
+
+      for (provider in standardProviders) {
+        for (functionality in provider.funcs) {
+          usedFunctionalities.add(functionality.lowercase())
+        }
+      }
+
+      processCodeLib(
+          renderProcessor,
+          properties,
+          usedFunctionalities,
+          usedEPs,
+          standardProviders.map { it.configId })
     }
 
     return null
+  }
+
+  /**
+   * Extracts every CSS class token that occurs in a `class="…"` (or `class='…'`) attribute of the
+   * given markup.
+   *
+   * Only class attributes are considered — `class` also appears in text, ids and inline scripts,
+   * and those must not be mistaken for an applied standard-configuration class.
+   *
+   * @param toExtractFrom The rendered form markup.
+   * @return The de-duplicated class names, in document order.
+   */
+  fun extractClassNames(toExtractFrom: String): Set<String> {
+    val result = linkedSetOf<String>()
+
+    for (match in CLASS_ATTRIBUTE.findAll(toExtractFrom)) {
+      val value = match.groupValues[1].ifEmpty { match.groupValues[2] }
+
+      for (candidate in value.split(" ", "\t", "\n", "\r", "\u000C")) {
+        val cssClass = candidate.trim()
+
+        if (cssClass.isNotEmpty()) {
+          result.add(cssClass)
+        }
+      }
+    }
+
+    return result
   }
 
   /**
@@ -165,7 +230,8 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
       renderProcessor: FormRenderProcessor,
       properties: CodbiFormProperties,
       usedFunctionalities: Set<String>,
-      usedEPs: Set<String>
+      usedEPs: Set<String>,
+      usedStandardConfigurations: List<String> = emptyList()
   ) {
     // Insert the main CSS and JavaScript for the code library
     renderProcessor.insertFormResourcePluginStyle("codbi-style", "codbi.css")
@@ -194,15 +260,24 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
     }
     // endregion Inject used element placeholders
     // region Inject selected standard configurations
+    // The form-level selection (`codbi-prop-standards`) plus every configuration whose CSS class
+    // the
+    // rendered form actually uses. Both are injected at most once, in a stable order.
+    val standardsToInject = linkedSetOf<String>()
+
     for (standard in properties.standards.split(",")) {
       val trimmed = standard.trim()
-      if (trimmed.isEmpty()) continue
-      if (CodbiFormResourcesPlugin.formResources["$trimmed.js"]?.resource != null) {
+      if (trimmed.isNotEmpty()) standardsToInject.add(trimmed)
+    }
+    standardsToInject.addAll(usedStandardConfigurations.filter { it.isNotBlank() })
+
+    for (standard in standardsToInject) {
+      if (CodbiFormResourcesPlugin.formResources["$standard.js"]?.resource != null) {
         renderProcessor.insertFormResourcePluginScript(
-            "codbi-standard-" + trimmed.replace(".", "-"), "$trimmed.js")
+            "codbi-standard-" + standard.replace(".", "-"), "$standard.js")
       } else {
         renderProcessor.insertNncHandlerScript(
-            "codbi-standard-" + trimmed.replace(".", "-"), trimmed)
+            "codbi-standard-" + standard.replace(".", "-"), standard)
       }
     }
     // endregion Inject selected standard configurations

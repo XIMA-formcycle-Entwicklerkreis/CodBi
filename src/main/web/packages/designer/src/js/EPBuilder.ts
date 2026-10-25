@@ -109,8 +109,8 @@ function readFormModelVariables(): Array<{ name: string; value: string }> {
 
     let json: unknown = wrapper;
 
-    if (wrapper && typeof wrapper === "object" && typeof (wrapper as Record<string, unknown>)["persist"] === "string") {
-      json = JSON.parse((wrapper as Record<string, unknown>)["persist"] as string);
+    if (wrapper && typeof wrapper === "object" && typeof (wrapper as Record<string, unknown>).persist === "string") {
+      json = JSON.parse((wrapper as Record<string, unknown>).persist as string);
     } else if (typeof wrapper === "string") {
       json = JSON.parse(wrapper);
     }
@@ -121,8 +121,8 @@ function readFormModelVariables(): Array<{ name: string; value: string }> {
       for (const entry of variables) {
         if (entry && typeof entry === "object") {
           const record = entry as Record<string, unknown>;
-          const name = String(record["name"] ?? "").trim();
-          const value = record["value"];
+          const name = String(record.name ?? "").trim();
+          const value = record.value;
 
           if (name !== "") {
             result.push({ name, value: value === undefined || value === null ? "" : String(value) });
@@ -472,7 +472,22 @@ const BUILDER_CSS = `
 .codbi-epb button.primary{background:darkorange;color:#fff}
 .codbi-epb button.primary:hover{background:#c96a00}
 .codbi-epb input,.codbi-epb select,.codbi-epb textarea{padding:1px 4px;border:1px solid darkorange;border-radius:3px;font:inherit;background:#fff;color:#3a2200}
-.codbi-epb input[type="text"]{min-width:8em}
+.codbi-epb input[type="text"],.codbi-epb input[type="number"]{min-width:8em}
+.codbi-epb__boolinput{width:auto!important;min-width:0!important;height:16px;margin:0;vertical-align:middle;align-self:flex-start}
+.codbi-epb__literalcontrol{display:inline-flex;align-items:center;min-width:0}
+.codbi-epb__optiontoggle{display:inline-flex;align-items:center;justify-content:center;align-self:stretch;margin-left:2px;padding:0 4px;border:1px solid darkorange;border-radius:3px;background:#fff;color:darkorange;cursor:pointer;font:inherit;line-height:1}
+.codbi-epb__optiontoggle:hover{background:darkorange;color:#fff}
+.codbi-epb__optionspop{position:fixed;z-index:100001;display:flex;flex-direction:column;max-height:260px;overflow:hidden;background:#fffdf9;border:1px solid darkorange;border-radius:4px;box-shadow:0 0 .5em black;font:inherit}
+.codbi-epb__optionfilter{margin:4px;padding:2px 6px;border:1px solid darkorange;border-radius:3px;background:#fff;color:#3a2200;font:inherit;outline:none}
+.codbi-epb__optionfilter:focus{border-bottom-width:3px}
+.codbi-epb__optionlist{overflow:auto;max-height:210px;scrollbar-color:darkorange transparent}
+.codbi-epb__optionlist::-webkit-scrollbar{width:10px;height:10px}
+.codbi-epb__optionlist::-webkit-scrollbar-track{background:transparent}
+.codbi-epb__optionlist::-webkit-scrollbar-thumb{background:darkorange;border-radius:5px}
+.codbi-epb__option{padding:2px 8px;color:#3a2200;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.codbi-epb__option:hover{background:darkorange;color:#fff}
+.codbi-epb__option--empty{color:#8a6a45;cursor:default;font-style:italic}
+.codbi-epb__option--empty:hover{background:transparent;color:#8a6a45}
 .codbi-epb input:focus,.codbi-epb select:focus,.codbi-epb textarea:focus{outline:none;border-bottom-width:3px;box-shadow:0 0 .5em black}
 .codbi-epb__seglist{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .codbi-epb__node{border:1px solid darkorange;border-radius:6px;background:#fff7ec;padding:6px;display:flex;flex-direction:column;gap:6px;width:100%}
@@ -536,7 +551,15 @@ const BUILDER_CSS = `
 .codbi-epb__toprow>.codbi-epb__seglist{flex:1 1 auto}
 .codbi-epb__addtext{flex:0 0 auto;min-width:26px;font-weight:700}
 .codbi-epb__resultpanel{margin-top:4px}
-.codbi-epb__result{max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:11px;background:#fffdf9;border:1px solid darkorange;border-radius:4px;padding:4px 6px;color:#3a2200}
+.codbi-epb__resulthead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:1px 2px 2px;color:#a85a00;font-weight:700}
+.codbi-epb__resultclose{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:1px solid darkorange;border-radius:4px;background:#fff;color:#a85a00;cursor:pointer;font:inherit;line-height:1}
+.codbi-epb__resultclose:hover{background:darkorange;color:#fff}
+.codbi-epb__result{max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:11px;background:#fffdf9;border:1px solid darkorange;border-radius:4px;padding:4px 6px;color:#3a2200;scrollbar-color:#ff9f40 transparent;scrollbar-width:thin}
+.codbi-epb__result::-webkit-scrollbar{width:10px;height:10px}
+.codbi-epb__result::-webkit-scrollbar-track{background:transparent}
+.codbi-epb__result::-webkit-scrollbar-thumb{background:#ff9f40;border-radius:5px}
+.codbi-epb__result::-webkit-scrollbar-thumb:hover{background:#ffb266}
+.codbi-epb__result::-webkit-scrollbar-corner{background:transparent}
 .codbi-epb--max{width:96vw;max-width:96vw;height:96vh;max-height:96vh}
 .codbi-epb--docked{border-radius:0;max-width:none;max-height:100vh}
 .codbi-epb__docsbtn{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:#a85a00;padding:2px;font-style:normal;line-height:1;cursor:pointer;vertical-align:middle;border-radius:50%}
@@ -656,15 +679,256 @@ async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
- * Whether a literal value may be entered for a parameter of **type**. Only string parameters (and
- * parameters of unknown type) accept a plain literal; every other datatype must be produced by a
- * nested Element-Placeholder.
+ * Whether a literal value may be entered for a parameter of **type**. Scalar parameters (string,
+ * boolean, integer, number, date) and unknown types accept a literal; complex/unknown datatypes
+ * must be produced by a nested Element-Placeholder.
  *
  * @param type The parameter's datatype hint.
  *
  * @returns **TRUE** when a literal input is allowed. */
 function allowsLiteral(type: string | undefined): boolean {
-  return type === undefined || type === "string" || type === "any";
+  const normalized = (type ?? "").toLowerCase();
+  return (
+    normalized === "" ||
+    normalized === "any" ||
+    normalized === "string" ||
+    normalized === "boolean" ||
+    normalized === "integer" ||
+    normalized === "number" ||
+    normalized === "date" ||
+    normalized === "enum"
+  );
+}
+
+/** @returns whether a serialized literal counts as a checked boolean (`true`/`1`/`yes`/`on`). */
+function isTruthyLiteral(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+}
+
+/** The currently open parameter-options popup (only one at a time) and its teardown. */
+let activeOptionsPopup: HTMLElement | null = null;
+let activeOptionsAnchor: HTMLElement | null = null;
+let activeOptionsCleanup: (() => void) | null = null;
+
+/** Closes the currently open parameter-options popup (if any). */
+function closeOptionsPopup(): void {
+  activeOptionsCleanup?.();
+  activeOptionsCleanup = null;
+  activeOptionsAnchor = null;
+  activeOptionsPopup?.remove();
+  activeOptionsPopup = null;
+}
+
+/**
+ * Opens the darkorange, filterable options popup below **anchor**. The filter input is focused
+ * immediately so the user can type to narrow the list; clicking an entry (or pressing Enter for the
+ * first match) writes it into **input** and invokes **onSelect**.
+ *
+ * @param doc      The document to render into.
+ * @param anchor   The wrapper the popup is aligned to.
+ * @param input    The literal input that receives the chosen value.
+ * @param values   The options to offer.
+ * @param onSelect Invoked with the chosen value.
+ */
+function openOptionsPopup(options: {
+  doc: Document;
+  anchor: HTMLElement;
+  input: HTMLInputElement;
+  values: Array<string>;
+  onSelect: (value: string) => void;
+}): void {
+  closeOptionsPopup();
+
+  const { doc, anchor, input, values, onSelect } = options;
+  // `doc` may be the canvas iframe's document — use ITS viewport for the fixed positioning.
+  const view = doc.defaultView ?? window;
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.max(rect.width, 180);
+  const popup = doc.createElement("div");
+  popup.className = "codbi-epb__optionspop";
+  popup.style.width = `${width}px`;
+  popup.style.left = `${Math.max(4, Math.min(rect.left, view.innerWidth - width - 8))}px`;
+  popup.style.top = `${rect.bottom + 2}px`;
+
+  const filter = doc.createElement("input");
+  filter.type = "text";
+  filter.className = "codbi-epb__optionfilter";
+  filter.placeholder = i18n("epBuilder.filterOptions");
+  filter.title = i18n("epBuilder.filterOptions");
+
+  const list = doc.createElement("div");
+  list.className = "codbi-epb__optionlist";
+
+  const choose = (value: string): void => {
+    input.value = value;
+    onSelect(value);
+    closeOptionsPopup();
+  };
+
+  const renderList = (query: string): void => {
+    const needle = query.trim().toLowerCase();
+    list.replaceChildren();
+    const matches = values.filter((value) => needle === "" || value.toLowerCase().includes(needle));
+
+    if (matches.length === 0) {
+      const empty = doc.createElement("div");
+      empty.className = "codbi-epb__option codbi-epb__option--empty";
+      empty.textContent = i18n("epBuilder.empty");
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const value of matches) {
+      const row = doc.createElement("div");
+      row.className = "codbi-epb__option";
+      row.textContent = value;
+      row.title = value;
+      // Keep the filter focused while choosing (no blur → no premature popup teardown).
+      row.addEventListener("mousedown", (event) => event.preventDefault());
+      row.addEventListener("click", () => choose(value));
+      list.appendChild(row);
+    }
+  };
+
+  filter.addEventListener("input", () => renderList(filter.value));
+  filter.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const first = list.querySelector<HTMLElement>(".codbi-epb__option");
+      const value = first?.textContent ?? "";
+      if (value !== "") {
+        choose(value);
+      }
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeOptionsPopup();
+      input.focus();
+    }
+  });
+
+  renderList("");
+  popup.append(filter, list);
+  doc.body.appendChild(popup);
+  activeOptionsPopup = popup;
+  activeOptionsAnchor = anchor;
+
+  const onOutside = (event: MouseEvent): void => {
+    const target = event.target;
+    if (target instanceof Node && (popup.contains(target) || anchor.contains(target))) {
+      return;
+    }
+    closeOptionsPopup();
+  };
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      closeOptionsPopup();
+      input.focus();
+    }
+  };
+  const onScroll = (event: Event): void => {
+    const target = event.target;
+    if (target instanceof Node && popup.contains(target)) {
+      return;
+    }
+    closeOptionsPopup();
+  };
+  doc.addEventListener("mousedown", onOutside, true);
+  doc.addEventListener("keydown", onKeyDown, true);
+  doc.addEventListener("scroll", onScroll, true);
+  activeOptionsCleanup = () => {
+    doc.removeEventListener("mousedown", onOutside, true);
+    doc.removeEventListener("keydown", onKeyDown, true);
+    doc.removeEventListener("scroll", onScroll, true);
+  };
+
+  filter.focus();
+}
+
+/**
+ * Creates a **datatype-aware** literal editor for one EP parameter value:
+ * - `boolean` writes `"true"`/`"false"` through a checkbox,
+ * - `integer`/`number` use a numeric input (`step` `1`/`any`),
+ * - every other literal-compatible type uses a plain text input.
+ *
+ * When the parameter declares known **options** (e.g. the directory properties of the BayVIS EPs or
+ * an `enum` defined in the local API-doc manager), an extra darkorange arrow opens a filterable
+ * options popup while the input still accepts free-form text (years, arithmetic, EPs, …).
+ *
+ * This mirrors the type-aware parameter fields of the form-element CodBi config panel
+ * (`boolean` → checkbox, numeric → number input).
+ *
+ * @param doc            The document to create the control in.
+ * @param type           The parameter's datatype hint.
+ * @param value          The current literal value.
+ * @param onChange       Invoked with the new literal value on every edit.
+ * @param options        Known valid values offered as suggestions (optional).
+ * @param inputClassName The CSS class applied to the text/number input (optional, defaults to the
+ *                       list-view styling; the diagram passes its own pill styling).
+ *
+ * @returns The created control (the checkbox itself, or a wrapper holding input + arrow). */
+function createLiteralControl(
+  doc: Document,
+  type: string | undefined,
+  value: string,
+  onChange: (value: string) => void,
+  options?: Array<string>,
+  inputClassName = "codbi-epb__textinput",
+): HTMLElement {
+  const normalized = (type ?? "").toLowerCase();
+
+  if (normalized === "boolean") {
+    const checkbox = doc.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "codbi-epb__textinput codbi-epb__boolinput";
+    checkbox.checked = isTruthyLiteral(value);
+    checkbox.title = i18n("epBuilder.value");
+    checkbox.addEventListener("change", () => onChange(checkbox.checked ? "true" : "false"));
+    return checkbox;
+  }
+
+  const input = doc.createElement("input");
+  const numeric = normalized === "integer" || normalized === "number";
+  input.type = numeric ? "number" : "text";
+  if (normalized === "integer") {
+    input.step = "1";
+  } else if (normalized === "number") {
+    input.step = "any";
+  }
+  input.className = inputClassName;
+  input.value = value;
+  input.placeholder = i18n("epBuilder.value");
+  input.title = i18n("epBuilder.value");
+  input.addEventListener("input", () => onChange(input.value));
+
+  if (!options || options.length === 0) {
+    return input;
+  }
+
+  const wrapper = doc.createElement("span");
+  wrapper.className = "codbi-epb__literalcontrol";
+
+  const toggle = doc.createElement("button");
+  toggle.type = "button";
+  toggle.className = "codbi-epb__optiontoggle";
+  toggle.textContent = "▾";
+  toggle.title = i18n("epBuilder.options");
+  toggle.setAttribute("aria-label", i18n("epBuilder.options"));
+  toggle.addEventListener("mousedown", (event) => event.preventDefault());
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (activeOptionsPopup !== null && activeOptionsAnchor === wrapper) {
+      closeOptionsPopup();
+      return;
+    }
+
+    openOptionsPopup({ doc, anchor: wrapper, input, values: options, onSelect: onChange });
+  });
+
+  wrapper.append(input, toggle);
+  return wrapper;
 }
 
 /**
@@ -1243,6 +1507,9 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     }
 
     disposed = true;
+    // The parameter-options popup lives in the document body (not in the overlay), so it must be
+    // closed explicitly when the builder goes away.
+    closeOptionsPopup();
     overlay.remove();
     doc.removeEventListener("keydown", onKeydown, true);
     // Closing without ever applying means the user cancelled (Cancel button, Escape, programmatic
@@ -1465,10 +1732,26 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     const wrap = doc.createElement("div");
     wrap.className = "codbi-epb__resultpanel";
 
+    const head = doc.createElement("div");
+    head.className = "codbi-epb__resulthead";
+    const label = doc.createElement("span");
+    label.textContent = node.id.trim() === "" ? i18n("epBuilder.epId") : node.id;
+    const close = doc.createElement("button");
+    close.type = "button";
+    close.className = "codbi-epb__resultclose";
+    close.textContent = "✕";
+    close.title = i18n("epBuilder.closeResult");
+    close.setAttribute("aria-label", i18n("epBuilder.closeResult"));
+    close.addEventListener("click", () => {
+      openResults.delete(node);
+      render();
+    });
+    head.append(label, close);
+
     const pre = doc.createElement("div");
     pre.className = "codbi-epb__result";
     pre.textContent = results.get(node) ?? "";
-    wrap.appendChild(pre);
+    wrap.append(head, pre);
 
     return wrap;
   };
@@ -1484,7 +1767,10 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     render();
 
     const ids = collectEPIds([node]);
-    const requested = serializeEPNode(node, true);
+    // Preserve the literal CASING: some EPs validate their parameters case-sensitively (e.g.
+    // BayVIS.Ansprechpartner.ID requires "Firstname Lastname"), so lowercasing here made retrieval
+    // fail in the builder while the same value worked in the published form.
+    const requested = serializeEPNode(node);
     let runtimeDiag = "";
 
     try {
@@ -1532,27 +1818,36 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   /**
    * Renders a value segment list (text runs and EPs) into **container**, backed by **list**.
    *
-   * When **allowLiteral** is false (a non-string parameter type) no literal input is offered — the
-   * value must be produced by a nested Element-Placeholder.
+   * When **allowLiteral** is false (a complex parameter type) no literal input is offered — the
+   * value must be produced by a nested Element-Placeholder. The literal editor itself is
+   * **datatype-aware** (see {@link createLiteralControl }), so a `boolean` parameter renders a
+   * checkbox and numeric parameters a number input.
    */
-  const renderValueList = (container: HTMLElement, list: Array<ValueSegment>, allowLiteral = true): void => {
+  const renderValueList = (
+    container: HTMLElement,
+    list: Array<ValueSegment>,
+    allowLiteral = true,
+    literalType?: string,
+    literalOptions?: Array<string>,
+  ): void => {
     container.className = "codbi-epb__seglist";
 
     // An empty value/parameter is directly editable: typing creates the literal-text segment.
     if (list.length === 0) {
       if (allowLiteral) {
-        const input = doc.createElement("input");
-        input.type = "text";
-        input.className = "codbi-epb__textinput";
-        input.placeholder = i18n("epBuilder.value");
-        input.title = i18n("epBuilder.value");
-        input.addEventListener("input", () => {
-          if (list.length === 0) {
-            list.push({ kind: "text", value: input.value });
-          } else if (list[0].kind === "text") {
-            list[0].value = input.value;
-          }
-        });
+        const input = createLiteralControl(
+          doc,
+          literalType,
+          "",
+          (value) => {
+            if (list.length === 0) {
+              list.push({ kind: "text", value });
+            } else if (list[0].kind === "text") {
+              list[0].value = value;
+            }
+          },
+          literalOptions,
+        );
         container.appendChild(input);
       } else {
         const hint = doc.createElement("span");
@@ -1574,14 +1869,15 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
         });
 
         if (allowLiteral) {
-          const input = doc.createElement("input");
-          input.type = "text";
-          input.className = "codbi-epb__textinput";
-          input.value = segment.value;
-          input.title = i18n("epBuilder.value");
-          input.addEventListener("input", () => {
-            segment.value = input.value;
-          });
+          const input = createLiteralControl(
+            doc,
+            literalType,
+            segment.value,
+            (value) => {
+              segment.value = value;
+            },
+            literalOptions,
+          );
           container.append(input, remove);
         } else {
           const literal = doc.createElement("span");
@@ -1839,7 +2135,7 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
 
       const inner = doc.createElement("div");
       inner.className = "codbi-epb__seglist";
-      renderValueList(inner, param, allowsLiteral(signatureParam?.type));
+      renderValueList(inner, param, allowsLiteral(signatureParam?.type), signatureParam?.type, signatureParam?.options);
       line.appendChild(inner);
 
       const addNested = doc.createElement("button");
@@ -2013,17 +2309,26 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
       return undefined;
     };
 
-    const renderSegments = (list: Array<ValueSegment>, parent: HTMLElement): void => {
+    const renderSegments = (
+      list: Array<ValueSegment>,
+      parent: HTMLElement,
+      literalType?: string,
+      literalOptions?: Array<string>,
+    ): void => {
       for (const segment of list) {
         if (segment.kind === "text") {
-          const input = doc.createElement("input");
-          input.type = "text";
-          input.className = "codbi-epb__diagram-input";
-          input.value = segment.value;
-          input.title = i18n("epBuilder.value");
-          input.addEventListener("input", () => {
-            segment.value = input.value;
-          });
+          // Type-aware editor (boolean → checkbox, integer/number → numeric input, enum/known
+          // options → filterable arrow), exactly like the form-element CodBi config panel.
+          const input = createLiteralControl(
+            doc,
+            literalType,
+            segment.value,
+            (value) => {
+              segment.value = value;
+            },
+            literalOptions,
+            "codbi-epb__diagram-input",
+          );
           parent.appendChild(input);
           continue;
         }
@@ -2063,9 +2368,8 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
             const index = doc.createElement("span");
             index.className = "codbi-epb__diagram-index";
             index.textContent = String(paramIndex + 1);
-            const paramDescription = pickLanguage(
-              diagramSignature?.params.find((candidate) => candidate.index === paramIndex + 1)?.description,
-            );
+            const signatureParam = diagramSignature?.params.find((candidate) => candidate.index === paramIndex + 1);
+            const paramDescription = pickLanguage(signatureParam?.description);
             if (paramDescription) {
               index.title = paramDescription;
             }
@@ -2084,7 +2388,7 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
               empty.textContent = i18n("epBuilder.empty");
               inner.appendChild(empty);
             } else {
-              renderSegments(param, inner);
+              renderSegments(param, inner, signatureParam?.type, signatureParam?.options);
             }
 
             if (nestedId !== undefined && nestedId.toLowerCase().trim() === diagramSelection) {
@@ -2177,6 +2481,9 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
 
   /** Renders the builder body without touching the keyboard tab order. */
   function renderInner(): void {
+    // The body is rebuilt below, so an open parameter-options popup (anchored to one of its inputs)
+    // would dangle — close it first.
+    closeOptionsPopup();
     body.textContent = "";
 
     if (rawMode) {

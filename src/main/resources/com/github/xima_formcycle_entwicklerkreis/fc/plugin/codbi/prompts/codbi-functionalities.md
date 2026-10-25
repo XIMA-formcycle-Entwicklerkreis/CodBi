@@ -329,7 +329,7 @@ TWO DISTINCT USES — pick by the request, NEVER apply both:
 
 ## Media.MultipleUpload
 
-USE whenever the request wants the user to upload SEVERAL files into ONE upload field: "mehrere Dateien hochladen", "multiple files", "mehrere Bilder/Anhänge", "mehrere Dateien können hochgeladen werden", "auch mehrere Dateien", "Upload mehrerer Dateien". This is the CODBI MULTIPLE-UPLOAD functionality (verified in the source: it sets the `multiple` attribute on the file input, limits the number of files and shows the selected filenames in the label). Apply it ON that XUpload:
+USE whenever the request wants the user to upload SEVERAL files into ONE upload field: "mehrere Dateien hochladen", "multiple files", "mehrere Bilder/Anhänge", "mehrere Dateien können hochgeladen werden", "auch mehrere Dateien", "Upload mehrerer Dateien". This is the CODBI MULTIPLE-UPLOAD functionality (verified in the source: it sets the `multiple` attribute on the file input, limits the number of files, renders a drag & drop area with a styled upload button and shows an overlapping-card preview of the selected files that can be maximized and from which single files may be removed). Apply it ON that XUpload:
 - set `data-cb-func="Media.MultipleUpload"`,
 - `data-cb-Maximum` = the number of files the user may upload (e.g. `"5"`) — when the request does NOT state a count, keep the functionality's default of `2` and OMIT the parameter (do NOT invent a number),
 - optionally `data-cb-PrefixTooMany` / `data-cb-PostfixTooMany` (the messages shown before/after the number when too many files are selected) when the request states them.

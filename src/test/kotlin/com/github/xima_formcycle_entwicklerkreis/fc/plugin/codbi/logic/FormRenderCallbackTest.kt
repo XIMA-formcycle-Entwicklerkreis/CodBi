@@ -1,5 +1,8 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiFormResourcesPlugin
+import com.hp.gagawa.java.FertileNode
+import com.hp.gagawa.java.elements.Div
 import com.hp.gagawa.java.elements.Form
 import com.hp.gagawa.java.elements.Html
 import com.hp.gagawa.java.elements.Script
@@ -13,6 +16,14 @@ import de.xima.fc.interfaces.plugin.param.form.IPluginFormRenderCallbackOnAfterR
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+
+/**
+ * The `id` attributes of all `<script>` elements the callback added directly to the form — the
+ * deterministic proof of WHICH resource was injected (the inline/DB fallback and the external form
+ * resource differ only in their content/`src`).
+ */
+private fun scriptIds(form: Form): Set<String> =
+    (form as FertileNode).children.filterIsInstance<Script>().mapNotNull { attr(it, "id") }.toSet()
 
 /** Tests for [FormRenderCallback]. */
 class FormRenderCallbackTest {
@@ -48,8 +59,13 @@ class FormRenderCallbackTest {
 
     FormRenderCallback.onAfterRenderForm(params)
 
-    assertNull(byTagName(params.doc.html, "script"))
-    assertNull(byTagName(params.doc.html, "link"))
+    // Only the CODE LIBRARY resources are gated on the enable flag. The Mirror's "hide the persisted
+    // copies" script is injected for EVERY form (a form may use the Mirror without the code library),
+    // so the assertion is scoped to the resources that belong to the library.
+    val ids = scriptIds(params.doc.form)
+    assertFalse("codbi-script" in ids, "codbi.js must not be injected when disabled: $ids")
+    assertFalse("codbi-style" in ids, "codbi.css must not be injected when disabled: $ids")
+    assertNull(byTagName(params.doc.head, "link"))
   }
 
   @Test
@@ -86,6 +102,93 @@ class FormRenderCallbackTest {
   fun returnsNullForNullParams() {
     val result = FormRenderCallback.onAfterRenderForm(null)
     assertNull(result)
+  }
+
+  // endregion
+
+  // region standard-configuration CSS classes
+
+  @Test
+  fun injectsStandardConfigurationAndFunctionalityForClassUsedInRenderedForm() {
+    // Reported bug: a field carrying ONLY the `CodBi_NoFutureDate` class never got the `Date.Min`
+    // behaviour, although applying `data-cb-func="Date.Min"` manually worked. Cause: the class is a
+    // MARKER, the behaviour lives in the `Appointments` configuration script, which used to be
+    // injected only while that configuration was activated form-wide (`codbi-prop-standards`).
+    val params = AfterRenderFormParams()
+    params.xForm.formProperties.setProperty("codbi-prop-enable", "1")
+
+    val field = Div()
+    attr(field, "class", "XItem XTextField CodBi_NoFutureDate")
+    params.doc.form.appendChild(field)
+
+    // Force the DB fallback so the assertions do not depend on the built JS being on the classpath.
+    CodbiFormResourcesPlugin.formResources = emptyMap()
+
+    try {
+      FormRenderCallback.onAfterRenderForm(params)
+
+      val ids = scriptIds(params.doc.form)
+      assertTrue(
+          "codbi-standard-Appointments" in ids,
+          "The owning standard configuration was not injected: $ids")
+      assertTrue(
+          "codbi-functionality-date-min" in ids,
+          "The functionality applied by CodBi_NoFutureDate was not injected: $ids")
+    } finally {
+      CodbiFormResourcesPlugin.formResources = emptyMap()
+    }
+  }
+
+  @Test
+  fun doesNotInjectStandardConfigurationForUnrelatedClasses() {
+    val params = AfterRenderFormParams()
+    params.xForm.formProperties.setProperty("codbi-prop-enable", "1")
+
+    val field = Div()
+    attr(field, "class", "XItem XTextField MyOwnClass")
+    params.doc.form.appendChild(field)
+
+    CodbiFormResourcesPlugin.formResources = emptyMap()
+
+    try {
+      FormRenderCallback.onAfterRenderForm(params)
+
+      val ids = scriptIds(params.doc.form)
+      assertFalse(
+          "codbi-standard-Appointments" in ids,
+          "An unrelated class must not inject a standard configuration: $ids")
+    } finally {
+      CodbiFormResourcesPlugin.formResources = emptyMap()
+    }
+  }
+
+  // endregion
+
+  // region extractClassNames
+
+  @Nested
+  inner class ExtractClassNamesTest {
+
+    @Test
+    fun readsDoubleAndSingleQuotedClassAttributes() {
+      val result =
+          FormRenderCallback.extractClassNames(
+              """<input class="XItem XTextField CodBi_NoFutureDate"><div class='wrapper'>""")
+
+      assertEquals(setOf("XItem", "XTextField", "CodBi_NoFutureDate", "wrapper"), result)
+    }
+
+    @Test
+    fun ignoresOtherAttributesContainingTheWordClass() {
+      val result = FormRenderCallback.extractClassNames("""<div data-class="CodBi_NoFutureDate">""")
+
+      assertTrue(result.isEmpty(), "Unexpected classes: $result")
+    }
+
+    @Test
+    fun toleratesEmptyMarkup() {
+      assertTrue(FormRenderCallback.extractClassNames("").isEmpty())
+    }
   }
 
   // endregion

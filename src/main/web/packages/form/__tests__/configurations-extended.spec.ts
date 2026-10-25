@@ -250,6 +250,55 @@ describe("Configuration: Holistic.Media.Input.Speech.Whisper", () => {
   });
 });
 
+describe("Configuration: Holistic.Media.MultipleUpload", () => {
+  let calls: any[];
+
+  beforeEach(() => {
+    (globalThis as any).XFC_METADATA = { requestType: "provide" };
+    document.body.innerHTML = "";
+    calls = setupConfigCapture();
+  });
+
+  afterEach(() => {
+    delete (globalThis as any).XFC_METADATA;
+    document.body.innerHTML = "";
+  });
+
+  it("calls loadConfig with MEDIA.MULTIPLEUPLOAD on every upload field", async () => {
+    await import("../src/js/Configurations/Holistic.Media.MultipleUpload.js");
+    expect(calls.length).toBe(1);
+    expect(calls[0].FUNC).toBe("MEDIA.MULTIPLEUPLOAD");
+    expect(calls[0].targets).toContain('.CXUpload input[type="file"]');
+    expect(calls[0].targets).toContain("CodBi_XCL_MultipleUpload");
+    expect(calls[0].targets).toContain(":not([data-cb-func])");
+  });
+});
+
+describe("Configuration: Holistic.Media.MultipleUpload.Single", () => {
+  let calls: any[];
+
+  beforeEach(() => {
+    (globalThis as any).XFC_METADATA = { requestType: "provide" };
+    document.body.innerHTML = "";
+    calls = setupConfigCapture();
+  });
+
+  afterEach(() => {
+    delete (globalThis as any).XFC_METADATA;
+    document.body.innerHTML = "";
+  });
+
+  it("applies MEDIA.MULTIPLEUPLOAD with Maximum 1 on every upload field", async () => {
+    await import("../src/js/Configurations/Holistic.Media.MultipleUpload.Single.js");
+    expect(calls.length).toBe(1);
+    expect(calls[0].FUNC).toBe("MEDIA.MULTIPLEUPLOAD");
+    expect(calls[0].Maximum).toBe("1");
+    expect(calls[0].targets).toContain('.CXUpload input[type="file"]');
+    expect(calls[0].targets).toContain("CodBi_XCL_MultipleUpload_Single");
+    expect(calls[0].targets).toContain(":not([data-cb-func])");
+  });
+});
+
 describe("Configuration: Holistic.CSS.Standard", () => {
   let calls: any[];
 

@@ -20,7 +20,31 @@
         "description": {
           "en": "An optional property of the contact, like e.g. \"nachname\".",
           "de": "Eine optionale Eigenschaft des Ansprechpartners, z. B. \"nachname\"."
-        }
+        },
+        "options": [
+          "anrede",
+          "vorname",
+          "nachname",
+          "funktion",
+          "stellenbezeichnung",
+          "email",
+          "website",
+          "zimmer",
+          "behoerdeId",
+          "behoerdeBezeichnung",
+          "gebaeudeId",
+          "gebaeudeBezeichnung",
+          "ansprechpartnerId",
+          "telefonLandvorwahl",
+          "telefonOrtsvorwahl",
+          "telefonAnlage",
+          "telefonDurchwahl",
+          "apTelefonLandvorwahl",
+          "apTelefonOrtsvorwahl",
+          "apTelefonAnlage",
+          "apTelefonDurchwahl",
+          "apEmail"
+        ]
       }
     ],
     "returnType": "any",

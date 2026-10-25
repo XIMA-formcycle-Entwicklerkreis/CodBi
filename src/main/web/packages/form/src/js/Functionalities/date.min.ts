@@ -74,6 +74,16 @@ export class Date_Min {
       : false;
     // #endregion Normalize Reverse-Parameter.
     toLoad.unit = ["d", "w", "m", "y"].includes(toLoad.unit as string) ? (toLoad.unit as string) : "y"; // Normalize Unit-Parameter.
+    // #region Normalize Minimum-Parameter.
+    // A MISSING/blank `Minimum` behaves like `Minimum = 0`: in the default (NOT reversed) direction the
+    // entered date may be at most TODAY — which is exactly the contract of a standard configuration
+    // such as `CodBi_NoFutureDate`. Without this normalization, `Number.parseInt(undefined)` produced
+    // `NaN`, the comparison date became an `Invalid Date` and EVERY check silently passed: the
+    // functionality looked applied (its `data-cb-*` attributes and badge were present) yet never
+    // rejected anything.
+    const minimumText = String(toLoad.minimum ?? "").trim();
+    toLoad.minimum = /^\d+$/.test(minimumText) ? minimumText : "0";
+    // #endregion Normalize Minimum-Parameter.
 
     $(toProcess).datepicker(
       "option",

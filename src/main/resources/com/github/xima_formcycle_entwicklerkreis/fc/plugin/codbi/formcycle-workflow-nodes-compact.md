@@ -256,9 +256,9 @@ REQUIRED: online or offline (and which page/field scope when applicable).
 CodbiExtendedAccessor (com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin) — Reads ONE form element and exposes its RAW value as a node RESULT (NO HTML escaping). USE when a rich-text/TinyMCE value must arrive RENDERED (a plain [%field%] in a mail body is HTML-escaped), or when one repetition (INDEX) or all repetitions (ALL) of a repeatable element must be read. nodeType IS "CodbiExtendedAccessor" (the registered name — NEVER the class name). Result placeholder: [%$<node name>.RESULT.value%].
 REQUIRED: fieldName (the technicalId of the ONE element to read).
 nodeParams: {"fieldName","repetitionMode":"CURRENT"|"INDEX"|"ALL","repetitionIndex","joinSeparator","includeMeta","sanitizeHtml","htmlToText","allowImages","allowLinks","allowTables","allowStyles"}. REQUEST the details for this node type.
-### CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin)
-CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin) — Creates a new form record (Vorgang) in another form.
-REQUIRED: the target form and the field mapping.
+### CreateRemoteFormRecordPlugin (de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin)
+CreateRemoteFormRecordPlugin (de.xima.advanced.plugin.node.CreateRemoteFormRecordPlugin) — Creates a new form record (Vorgang) in another form. The target form is one of the AVAILABLE FORMS (match its title by MEANING, write the EXACT title into projectName; never ask while a plausible form is listed); the old "…fc_plugin_create_record…CreateRecordNodePlugin" has NO installed handler and produces an invalid node.
+nodeParams: {"projectName","stateName" (ONE of the "statuses:" listed for that form, else omit),"inboxName" (ONE of the AVAILABLE INBOXES names — the record is CREATED in that inbox, so NO FC_MOVE_FORM_RECORD_TO_INBOX node is added),"elementsToCopy":[{"name","value"}],"copyAll","files":["<upload field technicalId>"]}.
 ### FC_SHOW_TEMPLATE
 FC_SHOW_TEMPLATE — Renders an HTML template to the user.
 REQUIRED: the HTML template to render.
@@ -276,8 +276,8 @@ A FIELD means UPLOAD ("die Datei im Feld Anhang", "das Uploadfeld X leeren", "de
 PATTERN: matched against the WHOLE stored file name incl. extension, case-SENSITIVE; "*" is the only wildcard and means one or more chars ("*.JPG", "KOALA*", "Anlage *.pdf"), everything else is literal (literal "*" = "\*"). Use the name exactly as the user wrote it — add no wildcards yourself.
 "searchSourceTypes" is OPTIONAL and OMITTED for all sources; set it only when the user restricts the origin (["WORKFLOW"], ["FORM_UPLOAD"], ["INBOX"], …). "attachments" is required and needs at least one item. There is NO "attachments":["<field id>"], NO "fileName" and NO "attachmentName" key. The result exposes deletedAttachments/notDeletedAttachments; no match is NOT an error.
 ### FC_MOVE_FORM_RECORD_TO_INBOX
-FC_MOVE_FORM_RECORD_TO_INBOX — Moves the form record to a specified inbox.
-REQUIRED: the inbox name (or the instruction to search by name).
+FC_MOVE_FORM_RECORD_TO_INBOX — Moves an EXISTING form record to a specified inbox.
+REQUIRED: the inbox name (or the instruction to search by name). NOT for a record that is being CREATED in another form — that inbox is the creating node's "inboxName".
 ### FC_THROW_EXCEPTION
 FC_THROW_EXCEPTION — Throws/causes a workflow error/exception (caught by FC_CATCH_ERROR in another lane).
 ### FC_EMPTY
@@ -319,6 +319,7 @@ NOTE — Upload malware scanning (fc-plugin-malware-scanner-ms-def) runs AUTOMAT
 ### FC_MULTIPLE_CONDITION
 FC_MULTIPLE_CONDITION — Checks whether a form field value meets a condition (CONDITIONAL branching node).
 REQUIRED: the field to check, the comparison and the value to compare against.
+BRANCHES: "_childNodes" = YES branch (condition met), "_elseChildNodes" = NO/ELSE branch (not met) — an if/else is ONE lane with ONE condition node, never two lanes (a lane without a condition always fires).
 ### FC_SWITCH
 FC_SWITCH — Switches execution based on the value of a form field (switch/case, MULTI-BRANCH).
 REQUIRED: the field to switch on and the case values/branches.

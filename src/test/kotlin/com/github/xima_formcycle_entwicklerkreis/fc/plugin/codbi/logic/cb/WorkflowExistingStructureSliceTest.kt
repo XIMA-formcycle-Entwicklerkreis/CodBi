@@ -119,7 +119,13 @@ class WorkflowExistingStructureSliceTest {
                 String::class.java, // formVariables
                 String::class.java, // existingWorkflowStructure
                 Boolean::class.javaPrimitiveType, // existingStructureBounded
-                Set::class.java) // existingStructureDemandedIds
+                Set::class.java, // existingStructureDemandedIds
+                String::class.java, // userGroups
+                String::class.java, // pdfTemplates
+                String::class.java, // databaseSql
+                String::class.java, // databaseLdap
+                String::class.java, // xslTemplates
+                String::class.java) // forms
     assertNotNull(method)
     method.isAccessible = true
     // Fail-open: with no entity manager the builder returns the classpath fallback prompt whether
@@ -145,7 +151,13 @@ class WorkflowExistingStructureSliceTest {
             null,
             null,
             true,
-            emptySet<Any>()) as String
+            emptySet<Any>(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null) as String
     val resultNoFlags =
         method.invoke(
             assistant,
@@ -166,7 +178,13 @@ class WorkflowExistingStructureSliceTest {
             null,
             null,
             false,
-            emptySet<Any>()) as String
+            emptySet<Any>(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null) as String
     assertTrue(resultBothFlags.isNotBlank())
     assertEquals(resultNoFlags, resultBothFlags)
   }

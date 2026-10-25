@@ -10,7 +10,7 @@ import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
 import { openEPBuilder } from "./EPBuilder.js";
-import { setSelectedItemAttributeValue } from "./CodbiElementMarkers.js";
+import { notifyFormPreviewChanged, setSelectedItemAttributeValue } from "./CodbiElementMarkers.js";
 import { codbiManagerCacheSuffix } from "./CodbiManagerBundle.js";
 import { i18n } from "./i18n.js";
 // #endregion Imports
@@ -1520,7 +1520,69 @@ export function enableLocalDocInterface(): void {
                             return;
                           }
 
-                          INSTANCE.tsCheck<HTMLElement>(queryGridCell(optionTargetRow, "r4"), HTMLElement).click();
+                          const valueCell = queryGridCell(optionTargetRow, "r4");
+                          const spec = variableParameterSpec(added.value);
+                          const specType = (spec?.type ?? "").toLowerCase();
+                          // Mirror the conditions of `syncVariableControl`: a CodBi parameter that
+                          // declares a usable datatype must NOT open the variables grid's plain
+                          // string editor. Commit the NAME edit, let the type-aware value control
+                          // (checkbox / number input / enum select) mount, and focus it.
+                          const typed =
+                            specType === "boolean" ||
+                            specType === "integer" ||
+                            specType === "number" ||
+                            (specType === "enum" && (spec?.options?.length ?? 0) > 0);
+
+                          if (typed) {
+                            // Keep the proven commit path (clicking the value cell commits the
+                            // NAME edit), then close the plain string editor it may have opened so
+                            // the type-aware control can mount over the cell.
+                            valueCell?.click();
+
+                            const focusTypedControl = (attempt: number): void => {
+                              const cell =
+                                valueCell?.isConnected === true ? valueCell : queryGridCell(optionTargetRow, "r4");
+
+                              if (!cell) {
+                                return;
+                              }
+
+                              const control = cell.querySelector<HTMLElement>(`[${VAR_CONTROL_ATTR}]`);
+
+                              if (control) {
+                                const focusable = control.matches("input,select")
+                                  ? control
+                                  : control.querySelector<HTMLElement>("input,select");
+                                (focusable ?? control).focus();
+                                return;
+                              }
+
+                              const editor = Array.from(
+                                cell.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input,textarea"),
+                              ).find((candidate) => !candidate.closest(`[${VAR_CONTROL_ATTR}]`));
+
+                              if (editor) {
+                                editor.blur();
+                                scheduleVariableButtonDecorate();
+                              }
+
+                              if (attempt < 8) {
+                                window.setTimeout(() => focusTypedControl(attempt + 1), 40);
+                                return;
+                              }
+
+                              // No typed control mounted (e.g. the current value is an EP
+                              // expression) — leave the grid's own editor usable.
+                              cell.click();
+                            };
+
+                            window.setTimeout(() => focusTypedControl(0), 0);
+                            return;
+                          }
+
+                          if (valueCell) {
+                            valueCell.click();
+                          }
                         });
                         // #endregion Insert proper global variable when <XC-OptionInput>'s current option was selected.
                         // #region Properly layout <XC-OptionInput>.
@@ -1600,6 +1662,576 @@ export function enableLocalDocInterface(): void {
           if (!varsEditor) {
             return;
           }
+
+          // #region Refresh RUNNING element previews after a form global variable changed.
+          // The variables tab is where the ALT+V global-variable picker writes its value. A global
+          // variable feeds the CodBi parameters (`<functionality>_<parameter>`) and the standard
+          // configurations' `globals`, so the server-rendered element previews must be re-applied
+          // with the freshly synced draft.
+          //
+          // FORMCYCLE's grid creates its cell editor on demand and removes it on commit (Enter or
+          // focus loss), so the input's value is remembered on `focusin` and compared when the cell
+          // is committed (`change`/`focusout` and the Enter keydown). Only an ACTUAL value change
+          // notifies — merely moving through the grid must not reload any preview.
+          const variableEditorValues = new WeakMap<Element, string>();
+          const isVariableEditor = (
+            node: EventTarget | null,
+          ): node is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement =>
+            node instanceof HTMLInputElement ||
+            node instanceof HTMLTextAreaElement ||
+            node instanceof HTMLSelectElement;
+          const notifyVariablePreviewChange = (event: Event): void => {
+            const target = event.target;
+
+            if (!isVariableEditor(target)) {
+              return;
+            }
+
+            const previous = variableEditorValues.get(target);
+            variableEditorValues.set(target, target.value);
+
+            // No baseline (the editor was not observed on focus) or an unchanged value: nothing to do.
+            if (previous === undefined || previous === target.value) {
+              return;
+            }
+
+            notifyFormPreviewChanged();
+          };
+          varsEditor.addEventListener(
+            "focusin",
+            (event: Event) => {
+              if (isVariableEditor(event.target)) {
+                variableEditorValues.set(event.target, event.target.value);
+              }
+            },
+            true,
+          );
+          for (const type of ["change", "focusout"] as const) {
+            varsEditor.addEventListener(type, notifyVariablePreviewChange, true);
+          }
+          // The grid commits on Enter; capture the keydown BEFORE the editor is removed, so the
+          // freshly typed value still reaches the comparison above.
+          varsEditor.addEventListener(
+            "keydown",
+            (event: KeyboardEvent) => {
+              if (event.key === "Enter") {
+                notifyVariablePreviewChange(event);
+              }
+            },
+            true,
+          );
+          // #endregion Refresh RUNNING element previews after a form global variable changed.
+
+          // #region EP-builder buttons for CodBi global variables in the variables grid.
+          /** Structural view of one entry of the designer's variables model. */
+          interface IVariableRowData {
+            aliasname?: string;
+            id?: string;
+            idx?: number;
+            name?: string;
+            serveronly?: boolean;
+            value?: string;
+          }
+          /** Structural view of the designer APIs used to read/write a form variable. */
+          interface IVariableDesigner {
+            getVariables?: () => Array<IVariableRowData>;
+            getLayoutView?: () => { setVariables?: (vars: Array<IVariableRowData>) => void } | undefined;
+            getPersistDiffer?: () => { checkForChanges?: () => void } | undefined;
+          }
+          /** Button class of the EP-builder launcher placed inside a variable's value cell. */
+          const VAR_EPB_BUTTON_CLASS = "codbi-vars-epb-button";
+          /** Marks the type-aware value control inserted into a variable's value cell. */
+          const VAR_CONTROL_ATTR = "data-codbi-vars-control";
+
+          /**
+           * One cell of a variables-editor row. The grid columns are (delete, serveronly, name,
+           * aliasname, value), and SlickGrid renders each cell with its 0-based column index in the
+           * `l<n>`/`r<n>` classes — so the variable's NAME is `r2` and its VALUE is `r4`.
+           */
+          const variableCell = (row: Element, marker: "r2" | "r4"): HTMLElement | null =>
+            Array.from(row.querySelectorAll<HTMLElement>(".slick-cell")).find((cell) =>
+              cell.classList.contains(marker),
+            ) ?? null;
+
+          /** @returns the visible text (or the active editor's value) of a variable cell. */
+          const variableCellText = (cell: HTMLElement | null): string => {
+            if (!cell) {
+              return "";
+            }
+            // Our own type-aware control is authoritative while it is mounted (a checkbox reports
+            // its checked state rather than its meaningless `value`).
+            const overlay = cell.querySelector<HTMLElement>(`[${VAR_CONTROL_ATTR}]`);
+            const overlayControl = overlay?.matches("input,select,textarea")
+              ? (overlay as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)
+              : overlay?.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+                  "input,select,textarea",
+                );
+            if (overlayControl) {
+              return overlayControl instanceof HTMLInputElement && overlayControl.type === "checkbox"
+                ? overlayControl.checked
+                  ? "true"
+                  : "false"
+                : overlayControl.value.trim();
+            }
+            // The grid's own cell editor (never one of our controls).
+            const control = Array.from(
+              cell.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+                "input,textarea,select",
+              ),
+            ).find((candidate) => !candidate.closest(`[${VAR_CONTROL_ATTR}]`));
+            if (control) {
+              return control.value.trim();
+            }
+            // Exclude our own launcher button from the cell's text.
+            const clone = cell.cloneNode(true) as HTMLElement;
+            for (const node of Array.from(clone.querySelectorAll(`.${VAR_EPB_BUTTON_CLASS}`))) {
+              node.remove();
+            }
+            return (clone.textContent ?? "").trim();
+          };
+
+          /** @returns the name and value of one variables-editor row. */
+          const readVariableRow = (row: Element): { name: string; value: string } => ({
+            name: variableCellText(variableCell(row, "r2")),
+            value: variableCellText(variableCell(row, "r4")),
+          });
+
+          /**
+           * Every name that counts as a **CodBi global variable**: the standard configurations'
+           * `globals` keys plus the functionality parameters `<Functionality>_<parameter>` — exactly
+           * the entries the ALT+V picker lists in the variables tab. Sorted longest-first so a
+           * longer name is tested before one of its prefixes.
+           */
+          const codbiGlobalVariableNames = (): Array<string> => {
+            const names = new Set<string>();
+            try {
+              const data = window.CodbiPluginData;
+              for (const standard of Object.keys(data?.detStandards ?? {})) {
+                for (const name of Object.keys(data?.detStandards?.[standard]?.globals ?? {})) {
+                  if (name.trim() !== "") {
+                    names.add(name.trim());
+                  }
+                }
+              }
+              const functionalities = data?.detFunctionalities ?? {};
+              for (const func of Object.keys(functionalities)) {
+                for (const parameter of Object.keys(functionalities[func]?.Parameter ?? {})) {
+                  names.add(`${func.replace(/\./g, "_")}_${parameter}`);
+                }
+              }
+            } catch {
+              /* plugin data not ready — treat as "no CodBi globals" */
+            }
+            return Array.from(names).sort((left, right) => right.length - left.length);
+          };
+
+          /**
+           * @returns whether the text references at least one CodBi global variable. The name must
+           * appear as a WHOLE identifier token, so `CodBi_Holidays_States2` does not match
+           * `CodBi_Holidays_States` (and therefore no stale EP launcher remains).
+           */
+          const containsCodbiGlobalVariable = (
+            text: string,
+            names: Array<string> = codbiGlobalVariableNames(),
+          ): boolean => {
+            const haystack = text.toLowerCase();
+            return names.some((name) => {
+              const needle = name.trim().toLowerCase();
+              if (needle === "") {
+                return false;
+              }
+              const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              return new RegExp(`(^|[^a-z0-9_])${escaped}(?![a-z0-9_])`, "i").test(haystack);
+            });
+          };
+
+          /**
+           * Writes a new value into the designer's variables model for the row that contains `row`.
+           * The variables grid's own editor is only created on demand, so writing through the model
+           * (`getVariables`/`setVariables`) is the reliable path; the persist differ is nudged so the
+           * change is synced to the server draft the preview renders.
+           */
+          const applyVariableValue = (row: Element, value: string): void => {
+            const info = readVariableRow(row);
+            try {
+              const designer = getDesignerInstance() as unknown as IVariableDesigner | undefined;
+              const variables = designer?.getVariables?.() ?? [];
+              let index = variables.findIndex(
+                (entry) =>
+                  String(entry.name ?? "").trim() === info.name && String(entry.value ?? "").trim() === info.value,
+              );
+              if (index < 0) {
+                index = variables.findIndex((entry) => String(entry.name ?? "").trim() === info.name);
+              }
+              if (index < 0) {
+                index = variables.findIndex((entry) => String(entry.value ?? "").trim() === info.value);
+              }
+              if (index >= 0) {
+                const updated = variables.map((entry, entryIndex) =>
+                  entryIndex === index ? { ...entry, value } : entry,
+                );
+                designer?.getLayoutView?.()?.setVariables?.(updated);
+                designer?.getPersistDiffer?.()?.checkForChanges?.();
+                notifyFormPreviewChanged();
+                return;
+              }
+            } catch (x) {
+              console.error("[CodBi] Variables: could not apply the composed EP value", x);
+            }
+            console.warn("[CodBi] Variables: could not resolve the edited variable row", info);
+          };
+
+          /** The datatype metadata of one CodBi functionality parameter. */
+          interface IVariableParameterSpec {
+            type?: string;
+            options?: Array<string>;
+          }
+
+          /**
+           * Resolves the datatype metadata of a global variable whose NAME is a CodBi functionality
+           * parameter (`<Functionality>_<parameter>` — the long form the ALT+V picker inserts).
+           * Standard configurations' `globals` carry no type information, so they stay plain text.
+           */
+          const variableParameterSpec = (name: string): IVariableParameterSpec | undefined => {
+            const wanted = name.trim().toLowerCase();
+            if (wanted === "") {
+              return undefined;
+            }
+            const functionalities = window.CodbiPluginData?.detFunctionalities ?? {};
+            for (const func of Object.keys(functionalities)) {
+              const entry = functionalities[func];
+              const prefix = `${func.replace(/\./g, "_")}_`.toLowerCase();
+              if (!wanted.startsWith(prefix)) {
+                continue;
+              }
+              const bare = wanted.substring(prefix.length);
+              const parameterKey = Object.keys(entry.Parameter ?? {}).find((key) => key.toLowerCase() === bare);
+              if (!parameterKey) {
+                continue;
+              }
+              const metaKey = Object.keys(entry.parameters ?? {}).find((key) => key.toLowerCase() === bare);
+              const meta = metaKey ? entry.parameters?.[metaKey] : undefined;
+              // Legacy `{Type}` hint in the parameter description acts as the fallback (identical to
+              // the form-element CodBi config panel).
+              const legacyType = /\{\s*([A-Za-z]+)\s*\}/
+                .exec(String(entry.Parameter?.[parameterKey] ?? ""))?.[1]
+                ?.toLowerCase();
+              return { type: meta?.type ?? legacyType ?? "string", options: meta?.options };
+            }
+            return undefined;
+          };
+
+          /**
+           * Keeps the type-aware value control of one variables-grid row in sync, mirroring the
+           * parameter editors of the form-element CodBi config panel:
+           * - `boolean` → checkbox (`true`/`false`),
+           * - `integer`/`number` → number input (`step` `1`/`any`),
+           * - `enum` (with options) → select.
+           *
+           * String/any parameters and **EP expressions** (`{ ... }`) keep the native text editing, so
+           * a composed element-placeholder value can always be edited as text. The control writes
+           * through {@link applyVariableValue } (model + persist differ + preview refresh).
+           */
+          const syncVariableControl = (
+            row: Element,
+            valueCell: HTMLElement,
+            spec: IVariableParameterSpec | undefined,
+          ): void => {
+            const info = readVariableRow(row);
+            const existing = valueCell.querySelector<HTMLElement>(`[${VAR_CONTROL_ATTR}]`);
+            // The grid's own editor must always win while it is open.
+            const gridEditing = Array.from(
+              valueCell.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+                "input,textarea,select",
+              ),
+            ).some((candidate) => !candidate.closest(`[${VAR_CONTROL_ATTR}]`));
+            const type = (spec?.type ?? "").toLowerCase();
+            const value = info.value;
+            const looksLikeEp = /(^|[^°])\{/.test(value);
+            const booleanLiteral = ["", "true", "false", "1", "0", "yes", "no", "on", "off"].includes(
+              value.toLowerCase(),
+            );
+            const numericLiteral = value === "" || Number.isFinite(Number(value));
+
+            let kind: "boolean" | "number" | "select" | null = null;
+            if (!gridEditing && spec && !looksLikeEp) {
+              if (type === "boolean" && booleanLiteral) {
+                kind = "boolean";
+              } else if ((type === "integer" || type === "number") && numericLiteral) {
+                kind = "number";
+              } else if (type === "enum" && (spec.options?.length ?? 0) > 0) {
+                kind = "select";
+              }
+            }
+
+            if (kind === null) {
+              existing?.remove();
+              return;
+            }
+
+            const signature = `${kind}\u0003${value}\u0003${(spec?.options ?? []).join("\u0002")}`;
+            if (existing?.dataset.codbiControlSignature === signature) {
+              return;
+            }
+            existing?.remove();
+
+            const apply = (next: string): void => {
+              applyVariableValue(row, next);
+            };
+            const control = document.createElement(
+              kind === "boolean" ? "span" : kind === "number" ? "input" : "select",
+            ) as HTMLElement;
+            control.setAttribute(VAR_CONTROL_ATTR, "");
+            control.dataset.codbiControlSignature = signature;
+            control.dataset.codbiControlKind = kind;
+            const bounds = {
+              position: "absolute",
+              right: "34px",
+              top: "1px",
+              bottom: "1px",
+              boxSizing: "border-box",
+              background: "#fff",
+              zIndex: "4",
+            } as const;
+
+            if (kind === "boolean") {
+              Object.assign(control.style, {
+                ...bounds,
+                left: "0",
+                display: "flex",
+                alignItems: "center",
+                paddingLeft: "6px",
+              });
+              const checkbox = document.createElement("input");
+              checkbox.type = "checkbox";
+              checkbox.checked = ["true", "1", "yes", "on"].includes(value.toLowerCase());
+              checkbox.addEventListener("change", () => apply(checkbox.checked ? "true" : "false"));
+              control.appendChild(checkbox);
+            } else if (kind === "number") {
+              const input = control as HTMLInputElement;
+              input.type = "number";
+              input.step = type === "integer" ? "1" : "any";
+              input.value = value;
+              Object.assign(input.style, {
+                ...bounds,
+                left: "2px",
+                border: "1px solid #d0d5dd",
+                borderRadius: "3px",
+                padding: "0 4px",
+                font: "inherit",
+              });
+              input.addEventListener("change", () => apply(input.value));
+              input.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  input.blur();
+                }
+              });
+            } else {
+              const select = control as HTMLSelectElement;
+              Object.assign(select.style, {
+                ...bounds,
+                left: "2px",
+                border: "1px solid #d0d5dd",
+                borderRadius: "3px",
+                padding: "0 2px",
+                font: "inherit",
+              });
+              const options = spec?.options ?? [];
+              const blank = document.createElement("option");
+              blank.value = "";
+              select.appendChild(blank);
+              for (const option of options) {
+                const entry = document.createElement("option");
+                entry.value = option;
+                entry.textContent = option;
+                select.appendChild(entry);
+              }
+              if (value !== "" && !options.includes(value)) {
+                const custom = document.createElement("option");
+                custom.value = value;
+                custom.textContent = value;
+                select.appendChild(custom);
+              }
+              select.value = value;
+              select.addEventListener("change", () => apply(select.value));
+            }
+
+            // Never let the grid start editing/selecting when the control is used.
+            for (const eventType of ["mousedown", "mouseup", "click", "dblclick", "keydown"] as const) {
+              control.addEventListener(eventType, (event) => event.stopPropagation());
+            }
+            valueCell.appendChild(control);
+          };
+
+          /**
+           * Adds (or removes) the EP-builder launcher at the RIGHT edge of every value cell (`l4 r4`)
+           * whose row references a CodBi global variable. Idempotent; called after every grid
+           * re-render (SlickGrid virtualises/culls rows and cells).
+           */
+          const decorateVariableValueCells = (): void => {
+            const globalNames = codbiGlobalVariableNames();
+            for (const row of varsEditor.querySelectorAll<HTMLElement>(".slick-row")) {
+              const valueCell = variableCell(row, "r4");
+              if (!valueCell) {
+                continue;
+              }
+              const existing = valueCell.querySelector<HTMLButtonElement>(`:scope > .${VAR_EPB_BUTTON_CLASS}`);
+              // The cell editor (when active) must leave room for the launcher at its right edge.
+              // Our own type-aware control is not a grid editor and must be ignored here.
+              const editorControl = Array.from(
+                valueCell.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+                  "input,textarea,select",
+                ),
+              ).find((candidate) => !candidate.closest(`[${VAR_CONTROL_ATTR}]`));
+              const info = readVariableRow(row);
+              const spec = variableParameterSpec(info.name);
+              const wanted = containsCodbiGlobalVariable(`${info.name} ${info.value}`, globalNames);
+
+              if (!wanted) {
+                existing?.remove();
+                syncVariableControl(row, valueCell, undefined);
+                valueCell.classList.remove("codbi-vars-has-builder");
+                valueCell.style.paddingRight = "";
+                if (editorControl instanceof HTMLElement) {
+                  editorControl.style.paddingRight = "";
+                }
+                continue;
+              }
+              // Type-aware value control (boolean checkbox / number input / enum select) next to
+              // the launcher; EP expressions keep the native text editor.
+              syncVariableControl(row, valueCell, spec);
+              if (existing) {
+                continue;
+              }
+
+              const button = document.createElement("button");
+              button.type = "button";
+              // Same launcher as the parameter fields of the element CodBi config (`ƒ`, darkorange,
+              // rounded, transparent) — but stretched to the FULL cell height on the right edge.
+              button.className = `${VAR_EPB_BUTTON_CLASS} codbi-func-config__ep`;
+              button.textContent = "ƒ";
+              button.title = "EP-Builder";
+              button.setAttribute("aria-label", "EP-Builder");
+              Object.assign(button.style, {
+                position: "absolute",
+                top: "0",
+                right: "2px",
+                bottom: "0",
+                height: "100%",
+                minWidth: "30px",
+                boxSizing: "border-box",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: "5",
+                font: "inherit",
+                fontSize: "13px",
+                lineHeight: "1",
+                padding: "0 4px",
+                cursor: "pointer",
+              });
+              // Never let the grid start editing/selecting when the launcher is pressed.
+              for (const type of ["mousedown", "mouseup", "dblclick"] as const) {
+                button.addEventListener(type, (event) => event.stopPropagation());
+              }
+              button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                // Only one builder popup at a time (mirrors the attribute-grid launcher).
+                if (document.querySelector(".codbi-epb-overlay")) {
+                  return;
+                }
+
+                openEPBuilder({
+                  document: window.document,
+                  anchor: button,
+                  value: readVariableRow(row).value,
+                  listEPs: () => {
+                    try {
+                      const raw = window.CodbiPluginData?.fslElementplaceholder ?? "[]";
+                      const parsed = JSON.parse(raw) as Array<string>;
+                      return Array.isArray(parsed) ? parsed.map((entry) => entry.replace(/\.(js|ts)$/i, "")) : [];
+                    } catch {
+                      return [];
+                    }
+                  },
+                  onApply: (value: string) => applyVariableValue(row, value),
+                });
+              });
+
+              if (getComputedStyle(valueCell).position === "static") {
+                valueCell.style.position = "relative";
+              }
+              valueCell.classList.add("codbi-vars-has-builder");
+              valueCell.style.paddingRight = "36px";
+              // Keep the launcher visible while the cell is being edited and keep the typed text
+              // clear of it.
+              if (editorControl instanceof HTMLElement) {
+                editorControl.style.paddingRight = "36px";
+              }
+              valueCell.appendChild(button);
+            }
+          };
+
+          /** Debounced (re)decoration — the grid re-renders rows/cells frequently. */
+          let variableButtonDecorateHandle: number | null = null;
+          const scheduleVariableButtonDecorate = (): void => {
+            if (variableButtonDecorateHandle !== null) {
+              window.clearTimeout(variableButtonDecorateHandle);
+            }
+            variableButtonDecorateHandle = window.setTimeout(() => {
+              variableButtonDecorateHandle = null;
+              decorateVariableValueCells();
+            }, 0);
+          };
+          new MutationObserver(scheduleVariableButtonDecorate).observe(varsEditor, {
+            childList: true,
+            subtree: true,
+          });
+          scheduleVariableButtonDecorate();
+
+          /*
+           * Deleting a variable row (the trash cell) removes a CodBi global variable that CodBi
+           * parameters may reference. The grid splices the row in its own (bubble-phase) click
+           * handler, so the consequence is evaluated on the next task; only a row whose NAME or
+           * VALUE references a CodBi global variable triggers the preview refresh.
+           */
+          varsEditor.addEventListener(
+            "click",
+            (event: Event) => {
+              const target = event.target;
+
+              if (!(target instanceof Element) || !target.closest(".xm-delete")) {
+                return;
+              }
+
+              const row = target.closest(".slick-row");
+
+              if (!(row instanceof HTMLElement)) {
+                return;
+              }
+
+              const deleted = readVariableRow(row);
+
+              window.setTimeout(() => {
+                if (!containsCodbiGlobalVariable(`${deleted.name} ${deleted.value}`)) {
+                  return;
+                }
+
+                try {
+                  (getDesignerInstance() as unknown as IVariableDesigner)?.getPersistDiffer?.()?.checkForChanges?.();
+                } catch {
+                  /* ignore */
+                }
+
+                notifyFormPreviewChanged();
+              }, 0);
+            },
+            true,
+          );
+          // #endregion EP-builder buttons for CodBi global variables in the variables grid.
 
           cellObserver.observe(DEFINED.tsCheck(varsEditor), {
             childList: true,

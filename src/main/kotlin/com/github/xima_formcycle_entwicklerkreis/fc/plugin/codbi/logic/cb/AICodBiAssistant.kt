@@ -11257,8 +11257,15 @@ class AICodBiAssistant : IPluginServletAction {
    * Builds a compact list of the form's REPEATABLE (dynamic) containers and the fields they
    * contain, from the persist JSON. The workflow AI uses this to know which [%field%] placeholders
    * belong to a repeatable container — a plain placeholder only returns the FIRST row, so content
-   * that must include ALL rows (e.g. an email with "the opening times") has to iterate the
-   * container.
+   * that must include ALL rows (e.g. an email with "the opening times" or a list of every entered
+   * first/last name) has to iterate the container.
+   *
+   * The fields are collected RECURSIVELY (descendant leaves), because a repeatable container
+   * commonly holds ordinary child containers around its row fields. A container whose fields are
+   * not resolved yet (e.g. a form created in the SAME run, whose new fields are not attached to the
+   * container at this point) is reported EXPLICITLY, so the prompt rule can still instruct the
+   * model to iterate it with the technical IDs from the FORM ELEMENTS list instead of silently
+   * falling back to a bare placeholder.
    */
   private fun buildRepeatableContainersContext(persistJson: String?): String? {
     if (persistJson.isNullOrBlank()) return null
@@ -11266,6 +11273,24 @@ class AICodBiAssistant : IPluginServletAction {
       val root = JsonParser.parseString(persistJson).asJsonObject
       val items = root.getAsJsonArray("items") ?: return null
       val lines = mutableListOf<String>()
+      fun leafNames(elements: JsonArray?): List<String> {
+        if (elements == null) return emptyList()
+        val names = mutableListOf<String>()
+        for (ref in elements) {
+          if (ref.isJsonPrimitive) {
+            names.add(ref.asString)
+          } else if (ref.isJsonObject) {
+            val props = ref.asJsonObject.getAsJsonObject("properties")
+            val children = props?.getAsJsonArray("elements")
+            if (children != null && children.size() > 0) {
+              names.addAll(leafNames(children))
+            } else {
+              props?.get("name")?.asString?.let { names.add(it) }
+            }
+          }
+        }
+        return names
+      }
       fun walk(list: JsonArray) {
         for (item in list) {
           if (!item.isJsonObject) continue
@@ -11276,19 +11301,14 @@ class AICodBiAssistant : IPluginServletAction {
           val elements = props.getAsJsonArray("elements")
           val dynamic = props.get("dynamic")?.asString
           if (dynamic == "1" && className in setOf("XContainer", "XContainerInvisible")) {
-            val childNames = mutableListOf<String>()
-            if (elements != null) {
-              for (ref in elements) {
-                when {
-                  ref.isJsonPrimitive -> childNames.add(ref.asString)
-                  ref.isJsonObject -> {
-                    val cn = ref.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
-                    if (cn != null) childNames.add(cn)
-                  }
+            val childNames = leafNames(elements).distinct()
+            val detail =
+                if (childNames.isEmpty()) {
+                  "<none resolved — treat the row fields named by the request (technical IDs from the FORM ELEMENTS list) as its children>"
+                } else {
+                  childNames.joinToString(", ")
                 }
-              }
-            }
-            lines.add("Repeatable container '$name' contains: ${childNames.joinToString(", ")}")
+            lines.add("Repeatable container '$name' contains: $detail")
           }
           if (elements != null) walk(elements)
         }

@@ -4,6 +4,12 @@ import { Constants } from "codbi-common";
 import { MARK_ELEMENTS_CHANGED_EVENT } from "./CodbiSwitchEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { mirrorElementOptions, mirrorFormOptions } from "./MirrorSelect.js";
+import {
+  formatMessage,
+  requestStandardConfigActivation,
+  standardConfigClassIsInactive,
+  standardConfigOwnerOfClass,
+} from "./StandardConfigActivation.js";
 import { i18n, localizedParameterDescription } from "./i18n.js";
 // #endregion Imports
 
@@ -35,6 +41,12 @@ import { i18n, localizedParameterDescription } from "./i18n.js";
  * standard-configuration class (`window.CodbiPluginData.detStandards[*].classes`). Hovering one
  * functionality sub-badge expands it DOWNWARD (over the marker badge's bounds) to show the
  * `data-cb-*` parameters set on the element for that functionality, as a parameter/value table.
+ *
+ * A BLUE class sub-badge whose owning standard configuration is **not activated** for the form is
+ * DIMMED (`.5` opacity) and outlined with a DASHED RED border: the class alone is only a marker then.
+ * Clicking that dimmed sub-badge opens the SAME “activate this standard configuration?” question the
+ * per-element CodBi panel uses (see `StandardConfigActivation.ts`); once it is activated the badge
+ * repaints at full opacity with its normal solid blue border.
  *
  * ## The canvas is a separate document
  * FORMCYCLE renders the design canvas inside a **same-origin iframe**. The designer stylesheet
@@ -245,6 +257,18 @@ const BADGE_CSS = `
 .codbi-elem-badge--focus-active .codbi-func-list>.codbi-func-item{opacity:1}
 .codbi-elem-badge--focus-active .codbi-func-list>.codbi-css-item{opacity:1}
 .codbi-elem-badge--focus-active .codbi-func-list>.codbi-holistic-item{opacity:1}
+/* A BLUE standard-configuration class sub-badge whose owning configuration is NOT activated for the
+   form is only a MARKER: it is dimmed to .5 opacity, outlined with a DASHED RED border and a CLICK asks
+   whether that configuration shall be activated (see requestStandardConfigActivation). The rules repeat
+   the reveal selectors above so they win over their opacity:1 and their blue border; once the
+   configuration is activated the badge repaints at full opacity with its normal solid blue border (the
+   activation state is part of the badge's change signature). */
+.codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-css-item--inactive,
+.codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-func-list>.codbi-css-item--inactive,
+.codbi-elem-badge--focus-active .codbi-func-list>.codbi-css-item--inactive{opacity:.5;cursor:pointer;border:1px dashed #dc2626}
+.codbi-elem-badge--funcs.codbi-elem-badge--hover>.codbi-func-list>.codbi-css-item--inactive:hover,
+.codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-func-list>.codbi-css-item--inactive:hover,
+.codbi-elem-badge--focus-active .codbi-func-list>.codbi-css-item--inactive:hover{opacity:.8;border-color:#b91c1c}
 .codbi-func-item__name{pointer-events:none}
 .codbi-css-item__name{pointer-events:none}
 .codbi-holistic-item__name{pointer-events:none}
@@ -658,76 +682,6 @@ function stringProp(props: TItemProperties | undefined, key: string): string {
 function notifyAttributeChange(): void {
   try {
     designerInstance()?.getPersistDiffer?.()?.checkForChanges?.();
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * Whether the opt-in PREVIEW diagnostics are enabled (`window.CodbiPreviewDebug = true`).
- *
- * Prints one line per preview reload / fit / pin prune / loop heal, so a broken preview can be traced
- * from the console instead of guessing: which element reloaded, into which generation, at which height,
- * and whether the pin had to be corrected.
- */
-function previewDebugEnabled(): boolean {
-  const enabled = (win: Window | null | undefined): boolean => {
-    try {
-      return Boolean((win as unknown as { CodbiPreviewDebug?: boolean } | null)?.CodbiPreviewDebug);
-    } catch {
-      return false;
-    }
-  };
-  if (enabled(window) || enabled(window.parent) || enabled(window.top)) {
-    return true;
-  }
-  // The designer panel runs inside its OWN iframe, so a flag set in the DevTools console of another
-  // frame may be invisible here. `localStorage` is shared by every same-origin frame — the most reliable
-  // switch: `localStorage.CodbiPreviewDebug = "1"` (and `= "0"`/`removeItem` to switch off).
-  try {
-    if (window.localStorage?.getItem("CodbiPreviewDebug") === "1") {
-      return true;
-    }
-  } catch {
-    /* ignore (storage disabled) */
-  }
-  // … and a URL switch for a quick check: `?CodbiPreviewDebug=1`.
-  try {
-    if (new URLSearchParams(window.location.search).get("CodbiPreviewDebug") === "1") {
-      return true;
-    }
-  } catch {
-    /* ignore */
-  }
-  return false;
-}
-
-/**
- * Logs one preview diagnostic line when {@link previewDebugEnabled} is on.
- *
- * @param message The message, prefixed consistently.
- * @param data    Optional values appended as JSON.
- */
-function previewDebug(message: string, data?: unknown): void {
-  if (!previewDebugEnabled()) {
-    return;
-  }
-  previewTrace(message, data);
-}
-
-/**
- * Logs one ALWAYS-ON preview trace line.
- *
- * Only the DECISIVE events use this (a reload was started / postponed, a clip gave up, a pin had to be
- * corrected, a refresh pass summary) — a handful of lines per interaction and none while idle, so the
- * information is available without a switch that may not reach the designer's own iframe.
- *
- * @param message The message, prefixed consistently.
- * @param data    Optional values appended as JSON.
- */
-function previewTrace(message: string, data?: unknown): void {
-  try {
-    console.info(`[[ CodBi / Preview ] ${message}`, data ?? "");
   } catch {
     /* ignore */
   }
@@ -1346,12 +1300,6 @@ export function setElementCssClass(
       : current.filter((entry) => entry !== name);
     props[CSS_CLASSES_PROPERTY] = next;
   }
-  previewDebug("cssclass write", {
-    name,
-    on,
-    deferred: Boolean(options.deferNotify),
-    classes: parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]),
-  });
   if (options.deferNotify) {
     // Everything that would make FORMCYCLE re-render the cell is postponed — including re-pushing the
     // value into the designer's own `cssclasses` editor, whose `setValue` fires the property callback.
@@ -1403,16 +1351,13 @@ function refreshCssClassesEditor(item: IMarkerItemLike): void {
   try {
     const selected = designerInstance()?.getSelectedMasterItem?.() === item;
     if (!selected) {
-      previewDebug("cssclasses editor: item not selected — skipped");
       return;
     }
     const editor = findPropertyEditor(CSS_CLASSES_PROPERTY);
     if (!editor?.setValue) {
-      previewDebug("cssclasses editor: not mounted — skipped");
       return;
     }
     const value = parseCssClasses(propertiesOf(item)?.[CSS_CLASSES_PROPERTY]);
-    previewDebug("cssclasses editor <- value", { value });
     editor.setValue(value);
   } catch (x) {
     console.warn("[CodBi] Element markers: could not refresh the CSS-classes editor", x);
@@ -2008,12 +1953,6 @@ function schedulePreviewReapply(anchor: HTMLElement, item: IMarkerItemLike): voi
       const id = item.getId?.() ?? "";
       const live = resolveFuncItem(id, anchor, item);
       const signature = elementPreviewSignature(live);
-      previewDebug("reapply timer", {
-        id,
-        previous: previewApplied.get(anchor),
-        signature,
-        previewOn: elementPreviewOn(live),
-      });
       if (previewApplied.get(anchor) === signature) {
         return;
       }
@@ -2043,11 +1982,9 @@ function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boo
     // The preview SWITCH is always reflected (the class above), but no preview is (re)built or torn down
     // while a modal question is open — see {@link suspendElementPreviews}.
     if (elementPreviewsSuspended() && on) {
-      previewDebug("apply skipped (frozen)", { id });
       return;
     }
     if (!on) {
-      previewDebug("apply OFF", { id });
       cancelScheduledPreviewReapply(anchor);
       previewApplied.delete(anchor);
       if (id) {
@@ -2063,21 +2000,12 @@ function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boo
     // with it the `--rendered` class that hides the native element — so treating the stale signature
     // as "already applied" left the cell permanently blank: no iframe, hidden content, no reload.
     const hasFrame = anchor.querySelector(":scope > .codbi-func-preview-frame") !== null;
-    previewDebug("apply", {
-      id,
-      anchorConnected: anchor.isConnected,
-      signatureMatched: previous === signature,
-      knownById: previewAppliedById.get(id) !== undefined,
-      hasFrame,
-      signature,
-    });
     if (previous === signature) {
       if (hasFrame) {
         return;
       }
       // Same content, but the rendered DOM (with our iframe) was replaced → rebuild right away; there
       // is nothing to sync, so the draft-sync delay of the reapply path does not apply.
-      previewTrace("rebuild preview after re-render", { id });
       previewApplied.delete(anchor);
       previewAppliedById.delete(id);
       void renderServerPreview(anchor, item, signature);
@@ -2240,10 +2168,8 @@ async function renderServerPreview(
       // Only ONE retry per iframe: a burst of requests must not queue a burst of retries that then fire
       // together (each of them would reset the iframe again).
       if (previewPostponedRetry.has(target)) {
-        previewTrace("reload postponed (already queued)", { elementRef, wait });
         return;
       }
-      previewTrace("reload postponed (burst guard)", { elementRef, wait });
       const retry = window.setTimeout(() => {
         previewPostponedRetry.delete(target);
         if (target.isConnected && wrapper.isConnected) {
@@ -2253,7 +2179,6 @@ async function renderServerPreview(
         // The designer re-rendered the cell while the request was queued: the captured wrapper is
         // detached, so a direct reload would be a silent no-op. Re-resolve the CURRENT anchor instead —
         // without this the cell could stay broken (360px iframe, no pin) forever.
-        previewTrace("postponed reload lost its anchor — refreshing", { elementRef });
         previewApplied.delete(wrapper);
         scheduleRefresh();
       }, wait);
@@ -2296,7 +2221,6 @@ async function renderServerPreview(
     // remembered height is reset so the first fit of the new document dispatches `resize` again.
     unregisterPreviewFit(target);
     delete target.dataset.codbiFitHeight;
-    previewTrace("reload", { elementRef, generation });
     target.src = fullUrl;
     wrapper.classList.add("codbi-func-preview--rendered");
     // Mark applied only once the iframe is pointed at the preview (a re-enable with the same target
@@ -2393,26 +2317,7 @@ function scheduleClip(
     return;
   }
   const ok = clipPreviewToElement(frame, elementRef);
-  if (!ok && attempts === 0) {
-    // The element is not found on the FIRST poll after `load` — normal for a preview page whose form
-    // renders asynchronously, but THE decisive signal when a preview never recovers.
-    previewTrace("clip pending (element not rendered yet)", {
-      elementRef,
-      generation,
-      height: frame.style.height,
-      pin: frame.parentElement?.style.minHeight ?? "",
-    });
-  }
   if (ok) {
-    if (fits === 0) {
-      previewTrace("clip OK", {
-        elementRef,
-        generation,
-        attempts,
-        height: frame.style.height,
-        pin: frame.parentElement?.style.minHeight ?? "",
-      });
-    }
     // Re-fit after success so late-mounting editors (TinyMCE) and settling preview chrome are
     // reflected in the iframe height.
     if (fits < PREVIEW_CLIP_REFITS) {
@@ -2421,12 +2326,6 @@ function scheduleClip(
     return;
   }
   if (attempts >= PREVIEW_CLIP_MAX_ATTEMPTS) {
-    previewTrace("clip GAVE UP — preview collapsed", {
-      elementRef,
-      generation,
-      height: frame.style.height,
-      pin: frame.parentElement?.style.minHeight ?? "",
-    });
     previewClipLoops.set(frame, false);
     collapseUnresolvedPreview(frame);
     return;
@@ -2637,8 +2536,6 @@ interface IPreviewFit {
   clipping?: boolean;
   /** Failed re-clip attempts since the last success (see {@link scheduleReclip}). */
   reclipAttempts?: number;
-  /** `true` when the last re-clip check found the preview document REPLACED (a navigation). */
-  docSwapped?: boolean;
 }
 
 /** Active previews (re-fitted whenever the preview document mutates). */
@@ -2723,8 +2620,7 @@ function reclipIfDetached(entry: IPreviewFit): boolean {
   // The preview page may have NAVIGATED (its own reload), which swaps the whole document: the
   // observer then sits on a dead document and would never fire again. Re-observe the new one.
   const cdoc = entry.frame.contentDocument;
-  entry.docSwapped = cdoc !== undefined && cdoc !== entry.owner;
-  if (cdoc && entry.docSwapped) {
+  if (cdoc && cdoc !== entry.owner) {
     entry.owner = cdoc;
     observePreview(cdoc);
   }
@@ -2754,12 +2650,6 @@ function scheduleReclip(entry: IPreviewFit): void {
       return;
     }
     if (reclipIfDetached(entry)) {
-      previewTrace("re-clipped preview after re-render", {
-        elementRef: entry.elementRef,
-        docSwapped: entry.docSwapped === true,
-        readyState: entry.owner.readyState,
-        bodyChildren: entry.owner.body?.children.length ?? -1,
-      });
       return;
     }
     // The element is still missing: retry a few times (the re-render may not be finished), then give
@@ -2771,41 +2661,28 @@ function scheduleReclip(entry: IPreviewFit): void {
     if (entry.reclipAttempts <= 10) {
       scheduleReclip(entry);
     } else {
-      previewTrace("re-clip gave up — preview collapsed", { elementRef: entry.elementRef });
       collapseUnresolvedPreview(entry.frame);
     }
   }, PREVIEW_RECLIP_DELAY_MS);
 }
 
-/**
- * Re-clips every running preview whose clipped element disappeared from its document.
- *
- * @returns The number of previews that were re-clipped.
- */
-function resyncDetachedPreviewClips(): number {
-  let reclipped = 0;
+/** Re-clips every running preview whose clipped element disappeared from its document. */
+function resyncDetachedPreviewClips(): void {
   for (const entry of Array.from(previewFits)) {
-    if (reclipIfDetached(entry)) {
-      reclipped++;
-    } else if (previewClipIsLost(entry.frame, entry.item)) {
+    if (!reclipIfDetached(entry) && previewClipIsLost(entry.frame, entry.item)) {
       // Still lost (the page is still rendering) — keep a retry alive instead of leaving the cell
       // hidden until the next user interaction.
       scheduleReclip(entry);
     }
   }
-  if (reclipped > 0) {
-    previewTrace("re-clipped previews after re-render", { count: reclipped });
-  }
-  return reclipped;
 }
 
 /**
  * Interval of the preview watchdog (see {@link startPreviewWatchdog}).
  *
  * The preview page renders PROGRESSIVELY and re-renders itself whenever the draft changes — also late,
- * when no designer event fires any more (the log showed the clip only becoming possible at the 10th/11th
- * poll, i.e. after ~2.5 s of rendering). Such a late re-render silently throws the clip away, so a slow
- * safety net re-checks the running previews instead of waiting for the next user interaction.
+ * when no designer event fires any more. Such a late re-render throws the clip away, so a slow safety
+ * net re-checks the running previews instead of waiting for the next user interaction.
  */
 const PREVIEW_WATCHDOG_INTERVAL_MS = 1000;
 
@@ -2910,7 +2787,6 @@ function fitPreviewHeight(entry: IPreviewFit): number {
   }
   const height = Math.max(60, Math.min(Math.ceil(bottom) + 12, 4000));
   const unchanged = frame.dataset.codbiFitHeight === String(height);
-  previewDebug("fit", { height, unchanged });
   frame.style.height = `${height}px`;
   applyPreviewWrapperHeight(frame, height);
   // Ask the designer to recompute the item layout so the item grows to the iframe's new height — but
@@ -2984,7 +2860,6 @@ function prunePreviewPins(): void {
   for (const wrapper of Array.from(pinnedPreviewWrappers)) {
     const hasFrame = wrapper.querySelector(":scope > .codbi-func-preview-frame") !== null;
     if (!wrapper.isConnected || !hasFrame) {
-      previewTrace("pin released", { connected: wrapper.isConnected, hasFrame });
       clearPreviewWrapperHeight(wrapper);
     }
   }
@@ -3013,7 +2888,6 @@ function reconcilePreviewPin(wrapper: HTMLElement, frame: HTMLIFrameElement): vo
     return;
   }
   if (wrapper.style.minHeight !== height) {
-    previewTrace("pin reconciled", { pin: wrapper.style.minHeight, frame: height });
     wrapper.style.minHeight = height;
   }
   const pinValue = height.replace("px", "");
@@ -3083,7 +2957,6 @@ function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boo
     const el = elementRef ? findPreviewElement(cdoc, elementRef) : null;
     const owner = el?.ownerDocument;
     if (!el || !owner || !owner.body) {
-      previewDebug("clip miss", { elementRef, found: el !== null, readyState: cdoc.readyState });
       return false;
     }
     let item: HTMLElement = resolveItemWrapper(el, owner) ?? el;
@@ -3607,7 +3480,10 @@ function isPreviewHost(node: Node | null | undefined): boolean {
   if (!el) {
     return false;
   }
-  if (el.classList.contains("codbi-func-preview-frame") || pinnedPreviewWrappers.has(el)) {
+  if (
+    el.classList.contains("codbi-func-preview-frame") ||
+    (el instanceof HTMLElement && pinnedPreviewWrappers.has(el))
+  ) {
     return true;
   }
 
@@ -3700,29 +3576,13 @@ function observeRoot(root: TMarkerRoot): void {
     // Only a GENUINE designer re-render may schedule a refresh: neither the records a pass produced
     // itself nor the churn of our badge/preview nodes between passes (the clip/fit loops resize the
     // frames and pin the cells on their own timers) are a reason to re-render the badges again.
-    const external = records.filter((record) => !isOwnMutation(record));
-    if (records.length > 0 && external.length === 0) {
+    if (records.length > 0 && records.every(isOwnMutation)) {
       return;
     }
-    const sample = external[0];
-    const sampleTarget = sample?.target as Element | null | undefined;
-    const sampleText = sample
-      ? `${sample.type}${sample.attributeName ? `:${sample.attributeName}` : ""} <${sampleTarget?.nodeName?.toLowerCase() ?? "?"}>`
-      : "";
     // A designer re-render only matters when it took one of our widgets down with it.
     if (!lostOwnWidgets()) {
-      previewDebug("canvas mutation ignored", {
-        records: records.length,
-        external: external.length,
-        sample: sampleText,
-      });
       return;
     }
-    previewTrace("canvas mutation → refresh", {
-      records: records.length,
-      external: external.length,
-      sample: sampleText,
-    });
     scheduleRefresh();
   });
   observer.observe(root, { attributes: true, attributeFilter: OBSERVED_ATTRIBUTES, childList: true, subtree: true });
@@ -4759,6 +4619,45 @@ function buildParamTable(
   return table;
 }
 
+/** All expandable sub-badges (functionality, CSS-class and holistic) of a badge's functionality list. */
+function subBadgeItems(list: HTMLElement): HTMLElement[] {
+  return Array.from(list.querySelectorAll<HTMLElement>(".codbi-func-item, .codbi-css-item, .codbi-holistic-item"));
+}
+
+/**
+ * Adds or removes the JS-held `--open` class of ONE sub-badge (whichever variant it is).
+ *
+ * This class is the FOCUS retention of the parameter popup: it is added on `focusin` so the table
+ * stays expanded while a control inside it holds focus. Hover disclosure is pure CSS (`:hover`), so
+ * a `--open` class left behind by a mere hover keeps the table expanded forever — the bug this
+ * helper exists to prevent.
+ */
+function setSubBadgeOpen(item: HTMLElement, open: boolean): void {
+  let cls = "codbi-func-item--open";
+  if (item.classList.contains("codbi-css-item")) {
+    cls = "codbi-css-item--open";
+  } else if (item.classList.contains("codbi-holistic-item")) {
+    cls = "codbi-holistic-item--open";
+  }
+  item.classList.toggle(cls, open);
+}
+
+/**
+ * Drops the focus-retention `--open` class of EVERY sub-badge of a functionality list — regardless of
+ * its colour (orange functionality, blue standard-config class, green holistic) — except the one
+ * whose popup still holds focus. Called whenever the pointer leaves the badge, so a table that was
+ * only hovered can never stay expanded (a rebuild may have re-applied the class in the meantime).
+ */
+function closeSubBadges(list: HTMLElement): void {
+  const active = list.ownerDocument?.activeElement ?? null;
+  for (const sub of subBadgeItems(list)) {
+    if (active !== null && sub.contains(active)) {
+      continue;
+    }
+    setSubBadgeOpen(sub, false);
+  }
+}
+
 /**
  * Builds the badge's inner DOM: the CodBi logo icon plus the list of functionality sub-badges
  * (orange) and CSS-standard-configuration-class sub-badges (blue). The list is revealed when the
@@ -4785,26 +4684,32 @@ function buildFuncBadgeInner(
 
   const list = doc.createElement("div");
   list.className = "codbi-func-list";
-  // Only clear the tracked open sub-badge when the pointer leaves the ENTIRE badge, never on a
-  // mere `focusout` — otherwise moving from the focused value input up to the "+ Add" trigger (to add
-  // a second parameter) would wipe it and the following rebuild would collapse the table.
-  list.addEventListener("mouseleave", () => {
-    openFuncSubBadge = null;
-  });
-  // Open exactly ONE sub-badge at a time. Opening another sub-badge (hover or focus) must first
-  // close every other one — otherwise moving the pointer from badge A to badge B leaves A's `--open`
-  // class intact and BOTH tables stay expanded.
+  // Opening another sub-badge (hover or focus) must first close every other one — otherwise moving
+  // the pointer from badge A to badge B leaves A's `--open` class intact and BOTH tables stay
+  // expanded.
   const openOnly = (active: HTMLElement): void => {
-    for (const sibling of Array.from(
-      list.querySelectorAll<HTMLElement>(".codbi-func-item, .codbi-css-item, .codbi-holistic-item"),
-    )) {
+    for (const sibling of subBadgeItems(list)) {
       if (sibling !== active) {
-        sibling.classList.remove("codbi-func-item--open");
-        sibling.classList.remove("codbi-css-item--open");
-        sibling.classList.remove("codbi-holistic-item--open");
+        setSubBadgeOpen(sibling, false);
       }
     }
   };
+  /** Forgets the tracked sub-badge once the focus leaves the ENTIRE badge (see the focusout blocks). */
+  const onSubBadgeFocusOut = (event: FocusEvent): void => {
+    const next = event.relatedTarget as Node | null;
+    if (!next || !list.contains(next)) {
+      openFuncSubBadge = null;
+    }
+  };
+  // Leaving the whole badge closes everything: the tracked sub-badge AND every focus-retention
+  // `--open` class. The latter may have been re-applied by a rebuild that happened while the pointer
+  // was over the badge (the "survive a rebuild" blocks), and without dropping it here a table that
+  // was only ever HOVERED stays expanded after the pointer has left — the reported bug. A sub-badge
+  // whose popup still holds focus is spared, because the focus itself keeps the table open.
+  list.addEventListener("mouseleave", () => {
+    openFuncSubBadge = null;
+    closeSubBadges(list);
+  });
   if (funcs.length > 0 || cssClasses.length > 0 || holistic.length > 0) {
     for (const func of funcs) {
       const item = doc.createElement("div");
@@ -4825,10 +4730,12 @@ function buildFuncBadgeInner(
       const params = doc.createElement("div");
       params.className = "codbi-func-item__params";
       item.appendChild(params);
+      // Hovering only REVEALS the table (CSS `:hover`) — it must NOT add the focus-retention `--open`
+      // class, which nothing would remove once the pointer leaves and which therefore kept the table
+      // expanded forever after a single hover.
       item.addEventListener("mouseenter", () => {
         openFuncSubBadge = func.name;
         openOnly(item);
-        item.classList.add("codbi-func-item--open");
         applyFuncPopupWidth(item, params, anchor, params.dataset.codbiMax === "1");
       });
       // Keep the popup open while a control inside it (the "+ Add" select or a value input) holds
@@ -4837,19 +4744,20 @@ function buildFuncBadgeInner(
       params.addEventListener("focusin", () => {
         openFuncSubBadge = func.name;
         openOnly(item);
-        item.classList.add("codbi-func-item--open");
+        setSubBadgeOpen(item, true);
       });
-      params.addEventListener("focusout", () => {
-        // Remove the focus-held `--open` (standard focus retention), but KEEP `openFuncSubBadge`.
-        // Clearing it here is what made the SECOND "add parameter" collapse: when the user moves from
-        // the focused value input up to the "+ Add" trigger, `focusout` fires, wiping the tracked
-        // sub-badge — so the following rebuild could no longer re-expand the table. The tracked badge
-        // must survive until the user actually leaves the whole badge (see the `mouseleave` below).
-        item.classList.remove("codbi-func-item--open");
+      params.addEventListener("focusout", (event) => {
+        // Remove the focus-held `--open` (standard focus retention). `openFuncSubBadge` survives as
+        // long as the focus stays INSIDE the badge: clearing it here is what made the SECOND "add
+        // parameter" collapse when the user moved from the value input up to the "+ Add" trigger.
+        // Moving the focus out of the whole badge clears it (see `onSubBadgeFocusOut`), so a later
+        // rebuild cannot re-expand a table the user has already left.
+        setSubBadgeOpen(item, false);
+        onSubBadgeFocusOut(event);
       });
       // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
       if (openFuncSubBadge === func.name) {
-        item.classList.add("codbi-func-item--open");
+        setSubBadgeOpen(item, true);
       }
       params.appendChild(buildParamTable(doc, [section], resolve, anchor, item, params, "func", badge));
       list.appendChild(item);
@@ -4864,28 +4772,49 @@ function buildFuncBadgeInner(
       name.className = "codbi-css-item__name";
       name.textContent = cssClass;
       item.appendChild(name);
+      // While the standard configuration that provides this class is NOT activated for the form, the
+      // class is only a MARKER: dim the sub-badge (`.codbi-css-item--inactive`, see BADGE_CSS) and let
+      // a CLICK ask whether that configuration shall be activated — the very same question the
+      // per-element CodBi panel asks when such a class is applied. Confirming activates the
+      // configuration, which changes the badge's change signature, so the sub-badge repaints at full
+      // opacity. A class whose owning configuration cannot be resolved stays untouched (fail-open).
+      const owner = standardConfigOwnerOfClass(cssClass);
+      if (owner !== undefined && standardConfigClassIsInactive(cssClass)) {
+        item.classList.add("codbi-css-item--inactive");
+        item.title = `${cssClass}\n${formatMessage(i18n("designer.element.standardConfig.inactiveHint"), owner)}`;
+        // Never let the click (or its mousedown) reach the designer canvas — it would select or even
+        // activate the underlying widget instead of opening the question.
+        item.addEventListener("mousedown", (event) => event.stopPropagation());
+        item.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          requestStandardConfigActivation(cssClass);
+        });
+      }
       const sections = buildCssClassSections(cssClass, resolve());
       const params = doc.createElement("div");
       params.className = "codbi-func-item__params";
       item.appendChild(params);
+      // Hovering only reveals the table via CSS `:hover` (see the func-loop comment).
       item.addEventListener("mouseenter", () => {
         openFuncSubBadge = cssClass;
         openOnly(item);
-        item.classList.add("codbi-css-item--open");
         applyFuncPopupWidth(item, params, anchor, params.dataset.codbiMax === "1");
       });
       params.addEventListener("focusin", () => {
         openFuncSubBadge = cssClass;
         openOnly(item);
-        item.classList.add("codbi-css-item--open");
+        setSubBadgeOpen(item, true);
       });
-      params.addEventListener("focusout", () => {
-        // Remove the focus-held `--open`, but KEEP `openFuncSubBadge` (see the func-loop comment).
-        item.classList.remove("codbi-css-item--open");
+      params.addEventListener("focusout", (event) => {
+        // Remove the focus-held `--open`; `openFuncSubBadge` only survives while the focus stays
+        // inside the badge (see the func-loop comment).
+        setSubBadgeOpen(item, false);
+        onSubBadgeFocusOut(event);
       });
       // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
       if (openFuncSubBadge === cssClass) {
-        item.classList.add("codbi-css-item--open");
+        setSubBadgeOpen(item, true);
       }
       params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "css", badge));
       list.appendChild(item);
@@ -4905,24 +4834,26 @@ function buildFuncBadgeInner(
       const params = doc.createElement("div");
       params.className = "codbi-func-item__params";
       item.appendChild(params);
+      // Hovering only reveals the table via CSS `:hover` (see the func-loop comment).
       item.addEventListener("mouseenter", () => {
         openFuncSubBadge = config.id;
         openOnly(item);
-        item.classList.add("codbi-holistic-item--open");
         applyFuncPopupWidth(item, params, anchor, params.dataset.codbiMax === "1");
       });
       params.addEventListener("focusin", () => {
         openFuncSubBadge = config.id;
         openOnly(item);
-        item.classList.add("codbi-holistic-item--open");
+        setSubBadgeOpen(item, true);
       });
-      params.addEventListener("focusout", () => {
-        // Remove the focus-held `--open`, but KEEP `openFuncSubBadge` (see the func-loop comment).
-        item.classList.remove("codbi-holistic-item--open");
+      params.addEventListener("focusout", (event) => {
+        // Remove the focus-held `--open`; `openFuncSubBadge` only survives while the focus stays
+        // inside the badge (see the func-loop comment).
+        setSubBadgeOpen(item, false);
+        onSubBadgeFocusOut(event);
       });
       // Survive a badge rebuild: if this sub-badge was open before, keep it open on the fresh DOM.
       if (openFuncSubBadge === config.id) {
-        item.classList.add("codbi-holistic-item--open");
+        setSubBadgeOpen(item, true);
       }
       params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "holistic", badge));
       list.appendChild(item);
@@ -4946,9 +4877,15 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   const holistic = holisticConfigsFor(anchor);
   // Fold in the holistic config ids AND the `data-cb-*` parameters their `FUNC`s can carry, so
   // toggling a config Active or editing a parameter via a GREEN sub-badge re-renders the badge.
+  // The ACTIVATION state of every applied standard configuration is folded in as well: activating one
+  // of them (asked by clicking a DIMMED blue sub-badge) must rebuild the badge so that sub-badge loses
+  // its `--inactive` dimming.
+  const standardActivation = cssClasses
+    .map((cssClass) => `${cssClass}\u0004${standardConfigClassIsInactive(cssClass) ? "0" : "1"}`)
+    .join("\u0001");
   const signature = `${funcSignature(funcs, cssClasses, item)}\u0006${holistic
     .map((c) => c.id)
-    .join("\u0001")}\u0006${holisticParamsSignature(holistic, item)}`;
+    .join("\u0001")}\u0006${holisticParamsSignature(holistic, item)}\u0006${standardActivation}`;
 
   let badge = funcBadges.get(id);
   if (!badge || !badge.isConnected || badge.parentElement !== anchor) {
@@ -4979,9 +4916,20 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
       // long as the pointer is over (or in) the badge keeps the parameter table on top.
       badge.addEventListener("mouseenter", () => raiseMarkedWidget(badge.parentElement));
       badge.addEventListener("mouseleave", () => {
-        // `:focus-within` keeps the lift while a control inside the badge still holds focus.
-        if (!badge.matches(":focus-within")) {
+        // `:focus-within` keeps the lift and the tracked sub-badge while a control inside the badge
+        // still holds focus. WITHOUT that focus nothing may stay "open" once the pointer is gone.
+        const holdsFocus = badge.matches(":focus-within");
+        if (!holdsFocus) {
           lowerMarkedWidget(badge.parentElement);
+          openFuncSubBadge = null;
+        }
+        // Safety net that does not depend on WHICH part of the badge the pointer left through (the
+        // functionality list, its popup or the logo): never leave a hover-revealed parameter table
+        // expanded behind — including every colour of sub-badge (orange/blue/green). A control that
+        // still holds focus keeps its table (`closeSubBadges` spares it).
+        const list = badge.querySelector<HTMLElement>(".codbi-func-list");
+        if (list) {
+          closeSubBadges(list);
         }
       });
     }
@@ -5090,6 +5038,19 @@ function pruneMarkedFuncWidgets(): void {
   }
 }
 
+/** Number of {@link refreshBadges} passes run so far. */
+let refreshPass = 0;
+
+/**
+ * @returns How many refresh passes have run in this document.
+ *
+ * Exported for the regression tests of the refresh loop: a pass must never queue another pass, and a
+ * genuine designer re-render must still queue exactly one.
+ */
+export function refreshPassCount(): number {
+  return refreshPass;
+}
+
 /**
  * Re-applies the badges for all marker items on the canvas: adds/updates the Mirror badges and the
  * `data-cb-func` function badges of the current items and drops the badges of removed items.
@@ -5098,16 +5059,11 @@ function pruneMarkedFuncWidgets(): void {
  * The canvas discovery (root detection + stylesheet injection) runs INDEPENDENT of the marker mode,
  * because the unconfigured Mirror placeholder must load `mirror-icon.svg` even when markers are off.
  */
-/** Counter of {@link refreshBadges} passes, used by the preview diagnostics. */
-let refreshPass = 0;
-
 function refreshBadges(): void {
   const enabled = isMarkEnabled();
   const elementPreview = previewElementsEnabled();
-  refreshing = true;
   refreshPass++;
-  const pass = refreshPass;
-  const stats = { previewsOn: 0, frames: 0, pinned: 0 };
+  refreshing = true;
   try {
     const designer = designerInstance();
     const items = designer?.items ?? {};
@@ -5202,15 +5158,6 @@ function refreshBadges(): void {
     // the form on every draft change — i.e. on each standard-configuration selection) and would show
     // the WHOLE form page again; re-clip it before anyone can see that.
     resyncDetachedPreviewClips();
-    stats.previewsOn = livePreview.size;
-    // Count in the roots we actually manage: the canvas DOCUMENT or its SHADOW ROOT (a document query
-    // does not see into a shadow root — which is why this used to log `frames: 0` while previews ran).
-    stats.frames = 0;
-    for (const root of observedRoots.keys()) {
-      stats.frames += root.querySelectorAll("iframe.codbi-func-preview-frame").length;
-    }
-    stats.pinned = pinnedPreviewWrappers.size;
-    previewTrace("refresh pass", { pass, ...stats });
     if (enabled) {
       // Drop Mirror badges whose item no longer exists or is no longer a Mirror.
       for (const id of Array.from(badges.keys())) {

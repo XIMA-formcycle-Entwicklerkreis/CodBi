@@ -158,6 +158,12 @@ interface DesignerTabbingApi {
 /** Minimal structural view of the designer SHELL window (`window.top`). */
 interface DesignerShellWindow extends Window {
   Formcycle?: { DesignerTabbing?: DesignerTabbingApi };
+  /**
+   * Token of the currently active tab-repair watchdog per `data-page-id` (see
+   * {@link installDesignerTabRepairWatchdog}). Lives in the SHELL window on purpose: it must
+   * survive the reload of the tab frame it watches.
+   */
+  __codbiTabRepair?: Record<string, number | undefined>;
 }
 
 /** Whether an `<iframe>` of the designer tab shell is the WORKFLOW designer tab. */
@@ -172,19 +178,30 @@ function isWorkflowTabFrame(frame: HTMLIFrameElement): boolean {
 }
 
 /**
+ * [url] with a cache-busting query parameter appended.
+ *
+ * Assigning an iframe the URL it already shows is not guaranteed to navigate in every browser, and
+ * the documents are served with a long-lived cache — so the parameter makes the re-fetch certain.
+ * Unknown query parameters are ignored by the designer pages.
+ */
+function cacheBustedUrl(url: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}codbiReload=${Date.now()}`;
+}
+
+/**
  * Loads the FORMCYCLE workflow-designer tab iframe(s) of the designer SHELL again.
  *
  * The designer is a tab shell where every tab is one `<iframe>` (`frameContent.xhtml`,
- * `data-page-id`/`data-target-url`), and `Formcycle.DesignerTabbing.reloadIframe(<pageId>)` is
- * FORMCYCLE's own way of loading a tab again (it is what the tab's "reload" link invokes).
- * Re-navigating the iframe to its `data-target-url` is the equivalent fallback.
+ * `data-page-id`/`data-target-url`). The iframe is navigated to its `data-target-url` (cache-busted,
+ * see [cacheBustedUrl]); `Formcycle.DesignerTabbing.reloadIframe(<pageId>)` — FORMCYCLE's own way of
+ * loading a tab again, what the tab's "reload" link invokes — is the fallback.
  *
  * `workflowSetupBean.onPageLoad()` reads the workflow from the DATABASE on every load
  * (`WorkflowProcessDao.loadMainProcess` in a fresh entity context), so a freshly loaded workflow
  * tab always shows the workflow the AI wrote. An already rendered workflow tab instead keeps the
- * workflow it loaded when it was opened — reloading only the FORM frame (or the shell, when the
- * browser restores the unchanged sub-frames from its cache) therefore left that tab on the
- * previous workflow, which is exactly the "switch to the workflow view and nothing changed"
+ * workflow it loaded when it was opened — reloading only the FORM frame therefore left that tab on
+ * the previous workflow, which is exactly the "switch to the workflow view and nothing changed"
  * symptom.
  *
  * Returns true when at least one workflow tab iframe was told to load again.
@@ -212,26 +229,20 @@ function reloadWorkflowTabIframes(): boolean {
     if (!isWorkflowTabFrame(frame)) {
       continue;
     }
+    const url = frame.getAttribute("data-target-url") ?? frame.getAttribute("src");
+    if (url) {
+      try {
+        frame.src = cacheBustedUrl(url);
+        reloaded = true;
+        continue;
+      } catch {
+        // Fall through to the tab API below.
+      }
+    }
     const pageId = frame.getAttribute("data-page-id");
     if (pageId && typeof tabbing?.reloadIframe === "function") {
       try {
         tabbing.reloadIframe(pageId);
-        reloaded = true;
-        continue;
-      } catch {
-        // Fall through to the plain re-navigation below.
-      }
-    }
-    const url = frame.getAttribute("data-target-url") ?? frame.getAttribute("src");
-    if (!url) {
-      continue;
-    }
-    try {
-      frame.contentWindow?.location.replace(url);
-      reloaded = true;
-    } catch {
-      try {
-        frame.setAttribute("src", url);
         reloaded = true;
       } catch {
         // Ignore — nothing else we can do for this frame.
@@ -240,6 +251,237 @@ function reloadWorkflowTabIframes(): boolean {
   }
   return reloaded;
 }
+
+// #region Designer tab repair watchdog
+/**
+ * Marks the error overlay FORMCYCLE renders next to a designer tab that failed to load
+ * (`frameContent.xhtml`: `div.tab-view__error-overlay`).
+ */
+const TAB_ERROR_OVERLAY_CLASS = "tab-view__error-overlay";
+
+/** The tab container (`div.tab-view__item[data-component-id]`) of the designer tab [pageId]. */
+function designerTabContainer(shell: DesignerShellWindow, pageId: string): HTMLElement | undefined {
+  try {
+    const containers = Array.from(shell.document.querySelectorAll<HTMLElement>(".tab-view__item[data-component-id]"));
+    return containers.find((container) => container.getAttribute("data-component-id") === pageId);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The error overlay FORMCYCLE renders directly AFTER the tab container [container], or
+ * `undefined`. The overlay only contains the error text and the "reload" link while that tab is in
+ * the error state (`ui:fragment rendered="#{not empty tab.error}"`).
+ */
+function designerTabErrorOverlay(container: HTMLElement | undefined): HTMLElement | undefined {
+  if (!container) {
+    return undefined;
+  }
+  try {
+    let sibling = container.nextElementSibling;
+    while (sibling) {
+      const element = sibling as HTMLElement;
+      if (element.classList.contains(TAB_ERROR_OVERLAY_CLASS)) {
+        return element;
+      }
+      // The overlay always directly follows its own tab container — stop at the next tab.
+      if (element.classList.contains("tab-view__item")) {
+        return undefined;
+      }
+      sibling = sibling.nextElementSibling;
+    }
+  } catch {
+    // Fall through — no overlay found.
+  }
+  return undefined;
+}
+
+/** The `<iframe>` of the designer tab [pageId], or `undefined`. */
+function designerTabIframe(shell: DesignerShellWindow, pageId: string): HTMLIFrameElement | undefined {
+  try {
+    const frames = Array.from(shell.document.querySelectorAll<HTMLIFrameElement>("iframe"));
+    return frames.find((frame) => frame.getAttribute("data-page-id") === pageId);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether FORMCYCLE currently shows its error overlay for the designer tab [pageId]. */
+function isDesignerTabBroken(shell: DesignerShellWindow, pageId: string): boolean {
+  try {
+    const overlay = designerTabErrorOverlay(designerTabContainer(shell, pageId));
+    return overlay != null && overlay.querySelector(".tab-view__error") != null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the page inside [frame] finished loading AND our designer bundle mounted.
+ *
+ * `cb-ai-assistant` is mounted by `enableAICodBiAssistantDialog()` on EVERY designer form page load
+ * (see `AICodBiAssistantDialog`), so its absence in a finished document means the page itself did
+ * not render — e.g. FORMCYCLE's `FormDesignerPluginBean.getPluginCssUrls()` NPE during the
+ * `RestoreView` phase, which leaves the tab on the error overlay.
+ */
+function isDesignerTabContentHealthy(frame: HTMLIFrameElement | undefined): boolean {
+  if (!frame) {
+    return false;
+  }
+  try {
+    const doc = frame.contentDocument;
+    if (!doc || doc.readyState === "loading") {
+      return false;
+    }
+    return doc.querySelector("cb-ai-assistant") != null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Loads the designer tab [pageId] again by navigating its iframe to its own `data-target-url`
+ * (what FORMCYCLE's own tab reload does, see `Formcycle.DesignerTabbing.reloadIframe`). The URL is
+ * cache-busted (see [cacheBustedUrl]) so the browser really re-fetches the page instead of
+ * restoring it from the cache.
+ */
+function reloadDesignerTabIframe(shell: DesignerShellWindow, pageId: string): boolean {
+  const frame = designerTabIframe(shell, pageId);
+  const target = frame?.getAttribute("data-target-url") ?? frame?.getAttribute("src") ?? "";
+  if (!frame || target.trim() === "") {
+    return false;
+  }
+  try {
+    frame.src = cacheBustedUrl(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Repairs a designer tab that came back BROKEN after an inference-driven reload, so the user no
+ * longer has to close the tab and reopen the designer.
+ *
+ * Background: the assistant reloads its own tab after a workflow-touching run. Occasionally the
+ * freshly loaded designer page failed to render because `FormDesignerPluginBean.getPluginCssUrls()`
+ * read a `null` Mandant (WELD-000019 destroying `DesignerPlaceholderBean` right before it) — the
+ * `RestoreView` phase then aborted with an NPE and FORMCYCLE left the tab on its error overlay,
+ * where every further request of that tab failed.
+ *
+ * The watchdog is installed in the designer SHELL window (so it survives the tab frame's own
+ * reload) and polls the tab:
+ * - tab rendered (our bundle mounted) — nothing to do, stop;
+ * - tab in FORMCYCLE's error state — click the overlay's own "reload" link, which clears
+ *   `tab.error` server-side (`DesignerTabBean.reloadTab`) and loads the iframe again;
+ * - tab neither rendered nor flagged as broken (e.g. a blank/teared-down document) — navigate the
+ *   iframe to its `data-target-url` again.
+ *
+ * At most {@link MAX_ATTEMPTS} repairs are attempted, then the tab is left to FORMCYCLE's own error
+ * overlay — a genuinely broken installation must not loop forever.
+ */
+function installDesignerTabRepairWatchdog(pageId: string): void {
+  let shell: DesignerShellWindow;
+  try {
+    shell = (window.top ?? window) as DesignerShellWindow;
+    if (!shell || shell.document == null || (shell as Window) === window) {
+      return;
+    }
+  } catch {
+    // Cross-origin shell (not expected for the designer) — nothing we can watch from here.
+    return;
+  }
+
+  // One watchdog per tab: a newer run supersedes (and thereby stops) an older one.
+  const token = Date.now();
+  try {
+    shell.__codbiTabRepair = shell.__codbiTabRepair ?? {};
+    shell.__codbiTabRepair[pageId] = token;
+  } catch {
+    return;
+  }
+
+  /** FORMCYCLE's error overlay is trustworthy right away — repair it after this grace period. */
+  const ERROR_GRACE_MS = 8_000;
+  /**
+   * A designer page that has not mounted our bundle after this long is treated as broken. Longer
+   * than {@link ERROR_GRACE_MS} on purpose: a merely SLOW designer boot must not be reloaded.
+   */
+  const MOUNT_GRACE_MS = 25_000;
+  /** How much time a repair attempt gets before the tab is inspected again. */
+  const RETRY_AFTER_MS = 8_000;
+  /** Watching stops here; after that FORMCYCLE's own error overlay stays in charge. */
+  const MAX_WATCH_MS = 90_000;
+  /** Repair attempts — never loop on a genuinely broken installation. */
+  const MAX_ATTEMPTS = 2;
+
+  const startedAt = Date.now();
+  let attempts = 0;
+
+  const stop = (): void => {
+    try {
+      if (shell.__codbiTabRepair?.[pageId] === token) {
+        delete shell.__codbiTabRepair[pageId];
+      }
+    } catch {
+      // Ignore — the watchdog simply ends here.
+    }
+  };
+
+  /** Runs one repair attempt and reports whether anything was triggered. */
+  const repair = (): boolean => {
+    // Preferred: FORMCYCLE's own repair action — it clears `tab.error` server-side and loads the
+    // tab again (`p:commandLink actionListener="#{designerTabBean.reloadTab(tab)}"`).
+    const overlay = designerTabErrorOverlay(designerTabContainer(shell, pageId));
+    const reloadLink = overlay?.querySelector<HTMLElement>("a.load-action");
+    if (reloadLink) {
+      try {
+        reloadLink.click();
+        return true;
+      } catch {
+        // Fall through to the plain iframe reload below.
+      }
+    }
+    return reloadDesignerTabIframe(shell, pageId);
+  };
+
+  const tick = (): void => {
+    try {
+      if (shell.__codbiTabRepair?.[pageId] !== token) {
+        return; // superseded by a newer watchdog
+      }
+      const elapsed = Date.now() - startedAt;
+      if (elapsed > MAX_WATCH_MS) {
+        stop();
+        return;
+      }
+      const broken = isDesignerTabBroken(shell, pageId);
+      const healthy = isDesignerTabContentHealthy(designerTabIframe(shell, pageId));
+      if (healthy && !broken) {
+        // The tab rendered (our bundle mounted) — the reload worked, nothing left to repair.
+        stop();
+        return;
+      }
+      if (elapsed < (broken ? ERROR_GRACE_MS : MOUNT_GRACE_MS)) {
+        shell.setTimeout(tick, 1_000);
+        return;
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        stop();
+        return;
+      }
+      attempts++;
+      repair();
+      shell.setTimeout(tick, RETRY_AFTER_MS);
+    } catch {
+      // The watchdog runs inside the SHELL window — never let it throw there.
+      stop();
+    }
+  };
+  shell.setTimeout(tick, 1_000);
+}
+// #endregion Designer tab repair watchdog
 
 /** Parses the stored marker (JSON now, plain epoch-ms for older tabs). */
 function parseWorkflowReloadMarker(raw: string): WorkflowReloadMarker | null {
@@ -3884,22 +4126,21 @@ export class AiAssistant implements OnInit, OnDestroy {
   }
 
   /**
-   * Brings the WORKFLOW view of the designer onto the state the AI just wrote, then reloads the
-   * designer.
+   * Brings the designer onto the state the AI just wrote: the FORM tab is loaded again (so the
+   * newly generated form elements show up) and the WORKFLOW tab is refreshed right after that.
    *
-   * Two separate things are needed:
+   * The workflow tab must be loaded again because an already rendered workflow tab keeps the
+   * workflow it loaded when it was opened — reloading only the form frame left it on the previous
+   * workflow (the "switch to the workflow view and nothing changed" symptom).
    *
-   * 1. The workflow tab iframe has to be loaded again. An already rendered workflow tab keeps the
-   *    workflow it loaded when it was opened, so reloading only the FORM frame left it on the
-   *    previous workflow — the "switch to the workflow view and nothing changed" symptom. See
-   *    [reloadWorkflowTabIframes].
-   * 2. The form frame has to be reloaded so the newly generated form elements show up.
-   *
-   * Reloading the whole shell (see [reloadDesigner]) usually covers both, but a browser may restore
-   * unchanged sub-frames from its cache, so the explicit tab reload is requested first.
+   * That refresh is deliberately NOT triggered here: the reload below writes
+   * [WORKFLOW_RELOAD_KEY], and the reloaded page loads the workflow tab itself once the designer
+   * has booted AND its network has settled ([scheduleWorkflowRefreshIfPending] →
+   * [refreshWorkflowTabAfterReload]). Poking the tab iframes here as well meant loading the same
+   * tab twice and, worse, doing it while the shell navigated/re-rendered its tabs — the concurrency
+   * that produced the broken form tab (see [installDesignerTabRepairWatchdog]).
    */
   private revalidateWorkflowAndReload(): void {
-    reloadWorkflowTabIframes();
     this.reloadDesigner();
   }
 
@@ -3942,22 +4183,61 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /** The designer shell window and the `data-page-id` of the tab this assistant runs in. */
+  private currentDesignerTab(): { shell: DesignerShellWindow; pageId: string } | null {
+    try {
+      const shell = (window.top ?? window) as DesignerShellWindow;
+      if (!shell || shell.document == null || (shell as Window) === window) {
+        // Not running inside the designer tab shell (e.g. opened standalone).
+        return null;
+      }
+      const frames = Array.from(shell.document.querySelectorAll<HTMLIFrameElement>("iframe"));
+      const own = frames.find((frame) => {
+        try {
+          return frame.contentWindow === window;
+        } catch {
+          return false;
+        }
+      });
+      const pageId = own?.getAttribute("data-page-id")?.trim() ?? "";
+      return pageId !== "" ? { shell, pageId } : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
-   * Reloads the whole designer SHELL, not just this frame.
+   * Reloads THIS designer tab (the form iframe the assistant runs in).
    *
-   * The FORMCYCLE designer is a tab shell whose tabs are one `<iframe>` each (`frameContent.xhtml`:
-   * `data-target-url`/`Formcycle.DesignerTabbing`). This assistant runs INSIDE the form tab's
-   * iframe, so `window.location.reload()` recreated only the FORM iframe — an already-open workflow
-   * tab kept its iframe (and thus its stale, previously loaded workflow model) until the user
-   * reloaded the browser. Reloading the top-most window recreates every tab iframe, so the workflow
-   * tab fetches its model again (`workflowSetupBean.onPageLoad` reads the DB) and shows the changes.
-   * Cross-origin frames (unexpected here) fall back to reloading this frame only.
+   * History: this used to reload the whole designer SHELL (`window.top.location.reload()`, see the
+   * git history of this method). That recreated every tab iframe of the shell at once while the
+   * shell itself was booting — and that reload storm is what occasionally killed the form tab: the
+   * freshly created form page was requested while the designer conversation/`DesignerPlaceholderBean`
+   * was being torn down, `FormDesignerPluginBean.getPluginCssUrls()` then resolved a `null` Mandant
+   * (`Cannot invoke "de.xima.fc.entities.Mandant.getId()" because "client" is null` in
+   * `WidgetPluginHelper.createWidgetBeanParams`) and the `RestoreView` phase failed. FORMCYCLE then
+   * showed the tab error overlay and every further request of that tab failed — closing the tab and
+   * reopening the designer was the only way out.
    *
-   * A shell reload is not guaranteed to reach the sub-frames (a browser may restore unchanged
-   * iframes from its cache), which is why [reloadWorkflowTabIframes] reloads the workflow tab
-   * explicitly as well.
+   * Loading only this tab is exactly what FORMCYCLE's own tab reload does
+   * (`Formcycle.DesignerTabbing.reloadIframe` navigates the same `data-target-url`), so it uses the
+   * very same supported path instead of recreating the whole shell. The workflow tab is refreshed by
+   * the reloaded page via [scheduleWorkflowRefreshIfPending] (that is what the shell reload was
+   * needed for), and — because the shell stays alive — [installDesignerTabRepairWatchdog] can repair
+   * this tab if it still comes back broken.
+   *
+   * Falls back to reloading the shell when the tab cannot be identified (e.g. the assistant runs
+   * outside the designer tab shell) or when the iframe cannot be navigated.
    */
   private reloadDesigner(): void {
+    const tab = this.currentDesignerTab();
+    if (tab) {
+      // Installed BEFORE the reload: it lives in the shell window and therefore survives it.
+      installDesignerTabRepairWatchdog(tab.pageId);
+      if (reloadDesignerTabIframe(tab.shell, tab.pageId)) {
+        return;
+      }
+    }
     try {
       const top = window.top;
       if (top && top !== window) {

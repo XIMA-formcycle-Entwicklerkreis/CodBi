@@ -109,7 +109,7 @@ FC_USER_INVOCATION — Fires when a logged-in user manually triggers it from the
 ## Node Types
 
 ### FC_EMAIL
-FC_EMAIL — Sends an email.
+FC_EMAIL — Sends an email. NEVER put a repeatable-row [%field%] straight into the body (FIRST row only) — build the list with FC_FOR_EACH_LOOP + FC_WRITE_FORM_RECORD_ATTRIBUTES.
 REQUIRED: sender address, subject, recipient (message service or direct address), message text. Ask for the sender and subject when the user only gives the recipient.
 ATTACHMENTS: to attach files from an upload field, add `"attachments":["<upload field technical ID>"]` to FC_EMAIL nodeParams — an array of STRINGS (e.g. `"attachments":["fdImageUpload"]`), NEVER objects like `{"field":"..."}`. Omit "attachments"/"files" entirely when no files were requested.
 RECIPIENT: NEVER invent a recipient address (e.g. NEVER "recipient@example.com"). "to" must be a real address the user provided/clarified (write it LITERALLY, do NOT create a form field for it) or a [%…%] placeholder of an EXISTING email field on the form (e.g. the payer's email in a payment form). If no recipient is known, ask via clarification BEFORE emitting the FC_EMAIL.
@@ -317,12 +317,12 @@ REQUIRED: the file(s) to upload and (if named) the RegiSafe metadata; NEVER inve
 nodeParams: {"files","metadata","serviceConfig","documentId"}. REQUEST the details for this node type.
 NOTE — Upload malware scanning (fc-plugin-malware-scanner-ms-def) runs AUTOMATICALLY on uploads when configured; it has NO workflow node to emit.
 ### FC_MULTIPLE_CONDITION
-FC_MULTIPLE_CONDITION — Checks whether a form field value meets a condition (CONDITIONAL branching node).
+FC_MULTIPLE_CONDITION — CONDITIONAL branching node for ONE yes/no check (field meets a condition). Multi-case on the SAME field → FC_SWITCH, never nested conditions.
 REQUIRED: the field to check, the comparison and the value to compare against.
-BRANCHES: "_childNodes" = YES branch (condition met), "_elseChildNodes" = NO/ELSE branch (not met) — an if/else is ONE lane with ONE condition node, never two lanes (a lane without a condition always fires).
+BRANCHES: "_childNodes" = YES branch (condition met), "_elseChildNodes" = NO/ELSE branch (not met) — an if/else is ONE lane with ONE condition node, never two lanes (a lane without a condition always fires). NEVER chain/nest conditions to test the NEXT value of the same field — that is ONE FC_SWITCH.
 ### FC_SWITCH
-FC_SWITCH — Switches execution based on the value of a form field (switch/case, MULTI-BRANCH).
-REQUIRED: the field to switch on and the case values/branches.
+FC_SWITCH — Multi-branch switch/case on ONE field: several DISTINCT values, EACH with its OWN action(s). NEVER emulate it with (nested) FC_MULTIPLE_CONDITION.
+REQUIRED: the field to switch on, and one "_cases" entry (caseValues + _childNodes) per distinct action set; optional "_defaultChildNodes".
 ### FC_EXPERIMENT
 FC_EXPERIMENT — Wraps an action with error handling (try-catch-finally pattern).
 USED FOR ABSCHLUSSSEITEN — when a failure Abschlussseite is clarified, nodeType MUST be
@@ -330,15 +330,15 @@ FC_EXPERIMENT: "_childNodes" = [main action, then the SUCCESS page as FC_SHOW_TE
 "_handlerChildNodes" = [the FAILURE page as FC_SHOW_TEMPLATE]. endpointState/endpointType stay at
 the top level.
 ### FC_FOR_EACH_LOOP
-FC_FOR_EACH_LOOP — Iterates over items and executes child nodes for each item.
+FC_FOR_EACH_LOOP — Iterates a REPEATABLE container's rows (or files/values). Use for ALL rows in ONE mail/list (accumulate a server attribute) or one action per row.
 REQUIRED: the item source to iterate over.
 Build a JSON array ONLY when the user explicitly wants the rows stored/persisted as JSON (e.g. into a database field, CMIS, file, or form field). For HUMAN-READABLE content (e.g. an email body, a chat/message, a text display) accumulate READABLE LINES instead of JSON — one line per row (e.g. "Mo: 09:00 - 17:00") or a bulleted list. When the data comes from a REPEATABLE (dynamic) container and must be persisted as ONE combined value (e.g. a JSON array), use sourceType FORM_FIELD_REPETITIONS. The loop has no variable, so build the JSON by string-concatenation on a server attribute: FC_WRITE_FORM_RECORD_ATTRIBUTES seeds the key with "[" before the loop; INSIDE each iteration FC_WRITE_FORM_RECORD_ATTRIBUTES sets the value to the current [%\$RECORD_ATTR.<key>%] plus this row's object (e.g. [%\$RECORD_ATTR.<key>%],{...} — do NOT merely echo the current value back, each write appends one row); after the loop FC_WRITE_FORM_RECORD_ATTRIBUTES appends "]". Then store the accumulated [%\$RECORD_ATTR.<key>%] ONCE with the node matching the target the prompt names: a database/table/column → FC_SQL_STATEMENT; a CMIS node/document → the CMIS write node; a file → FC_CREATE_TEXT_FILE; a specific form field → FC_CHANGE_FORM_VALUE; no specific target named → the server attribute itself is the result.
 CRITICAL NESTING: the per-iteration node (the per-row append) MUST be placed INSIDE the loop's nodeParams._childNodes as {"nodeType":"FC_WRITE_FORM_RECORD_ATTRIBUTES","nodeParams":{...}} — that is what makes it run ONCE PER ROW. NEVER place it in "chainedNodes" or as a node listed after the loop (such nodes run exactly ONCE, so the JSON would never grow). Only the post-loop nodes (close "]" and the single final write) go after the loop.
 ### FC_WHILE_LOOP
-FC_WHILE_LOOP — Repeatedly executes child actions WHILE a form field value meets a condition (PRE-CHECK loop).
+FC_WHILE_LOOP — PRE-CHECK loop: repeats child actions while a field condition holds (may run 0×). Pick it when the CONDITION is named FIRST ("while/as long as <c>: <action>", "Solange X, setze Y").
 REQUIRED: the field to check, the comparison and the value.
 ### FC_DO_UNTIL_LOOP
-FC_DO_UNTIL_LOOP — Executes child actions FIRST, then checks the condition (POST-CHECK loop).
+FC_DO_UNTIL_LOOP — POST-CHECK loop: runs child actions FIRST, then checks the condition (always ≥1×). Pick it when the ACTION is named FIRST ("<action> as long as <c>", "Setze X auf Y solange Z").
 REQUIRED: the field to check, the comparison and the value.
 ### FC_WITH_FORM_ELEMENT_CONTEXT
 FC_WITH_FORM_ELEMENT_CONTEXT — Scoping node that wraps child actions and provides form element context.

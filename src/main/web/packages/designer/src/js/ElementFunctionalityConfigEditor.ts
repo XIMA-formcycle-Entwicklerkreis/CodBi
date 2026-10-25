@@ -1,7 +1,6 @@
 // #region Imports
 import {
   $,
-  Callbacks,
   Editors,
   type IPropertyDescriptor,
   type TEditorCfg,
@@ -23,14 +22,11 @@ import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
   elementCssClasses,
   flushElementCssClassChange,
-  notifyFormPreviewChanged,
   refreshCodbiElementMarkers,
   removeFuncAttributeQuiet,
-  resumeElementPreviews,
   setElementCssClass,
   setItemAttributeValueQuiet,
   setItemPropertyValueQuiet,
-  suspendElementPreviews,
 } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import {
@@ -53,8 +49,22 @@ import {
   selectedProperty,
 } from "./FunctionalityConfigEditor.js";
 import { ensureCodbiBranding } from "./MirrorSelect.js";
-import { getDesignerLanguage, i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
+import {
+  type IStandardConfigClassEntry,
+  activateStandardConfig as activateStandardConfigForForm,
+  activeStandardConfigIds,
+  confirmStandardConfigActivation as confirmStandardConfigActivationDialog,
+  formatMessage,
+  isStandardConfigActive,
+  standardConfigClassEntries,
+  standardConfigOwnerOfClass,
+  standardConfigTooltip,
+} from "./StandardConfigActivation.js";
+import { i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
 // #endregion Imports
+
+// Kept part of this module's public surface (it is the shape of the activation dialog's class list).
+export type { IStandardConfigClassEntry };
 
 /**
  * Loosened `i18n` accessor (see the identical widening in FunctionalityConfigEditor). The strongly
@@ -124,17 +134,6 @@ declare module "@de-xima/fc-form-designer" {
 
 /** Category id grouping the per-element CodBi property (the existing "CodBi" category). */
 export const ELEMENT_FUNCTIONALITY_CATEGORY_ID = "codbi-cat-main";
-
-/**
- * One CSS class a standard configuration provides, together with the SHORT DESCRIPTION shown when the
- * class is hovered (e.g. `Appointments › Prevents selecting future dates.`).
- */
-export interface IStandardConfigClassEntry {
-  /** The CSS class name (e.g. `CodBi_NoFutureDate`). */
-  cssClass: string;
-  /** The class's short description, prefixed with the owning configuration's path. */
-  description: string;
-}
 
 /** Platform-available `designer.element.property.funcs` (the CSV of applied functionality ids). */
 export const ELEMENT_FUNCS_PROPERTY = String(Constants["designer.element.property.funcs"]);
@@ -235,7 +234,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   private docAnchorRow: HTMLElement | undefined;
   /**
    * Standard configurations activated through THIS panel (see {@link activateStandardConfig}), in their
-   * original casing. Merged into {@link currentStandards} so the listing reflects an activation
+   * original casing. Merged into {@link locallyActiveIds} so the listing reflects an activation
    * immediately — even when the `codbi-prop-standards` property cannot be read back yet (no standards
    * editor mounted, running element preview, …).
    */
@@ -1012,7 +1011,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const applied = new Set(element ? elementCssClasses(element as never) : []);
     // The standard configurations ACTIVE for the form decide whether a class row is dimmed and gets an
     // "activate" button: a class whose configuration is not active is only a marker.
-    const activeIds = new Set(this.currentStandards().map((id) => id.toLowerCase()));
+    const activeIds = new Set(activeStandardConfigIds(this.locallyActiveIds()).map((id) => id.toLowerCase()));
     const mainFragment = document.createDocumentFragment();
     const otherFragment = document.createDocumentFragment();
     let mainShown = 0;
@@ -1026,7 +1025,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       // path). Used by the activation question, which lists the classes that become available.
       const configClasses = Object.keys(classes ?? {}).map((cssClass) => ({
         cssClass,
-        description: this.standardConfigTooltip(id, cssClass, classes?.[cssClass], funcs?.[cssClass], true),
+        description: standardConfigTooltip(id, cssClass, classes?.[cssClass], funcs?.[cssClass], true),
       }));
       for (const label of labels) {
         // A class the element already carries is ALWAYS shown (and checked) in the main list, so an
@@ -1056,7 +1055,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         // row always has a meaningful tooltip.
         const classSpec = hasClasses ? classes?.[label] : undefined;
         const configActive = activeIds.has(id.toLowerCase());
-        const tooltip = this.standardConfigTooltip(id, label, classSpec, funcs?.[label], configActive);
+        const tooltip = standardConfigTooltip(id, label, classSpec, funcs?.[label], configActive);
         const row = this.buildStandardConfigRow({
           id,
           label,
@@ -1164,353 +1163,78 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     if (!item) {
       return;
     }
-    const owner = on ? this.standardConfigOwner(label) : undefined;
-    const askForActivation = owner !== undefined && !this.isStandardConfigActive(owner);
+    const owner = on ? standardConfigOwnerOfClass(label) : undefined;
+    const askForActivation = owner !== undefined && !isStandardConfigActive(owner, this.locallyActiveIds());
     setElementCssClass(item as never, label, on, { deferNotify: askForActivation });
     if (askForActivation && owner !== undefined) {
-      // Freeze ALL element previews while the question is open: every draft sync / badge refresh /
-      // preview (re)fit makes FORMCYCLE re-render the cell, and a preview rebuilt under the modal comes
-      // back clipped with the platform's own preview chrome visible — for a decision the user has not
-      // even taken yet. The freeze is released in the dialog's `close()`.
-      suspendElementPreviews();
-      this.confirmStandardConfigActivation(owner, this.standardConfigClassEntries(owner));
+      // The SHARED activation question (also opened by the on-canvas marker badges) freezes ALL element
+      // previews while it is open — every draft sync / badge refresh / preview (re)fit makes FORMCYCLE
+      // re-render the cell, and a preview rebuilt under the modal comes back clipped with the platform's
+      // own preview chrome visible. The freeze is released when the question is answered.
+      this.confirmStandardConfigActivation(owner, standardConfigClassEntries(owner));
     }
     this.renderStandardConfigList();
   }
 
   /**
-   * The id of the standard CONFIGURATION that provides the CSS class `cssClass`.
-   *
-   * @param cssClass The standard-configuration CSS class.
-   * @returns The owning configuration id, or **undefined** when no configuration provides that class.
+   * The ids this panel additionally considers ACTIVE: the configurations activated through it
+   * ({@link locallyActivatedStandards}), which cannot be read back from the form property yet (no
+   * standards editor mounted, no draft sync, …).
    */
-  private standardConfigOwner(cssClass: string): string | undefined {
-    try {
-      const standards = window.CodbiPluginData?.detStandards ?? {};
-      return Object.keys(standards).find((id) => {
-        const classes = standards[id]?.classes;
-        return classes != null && Object.prototype.hasOwnProperty.call(classes, cssClass);
-      });
-    } catch {
-      return undefined;
-    }
+  private locallyActiveIds(): string[] {
+    return [...this.locallyActivatedStandards];
   }
 
   /**
-   * Whether the standard configuration `configId` is currently active for the edited form.
-   *
-   * @param configId The standard-configuration id (case-insensitive).
-   */
-  private isStandardConfigActive(configId: string): boolean {
-    const wanted = String(configId ?? "")
-      .trim()
-      .toLowerCase();
-    return wanted !== "" && this.currentStandards().some((id) => id.toLowerCase() === wanted);
-  }
-
-  /**
-   * Every CSS class a standard configuration provides, together with the SHORT DESCRIPTION used by the
-   * listing tooltips (`Appointments › Prevents selecting future dates.`).
-   *
-   * @param configId The standard-configuration id.
-   * @returns The class entries (empty when the configuration provides none or is unknown).
-   */
-  private standardConfigClassEntries(configId: string): IStandardConfigClassEntry[] {
-    try {
-      const def = window.CodbiPluginData?.detStandards?.[configId];
-      const classes = def?.classes;
-      if (classes == null) {
-        return [];
-      }
-      return Object.keys(classes).map((cssClass) => ({
-        cssClass,
-        description: this.standardConfigTooltip(configId, cssClass, classes[cssClass], def?.funcs?.[cssClass], true),
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Makes the standard CONFIGURATION `configId` active for the edited form, so its script is injected
-   * for the form and every class it provides does what it promises.
-   *
-   * Three paths, most reliable first:
-   *
-   * 1. `CodbiPluginData.setStandardsValue` — the form-level standards editor, which persists
-   *    `codbi-prop-standards`, updates the `Active` flags and re-applies running element previews.
-   * 2. The designer's own `set-property` callback (the very callback the standards tree fires) plus
-   *    the `Active` flag — needed because the standards editor only publishes path 1 once it has been
-   *    MOUNTED, i.e. after the CodBi form options were opened.
-   * 3. The standards tree's checkbox, if it happens to be rendered.
+   * Makes the standard CONFIGURATION `configId` active for the edited form — the SHARED
+   * `activateStandardConfig` the on-canvas marker badges use as well, so both surfaces activate a
+   * configuration exactly the same way (three paths, most reliable first: the standards editor's
+   * `setStandardsValue`, the designer's own `set-property` callback, the tree's checkbox).
    *
    * A configuration activated here is remembered locally ({@link locallyActivatedStandards}) so the
-   * listing reflects the new state immediately, even when the property cannot be read back.
+   * listing reflects the new state immediately, and the listing re-renders itself.
    *
    * @param configId The standard-configuration id to activate.
    * @returns **True** when the configuration was activated, **false** when it already was or could not
    *   be activated.
    */
   private activateStandardConfig(configId: string): boolean {
-    const id = String(configId ?? "").trim();
-    if (id === "") {
-      return false;
-    }
-    try {
-      if (this.isStandardConfigActive(id)) {
-        return false; // Already active — nothing to do.
-      }
-      const next = [...this.currentStandards(), id].join(",");
-      const apply = window.CodbiPluginData?.setStandardsValue;
-      if (typeof apply === "function") {
-        apply(next);
+    return activateStandardConfigForForm(configId, {
+      extraActiveIds: this.locallyActiveIds(),
+      sender: this,
+      onActivated: (id) => {
         this.locallyActivatedStandards.add(id);
-        refreshCodbiElementMarkers();
-        return true;
-      }
-      // No standards editor instance this session: persist the property through the designer's own
-      // callback and mark the configuration ACTIVE (the canvas badges read that flag).
-      const standardsDef = window.CodbiPluginData?.detStandards?.[id];
-      if (standardsDef) {
-        standardsDef.Active = true;
-      }
-      const setPropertyCallback = Callbacks["set-property"];
-      if (setPropertyCallback && typeof setPropertyCallback.fire === "function") {
-        // Called as a METHOD so the callback keeps its own `this`.
-        setPropertyCallback.fire(Constants["designer.property.standards"], next, this as never);
-        this.locallyActivatedStandards.add(id);
-        notifyFormPreviewChanged();
-        refreshCodbiElementMarkers();
-        return true;
-      }
-      // Last resort: tick the form-level tree's checkbox; its `change` handler persists the selection.
-      const checkbox = document.getElementById(`CodBi-StandardConfigSelector_${id}`);
-      if (checkbox instanceof HTMLInputElement && !checkbox.checked) {
-        checkbox.checked = true;
-        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
-        this.locallyActivatedStandards.add(id);
-        return true;
-      }
-      console.warn(
-        `[CodBi] Element: standard configuration "${id}" is not active for this form and could not be activated automatically.`,
-      );
-      return false;
-    } catch (x) {
-      console.warn("[CodBi] Element: could not activate the standard configuration", x);
-      return false;
-    }
+        this.renderStandardConfigList();
+      },
+    });
   }
 
   /**
    * Asks the user whether the standard configuration `configId` — whose class was just applied to the
    * element, or whose activate button was clicked — shall be activated for the form.
    *
-   * The dialog names the configuration and lists every class it provides — each entry with the class's
-   * short description as its tooltip — so it is clear what becomes available. Confirming activates the
-   * configuration; dismissing leaves everything as it is (the class stays applied and the row keeps its
-   * dimmed "not activated" state plus the activate button).
+   * This delegates to the SHARED activation dialog, which the on-canvas marker badges open in exactly
+   * the same way (when a DIMMED standard-configuration class sub-badge is clicked): the dialog names the
+   * configuration and lists every class it provides — each entry with the class's short description as
+   * its tooltip — so it is clear what becomes available. Confirming activates the configuration;
+   * dismissing leaves everything as it is (the class stays applied and the row keeps its dimmed "not
+   * activated" state plus the activate button).
    *
    * @param configId The standard-configuration id.
    * @param classes  The classes that configuration provides, with their short descriptions.
    */
   private confirmStandardConfigActivation(configId: string, classes: IStandardConfigClassEntry[]): void {
-    // Only ONE question at a time: a leftover dialog (e.g. from a previous element selection) is
-    // replaced instead of stacking a second overlay on top of it.
-    for (const stale of Array.from(document.querySelectorAll(".codbi-std-activate-overlay"))) {
-      stale.remove();
-    }
-    const overlay = document.createElement("div");
-    overlay.className = "codbi-std-activate-overlay";
-    const dialog = document.createElement("div");
-    dialog.className = "codbi-std-activate-dialog";
-    dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-modal", "true");
-
-    const title = document.createElement("h3");
-    title.textContent = kI18n("designer.element.standardConfig.dialog.title");
-    const message = document.createElement("p");
-    message.textContent = this.formatMessage(kI18n("designer.element.standardConfig.dialog.message"), configId);
-    dialog.append(title, message);
-
-    if (classes.length > 0) {
-      const classesLabel = document.createElement("p");
-      classesLabel.textContent = kI18n("designer.element.standardConfig.dialog.classes");
-      const list = document.createElement("ul");
-      list.className = "codbi-std-activate-dialog__list";
-      for (const { cssClass, description } of classes) {
-        const entry = document.createElement("li");
-        entry.textContent = cssClass;
-        // The short description (prefixed with the configuration path) is shown on hover, exactly like
-        // the listing rows do it — the dialog must not be the only place without it.
-        if (description) {
-          entry.title = description;
-        }
-        list.append(entry);
-      }
-      dialog.append(classesLabel, list);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "codbi-std-activate-dialog__actions";
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "codbi-std-activate-dialog__cancel";
-    cancel.textContent = kI18n("designer.element.standardConfig.dialog.cancel");
-    const confirm = document.createElement("button");
-    confirm.type = "button";
-    confirm.className = "codbi-std-activate-dialog__confirm";
-    confirm.textContent = kI18n("designer.element.standardConfig.dialog.confirm");
-    actions.append(cancel, confirm);
-    dialog.append(actions);
-
-    /**
-     * Closes the question.
-     *
-     * @param refresh **True** when the answer ACTIVATES the configuration (the canvas/previews then
-     *   have to catch up exactly once); **false** when the question is dismissed — the user declined,
-     *   so nothing may be re-actualised: the class is still saved (persist-differ nudge only), the
-     *   designer's `cssclasses` editor and the previews stay exactly as they are.
-     */
-    const close = (refresh: boolean): void => {
-      document.removeEventListener("keydown", onKeyDown);
-      overlay.remove();
-      flushElementCssClassChange({ refreshPreview: refresh });
-      resumeElementPreviews(refresh);
-    };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close(false);
-      }
-    };
-    cancel.addEventListener("click", () => close(false));
-    confirm.addEventListener("click", () => {
-      close(true);
-      if (this.activateStandardConfig(configId)) {
+    confirmStandardConfigActivationDialog(configId, classes, {
+      extraActiveIds: this.locallyActiveIds(),
+      sender: this,
+      onActivated: (id) => {
+        this.locallyActivatedStandards.add(id);
         this.renderStandardConfigList();
-      }
+      },
+      // The class was written with `deferNotify` while the question was OPEN: the deferred draft sync
+      // (and, when the user CONFIRMED, the canvas/preview refresh) belongs to the answer.
+      onClose: (answered) => flushElementCssClassChange({ refreshPreview: answered }),
     });
-    // A click on the backdrop (not inside the dialog) dismisses the question.
-    overlay.addEventListener("mousedown", (event) => {
-      if (event.target === overlay) {
-        close(false);
-      }
-    });
-    document.addEventListener("keydown", onKeyDown);
-    overlay.append(dialog);
-    document.body.append(overlay);
-    // The primary action is focused, so ENTER confirms and ESC cancels.
-    confirm.focus();
-  }
-
-  /**
-   * The standard-configuration ids currently active for the edited form: the persisted
-   * `codbi-prop-standards` CSV merged with every configuration the form-level standards tree has
-   * flagged `Active` (the latter also covers a toggle that was not persisted yet).
-   *
-   * The ids are kept in their ORIGINAL casing and order — the runtime resolves them as file names
-   * (`Appointments.js`), which is case-sensitive.
-   */
-  private currentStandards(): string[] {
-    const result: string[] = [];
-    const add = (raw: unknown): void => {
-      for (const entry of String(raw ?? "").split(",")) {
-        const id = entry.trim();
-        if (id !== "" && !result.some((existing) => existing.toLowerCase() === id.toLowerCase())) {
-          result.push(id);
-        }
-      }
-    };
-    try {
-      const designer = instance() as unknown as
-        | { getFormPropertyValueForCurrentLang?: (property: string) => unknown }
-        | undefined;
-      add(designer?.getFormPropertyValueForCurrentLang?.(Constants["designer.property.standards"]));
-    } catch {
-      // No form-property model available — the `Active` flags below still provide the selection.
-    }
-    try {
-      for (const [id, def] of Object.entries(window.CodbiPluginData?.detStandards ?? {})) {
-        if (def?.Active) {
-          add(id);
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    // Activations performed through this panel — visible immediately, before the property round-trip.
-    for (const id of this.locallyActivatedStandards) {
-      add(id);
-    }
-    return result;
-  }
-
-  /**
-   * Tooltip text of one standard-configuration row.
-   *
-   * The text is LOCALIZED, most specific source first:
-   *
-   * 1. the class's own translated description (`classes[class].descriptionDe` / `.descriptionIt`,
-   *    hand-authored in the configuration metadata) — the only source for the classes that apply NO
-   *    functionality (e.g. the marker classes of a date/time pair);
-   * 2. for any other language, the localized short summaries of the functionalities the class applies;
-   * 3. the published (English) class description.
-   *
-   * The text is PREFIXED with the owning standard configuration's full path (`Appointments › …`),
-   * because that is what the user has to activate in the form's CodBi section for the class to have its
-   * effect. An inactive configuration additionally appends an explicit hint.
-   *
-   * @param id           The owning standard-configuration id (its full path).
-   * @param label        The CSS class name.
-   * @param classSpec    The class's published entry (description + optional localized descriptions).
-   * @param funcsCsv     The comma-separated FUNC list the class applies.
-   * @param configActive Whether the owning configuration is ACTIVE for the form.
-   */
-  private standardConfigTooltip(
-    id: string,
-    label: string,
-    classSpec: TStandardConfigClassSpec | undefined,
-    funcsCsv: string | undefined,
-    configActive: boolean,
-  ): string {
-    const spec = classSpec != null && typeof classSpec === "object" ? classSpec : undefined;
-    const published = typeof classSpec === "string" ? classSpec : spec?.description;
-    const language = getDesignerLanguage().toLowerCase();
-    // The class's OWN translation wins (it describes the class, not a functionality).
-    const translated = language.startsWith("de")
-      ? spec?.descriptionDe
-      : language.startsWith("it")
-        ? spec?.descriptionIt
-        : undefined;
-    let body = translated || published || id;
-    if (!translated && language !== "en") {
-      const summaries = String(funcsCsv ?? "")
-        .split(",")
-        .map((func) => func.trim())
-        .filter(Boolean)
-        .map((func) => functionalitySummary(func))
-        .filter(Boolean);
-      const unique = [...new Set(summaries)];
-      if (unique.length > 0) {
-        body = unique.join(" · ");
-      }
-    }
-    const lines = [`${id} › ${body}`];
-    if (!configActive) {
-      lines.push(this.formatMessage(kI18n("designer.element.standardConfig.inactiveHint"), id));
-    }
-    return lines.join("\n");
-  }
-
-  /**
-   * Replaces the `{0}`, `{1}`, … placeholders of an i18n message with the given values.
-   *
-   * @param message The localized message (may contain `{n}` placeholders).
-   * @param values  The replacement values, in placeholder order.
-   * @returns The message with every present placeholder replaced.
-   */
-  private formatMessage(message: string, ...values: Array<string>): string {
-    return values.reduce((text, value, index) => text.split(`{${index}}`).join(value), String(message ?? ""));
   }
 
   /**
@@ -1607,7 +1331,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     activate.type = "button";
     activate.className = "codbi-func-config__std-activate";
     activate.textContent = "+";
-    const hint = this.formatMessage(kI18n("designer.element.standardConfig.activate"), configId);
+    const hint = formatMessage(kI18n("designer.element.standardConfig.activate"), configId);
     activate.title =
       configClasses.length > 0
         ? `${hint}\n${kI18n("designer.element.standardConfig.dialog.classes")}\n${configClasses

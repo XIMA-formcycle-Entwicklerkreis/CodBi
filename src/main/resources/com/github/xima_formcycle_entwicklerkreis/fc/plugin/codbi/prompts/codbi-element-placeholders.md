@@ -26,7 +26,7 @@ CRITICAL — A LITERAL NAME IS NOT A VARIABLE: a person's/authority's NAME is NE
 
 ## AI.LLAMA.STD.QA
 
-This EP queries an AI to answer a question. USE for weather/AI/knowledge queries. Param[1]=question, Param[2]=UseInternet ("true"). CRITICAL: trailing semicolons for unused params.  This EP is a RUNTIME AI answer; it is only usable when the environment has a suitable AI engine (otherwise the codbi data-cb-Specialist parameter must name a specialist, which the AI cannot know). Do NOT make a live-data widget depend on it — prefer self-contained JavaScript that fetches a CORS-ENABLED endpoint (see the custom-JavaScript rules).
+This EP queries an AI to answer a question. USE for weather/AI/knowledge queries. Param[1]=question, Param[2]=UseInternet ("true"). CRITICAL: trailing semicolons for unused params.  This EP is a RUNTIME AI answer; it is only usable when the environment has a suitable AI engine (otherwise the codbi data-cb-Specialist parameter must name a specialist from the "CONFIGURED AI SPECIALISTS" list in the system prompt). Do NOT make a live-data widget depend on it — prefer self-contained JavaScript that fetches a CORS-ENABLED endpoint (see the custom-JavaScript rules).
 Example: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }"
 
 ## Date.Today

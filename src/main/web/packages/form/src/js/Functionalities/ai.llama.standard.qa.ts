@@ -97,10 +97,13 @@ export class AI_LLAMA_STANDARD_QA {
    * - **VerifyCheckboxLabel**: Label for the manual verification checkbox.
    *                            Default: `"The content is not as expected. Please check if you selected the correct file(s).
    *                            You may manually verify that it is the correct one by clicking the checkbox."`
-   * - **Mode**:                If set to "verify", the upload field may have a **data-cb-Question** attribute.
-   *                            In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
-   *                            to be accepted. If not, an error and a manual verification checkbox are shown,
-   *                            just like in ai.ocr.ts. The question can reference symbols as usual.
+   * - **Mode**:                Optional mode: the default (unset or `"analyse"`) answers the questions about the
+   *                            uploaded document and writes each answer into its tagged `AI_LLAMA_STANDARD_QA_Question`
+   *                            field. If set to `"verify"`, the upload field itself may have a **data-cb-Question**
+   *                            attribute; the question is sent to the AI and the answer must be the positive response
+   *                            (default "yes", case-insensitive) for the file to be accepted. If verification fails, an
+   *                            error and a manual verification checkbox are shown, just like in ai.ocr.ts. The question
+   *                            can reference symbols as usual. Default: `"analyse"` (same as leaving it empty).
    * - **ResponseLanguage**:    Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to
    *                            respond in this language, skipping auto-detection. Overrides the
    *                            `AI_LLAMA_STD_Language` plugin property for this instance.
@@ -135,7 +138,10 @@ export class AI_LLAMA_STANDARD_QA {
    * upload field only picks up its own questions. An upload field that resides *inside* an excluded sub-container naturally
    * searches that sub-container (its own nearest XContainer) and is not affected by the exclusion.
    *
-   * In verify mode, the upload field itself may have a **data-cb-Question** attribute. This question is sent to the AI and the answer must be "yes" (case-insensitive) for the file to be accepted. Otherwise, an error and a manual verification checkbox are shown.
+   * The default mode (`"analyse"`, or leaving **data-cb-Mode** unset) answers the questions about the uploaded document and
+   * writes each answer back into its tagged `AI_LLAMA_STANDARD_QA_Question` field. In verify mode (`"verify"`), the upload field
+   * itself may have a **data-cb-Question** attribute; this question is sent to the AI and the answer must be "yes"
+   * (case-insensitive) for the file to be accepted. Otherwise, an error and a manual verification checkbox are shown.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -149,7 +155,7 @@ export class AI_LLAMA_STANDARD_QA {
     InternetAccess: { type: "boolean" },
     Thinking: { type: "boolean" },
     MaxThinkingTokens: { type: "number" },
-    Mode: { type: "string" },
+    Mode: { type: "enum", options: ["analyse", "verify"] },
     PositiveResponse: { type: "string" },
     CaseInsensitive: { type: "boolean" },
     VerifyErrorText: { type: "string" },

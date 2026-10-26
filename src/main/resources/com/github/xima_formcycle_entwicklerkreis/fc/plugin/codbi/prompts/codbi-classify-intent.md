@@ -17,6 +17,19 @@ Examples (ILLUSTRATIVE ONLY — the user may phrase the same intent in ANY langu
 - "Datei herunterladen" / "file download" when combined with "submit" → workflow
 - "Wenn auf Cool geklickt wird soll die PDF Gehaltsabrechnung befüllt werden. Die zu verwendende Schriftart ist Algerian." / "when Cool is clicked, fill the payslip PDF, using the Algerian font" → workflow
 
+CRITICAL — AN AI ANSWER THAT HAPPENS INSIDE A FORM FIELD IS A FORM CHANGE, NOT A WORKFLOW.
+When the request asks to ADD/CREATE a form element (an input field, a question field, a text field) AND
+describes that the field itself gets its answer from an AI (CodBi functionality like
+AI.LLAMA.STD.QA / AI.LLAMA.CHAT, optionally naming a specialist model such as "von Cerebras beantworten
+lassen", "let Cerebras answer", "Antwort von einem KI-Spezialisten"), it is a FORM change: the AI
+answering happens WITHIN the field at runtime, there is NO workflow node, no email, no state change.
+This is exactly like "Add an upload field that extracts document text" → "form". Examples:
+- "Erstelle ein Eingabefeld welches die Frage wie das Wetter heute wird von Cerebras beantworten lässt" → form
+- "Add a field that lets Cerebras answer the user's question" → form
+- "Füge eine Frage hinzu, die eine KI beantwortet" → form
+Only classify such a request as "both" if it ALSO explicitly asks for a workflow automation (a mail,
+a status change, a trigger that runs on submit, ...) — the bare mention of "answer" is NOT a workflow.
+
 CRITICAL — AN ACTION TRIGGERED BY A CLICK / SUBMIT IS A WORKFLOW, EVEN WHEN THE REQUEST ALSO NAMES DOCUMENT DETAILS.
 When the request describes what should HAPPEN on a button click or on submit ("wenn auf X geklickt wird soll …", "beim Absenden soll …", "nach dem Absenden …", "when X is clicked …", "on submit …"), it is a WORKFLOW request: the button is already a form element and its click starts the automation. Details about the PRODUCED ARTEFACT — FONT, colour, layout, file name, template, recipient, subject, HTTP headers — are NODE PARAMETERS of that automation (e.g. `usedFont` / `file` of FC_FILL_PDF), NEVER a form-structure change. They must not turn a workflow request into "form"; the form pass cannot create workflow nodes, so the request would silently produce nothing. Route to "workflow" (or "both" only when the request ALSO asks to add/change form elements or their layout).
 

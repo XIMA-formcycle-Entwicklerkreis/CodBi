@@ -4218,7 +4218,8 @@ class AICodBiAssistant : IPluginServletAction {
         if (DesignedTextDetector.wantsDesignedTextOrIllustration(prompt))
             gatedKeepTags + setOf("designed_text")
         else gatedKeepTags
-    val baseSystemPrompt = buildFormSystemPrompt(useCodbi, useBuergerserviceNaming, sectionKeepTags)
+    val baseSystemPrompt =
+        buildFormSystemPrompt(modelId, useCodbi, useBuergerserviceNaming, sectionKeepTags)
     val systemPrompt =
         if (hasAttachedDocument) {
           val em = CodbiEntities.entityManagerFactory?.createEntityManager()
@@ -4815,6 +4816,7 @@ class AICodBiAssistant : IPluginServletAction {
         // codes stay, being untagged in the same file).
         val applySystemPrompt =
             loadCodbiApplyPrompt(
+                modelId,
                 requested,
                 widgetsForDetailsFinal,
                 useCodbi,
@@ -5053,6 +5055,7 @@ class AICodBiAssistant : IPluginServletAction {
         // IDs (pure blind reconsideration).
         val finalSystemPrompt =
             loadCodbiApplyPrompt(
+                modelId,
                 requested,
                 widgets,
                 useCodbi,
@@ -5497,10 +5500,12 @@ class AICodBiAssistant : IPluginServletAction {
       if (text.isBlank()) 0 else (text.length / 4).coerceAtLeast(1)
 
   private fun buildFormSystemPrompt(
+      modelId: String,
       useCodbi: Boolean = true,
       useBuergerserviceNaming: Boolean = false,
       sectionKeepTags: Set<String> = emptySet()
-  ): String = buildCodbiFormSystemPrompt(useCodbi, useBuergerserviceNaming, sectionKeepTags)
+  ): String =
+      buildCodbiFormSystemPrompt(modelId, useCodbi, useBuergerserviceNaming, sectionKeepTags)
 
   private data class CodbiDetailsSignal(
       val elements: List<String>,
@@ -5749,6 +5754,53 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (_: Exception) {
       false
     }
+  }
+
+  /**
+   * True when a workflow-AI `{"error": ...}` message is a deliberate "nothing to do here" verdict:
+   * the workflow AI itself decided the request only concerns FORM structure / elements / CodBi
+   * functionality (e.g. "Erstelle ein Eingabefeld ... von Cerebras beantworten lässt") and can
+   * therefore not be turned into a workflow automation. This typically happens when the intent was
+   * misclassified as "workflow"/"both" although the request is form-only. In that case the workflow
+   * step must NOT abort the (already successful) form build — it is treated as an empty workflow
+   * change instead (see runWorkflowCreation).
+   */
+  private fun isFormOnlyWorkflowRefusal(message: String): Boolean {
+    val m = message.lowercase()
+    val describesFormElement =
+        listOf(
+            "eingabefeld",
+            "formularfeld",
+            "formularelement",
+            "input field",
+            "form field",
+            "form element",
+            "campo di input",
+            "campo del modulo",
+            "element des formulare",
+            "elemento del modulo",
+            "ein neues feld",
+            "neues feld",
+            "new field",
+            "neues formular",
+            "formular erstellen",
+            "beantworten")
+    val workflowOnlyRefusal =
+        listOf(
+            "in diesem schritt können nur workflow",
+            "in diesem schritt können ausschließlich workflow",
+            "this step can only",
+            "this step only supports",
+            "this step only processes",
+            "nur workflow-automatisierungen",
+            "können nur workflow",
+            "als workflow-aufgabe",
+            "as a workflow task",
+            "keine workflow-",
+            "no workflow",
+            "nicht als workflow",
+            "beschreiben sie die gewünschte aktion als workflow")
+    return describesFormElement.any { m.contains(it) } && workflowOnlyRefusal.any { m.contains(it) }
   }
 
   /**
@@ -6817,6 +6869,9 @@ class AICodBiAssistant : IPluginServletAction {
         if (item.get("className")?.asString != "XTextField") continue
         val props = item.getAsJsonObject("properties") ?: continue
         val name = props.get("name")?.asString ?: continue
+        // Never tag an AI functionality answer / receiver field (e.g. the field that receives the
+        // document-QA answer) with a People class — such a field has nothing to do with a person.
+        if (isAiAnswerField(props)) continue
         val label = (props.get("label")?.asString ?: "").lowercase()
         val datatype = props.get("datatype")?.asString ?: ""
         val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }.toSet()
@@ -6858,6 +6913,41 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Returns `true` when an XTextField's [props] identify it as an AI functionality answer /
+   * receiver field - i.e. a field whose content is produced by an AI (e.g. txtQA or document QA
+   * answers into a field tagged `AI_LLAMA_STANDARD_QA_Question` /
+   * `AI_LLAMA_STANDARD_TXTQA_Question`, or carrying a `data-cb-Question` attribute). Such a field
+   * has NO relation to an address or to a person, so the deterministic OpenPLZ.AC.SET and People
+   * class-nets must never tag it - stamping `CodBi_OpenPLZ_AC_SET_Locality` / `CodBi_People_*` onto
+   * an AI answer field corrupts it into a bogus autocomplete/address field. The receiver is
+   * detected either by its AI receiver CSS class or by its `data-cb-Question` attribute (both the
+   * flattened property and the attributes array).
+   */
+  private fun isAiAnswerField(props: JsonObject): Boolean {
+    val existingCss = props.get("cssclasses")?.takeIf { it.isJsonArray }?.asJsonArray
+    val hasAiReceiverClass =
+        existingCss?.any {
+          it.isJsonPrimitive &&
+              (it.asString.contains("AI_LLAMA_", ignoreCase = true) ||
+                  it.asString.contains("AI_OCR", ignoreCase = true) ||
+                  it.asString.contains("TXTQA", ignoreCase = true) ||
+                  it.asString.contains("Question", ignoreCase = true))
+        } == true
+    val hasAiQuestionAttr =
+        props.entrySet().any { (k, _) -> k.equals("data-cb-Question", ignoreCase = true) } ||
+            props
+                .get("attributes")
+                ?.takeIf { it.isJsonArray }
+                ?.asJsonArray
+                ?.any {
+                  it.isJsonObject &&
+                      (it.asJsonObject.get("text")?.asString ?: "").equals(
+                          "data-cb-Question", ignoreCase = true)
+                } == true
+    return hasAiReceiverClass || hasAiQuestionAttr
+  }
+
+  /**
    * Deterministic safety net for the OpenPLZ.AC.SET standard: ensures the matching
    * `CodBi_OpenPLZ_AC_SET_*` CSS class is present on any XTextField that represents an address part
    * (street, building number, postal code, locality). The AI is instructed to apply these classes
@@ -6881,6 +6971,15 @@ class AICodBiAssistant : IPluginServletAction {
       if (item.get("className")?.asString != "XTextField") continue
       val props = item.getAsJsonObject("properties") ?: continue
       val name = props.get("name")?.asString ?: continue
+      // NEVER tag an AI functionality answer / receiver field (e.g. the field that receives the
+      // document-QA answer and carries the AI_LLAMA_STANDARD_QA_Question class, or any field with a
+      // data-cb-Question attribute - txtQA / document QA). Such a field has NOTHING to do with an
+      // address, and stamping CodBi_OpenPLZ_AC_SET_Locality (or any address class) onto it corrupts
+      // the AI output into a bogus postal-code/locality autocomplete field.
+      if (isAiAnswerField(props)) {
+        logger.info("[AICodBiAssistant] OpenPLZ.AC.SET net skipped AI answer field '{}'", name)
+        continue
+      }
       // Split camelCase names into words (e.g. "tfPostalCode" -> [tf, postal, code]) and match the
       // address-part tokens so unrelated names (e.g. "tfReport") never match by accident.
       val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }
@@ -11272,29 +11371,52 @@ class AICodBiAssistant : IPluginServletAction {
     return try {
       val root = JsonParser.parseString(persistJson).asJsonObject
       val items = root.getAsJsonArray("items") ?: return null
+      // Index every element by its technical name so a PRIMITIVE string reference inside a
+      // container's `elements` array can be resolved back to the referenced element. In the
+      // Formcycle persist format a container's children are usually listed by NAME (a plain string)
+      // rather than as inline objects. Without resolving these, a repeatable container whose row
+      // fields sit inside a (nested) child container would only report the nested container's own
+      // name — never the actual row fields — so the workflow AI would NOT see that the fields are
+      // repeatable and would fall back to a bare [%field%] placeholder + a single condition instead
+      // of building an FC_FOR_EACH_LOOP over the container.
+      val byName = mutableMapOf<String, JsonObject>()
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val props = item.asJsonObject.getAsJsonObject("properties") ?: continue
+        val nm = props.get("name")?.asString ?: continue
+        byName[nm] = item.asJsonObject
+      }
       val lines = mutableListOf<String>()
+      // Resolve a `ref` (primitive name or inline object) to the underlying element object, or
+      // null.
+      fun resolve(ref: JsonElement): JsonObject? {
+        return if (ref.isJsonPrimitive) byName[ref.asString]
+        else if (ref.isJsonObject) {
+          val props = ref.asJsonObject.getAsJsonObject("properties") ?: return null
+          val nm = props.get("name")?.asString ?: return ref.asJsonObject
+          byName[nm] ?: ref.asJsonObject
+        } else null
+      }
+      // Collect every descendant LEAF field name below `elements`, recursing through nested
+      // containers (whether the child is referenced by primitive name or as an inline object).
       fun leafNames(elements: JsonArray?): List<String> {
         if (elements == null) return emptyList()
         val names = mutableListOf<String>()
         for (ref in elements) {
-          if (ref.isJsonPrimitive) {
-            names.add(ref.asString)
-          } else if (ref.isJsonObject) {
-            val props = ref.asJsonObject.getAsJsonObject("properties")
-            val children = props?.getAsJsonArray("elements")
-            if (children != null && children.size() > 0) {
-              names.addAll(leafNames(children))
-            } else {
-              props?.get("name")?.asString?.let { names.add(it) }
-            }
+          val child = resolve(ref) ?: continue
+          val props = child.getAsJsonObject("properties")
+          val children = props?.getAsJsonArray("elements")
+          if (children != null && children.size() > 0) {
+            names.addAll(leafNames(children))
+          } else {
+            props?.get("name")?.asString?.let { names.add(it) }
           }
         }
         return names
       }
       fun walk(list: JsonArray) {
-        for (item in list) {
-          if (!item.isJsonObject) continue
-          val obj = item.asJsonObject
+        for (ref in list) {
+          val obj = resolve(ref) ?: continue
           val className = obj.get("className")?.asString ?: continue
           val props = obj.getAsJsonObject("properties") ?: continue
           val name = props.get("name")?.asString ?: continue
@@ -11313,6 +11435,8 @@ class AICodBiAssistant : IPluginServletAction {
           if (elements != null) walk(elements)
         }
       }
+      // Walk the whole element tree from the root so nested repeatable containers are found too
+      // (the recursion descends through nested containers referenced by name or inline).
       walk(items)
       if (lines.isEmpty()) null else lines.joinToString("\n")
     } catch (e: Exception) {
@@ -13178,6 +13302,21 @@ class AICodBiAssistant : IPluginServletAction {
               aiWorkflowError.contains("password", ignoreCase = true) ||
               containsPasswordValue(prompt)
       val message = if (looksLikePassword) passwordSecurityNotice(prompt) else aiWorkflowError
+      // A "form-only" refusal is NOT a failure: the workflow AI itself decided the request only
+      // concerns form structure/elements (it landed here only because the intent was misclassified
+      // as "workflow"/"both"). The form pass has already succeeded, so do NOT abort the whole run —
+      // treat this as an empty workflow change (same graceful outcome as an empty operations
+      // wrapper).
+      if (!looksLikePassword && isFormOnlyWorkflowRefusal(message)) {
+        logger.info(
+            "[AICodBiAssistant] Workflow AI reported a form-only request (no workflow automation needed): {}",
+            message.take(300))
+        return Triple(
+            "No workflow automation was needed — the request only concerned the form itself. " +
+                "The workflow version was left unchanged.",
+            JsonArray(),
+            TokenUsage(tokensIn, tokensOut))
+      }
       throw Exception("AI could not create the workflow: $message")
     }
 
@@ -26503,6 +26642,7 @@ class AICodBiAssistant : IPluginServletAction {
       loadPromptWithClasspathFallback("codbi.change_log_schema") ?: ""
 
   private fun buildCodbiFormSystemPrompt(
+      modelId: String,
       useCodbi: Boolean = true,
       useBuergerserviceNaming: Boolean = false,
       sectionKeepTags: Set<String> = emptySet()
@@ -26574,7 +26714,13 @@ class AICodBiAssistant : IPluginServletAction {
               (loadPromptWithClasspathFallback("codbi.form_structure_rules_decision") ?: "") +
               "\n\n" +
               (fcFormcycleGeneralDecision ?: "")
-      val requestCatalogs = widgetsSectionCondensed + codbiPart
+      // The configured specialists (and whether a default/main model exists). Without this block
+      // the AI only knows the generic SPECIALIST RULE (HOW to set data-cb-Specialist) but not WHICH
+      // specialist names are valid, so it cannot match a prompt like "let Cerebras answer" to a
+      // configured specialist nor ask a sensible clarification question. This is configuration-
+      // static per deployment, so it lives on the volatile catalog side of the cache split.
+      val specialistPart = buildSpecialistContext(modelId)
+      val requestCatalogs = specialistPart + widgetsSectionCondensed + codbiPart
       val composed =
           if (promptCachingEnabled)
           // static core -> static canonical rules -> volatile catalogs -> per-request naming
@@ -26619,6 +26765,62 @@ class AICodBiAssistant : IPluginServletAction {
     } finally {
       em?.close()
     }
+  }
+
+  /**
+   * Builds the specialist-discovery context block for the form system prompt: the list of
+   * configured specialist models (from the plugin properties, surfaced via [Standard]) and whether
+   * a default/main model exists. This lets the AI (a) match a prompt that names a specialist (e.g.
+   * "let Cerebras answer") to a configured one, (b) validate a `data-cb-Specialist` value it is
+   * about to emit, and (c) ask a sensible clarification question when nothing matches.
+   *
+   * A `data-cb-Specialist` attribute is emitted ONLY when the user's request names or implies a
+   * specific specialist — the block explicitly tells the AI NOT to stamp it unconditionally just
+   * because this run is performed through a specialist (`specialist:<name>` /
+   * `ext-specialist:<name>` via [modelId]).
+   *
+   * Returns an empty string when no specialists are configured (so legacy prompts stay unchanged),
+   * and the rule text always instructs the AI on the clarification fallback and the no-main-model
+   * case.
+   */
+  private fun buildSpecialistContext(modelId: String): String {
+    val std = Standard.instance ?: return ""
+    val specialists = std.configuredSpecialists()
+    val hasDefaultModel = std.hasDefaultModel()
+    if (specialists.isEmpty()) return ""
+
+    fun formatName(s: Standard.SpecialistInfo): String =
+        if (s.external) "${s.name} (external)" else "${s.name} (local)"
+
+    val listed = specialists.joinToString("\n") { "  - ${formatName(it)}" }
+    val defaultNote =
+        if (hasDefaultModel)
+            "A default/main model exists. Using \"none\" routes the AI request to that default model."
+        else
+            "WARNING: There is NO default/main model configured — only the specialists above are usable. " +
+                "If the user does not choose a specialist, the AI functionality cannot run."
+
+    return """
+## CONFIGURED AI SPECIALISTS (from plugin properties)
+The following specialist models are configured in this environment. These are the ONLY valid
+values for a `data-cb-Specialist` attribute:
+$listed
+
+A `data-cb-Specialist` attribute is set ONLY when the user's request names or implies a specific
+specialist — it is never stamped unconditionally just because this build runs through a specialist.
+
+When the user's prompt names or implies a specific AI specialist (e.g. "let Cerebras answer",
+"verwende den Spezialisten Cerebras"):
+- Use a configured specialist from the list above that sensibly matches (by name or by the described
+  capability), and set its exact name as the `data-cb-Specialist` attribute value.
+- NEVER invent or emit a specialist name that is NOT in the list above.
+
+When NO configured specialist sensibly matches the user's request:
+- Ask in the separate clarification round which specialist to use, OFFERING ONLY names from the
+  list above plus "none".
+- "none" means do not use any specialist. $defaultNote
+"""
+        .trim()
   }
 
   /**
@@ -26731,6 +26933,7 @@ class AICodBiAssistant : IPluginServletAction {
    * every caller that does not compute a demand signal keeps the catalog — fail-open.
    */
   private fun loadCodbiApplyPrompt(
+      modelId: String,
       requestedIds: List<String> = emptyList(),
       widgetIds: List<String> = emptyList(),
       useCodbi: Boolean = true,
@@ -26817,6 +27020,9 @@ class AICodBiAssistant : IPluginServletAction {
       // tfOrg* IDs (and the fsBKOrgDaten ELSTER organisation fields) are lost.
       val buergerserviceNaming =
           if (useBuergerserviceNaming) categories["codbi.buergerservice_naming"] ?: "" else ""
+      // The configured specialists (valid `data-cb-Specialist` values) must reach the BUILD pass
+      // too — the AI actually writes `data-cb-Specialist` here. See [buildSpecialistContext].
+      val specialistPart = buildSpecialistContext(modelId)
       val codbiPart =
           when {
             requested.isNotEmpty() -> {
@@ -26921,6 +27127,7 @@ class AICodBiAssistant : IPluginServletAction {
       // the volatile tail. Non-caching mode keeps the historical order unchanged.
       return if (promptCachingEnabled)
           staticPrefix +
+              specialistPart +
               codbiPart +
               (if (buergerserviceNaming.isNotBlank()) "\n\n" + buergerserviceNaming else "") +
               "\n\n" +
@@ -26932,6 +27139,7 @@ class AICodBiAssistant : IPluginServletAction {
               "\n\n" +
               base +
               "\n\n" +
+              specialistPart +
               codbiPart +
               (if (buergerserviceNaming.isNotBlank()) "\n\n" + buergerserviceNaming else "") +
               "\n\n" +

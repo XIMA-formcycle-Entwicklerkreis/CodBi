@@ -13,7 +13,7 @@
     "InternetAccess": "If set to true, enables Brave Search internet access for this instance. Default: false.",
     "Thinking": "If set to true, enables thinking mode using a dedicated thinking model for deeper reasoning. Default: false.",
     "MaxThinkingTokens": "Maximum token budget for thinking inference. In verify mode defaults to 512. Has no effect when Thinking is false.",
-    "Mode": "If set to 'verify', the upload field may have a data-cb-Question attribute; the AI answer must be the positive response for the file to be accepted.",
+    "Mode": "Optional mode. Default/'analyse' answers the questions about the uploaded document and writes each answer into its tagged AI_LLAMA_STANDARD_QA_Question field; 'verify' accepts the file only when the AI answers the upload field's own data-cb-Question with the positive response.",
     "PositiveResponse": "The expected positive answer from the AI in verify mode. Comparison is case-insensitive by default. Default: 'yes'.",
     "CaseInsensitive": "If true (default), the AI answer is lowercased before comparing with PositiveResponse.",
     "VerifyErrorText": "Error message shown when the file does not pass verification. Default: 'The file does not meet the verification criteria.'",
@@ -72,10 +72,11 @@
       "descriptionIt": "Budget token massimo per l'inferenza di ragionamento. In modalità verify il valore predefinito è 512. Nessun effetto se Thinking è false."
     },
     "Mode": {
-      "type": "string",
-      "description": "If set to 'verify', the upload field may have a data-cb-Question attribute; the AI answer must be the positive response for the file to be accepted.",
-      "descriptionDe": "Wenn auf 'verify' gesetzt, kann das Upload-Feld ein data-cb-Question-Attribut haben; die KI-Antwort muss die positive Antwort sein, damit die Datei akzeptiert wird.",
-      "descriptionIt": "Se impostato su 'verify', il campo di caricamento può avere un attributo data-cb-Question; la risposta AI deve essere quella positiva affinché il file venga accettato."
+      "type": "enum",
+      "options": ["analyse", "verify"],
+      "description": "Optional mode. Default/'analyse' (same as leaving it empty) answers the questions about the uploaded document and writes each answer into its tagged AI_LLAMA_STANDARD_QA_Question field; 'verify' accepts the file only when the AI answers the upload field's own data-cb-Question with the positive response.",
+      "descriptionDe": "Optionaler Modus. Standard/'analyse' (wie leer lassen) beantwortet die Fragen zum hochgeladenen Dokument und schreibt jede Antwort in das jeweilige AI_LLAMA_STANDARD_QA_Question-Feld; 'verify' akzeptiert die Datei nur, wenn die KI die data-cb-Question des Upload-Felds mit der positiven Antwort beantwortet.",
+      "descriptionIt": "Modalità opzionale. Predefinita/'analyse' (come lasciarla vuota) risponde alle domande sul documento caricato e scrive ogni risposta nel campo AI_LLAMA_STANDARD_QA_Question corrispondente; 'verify' accetta il file solo se l'AI risponde alla data-cb-Question del campo di caricamento con la risposta positiva."
     },
     "PositiveResponse": {
       "type": "string",

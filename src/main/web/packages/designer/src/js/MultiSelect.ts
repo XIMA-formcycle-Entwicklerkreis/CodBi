@@ -129,7 +129,21 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     // Update the `Active` flags FIRST so anything reacting to the persisted change (the holistic
     // standard-configuration badges) already sees the new state.
     this.setStandardActive(target.value, target.checked, window.CodbiPluginData.detStandards);
-    Callbacks["set-property"].fire(this.config.property, this.getValue(), this);
+    const value = this.getValue();
+    // Persisting the toggle MUST also keep the internal tracked value (`_currentValue`) in sync:
+    // otherwise a later panel re-render (`populateStandards`) restores the value it was tracking
+    // BEFORE the change and snaps a configuration the user just turned OFF (or ON) back to its old
+    // state. This mirrors the `_protecting` window used by {@link setStandardsValue} so FORMCYCLE's
+    // synchronous internal reset `setValue("")` — fired inside the set-property chain — cannot wipe
+    // the just-tracked value either.
+    const wasProtecting = this._protecting;
+    this._protecting = true;
+    try {
+      this._currentValue = value;
+      Callbacks["set-property"].fire(this.config.property, value, this);
+    } finally {
+      this._protecting = wasProtecting;
+    }
     // Keep the "only checked" view truthful while it is active.
     this.applyTreeVisibility();
     // Activating/deactivating a standard configuration changes what the form runtime applies to the

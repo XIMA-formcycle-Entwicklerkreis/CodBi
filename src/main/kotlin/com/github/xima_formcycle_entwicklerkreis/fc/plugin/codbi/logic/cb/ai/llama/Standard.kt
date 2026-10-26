@@ -1267,6 +1267,15 @@ class Standard : LLAMA() {
    * produce cache hits instead of being assumed to. Providers without prompt caching always
    * report 0.
    */
+  /**
+   * A configured specialist model for AI Form Assistance, with its exact (case-preserving) [name]
+   * and whether it is an [external] OpenAI-compatible API specialist (as opposed to a local GGUF
+   * specialist).
+   *
+   * The name is the value to write into a `data-cb-Specialist` attribute.
+   */
+  data class SpecialistInfo(val name: String, val external: Boolean)
+
   internal data class AssistUsage(
       val promptTokens: Int,
       val completionTokens: Int,
@@ -1488,6 +1497,29 @@ class Standard : LLAMA() {
    */
   fun priceForModel(modelId: String): ModelPrice? =
       if (::config.isInitialized) config.priceForModel(modelId) else null
+
+  /**
+   * The configured specialist models (local GGUF and external API), with their exact
+   * (case-preserving) names. Used during form assistance so the AI knows which `data-cb-Specialist`
+   * values are valid. Empty when no specialists are configured or the config has not been parsed.
+   */
+  fun configuredSpecialists(): List<SpecialistInfo> {
+    if (!::config.isInitialized) return emptyList()
+    return buildList {
+      for (name in config.specialists.keys) add(SpecialistInfo(name, external = false))
+      for (name in config.externalSpecialists.keys) add(SpecialistInfo(name, external = true))
+    }
+  }
+
+  /**
+   * Whether a default/main model (the `standard` routing id) is available for AI Form Assistance.
+   * `false` in external-only mode without an external URL, where only external specialists are
+   * usable.
+   */
+  fun hasDefaultModel(): Boolean {
+    if (!::config.isInitialized) return false
+    return config.isExternalMode || !externalOnly
+  }
 
   // endregion AI Form Assistance
   // endregion Lifecycle

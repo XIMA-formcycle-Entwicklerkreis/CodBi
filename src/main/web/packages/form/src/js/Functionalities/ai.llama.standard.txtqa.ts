@@ -81,7 +81,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
-  @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @SupportedFormelementtype(["XTextField", "XTextArea", "XSpan"])
   @ParameterTypes({
     AIHint: { type: "string" },
     useinternet: { type: "boolean" },

@@ -105,6 +105,12 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
     // renders the referenced source element LIVE instead. This must run for EVERY form (a form may
     // use the Mirror without the CodBi code library being enabled).
     renderProcessor?.insertHideMirrorCopiesScript()
+    // Teach FORMCYCLE's client-side condition engine the mirrored elements: their ids are
+    // namespaced
+    // and they are not part of the target form's item loop, so FORMCYCLE never registers their
+    // hidden-if/readonly-if/required-if conditions on its own. Also needed regardless of the CodBi
+    // code library being enabled.
+    renderProcessor?.insertMirrorConditionModelScript()
 
     if (renderProcessor != null && properties?.enabled == true) {
       val usedFunctionalities = mutableSetOf<String>()

@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 
+import com.alibaba.fastjson.JSON
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
 import com.hp.gagawa.java.FertileNode
@@ -695,10 +696,218 @@ object MirrorFormAccess {
   // region Rendering
 
   /**
+   * The validation-model keys whose value is the technical ID of ANOTHER form element. FORMCYCLE's
+   * client-side condition engine resolves those ids against the DOM, so they have to be namespaced
+   * together with the ids themselves (see [namespaceValidationModel]).
+   */
+  private val CONDITION_ID_KEYS =
+      setOf("hif", "hnotif", "roif", "ronotif", "vrif", "vrnotif", "veq", "vgr")
+
+  /**
+   * The `revids` buckets of the validation model that map a CONTROLLING element id to the ids of
+   * the elements it controls. `formula` is handled separately: it holds plain id lists (one per
+   * condition kind) because a formula has no controlling element.
+   */
+  private val REVIDS_ID_BUCKETS =
+      setOf("groups", "equal", "required", "hidden", "readonly", "trigger")
+
+  /**
+   * The condition-related descriptors of one `fields` entry. A mirrored element only needs its
+   * CONDITIONS in the target form's model — the VALUE validation rules (`vdt`, `vr`, `vmn`, …) must
+   * not be activated, because the mirrored field is not part of the target form's item list and its
+   * value is validated by the target form's own rules (if any).
+   */
+  private val CONDITION_MODEL_KEYS =
+      CONDITION_ID_KEYS +
+          setOf(
+              "hif_c",
+              "hif_v",
+              "hif_cl",
+              "roif_c",
+              "roif_v",
+              "roif_cl",
+              "rom",
+              "vrif_c",
+              "vrif_v",
+              "vrif_cl")
+
+  /**
+   * Reduces [model] to the CONDITION parts (hidden-if / read-only-if / required-if / equals /
+   * groups), dropping the value-validation rules. See [CONDITION_MODEL_KEYS] for the rationale.
+   *
+   * @return a new model; [model] is left untouched.
+   */
+  fun conditionsOnly(model: JSONObject): JSONObject {
+    val validation = model.getJSONObject("validation") ?: return newValidationModel()
+    val fields = validation.getJSONObject("fields") ?: return newValidationModel()
+    val kept = JSONObject()
+    for (id in fields.jsonKeys()) {
+      val descriptor = fields.getJSONObject(id) ?: continue
+      val conditions = JSONObject()
+      for (key in descriptor.jsonKeys()) {
+        if (key in CONDITION_MODEL_KEYS) conditions.put(key, descriptor.get(key))
+      }
+      if (!conditions.isEmpty()) kept.put(id, conditions)
+    }
+    // A CONTROLLING element of a mirrored condition is usually not in the target form's model
+    // either, so make sure it still has a (possibly empty) descriptor: the runtime resolves the
+    // references through the model.
+    val revids = validation.getJSONObject("revids")
+    if (revids != null) {
+      for (bucketName in REVIDS_ID_BUCKETS) {
+        val bucket = revids.getJSONObject(bucketName) ?: continue
+        for (controllerId in bucket.jsonKeys()) {
+          if (!kept.containsKey(controllerId)) kept.put(controllerId, JSONObject())
+        }
+      }
+    }
+    val result = newValidationModel()
+    result.getJSONObject("validation").put("fields", kept)
+    // Deep copy: the caller namespaces (and therefore mutates) the returned model.
+    result
+        .getJSONObject("validation")
+        .put("revids", revids?.let { JSON.parseObject(it.toJSONString()) })
+    return result
+  }
+
+  /**
+   * Creates the (empty) **validation model** FORMCYCLE's item renderer fills while an item renders:
+   * ```json
+   * { "validation": { "fields": {}, "revids": { "groups": {}, "equal": {}, … } } }
+   * ```
+   *
+   * The shape mirrors what `XFormRenderer` builds for the target form (see `XM_FORM_MODEL` in the
+   * rendered page). All buckets must exist because the renderer only registers a condition into a
+   * bucket that is already present.
+   */
+  fun newValidationModel(): JSONObject {
+    val revids =
+        JSONObject().apply {
+          for (bucket in listOf("groups", "equal", "required", "hidden", "readonly", "trigger")) {
+            put(bucket, JSONObject())
+          }
+          // A formula condition has no controlling element: its dependent ids are collected per
+          // condition kind.
+          put(
+              "formula",
+              JSONObject().apply {
+                put("hidden", JSONArray())
+                put("readonly", JSONArray())
+                put("required", JSONArray())
+              })
+        }
+    val validation =
+        JSONObject().apply {
+          put("fields", JSONObject())
+          put("revids", revids)
+        }
+    return JSONObject().apply { put("validation", validation) }
+  }
+
+  /**
+   * Rewrites every ELEMENT ID of a validation model produced by [renderElementNode] to the
+   * namespaced id used in the rendered markup.
+   *
+   * FORMCYCLE registers `fields[<sourceId>] = { hif: <sourceIdOfController>, … }` and
+   * `revids.<bucket>[<sourceIdOfController>] = [<sourceId>, …]`. The mirrored markup, however,
+   * renders every id with the Mirror's prefix (`<mirror id>_<sourceId>`, see
+   * `XMirror.namespaceLinkedIds`), so without this rewrite the condition engine cannot resolve the
+   * mirrored elements — the hide/show (and read-only/required) conditions silently do nothing.
+   *
+   * Only ids that belong to the rendered subtree are prefixed: a condition may reference an element
+   * outside the mirrored element (or a form variable), which cannot be brought along by the mirror.
+   *
+   * @return the same [model] instance, for convenient chaining.
+   */
+  fun namespaceValidationModel(model: JSONObject, idPrefix: String): JSONObject {
+    val validation = model.getJSONObject("validation") ?: return model
+    val fields = validation.getJSONObject("fields") ?: return model
+    val subtreeIds = fields.jsonKeys().toSet()
+    fun namespaced(id: String?): String? =
+        if (!id.isNullOrBlank() && id in subtreeIds) idPrefix + id else id
+
+    val namespacedFields = JSONObject()
+    for (id in subtreeIds) {
+      val descriptor = fields.getJSONObject(id) ?: continue
+      val copy = JSONObject()
+      for (key in descriptor.jsonKeys()) {
+        copy.put(key, descriptor.get(key))
+      }
+      for (key in CONDITION_ID_KEYS) {
+        val value = copy.getString(key)
+        if (!value.isNullOrBlank()) copy.put(key, namespaced(value))
+      }
+      namespacedFields.put(idPrefix + id, copy)
+    }
+    validation.put("fields", namespacedFields)
+
+    val revids = validation.getJSONObject("revids") ?: return model
+    for (bucketName in REVIDS_ID_BUCKETS) {
+      val bucket = revids.getJSONObject(bucketName) ?: continue
+      val copy = JSONObject()
+      for (controllerId in bucket.jsonKeys()) {
+        val dependents = bucket.getJSONArray(controllerId) ?: continue
+        copy.put(namespaced(controllerId) ?: controllerId, namespacedIds(dependents, ::namespaced))
+      }
+      revids.put(bucketName, copy)
+    }
+    revids.getJSONObject("formula")?.let { formula ->
+      for (kind in listOf("hidden", "readonly", "required")) {
+        val ids = formula.getJSONArray(kind) ?: continue
+        formula.put(kind, namespacedIds(ids, ::namespaced))
+      }
+    }
+    return model
+  }
+
+  /**
+   * The keys of a fastjson object, read as a `MutableMap` view. (Calling `keySet()` directly is not
+   * resolvable from Kotlin for the `noneautotype` build of fastjson used by FORMCYCLE.)
+   */
+  @Suppress("UNCHECKED_CAST")
+  private fun JSONObject.jsonKeys(): List<String> {
+    val map = this as MutableMap<String, Any?>
+    return map.keys.toList()
+  }
+
+  /**
+   * The client payload of a (namespaced) validation model: the INNER `validation` object, i.e.
+   * `{"fields": …, "revids": …}`.
+   *
+   * This is the exact shape the merge script injected by `FormRenderProcessor` consumes
+   * (`data.fields` / `data.revids`). Emitting the outer model (`{"validation": …}`) silently
+   * produces a merge that does nothing.
+   *
+   * @return the JSON, or `null` when the mirrored subtree declares no conditions at all.
+   */
+  fun conditionModelPayload(model: JSONObject): String? {
+    val validation = model.getJSONObject("validation") ?: return null
+    val fields = validation.getJSONObject("fields") ?: return null
+    if (fields.isEmpty()) return null
+    return validation.toJSONString()
+  }
+
+  /** Maps every entry of [ids] through [namespaced], keeping the original when it is unknown. */
+  private fun namespacedIds(ids: JSONArray, namespaced: (String?) -> String?): JSONArray {
+    val out = JSONArray()
+    for (entry in ids) {
+      val id = if (entry is String) entry else entry?.toString()
+      out.add(namespaced(id) ?: id)
+    }
+    return out
+  }
+
+  /**
    * Renders the referenced element (and its children) of the foreign form to a gagawa node, using
    * the **current** render configuration/context so the mirrored markup behaves like it does in the
    * form it lives in. The returned node can be appended to the current form's DOM tree directly.
    *
+   * @param validationModel optional sink that receives FORMCYCLE's **validation model** for the
+   *   rendered subtree (see [newValidationModel]). FORMCYCLE registers the element conditions
+   *   (`hiddenif`, `readonlyif`, `requiredif`, `equals`, groups, …) in that JSON object while an
+   *   item renders — exactly like `XFormRenderer` does for the items of the target form. The ids
+   *   recorded there are the SOURCE ids, so the caller has to run [namespaceValidationModel] before
+   *   handing the model to the client.
    * @return the rendered node, or `null` when the form/element cannot be resolved.
    */
   fun renderElementNode(
@@ -708,7 +917,8 @@ object MirrorFormAccess {
       renderConfig: IXFormRenderConfig?,
       renderContext: IXFormRenderContext?,
       formName: String? = null,
-      elementKey: String? = null
+      elementKey: String? = null,
+      validationModel: JSONObject? = null
   ): Div? {
     if (renderConfig == null || renderContext == null) return null
     val json = loadFormJson(userContext, formKey, formName) ?: return null
@@ -718,8 +928,14 @@ object MirrorFormAccess {
       val item = findItem(form, formKey, ref) ?: return null
       val node =
           item.render(
-              renderConfig, HashMap(), emptyMap(), false, renderContext, JSONObject(), false, false)
-              ?: return null
+              renderConfig,
+              HashMap(),
+              emptyMap(),
+              false,
+              renderContext,
+              validationModel ?: JSONObject(),
+              false,
+              false) ?: return null
       // Rendering a single item only produces that item's own tag. FORMCYCLE's form renderer is
       // what
       // nests child items into their container, and we bypass it here — so append the element's
@@ -733,7 +949,8 @@ object MirrorFormAccess {
             renderConfig,
             renderContext,
             0,
-            HashSet())
+            HashSet(),
+            validationModel)
       }
       node
     } catch (x: Exception) {
@@ -768,7 +985,8 @@ object MirrorFormAccess {
       json: JSONObject?,
       elementRef: String?,
       renderConfig: IXFormRenderConfig?,
-      renderContext: IXFormRenderContext?
+      renderContext: IXFormRenderContext?,
+      validationModel: JSONObject? = null
   ): Div? {
     if (json == null || renderConfig == null || renderContext == null) return null
     return try {
@@ -776,8 +994,14 @@ object MirrorFormAccess {
       val item = findItem(form, null, elementRef) ?: return null
       val node =
           item.render(
-              renderConfig, HashMap(), emptyMap(), false, renderContext, JSONObject(), false, false)
-              ?: return null
+              renderConfig,
+              HashMap(),
+              emptyMap(),
+              false,
+              renderContext,
+              validationModel ?: JSONObject(),
+              false,
+              false) ?: return null
       itemJsonByRef(json, elementRef)?.let { elementJson ->
         appendDescendants(
             childrenIndex(json),
@@ -787,7 +1011,8 @@ object MirrorFormAccess {
             renderConfig,
             renderContext,
             0,
-            HashSet())
+            HashSet(),
+            validationModel)
       }
       node
     } catch (x: Exception) {
@@ -1033,7 +1258,8 @@ object MirrorFormAccess {
       renderConfig: IXFormRenderConfig,
       renderContext: IXFormRenderContext,
       depth: Int,
-      seen: MutableSet<String>
+      seen: MutableSet<String>,
+      validationModel: JSONObject? = null
   ) {
     if (depth > 64) return
     val props = parentJson.getJSONObject("properties") ?: return
@@ -1052,14 +1278,30 @@ object MirrorFormAccess {
       val childRef = childId.ifBlank { childName }
       if (childRef.isEmpty() || !seen.add(childRef)) continue
       val childItem = itemsByRef[childRef] ?: itemsByRef[childName] ?: continue
+      // Passing the SHARED validation model makes FORMCYCLE register the child's conditions
+      // (hiddenif & co.) exactly as it does for the items of a normally rendered form.
       val childNode =
           childItem.render(
-              renderConfig, HashMap(), emptyMap(), false, renderContext, JSONObject(), false, false)
-              ?: continue
+              renderConfig,
+              HashMap(),
+              emptyMap(),
+              false,
+              renderContext,
+              validationModel ?: JSONObject(),
+              false,
+              false) ?: continue
       target.children.add(childNode)
       childNode.setParent(target)
       appendDescendants(
-          index, itemsByRef, childJson, childNode, renderConfig, renderContext, depth + 1, seen)
+          index,
+          itemsByRef,
+          childJson,
+          childNode,
+          renderConfig,
+          renderContext,
+          depth + 1,
+          seen,
+          validationModel)
     }
   }
 

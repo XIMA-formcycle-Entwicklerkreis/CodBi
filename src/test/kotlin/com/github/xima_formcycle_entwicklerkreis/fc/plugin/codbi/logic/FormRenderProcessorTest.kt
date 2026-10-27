@@ -142,6 +142,28 @@ class FormRenderProcessorTest {
         attr(link, "href"))
   }
 
+  @Test
+  fun insertMirrorConditionModelScript_appendsInlineScriptThatMergesTheMirrorModels() {
+    val doc = HtmlDocument()
+    val renderConfig = newXFormRenderConfig()
+    val processor = FormRenderProcessor(renderConfig, doc.html, doc.form)
+
+    processor.insertMirrorConditionModelScript()
+
+    val script = byTagName(doc.form, "script")
+    assertEquals("codbi-mirror-model-merge", attr(script, "id"))
+    val code = text(script)
+    // Selects the inert JSON blobs emitted by the Mirror widget …
+    assertTrue(code.contains(".codbi-mirror-model"))
+    // … and merges them into FORMCYCLE's form model.
+    assertTrue(code.contains("XM_FORM_MODEL"))
+    // The blob carries `fields`/`revids` at its TOP level (see
+    // `MirrorFormAccess.conditionModelPayload`) — wrapping them in another `validation` object
+    // silently turns the merge into a no-op.
+    assertTrue(code.contains("d.fields"))
+    assertTrue(code.contains("d.revids"))
+  }
+
   @BeforeEach
   fun setUp() {
     plugin.testInit()

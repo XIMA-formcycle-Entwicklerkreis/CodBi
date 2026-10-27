@@ -86,8 +86,9 @@ interface IDesignerLike {
 export const MIRROR_OWNER_PROPERTY = "codbi_mirror_owner";
 
 /**
- * CSS class applied to the generated copies. The published form hides it (see `XMirror.getCssData`),
- * so the copies never duplicate the live-rendered fields at runtime.
+ * CSS class applied to the generated copies. On the published form `XMirror.renderItem` nests the
+ * copies into a hidden host that the runtime script removes again, so they never duplicate the
+ * live-rendered fields.
  */
 export const MIRROR_COPY_CSS_CLASS = "codbi-mirror-copy";
 
@@ -462,7 +463,16 @@ function generatedChildIds(designer: IDesignerLike, mirrorId: string): string[] 
 function removeGeneratedChildren(designer: IDesignerLike, mirrorId: string): void {
   for (const id of generatedChildIds(designer, mirrorId)) {
     try {
-      designer.items?.[id]?.remove?.();
+      const item = designer.items?.[id];
+      item?.remove?.();
+      // `Item.remove()` marks the container `removed="true"` (kept in the DOM for the undo stack)
+      // rather than destroying it. If the removed-but-present containers are left inside the Mirror's
+      // wrapper, a later re-sync's `placeInsideParent` can resolve a stale/ambiguous target and end
+      // up relocating the fresh copies OUTSIDE the Mirror. Detaching the container here is safe: the
+      // item is already logically removed (it is no longer added back when we re-create), and the
+      // undo stack only ever needs the item reference, not its in-DOM position.
+      const container = item?.getContainer?.();
+      container?.detach?.();
     } catch (x) {
       console.error("[CodBi] Mirror: could not remove generated child", id, x);
     }
@@ -505,6 +515,90 @@ function placeInsideParent(parent: IMirrorItemLike, item: IMirrorItemLike): bool
   }
 }
 
+/** The unconfigured hint `XMirror.renderItemPreview` renders (mirror icon + "Mirror" label). */
+const MIRROR_PLACEHOLDER_SELECTOR = ".codbi-mirror-placeholder";
+
+/**
+ * Shows or hides the Mirror's UNCONFIGURED hint (mirror icon + “Mirror” label).
+ *
+ * The designer does NOT re-render the server-generated widget preview when only one of the Mirror's
+ * custom properties (source form/element) changes. The hint rendered while the Mirror was still
+ * unconfigured therefore stays in the DOM, and the just-materialized child items are appended AFTER
+ * it — which makes the reflected element look as if it were rendered *below* the widget.
+ *
+ * The hint is hidden (not removed) so it can be restored: clearing the source reference shows it
+ * again, exactly like a freshly dropped, still unconfigured Mirror.
+ */
+function setMirrorPlaceholderVisible(mirror: IMirrorItemLike, visible: boolean): void {
+  try {
+    const cell = mirror.getItemContentCell?.();
+    if (!cell || cell.length === 0) {
+      return;
+    }
+    cell.find(MIRROR_PLACEHOLDER_SELECTOR).each((_index, node) => {
+      const element = node as HTMLElement;
+      if (element?.style) {
+        element.style.display = visible ? "" : "none";
+      }
+    });
+  } catch (x) {
+    console.warn("[CodBi] Mirror: could not toggle the widget's unconfigured hint", x);
+  }
+}
+
+/**
+ * Properties of a copied item whose value is the technical ID of ANOTHER form element
+ * (`hiddenif` = hidden-if controller, `readonlyif` = read-only-if controller, `requiredif` =
+ * required-if controller, `equals` = field that must have the same value).
+ */
+const MIRROR_REFERENCE_PROPERTIES = ["hiddenif", "readonlyif", "requiredif", "equals"] as const;
+
+/**
+ * Re-points the copies' CONDITION REFERENCES at the copies that were created for them.
+ *
+ * The source properties reference the SOURCE element ids, but the designer assigns fresh ids to the
+ * copies it creates. Those references would therefore dangle: the reflected container would show
+ * every child unconditionally, because the hide/show condition can no longer find its controlling
+ * element (this is the designer-side counterpart of the id namespacing the published form performs).
+ *
+ * Runs AFTER the whole subtree was created, so the order of the source elements does not matter.
+ */
+function remapCopiedReferences(
+  designer: IDesignerLike,
+  nodes: readonly IMirrorNode[],
+  itemByRef: Map<string, IMirrorItemLike>,
+): void {
+  let changed = false;
+  for (const node of nodes) {
+    const item = itemByRef.get(node.ref);
+    if (!item) {
+      continue;
+    }
+    const properties = propertiesOf(item);
+    if (!properties) {
+      continue;
+    }
+    for (const property of MIRROR_REFERENCE_PROPERTIES) {
+      const referenced = String(properties[property] ?? "").trim();
+      // "@formula" (and empty) are not element ids.
+      if (!referenced || referenced.startsWith("@")) {
+        continue;
+      }
+      const targetId = itemByRef.get(referenced)?.getId?.();
+      if (!targetId || targetId === referenced) {
+        continue;
+      }
+      for (const bag of writablePropertyBags(item)) {
+        bag[property] = targetId;
+      }
+      changed = true;
+    }
+  }
+  if (changed) {
+    notifyDesignerChanged(designer);
+  }
+}
+
 /** Copies a source node's properties, dropping the ones the designer assigns itself. */
 function propertiesForNode(node: IMirrorNode, mirrorId: string, namePrefix: string): TItemProperties {
   const properties: TItemProperties = {};
@@ -521,7 +615,9 @@ function propertiesForNode(node: IMirrorNode, mirrorId: string, namePrefix: stri
   properties[MIRROR_OWNER_PROPERTY] = mirrorId;
   // The generated items exist so the fields appear in the placeholder dialog. At RUNTIME the Mirror
   // renders the source LIVE and submits those inputs; the copies must therefore not duplicate them:
-  // they get the hidden class (CSS in `XMirror.getCssData`) and are disabled so they never submit.
+  // they get the copy class (a legacy marker for older published forms) and are disabled so they
+  // never submit. `XMirror.renderItem` additionally nests them into a hidden host that the runtime
+  // script removes from the published DOM.
   const classes = Array.isArray(properties.cssclasses) ? [...properties.cssclasses] : [];
   if (!classes.includes(MIRROR_COPY_CSS_CLASS)) {
     classes.push(MIRROR_COPY_CSS_CLASS);
@@ -532,18 +628,70 @@ function propertiesForNode(node: IMirrorNode, mirrorId: string, namePrefix: stri
 }
 
 /**
+ * Queues of the in-flight sync runs, keyed by the Mirror item id.
+ *
+ * `syncMirrorChildren` can be triggered concurrently from several paths (the element dropdown's
+ * `onSelect`, the form dropdown, a rebound reload, and `refreshAllMirrors` on form load). Because
+ * each run removes the previous children at the START and then awaits the `tree` request, two
+ * concurrent runs would both remove nothing (neither has created children yet), both await, and then
+ * EACH create a full copy of the source subtree — duplicating the mirrored content in the designer.
+ * Serializing the runs per Mirror ensures every later run removes exactly what the previous one
+ * created, so the content is never duplicated.
+ */
+const syncQueues = new Map<string, Promise<void>>();
+
+/**
+ * Enqueues [run] for [mirrorId] so concurrent sync requests run one after another.
+ */
+function enqueueSync(mirrorId: string, run: () => Promise<void>): Promise<void> {
+  const previous = syncQueues.get(mirrorId) ?? Promise.resolve();
+  // Run the worker only after the previous sync for this Mirror settles. `then(run, run)` starts the
+  // next worker even when the previous one failed, so one failure cannot block the following sync.
+  const current = previous.then(run, run);
+  // Store the swallowing variant in the chain (so errors are not re-surfaced here) while still
+  // returning the error-propagating [current] to the caller of this invocation.
+  const chained = current.catch(() => {
+    /* errors are surfaced to the caller of this invocation */
+  });
+  syncQueues.set(mirrorId, chained);
+  void chained.finally(() => {
+    if (syncQueues.get(mirrorId) === chained) {
+      syncQueues.delete(mirrorId);
+    }
+  });
+  return current;
+}
+
+/**
+ * The source signature ({@code form|element|version|revision}) each Mirror last materialized, keyed
+ * by the Mirror item id.
+ *
+ * AFTER the serialization queue fixed the duplication, a second (redundant) sync for the SAME
+ * source still fired ~1.8 s later (the element dropdown's `onSelect` plus a rebound `reload`, and
+ * `refreshAllMirrors` on form load). Serialized, that second run now removed the JUST-created
+ * children (`Item.remove()` keeps their DOM in place with `removed="true"`) and re-created them
+ * from scratch — which made the content briefly vanish and the re-placed copies end up OUTSIDE the
+ * Mirror widget. Skipping a sync whose source is byte-for-byte identical to the one already
+ * materialized (same form + element + version + revision) makes these redundant runs a no-op.
+ */
+const materializedByMirror = new Map<string, string>();
+
+/**
  * Synchronizes the Mirror widget's generated child items with the chosen source element: removes the
  * children generated on the previous configuration and, when a source element is selected, copies
  * its whole subtree (containers/fieldsets AND fields), preserving the hierarchy.
  *
  * Safe to call with an empty [element] (e.g. after the source form changed) — this only clears.
  *
+ * Concurrent invocations for the SAME Mirror are serialized (see {@link syncQueues}), so the child
+ * items are never duplicated even when several paths fire at once.
+ *
  * @param designer the form designer instance (e.g. `editor.config.designer`).
  * @param form the source form key (`project-<id>`), or `""`.
  * @param element the source element reference (id or name), or `""`.
  * @param explicitMirror the Mirror item to populate; defaults to the selected item.
  */
-export async function syncMirrorChildren(
+export function syncMirrorChildren(
   designerLike: unknown,
   form: string,
   element: string,
@@ -552,26 +700,57 @@ export async function syncMirrorChildren(
 ): Promise<void> {
   const designer = designerLike as IDesignerLike;
   if (!designer) {
-    return;
+    return Promise.resolve();
   }
   lastDesigner = designer;
   const mirror = explicitMirror ?? designer.getSelectedMasterItem?.();
   const mirrorId = mirror?.getId?.();
-  if (!mirrorId) {
+  if (!mirrorId || !mirror) {
     console.warn("[CodBi] Mirror: no Mirror item — nothing to do");
+    return Promise.resolve();
+  }
+  return enqueueSync(mirrorId, () => syncMirrorChildrenWorker(designer, mirror, mirrorId, form, element, elementKey));
+}
+
+/** The actual single (serialized) sync run — see {@link syncMirrorChildren}. */
+async function syncMirrorChildrenWorker(
+  designer: IDesignerLike,
+  mirror: IMirrorItemLike,
+  mirrorId: string,
+  form: string,
+  element: string,
+  elementKey?: string,
+): Promise<void> {
+  // Source signature of the most recent successful materialization. When a request targets the
+  // IDENTICAL source (same form + element + version + revision) we already materialized, the run is
+  // a no-op: re-removing and re-creating byte-identical children is what made the content vanish and
+  // get relocated outside the widget on the redundant second sync.
+  const signature = `${form}|${element}|`;
+  if (!form || !element) {
+    removeGeneratedChildren(designer, mirrorId);
+    materializedByMirror.delete(mirrorId);
+    // Unconfigured again: bring back the hint the preview rendered for exactly this state.
+    setMirrorPlaceholderVisible(mirror, true);
+    return;
+  }
+
+  // The Mirror IS configured: the hint rendered while it was still unconfigured is stale and must not
+  // sit above the mirrored child items (the preview is not re-rendered on a property change).
+  setMirrorPlaceholderVisible(mirror, false);
+
+  const tree = await mirrorElementTree(form, element, elementKey);
+  const fullSignature = `${signature}${tree.version}|${tree.revision}`;
+  if (materializedByMirror.get(mirrorId) === fullSignature) {
+    // Same source, already materialized. Nothing to do — avoid the destructive remove + recreate.
+    return;
+  }
+  if (tree.items.length === 0) {
+    removeGeneratedChildren(designer, mirrorId);
+    materializedByMirror.set(mirrorId, fullSignature);
     return;
   }
 
   removeGeneratedChildren(designer, mirrorId);
-
-  if (!form || !element) {
-    return;
-  }
-
-  const tree = await mirrorElementTree(form, element, elementKey);
-  if (tree.items.length === 0) {
-    return;
-  }
 
   const createFromCatalogue = designer._createItemFromCatalogue?.bind(designer);
   const create = designer._createItem?.bind(designer);
@@ -617,6 +796,11 @@ export async function syncMirrorChildren(
     }
   }
 
+  // The copies received NEW ids from the designer, so the condition references copied from the
+  // source (`hiddenif`, `readonlyif`, …) must be re-pointed at the copies — they still name the
+  // SOURCE ids and would otherwise never resolve (the reflected children would never hide/show).
+  remapCopiedReferences(designer, tree.items, itemByRef);
+
   // Remember which source version these copies came from, so a later change can be detected.
   try {
     const props = (propertiesOf(mirror) ?? mirror.properties ?? {}) as TItemProperties;
@@ -625,6 +809,9 @@ export async function syncMirrorChildren(
   } catch {
     /* ignore */
   }
+
+  // This source is now materialized; a later request for the identical source can be skipped.
+  materializedByMirror.set(mirrorId, fullSignature);
 
   try {
     // Drop the designer's cached value-able items so the placeholder dialog sees the new fields.
@@ -650,7 +837,7 @@ export async function refreshMirrorIfStale(designerLike: unknown): Promise<void>
   const formName = String(props?.[MIRROR_FORM_NAME_PROPERTY] ?? "");
   const element = String(props?.[MIRROR_ELEMENT_PROPERTY] ?? "");
   const elementKey = String(props?.[MIRROR_ELEMENT_KEY_PROPERTY] ?? "");
-  if (!props || !form || !element) {
+  if (!mirror || !props || !form || !element) {
     return;
   }
   const options = await mirrorFormOptions();
@@ -712,6 +899,9 @@ export async function refreshAllMirrors(designerLike: unknown): Promise<void> {
     if (!form || !element) {
       continue;
     }
+    // A configured Mirror never shows the unconfigured hint. Hide a stale one even when the source
+    // did not change (and therefore no re-sync is needed below), e.g. after loading the form.
+    setMirrorPlaceholderVisible(item, false);
     // Older/newly imported Mirrors may not have the element name cached. Recover it from the
     // generated child items BEFORE trying to resolve the (possibly already deleted) source element.
     if (!elementKey) {

@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 
+import com.alibaba.fastjson.JSONObject
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.localize
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey
@@ -66,6 +67,13 @@ class XMirror : IXItemWidget, IXItemAppendable {
     val formName = renderData.get(Constants.MIRROR_PROPERTY_FORM_NAME)?.getString()
     val elementRef = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT)?.getString()
     val elementKey = renderData.get(Constants.MIRROR_PROPERTY_ELEMENT_KEY)?.getString()
+    val idPrefix = mirrorIdPrefix(renderData)
+    val namePrefix = mirrorNamePrefix(renderData)
+    // Collect FORMCYCLE's validation model while rendering: it carries the element CONDITIONS
+    // (hiddenif / readonlyif / requiredif / equals / groups). The mirrored markup is rendered
+    // OUTSIDE the target form's item loop, so FORMCYCLE would otherwise never register those
+    // conditions for the mirrored elements — they would silently never hide/show.
+    val validationModel = MirrorFormAccess.newValidationModel()
     val mirrored =
         if (formRef.isNullOrBlank() || elementRef.isNullOrBlank()) {
           null
@@ -77,22 +85,39 @@ class XMirror : IXItemWidget, IXItemAppendable {
               renderData.getXFormRenderConfig(),
               formRenderCtx,
               formName,
-              elementKey)
+              elementKey,
+              validationModel)
         }
     if (mirrored != null) {
-      namespaceLinkedIds(mirrored, mirrorIdPrefix(renderData), mirrorNamePrefix(renderData))
+      namespaceLinkedIds(mirrored, idPrefix, namePrefix)
+      // Keep only the CONDITION parts (not the value-validation rules) and rewrite the SOURCE ids
+      // to the namespaced ids used by the markup, so the client-side condition engine can resolve
+      // them.
+      val conditionModel =
+          MirrorFormAccess.namespaceValidationModel(
+              MirrorFormAccess.conditionsOnly(validationModel), idPrefix)
+      conditionModelBlob(conditionModel)?.let { wrapper.appendChild(it) }
       wrapper.appendChild(mirrored)
     }
+
+    // The PERSISTED CHILD items (the “registration copies” that make the mirrored fields show up in
+    // the workflow placeholder dialog) must NOT be part of the published form: the source element is
+    // rendered LIVE above, so their markup would be a duplicate item tree — including the item
+    // wrappers, labels and error containers that the `codbi-mirror-copy` class does not cover. Nest
+    // them into a HIDDEN host instead; `FormRenderProcessor.insertHideMirrorCopiesScript` removes that
+    // host from the DOM again, so the page only contains the live-rendered element.
+    val copyHost = Div()
+    copyHost.setCSSClass(Constants.MIRROR_COPIES_CSS_CLASS)
+    copyHost.setStyle("display:none;")
+    wrapper.appendChild(copyHost)
 
     // The renderer re-renders the widget IN PLACE, so drop whatever a previous pass left behind.
     removePreviousRender(container)
     container.appendChild(wrapper)
 
-    // Register this wrapper as the current parent so FORMCYCLE appends the widget's PERSISTED CHILD
-    // items (the registration copies that make the fields appear in the placeholder dialog) into
-    // it.
-    // Those copies are hidden at runtime via `getCssData`, so only the live-rendered fields show.
-    renderCtx.registerParent(wrapper)
+    // Register the HIDDEN host as the current parent so FORMCYCLE appends the persisted child items
+    // into it (instead of into the visible wrapper).
+    renderCtx.registerParent(copyHost)
   }
 
   /**
@@ -154,6 +179,15 @@ class XMirror : IXItemWidget, IXItemAppendable {
         if (customClasses.isNullOrBlank()) Constants.MIRROR_CSS_CLASS
         else "${Constants.MIRROR_CSS_CLASS} $customClasses")
     renderData.id?.takeIf { it.isNotBlank() }?.let { wrapper.setAttribute("id", it) }
+    // Mark the wrapper as THIS widget's append target, exactly like FORMCYCLE's own containers and
+    // fieldsets do (`data-xm-appendable="<item ref>"`). The designer nests an item's PERSISTED child
+    // items into the element carrying this marker. Without it the children were appended to the
+    // widget's CONTENT CELL instead, i.e. AFTER the widget's preview — which made the mirrored
+    // elements appear BELOW the widget (e.g. below the unconfigured mirror icon/label hint).
+    val appendRef =
+        renderData.id?.takeIf { it.isNotBlank() }
+            ?: renderData.name?.takeIf { it.isNotBlank() }
+    appendRef?.let { wrapper.setAttribute("data-xm-appendable", it) }
     renderCtx.addHtmlAttributes(wrapper)
     removePreviousRender(container)
     container.appendChild(wrapper)
@@ -304,7 +338,11 @@ class XMirror : IXItemWidget, IXItemAppendable {
    * dialog lists (the registration copies use the identical prefix).
    */
   private fun namespaceLinkedIds(node: Node, idPrefix: String, namePrefix: String) {
-    for (attr in listOf("id", "for", "list", "headers")) {
+    // `data-xi` / `xi` are the item's own technical ID, written next to `id` by FORMCYCLE's item
+    // renderer. They must be prefixed as well: the client-side condition engine resolves the ids of
+    // its validation model (`hif`, `revids`, …) against them, and those ids are namespaced with the
+    // SAME prefix (see `MirrorFormAccess.namespaceValidationModel`).
+    for (attr in listOf("id", "for", "list", "headers", "data-xi", "xi")) {
       val value = node.getAttribute(attr)
       if (!value.isNullOrBlank()) node.setAttribute(attr, idPrefix + value)
     }
@@ -315,13 +353,36 @@ class XMirror : IXItemWidget, IXItemAppendable {
             attr, value.split(' ').filter { it.isNotEmpty() }.joinToString(" ") { idPrefix + it })
       }
     }
-    for (attr in listOf("name", "data-name")) {
+    // `data-xn` / `xn` carry the item's technical NAME and therefore follow the field-name prefix,
+    // exactly like `name` and `data-name` (so they cannot collide with a target-form field).
+    for (attr in listOf("name", "data-name", "data-xn", "xn")) {
       val value = node.getAttribute(attr)
       if (!value.isNullOrBlank()) node.setAttribute(attr, namePrefix + value)
     }
     if (node is FertileNode) {
       node.children.forEach { namespaceLinkedIds(it, idPrefix, namePrefix) }
     }
+  }
+
+  /**
+   * Wraps the (already namespaced) validation model of the mirrored subtree in an INERT
+   * `<script type="application/json">` element.
+   *
+   * The model must reach the client, but the widget's markup is emitted BEFORE the page's
+   * `XM_FORM_MODEL` assignment, so it cannot be applied inline. A small script injected by
+   * `FormRenderProcessor` reads these blobs at the end of the render and merges them into
+   * `window.XM_FORM_MODEL` — before FORMCYCLE's form runtime initializes.
+   *
+   * A `<` inside the JSON (e.g. a `<` in a formula or comparison value) is escaped as `\u003c` so
+   * the `</script>` terminator can never appear inside the blob.
+   */
+  private fun conditionModelBlob(model: JSONObject): Node? {
+    // Payload is `{fields, revids}` (the inner `validation` object) — the exact shape the merge
+    // script in `FormRenderProcessor` expects.
+    val json = MirrorFormAccess.conditionModelPayload(model) ?: return null
+    return RawMarkup(
+        "<script type=\"application/json\" class=\"${Constants.MIRROR_CONDITION_MODEL_CSS_CLASS}\">" +
+            "${json.replace("<", "\\u003c")}</script>")
   }
 
   /**
@@ -403,6 +464,9 @@ class XMirror : IXItemWidget, IXItemAppendable {
           "drop-shadow(0 0 3px rgba(37,99,235,0.45));" +
           "display:inline-block;width:1.15em;height:1.15em;vertical-align:middle}" +
           ".ico-fc-XMirror::before{content:\"\" !important}" +
+          // The persisted registration copies of the mirrored fields are nested into a hidden host
+          // (see `renderItem`); hide it even when the inline style is stripped by an aggregator.
+          ".${Constants.MIRROR_COPIES_CSS_CLASS}{display:none !important}" +
           // The placeholder icon (a freshly dropped, unconfigured Mirror) is rendered inline in the
           // canvas; give its SVG the same glow. This stylesheet is what reaches the canvas iframe
           // (the designer's own frame.css does not).

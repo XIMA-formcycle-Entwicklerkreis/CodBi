@@ -1,5 +1,7 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.MIRROR_CONDITION_MODEL_CSS_CLASS
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.MIRROR_COPIES_CSS_CLASS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_FORM_RESOURCES_ID
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_KEY
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiFormResourcesPlugin
@@ -93,22 +95,75 @@ internal class FormRenderProcessor {
   }
 
   /**
-   * Inserts an inline script that hides the Mirror widget's persisted "registration" copies on the
-   * published form.
+   * Inserts an inline script that removes the Mirror widget's persisted "registration" copies from
+   * the published form.
    *
    * The Mirror renders the referenced source element LIVE, so those persisted copies must not be
-   * visible (and, being `isdisabled`, they never submit). Hiding them with an inline script is more
-   * reliable than widget CSS, which is not guaranteed to be included on the published form.
+   * part of the page at all: their markup is a DUPLICATE item tree (item wrapper, label, error
+   * container), and the `codbi-mirror-copy` class that marks the fields themselves does not cover
+   * those wrappers. `XMirror.renderItem` therefore nests the copies into a HIDDEN host, which this
+   * script removes from the DOM (and keeps removed, should the form be re-rendered on the client).
+   * Copies written by older plugin versions have no host yet — those are hidden by class instead.
+   * Removing/ hiding with an inline script is more reliable than widget CSS, which is not
+   * guaranteed to be included on the published form.
    */
   fun insertHideMirrorCopiesScript(id: String = "codbi-mirror-hide-copies") {
     val code =
-        "(function(){var f=function(){var n=document.querySelectorAll('.codbi-mirror-copy');" +
-            "for(var i=0;i<n.length;i++){n[i].style.display='none';}};" +
+        "(function(){var H='.$MIRROR_COPIES_CSS_CLASS';var f=function(){" +
+            "var h=document.querySelectorAll(H);" +
+            "for(var i=0;i<h.length;i++){if(h[i].parentNode){h[i].parentNode.removeChild(h[i]);}}" +
+            "var n=document.querySelectorAll('.codbi-mirror-copy');" +
+            "for(var j=0;j<n.length;j++){n[j].style.display='none';}};" +
             "if(document.readyState!=='loading'){f();}" +
             "else{document.addEventListener('DOMContentLoaded',f);}" +
             "try{new MutationObserver(f).observe(document.documentElement," +
             "{childList:true,subtree:true});}catch(e){}})();"
     appendChild(form, createScriptInline(id, code))
+  }
+
+  /**
+   * Inserts an inline script that merges the **mirrored elements' validation models** into
+   * FORMCYCLE's form model.
+   *
+   * `XMirror.renderItem` renders the referenced source element OUTSIDE the target form's item loop,
+   * so FORMCYCLE never registers its element conditions (`hiddenif`, `readonlyif`, `requiredif`,
+   * `equals`, groups, …) in `XM_FORM_MODEL`. It therefore emits the model of the mirrored subtree —
+   * with every element id namespaced to the id used in the mirrored markup — as inert
+   * `script.codbi-mirror-model` JSON blobs (see `XMirror.conditionModelBlob`).
+   *
+   * This script is appended at the END of the form, i.e. after the page assigned `XM_FORM_MODEL`
+   * and before `$(document).ready` lets FORMCYCLE's form runtime initialize, so the conditions are
+   * known when the runtime binds them. The merge is idempotent (ids are only ever added).
+   */
+  fun insertMirrorConditionModelScript(id: String = "codbi-mirror-model-merge") {
+    val code =
+        "(function(){var SEL='.$MIRROR_CONDITION_MODEL_CSS_CLASS';" +
+            "function union(a,b){a=a||[];for(var i=0;i<b.length;i++){if(a.indexOf(b[i])<0){a.push(b[i]);}}return a;}" +
+            "function merge(){var M=window.XM_FORM_MODEL;if(!M||!M.validation){return false;}" +
+            "var V=M.validation,F=V.fields||(V.fields={}),R=V.revids||(V.revids={});" +
+            "var b=document.querySelectorAll(SEL);" +
+            "for(var i=0;i<b.length;i++){var d=null;" +
+            "try{d=JSON.parse(b[i].textContent||b[i].innerHTML||'{}');}catch(e){continue;}" +
+            "if(!d||typeof d!=='object'){continue;}" +
+            // Tolerate both shapes: the blob normally carries `{fields, revids}` directly; a nested
+            // `{validation:{fields, revids}}` (older/foreign producers) is unwrapped as well.
+            "d=d.validation||d;" +
+            "var k,p,df,o,f=d.fields||{};" +
+            "for(k in f){if(!Object.prototype.hasOwnProperty.call(f,k)){continue;}" +
+            "df=F[k]||(F[k]={});o=f[k]||{};" +
+            "for(p in o){if(Object.prototype.hasOwnProperty.call(o,p)){df[p]=o[p];}}}" +
+            "var r=d.revids||{},c,bk,tb,tg,id;" +
+            "for(c in r){if(!Object.prototype.hasOwnProperty.call(r,c)){continue;}" +
+            "bk=r[c];if(!bk){continue;}" +
+            "if(c==='formula'){tg=R.formula||(R.formula={});" +
+            "for(p in bk){if(!Object.prototype.hasOwnProperty.call(bk,p)){continue;}" +
+            "tg[p]=union(tg[p]||[],bk[p]||[]);}}" +
+            "else{tb=R[c]||(R[c]={});" +
+            "for(id in bk){if(!Object.prototype.hasOwnProperty.call(bk,id)){continue;}" +
+            "tb[id]=union(tb[id]||[],bk[id]||[]);}}}}" +
+            "return true;}" +
+            "if(!merge()){document.addEventListener('DOMContentLoaded',merge);}})();"
+    insertInlineScript(id, code)
   }
 
   /**

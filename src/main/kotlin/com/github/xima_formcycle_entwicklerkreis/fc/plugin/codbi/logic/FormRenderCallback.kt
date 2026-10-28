@@ -35,6 +35,19 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
       Regex("""(?<![-\w])class\s*=\s*(?:"([^"]*)"|'([^']*)')""", RegexOption.IGNORE_CASE)
 
   /**
+   * Matches a CodBi attribute (`data-cb-…`) of the rendered markup. Group 1 holds the attribute
+   * NAME, group 2 a double-quoted value, group 3 a single-quoted one.
+   *
+   * Needed because the persisted items of the target form are NOT the only source of CodBi usages:
+   * a Mirror renders the referenced element LIVE, so functionalities applied to an element inside
+   * the mirrored container (e.g. `data-cb-func="media.multipleupload"` on a mirrored `XUpload`)
+   * only exist in the RENDERED markup — the target form's own items know nothing about them (and
+   * the Mirror's persisted copies are only refreshed when the designer loads the form).
+   */
+  private val CB_ATTRIBUTE =
+      Regex("""(?<![-\w])(data-cb-[\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""", RegexOption.IGNORE_CASE)
+
+  /**
    * Extracts all **E**lement **P**laceholders used within a CodBi-Attribute's value with nesting
    * supported. Those placeholders are of following format { Placeholder e.g. HTML.Text.Mapper >
    * Parameter SSV }.
@@ -116,6 +129,10 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
       val usedFunctionalities = mutableSetOf<String>()
       val usedEPs = mutableSetOf<String>()
 
+      // The RENDERED markup is serialized exactly once and used for BOTH scans below.
+      val renderedMarkup = renderProcessor.renderedFormMarkup()
+
+      // (1) The persisted items of the TARGET form.
       for (child in params.xForm.xItems) {
         for (i in 0 until child.value.attributes.size) { // Iterate through all attributes...
           val currentEntry = child.value.attributes[i]
@@ -129,39 +146,18 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
             // (see AICodBiAssistant's properties.attributes canonicalization).
             val attrText = currentEntry.get("text") as? String ?: continue
             val attrValue = currentEntry.get("value") as? String ?: ""
-            val currentEntryValue = attrText.lowercase()
-
-            if (currentEntryValue == "data-cb-func" ||
-                currentEntryValue == "data-cb-_t_func" ||
-                currentEntryValue ==
-                    "data-cb-_f_func") { // Check if it is the property that contains the
-              // functionalities
-              // to use.
-              for (functionality in attrValue.split(",")) {
-                val fileName = functionality.trim().lowercase()
-
-                if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {
-                  usedFunctionalities.add(fileName)
-                }
-              }
-            } else {
-              if (attrText.length > 8 &&
-                  currentEntryValue != "data-cb-apply" &&
-                  attrText.substring(0, 8) == "data-cb-") {
-                // CodBi-Attributes named "data-cb-APPLY" can be omitted. All
-                // others starting with "data-cb-" may contain EPs.
-                for (ep in extractEPs(attrValue)) {
-                  val fileName = ep.trim().lowercase()
-
-                  if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {
-                    usedEPs.add(ep.trim().lowercase())
-                  }
-                }
-              }
-            }
+            collectCodbiUsage(attrText, attrValue, usedFunctionalities, usedEPs)
           }
         }
       }
+
+      // (2) The RENDERED markup. This is what makes CodBi functionalities (and EPs) work on
+      // elements a Mirror renders LIVE: those elements belong to ANOTHER form, so they are absent
+      // from `xForm.xItems` — and the Mirror's persisted copies are only refreshed when the
+      // designer loads the target form. Without this scan a functionality applied to a mirrored
+      // element (e.g. a multi-upload on a mirrored `XUpload`) only appeared after opening and
+      // saving the target form in the designer.
+      collectCodbiUsage(renderedMarkup, usedFunctionalities, usedEPs)
 
       // #region Standard-configuration CSS classes used by the RENDERED form.
       // A standard configuration is applied by putting one of its CSS classes onto an element — the
@@ -176,7 +172,7 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
       // the
       // functionalities it applies are injected whenever the form actually uses the class.
       // #endregion
-      val usedStandardClasses = extractClassNames(renderProcessor.renderedFormMarkup())
+      val usedStandardClasses = extractClassNames(renderedMarkup)
       val standardProviders = StandardConfigClasses.providersOf(usedStandardClasses)
 
       for (provider in standardProviders) {
@@ -223,6 +219,66 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
 
     return result
   }
+
+  /**
+   * Records the CodBi **functionalities** and **e**lement **p**laceholders that one attribute
+   * (`attributeName`/`attributeValue`) uses.
+   *
+   * Only usages whose resource actually exists are recorded — an unknown name would otherwise
+   * produce a 404 (functionalities and EPs stored in the database are handled by the caller via the
+   * NNC handler).
+   */
+  fun collectCodbiUsage(
+      attributeName: String,
+      attributeValue: String,
+      usedFunctionalities: MutableSet<String>,
+      usedEPs: MutableSet<String>
+  ) {
+    val name = attributeName.lowercase()
+    if (name == "data-cb-func" || name == "data-cb-_t_func" || name == "data-cb-_f_func") {
+      // The property carrying the functionalities to use.
+      for (functionality in attributeValue.split(",")) {
+        val fileName = functionality.trim().lowercase()
+        if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {
+          usedFunctionalities.add(fileName)
+        }
+      }
+      return
+    }
+    // `data-cb-apply` never contains EPs; every other `data-cb-…` attribute may.
+    if (name.startsWith("data-cb-") && name != "data-cb-apply") {
+      for (ep in extractEPs(attributeValue)) {
+        val fileName = ep.trim().lowercase()
+        if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {
+          usedEPs.add(fileName)
+        }
+      }
+    }
+  }
+
+  /**
+   * Records the CodBi usages of every `data-cb-…` attribute that occurs in [markup].
+   *
+   * Used for the RENDERED form markup, which also contains the elements a Mirror renders LIVE from
+   * another form (they are not part of the target form's persisted items).
+   */
+  fun collectCodbiUsage(
+      markup: String,
+      usedFunctionalities: MutableSet<String>,
+      usedEPs: MutableSet<String>
+  ) {
+    for ((attributeName, attributeValue) in extractCodbiAttributeUsages(markup)) {
+      collectCodbiUsage(attributeName, attributeValue, usedFunctionalities, usedEPs)
+    }
+  }
+
+  /** @return the `(name, value)` pairs of all `data-cb-…` attributes that occur in [markup]. */
+  fun extractCodbiAttributeUsages(markup: String): List<Pair<String, String>> =
+      CB_ATTRIBUTE.findAll(markup)
+          .map { match ->
+            match.groupValues[1] to match.groupValues[2].ifEmpty { match.groupValues[3] }
+          }
+          .toList()
 
   /**
    * Called when the code library was enabled. Inserts the required CSS and JavaScript resources;

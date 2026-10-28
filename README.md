@@ -26,6 +26,7 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 - [🛠 Features](#-features)
   - [⚡ Functionalities](#-functionalities)
   - [🔗 Element Placeholders (EPs)](#-element-placeholders-eps)
+  - [🔎 Field References in Parameters](#-field-references-in-parameters)
   - [📋 Standard Configurations](#-standard-configurations)
   - [📚 Local API-Documentation Manager](#-local-api-documentation-manager)
   - [📐 CodBi Elements Template](#-codbi-elements-template)
@@ -169,6 +170,26 @@ EPs (Element Placeholders) can be used in any functionality parameter to dynamic
 | | `BayVIS.Behoerden.Details.Gebaeude` | Building details |
 | | `BayVIS.Behoerden.Gebaeude.ID` | Building by ID |
 
+### 🔎 Field References in Parameters
+
+Every CodBi parameter — on Functionalities, Standard Configurations, Element Placeholders and locally managed elements — may embed the current value of a form field using `<[...]>`. The reference is resolved before the functionality is invoked (see [`resolveFieldPlaceholders()`](src/main/web/packages/form/src/js/global-scope.ts:1448)).
+
+| Notation | Resolves to |
+|---|---|
+| `<[this]>` | The value of the element the parameter belongs to |
+| `<[.FieldName]>`, `<[#id]>`, `<[input[name=x]]>` | The value of the first field matching that CSS selector |
+| `<[FieldName]>` | The value of the field with CSS class `FieldName` (fallback: `data-name`, then a plain selector) |
+| `<[Base::path]>` | A DOM property (`innerHTML`, `textContent`, `value`, `checked`, `dataset.x`, …) or a **JSON path** of the field's value — `Base` may be `this`, a name or any selector |
+| `<[FieldName.path]>` | Shorthand for a bare `FieldName`, e.g. `<[tfJson.total]>`; it is NOT applied to selector-like references, so use `::` there (`<[.tfJson::items[0].name]>`) |
+
+- **Scope:** the nearest ancestor `.XContainer` / `.XFieldSet` of the referencing element is searched first, the document second — so repeatable containers stay isolated.
+- **Value:** form controls contribute their live `value`, wrapper elements their first contained control, otherwise the `value` attribute or the text content.
+- **Paths:** a value that parses as JSON is traversed **first** (`<[tfJson.total]>`, `<[tfJson::items[0].name]>`); only then are whitelisted DOM properties read (`<[this::innerHTML]>`, `<[tfRich::textContent]>`). Objects/arrays are serialized as JSON, unknown paths stay literal, and `__proto__` / `constructor` / prototype traversal is refused.
+- **Timing:** resolution runs once when the functionality is initialized — i.e. on Formcycle's own `form.xm-form` `ready` event, after the **values of the current form state** have been server-rendered into the `value` attributes and repeatable rows have been materialized. A reference that cannot be resolved — and `<[this]>` while the field is still empty — is left as the literal token, so functionalities that resolve on a later event (`AI.Llama.Standard.TxtVerify` on blur, `AI.OCR` on file-change) still see it.
+- **Escape:** write `°<[` when the text itself must show a reference-looking token; it is unescaped to `<[`.
+- **Combined with `[%field%]`:** both notations are resolved in one pass, so a value inserted by one is never re-scanned by the other; commas inside `<[...]>` do not split a parameter into a CSV list.
+
+Examples: `data-cb-Question="Prüfe ob die Summe von '<[tfZahl1]>' und '<[this]>' genau 9 ergibt."` and `data-cb-Question="Ist '<[tfJson::customer.name]>' korrekt?"`.
 
 ### 📋 Standard Configurations
 

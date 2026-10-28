@@ -2,6 +2,12 @@ import { describe, expect, it, jest } from "@jest/globals";
 
 import { DQ_Table_View } from "../../src/js/Functionalities/dq.table.view.js";
 
+/** A single URL-part replacement pair as handled by the functionality. */
+interface TestUrlReplacement {
+  from: string;
+  to: string;
+}
+
 // The JSON helpers are protected; expose them via a typed test-surface.
 interface JsonHelpers {
   normalizeJson(raw: unknown): string;
@@ -12,7 +18,10 @@ interface JsonHelpers {
   summarizeObject(value: unknown): string;
   parseExcludedColumns(value: unknown): Set<string>;
   isColumnExcluded(column: { label: string; dataColumn: string }, excluded: Set<string>): boolean;
-  renderTextCell(td: HTMLTableCellElement, raw: string): void;
+  parseUrlReplacements(partToReplace: unknown, replacement: unknown): TestUrlReplacement[];
+  applyUrlReplacements(url: string, replacements: TestUrlReplacement[]): string;
+  replaceUrlsInText(text: string, replacements: TestUrlReplacement[]): string;
+  renderTextCell(td: HTMLTableCellElement, raw: string, replacements?: TestUrlReplacement[]): void;
 }
 
 const helpers = DQ_Table_View as unknown as JsonHelpers;
@@ -212,6 +221,106 @@ describe("DQ_Table_View JSON-column handling", () => {
     });
   });
 
+  describe("parseUrlReplacements", () => {
+    it("returns an empty list when only one of the two parameters is set", () => {
+      expect(helpers.parseUrlReplacements("https://intern.example", undefined)).toEqual([]);
+      expect(helpers.parseUrlReplacements(undefined, "https://public.example")).toEqual([]);
+      expect(helpers.parseUrlReplacements("", "")).toEqual([]);
+    });
+
+    it("combines both CSVs by position", () => {
+      expect(helpers.parseUrlReplacements("a,b", "x,y")).toEqual([
+        { from: "a", to: "x" },
+        { from: "b", to: "y" },
+      ]);
+    });
+
+    it("only uses as many pairs as the shorter CSV provides", () => {
+      expect(helpers.parseUrlReplacements("a,b,c", "x")).toEqual([{ from: "a", to: "x" }]);
+    });
+
+    it("keeps an intentionally empty replacement (removal of the part)", () => {
+      expect(helpers.parseUrlReplacements("a,b", "x,")).toEqual([
+        { from: "a", to: "x" },
+        { from: "b", to: "" },
+      ]);
+    });
+
+    it("trims the entries and skips empty 'from' entries", () => {
+      expect(helpers.parseUrlReplacements(" a , ,b ", " x , y , z ")).toEqual([
+        { from: "a", to: "x" },
+        { from: "b", to: "z" },
+      ]);
+    });
+
+    it("accepts pre-split arrays as delivered by the attribute-processor", () => {
+      expect(helpers.parseUrlReplacements(["a", "b"], ["x", "y"])).toEqual([
+        { from: "a", to: "x" },
+        { from: "b", to: "y" },
+      ]);
+    });
+  });
+
+  describe("applyUrlReplacements", () => {
+    it("returns the URL unchanged without replacements", () => {
+      expect(helpers.applyUrlReplacements("https://intern.example/x", [])).toBe("https://intern.example/x");
+    });
+
+    it("replaces all occurrences of a part", () => {
+      const replacements = helpers.parseUrlReplacements("example", "test");
+
+      expect(helpers.applyUrlReplacements("https://example.example/x?example=1", replacements)).toBe(
+        "https://test.test/x?test=1",
+      );
+    });
+
+    it("pairs the CSVs in order", () => {
+      const replacements = helpers.parseUrlReplacements(
+        "https://intern.example,http://intern.example",
+        "https://a.example,https://b.example",
+      );
+
+      expect(helpers.applyUrlReplacements("https://intern.example/x", replacements)).toBe("https://a.example/x");
+      expect(helpers.applyUrlReplacements("http://intern.example/x", replacements)).toBe("https://b.example/x");
+    });
+
+    it("treats characters such as '.' literally instead of as RegExp syntax", () => {
+      const replacements = helpers.parseUrlReplacements("a.b", "c.d");
+
+      expect(helpers.applyUrlReplacements("https://axb.example", replacements)).toBe("https://axb.example");
+      expect(helpers.applyUrlReplacements("https://a.b.example", replacements)).toBe("https://c.d.example");
+    });
+
+    it("removes a part when its replacement is empty", () => {
+      // A trailing comma in the replacement-CSV explicitly keeps the second replacement empty (= remove the part).
+      const replacements = helpers.parseUrlReplacements("nomatch,?fcpuid=", "x,");
+
+      expect(helpers.applyUrlReplacements("https://a.example/provide/?fcpuid=1234", replacements)).toBe(
+        "https://a.example/provide/1234",
+      );
+    });
+  });
+
+  describe("replaceUrlsInText", () => {
+    it("only rewrites the URLs, not the surrounding text", () => {
+      const replacements = helpers.parseUrlReplacements("intern.example", "public.example");
+
+      expect(helpers.replaceUrlsInText("See https://intern.example/x for details.", replacements)).toBe(
+        "See https://public.example/x for details.",
+      );
+    });
+
+    it("leaves text without a URL untouched", () => {
+      const replacements = helpers.parseUrlReplacements("intern.example", "public.example");
+
+      expect(helpers.replaceUrlsInText("Max Mustermann", replacements)).toBe("Max Mustermann");
+    });
+
+    it("returns the text unchanged without replacements", () => {
+      expect(helpers.replaceUrlsInText("See https://intern.example/x", [])).toBe("See https://intern.example/x");
+    });
+  });
+
   describe("renderTextCell", () => {
     it("renders a plain value without a URL as plain text", () => {
       const td = document.createElement("td");
@@ -251,8 +360,9 @@ describe("DQ_Table_View JSON-column handling", () => {
       const anchors = td.querySelectorAll("a");
 
       expect(anchors.length).toBe(2);
-      expect(anchors[0].href).toBe("https://a.example");
-      expect(anchors[1].href).toBe("https://b.example");
+      // Compare the literal attribute: the `href` property is canonicalized by the URL parser (adds a trailing "/").
+      expect(anchors[0].getAttribute("href")).toBe("https://a.example");
+      expect(anchors[1].getAttribute("href")).toBe("https://b.example");
     });
 
     it("prefixes bare www. links with http://", () => {
@@ -261,7 +371,7 @@ describe("DQ_Table_View JSON-column handling", () => {
       helpers.renderTextCell(td, "www.acme.example");
       const anchor = td.querySelector("a")!;
 
-      expect(anchor.href).toBe("http://www.acme.example");
+      expect(anchor.getAttribute("href")).toBe("http://www.acme.example");
     });
 
     it("treats a non-string value as text and renders it", () => {
@@ -286,46 +396,67 @@ describe("DQ_Table_View JSON-column handling", () => {
       helpers.renderTextCell(td, "Visit https://a.example, please.");
       const anchor = td.querySelector("a")!;
 
-      expect(anchor.href).toBe("https://a.example");
+      expect(anchor.getAttribute("href")).toBe("https://a.example");
       expect(anchor.textContent).toBe("https://a.example");
       expect(td.textContent).toBe("Visit https://a.example, please.");
     });
 
-    it("matches a plain http:// link including a query string", () => {
+    it("renders a same-origin form-provide link as a normal link", () => {
       const td = document.createElement("td");
+      const formProvideUrl = `${window.location.origin}/xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7`;
 
-      helpers.renderTextCell(td, "http://xxxx/xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7");
+      helpers.renderTextCell(td, formProvideUrl);
       const anchor = td.querySelector("a")!;
 
-      // This is a Formcycle form-provide link: the raw URL is kept out of `href` (to avoid Formcycle recursing on
-      // page load) and is stored in `data-url` instead.
-      expect(anchor.getAttribute("data-url")).toBe(
-        "http://xxxx/xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7",
-      );
-      expect(anchor.textContent).toBe(
-        "http://xxxx/xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7",
-      );
-      expect(anchor.href).not.toContain("form/provide");
+      expect(anchor.href).toBe(formProvideUrl);
+      expect(anchor.getAttribute("data-url")).toBeNull();
+      expect(anchor.textContent).toBe(formProvideUrl);
     });
 
-    it("opens a form-provide link via its data-url when clicked (avoids Formcycle recursion)", () => {
+    it("renders an inbox-review link that carries an fcpuid query parameter as a normal link", () => {
+      const td = document.createElement("td");
+      const reviewUrl =
+        "https://forms.ansbach.de/frontend-server/inbox/review.xhtml?fcpuid=2caca488-b46d-47a1-b373-94e50a2ec2e2";
+
+      helpers.renderTextCell(td, reviewUrl);
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.href).toBe(reviewUrl);
+      expect(anchor.getAttribute("data-url")).toBeNull();
+      expect(anchor.textContent).toBe(reviewUrl);
+    });
+
+    it("applies the URL-part replacements to the link text and href", () => {
+      const td = document.createElement("td");
+      const replacements = helpers.parseUrlReplacements("https://intern.example", "https://public.example");
+
+      helpers.renderTextCell(td, "See https://intern.example/x for details.", replacements);
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.getAttribute("href")).toBe("https://public.example/x");
+      expect(anchor.textContent).toBe("https://public.example/x");
+      expect(td.textContent).toBe("See https://public.example/x for details.");
+    });
+
+    it("applies multiple replacements to multiple URLs in one cell", () => {
+      const td = document.createElement("td");
+      const replacements = helpers.parseUrlReplacements("a.example,b.example", "x.example,y.example");
+
+      helpers.renderTextCell(td, "https://a.example https://b.example", replacements);
+      const anchors = td.querySelectorAll("a");
+
+      expect(anchors[0].getAttribute("href")).toBe("https://x.example");
+      expect(anchors[1].getAttribute("href")).toBe("https://y.example");
+    });
+
+    it("renders without replacements when none are given", () => {
       const td = document.createElement("td");
 
-      helpers.renderTextCell(td, "http://xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7");
-      const anchor = td.querySelector("a")!;
-      const openSpy = jest.spyOn(window, "open").mockImplementation(() => null);
-
-      anchor.dispatchEvent(new MouseEvent("click", { cancelable: true, bubbles: true }));
-
-      expect(openSpy).toHaveBeenCalledWith(
-        "http://xxxx/form/provide/2602/?fcpuid=008974c0-e641-4919-8ba4-1cd29c0cc0c7",
-        "_blank",
-        "noopener,noreferrer",
-      );
-      openSpy.mockRestore();
+      helpers.renderTextCell(td, "https://intern.example/x");
+      expect(td.querySelector("a")!.getAttribute("href")).toBe("https://intern.example/x");
     });
 
-    it("intercepts the click and opens a normal link in a new window", () => {
+    it("keeps the real href and does not intercept the click", () => {
       const td = document.createElement("td");
 
       helpers.renderTextCell(td, "https://acme.example/x");
@@ -334,7 +465,9 @@ describe("DQ_Table_View JSON-column handling", () => {
 
       anchor.dispatchEvent(new MouseEvent("click", { cancelable: true, bubbles: true }));
 
-      expect(openSpy).toHaveBeenCalledWith("https://acme.example/x", "_blank", "noopener,noreferrer");
+      expect(anchor.href).toBe("https://acme.example/x");
+      // No `window.open` interception — the browser's native link handling applies.
+      expect(openSpy).not.toHaveBeenCalled();
       openSpy.mockRestore();
     });
   });

@@ -13,7 +13,9 @@
     "SheetName": "The name of the worksheet within the exported Excel file. Defaults to 'sheet1'.",
     "ExportButton": "Optional CSS selector of an existing button/anchor that triggers the export. When omitted, the Excel export is not available.",
     "Centered": "Whether the content of the table cells is centered. Defaults to true; set to false/0/no to keep cells left-aligned.",
-    "ExcludeColumns": "Optional CSV of column names (matched against label or datacolumn) that shall be excluded from the Excel export (they remain visible in the table)."
+    "ExcludeColumns": "Optional CSV of column names (matched against label or datacolumn) that shall be excluded from the Excel export (they remain visible in the table).",
+    "UrlPartToReplace": "Optional CSV of URL parts that shall be replaced in every URL rendered as text inside a cell (and in the Excel export). Only applied when UrlPartReplacement is set as well; both CSVs are combined by position (first entry with the first entry, second with the second, ...).",
+    "UrlPartReplacement": "Optional CSV of replacements for UrlPartToReplace, combined by position. An empty entry removes the corresponding part from the URL."
   },
   "supportedFormelementtypes": ["XContainer", "XContainerInvisible"],
   "parameters": {
@@ -64,6 +66,18 @@
       "description": "Optional CSV of column names (matched against label or datacolumn) that shall be excluded from the Excel export (they remain visible in the table).",
       "descriptionDe": "Optionale CSV von Spaltennamen (abgeglichen gegen Label oder Datacolumn), die vom Excel-Export ausgeschlossen werden sollen (sie bleiben in der Tabelle sichtbar).",
       "descriptionIt": "CSV opzionale di nomi di colonne (abbinati a label o datacolumn) da escludere dall'esportazione Excel (restano visibili nella tabella)."
+    },
+    "UrlPartToReplace": {
+      "type": "string",
+      "description": "Optional CSV of URL parts that shall be replaced in every URL rendered as text inside a cell (and in the Excel export). Only applied when UrlPartReplacement is set as well; both CSVs are combined by position: the first entry is replaced with the first entry of UrlPartReplacement, the second with the second and so on.",
+      "descriptionDe": "Optionale CSV von URL-Teilen, die in jeder als Text dargestellten URL einer Zelle (und im Excel-Export) ersetzt werden sollen. Wird nur angewendet, wenn auch UrlPartReplacement gesetzt ist; beide CSVs werden positionsweise kombiniert: der erste Eintrag wird durch den ersten Eintrag von UrlPartReplacement ersetzt, der zweite durch den zweiten usw.",
+      "descriptionIt": "CSV opzionale di parti di URL da sostituire in ogni URL visualizzata come testo in una cella (e nell'esportazione Excel). Viene applicato solo se è impostato anche UrlPartReplacement; entrambi i CSV vengono combinati per posizione: il primo elemento viene sostituito con il primo elemento di UrlPartReplacement, il secondo con il secondo e così via."
+    },
+    "UrlPartReplacement": {
+      "type": "string",
+      "description": "Optional CSV of replacements for UrlPartToReplace, combined by position. An empty entry removes the corresponding part from the URL.",
+      "descriptionDe": "Optionale CSV von Ersetzungen für UrlPartToReplace, positionsweise kombiniert. Ein leerer Eintrag entfernt den entsprechenden Teil aus der URL.",
+      "descriptionIt": "CSV opzionale di sostituzioni per UrlPartToReplace, combinate per posizione. Un elemento vuoto rimuove la parte corrispondente dall'URL."
     }
   }
 }

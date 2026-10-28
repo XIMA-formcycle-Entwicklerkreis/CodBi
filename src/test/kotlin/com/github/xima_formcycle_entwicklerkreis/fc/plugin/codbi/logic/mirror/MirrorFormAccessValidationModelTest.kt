@@ -1,7 +1,10 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 
+import com.alibaba.fastjson.JSON
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.newXFormRenderConfig
+import de.xima.fc.form.common.models.XFormRenderContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -56,6 +59,23 @@ class MirrorFormAccessValidationModelTest {
         .put("xi-sel-1", JSONArray().apply { add("xi-span-1"); add("xi-span-2") })
     revids.getJSONObject("formula").getJSONArray("hidden").add("xi-span-1")
     return model
+  }
+
+  @Test
+  fun renderElementFromJson_keepsTheCodbiAttributesOfTheSourceItems() {
+    // The live render is the ONLY place where the mirrored element's CodBi attributes reach the
+    // target form's markup, so the render callback can detect the functionalities they use.
+    val config = newXFormRenderConfig()
+    val json =
+        JSON.parseObject(
+            """{"items":[{"className":"XUpload","properties":{
+              "id":"xi-up-1","name":"up1","label":"Up",
+              "attributes":[{"text":"data-cb-func","value":"media.multipleupload"}]}}]}""")
+
+    val node = MirrorFormAccess.renderElementFromJson(json, "xi-up-1", config, XFormRenderContext())
+
+    val html = node?.write().orEmpty()
+    assertTrue(html.contains("data-cb-func=\"media.multipleupload\""), html)
   }
 
   @Test

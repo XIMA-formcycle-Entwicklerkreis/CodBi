@@ -51,6 +51,11 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
    *  - `<[CSSClass]>` — resolves to the value of the nearest element with that CSS class (scoped to the
    *    ancestor **XContainer**, with document-level fallback).
    *
+   *  > **Note:** `<[...]>` is a CodBi-wide parameter feature (see {@link CodbiGlobal.resolveFieldPlaceholders })
+   *  > and is therefore resolved for every `data-cb-*` parameter at functionality initialization. This
+   *  > functionality nevertheless keeps its own resolution for the question, because it must run against the
+   *  > **live** field value on **blur** — a config-time resolution would freeze `<[this]>` at its initial value.
+   *
    *  The functionality automatically appends a reply-format instruction — do **not** add "reply with yes or no"
    *  or similar instructions manually. When `<[this]>` is **not** used, the field value is prepended as
    *  `Text: "…"` so that thinking models can resolve references like *"this text"* before reading the question.

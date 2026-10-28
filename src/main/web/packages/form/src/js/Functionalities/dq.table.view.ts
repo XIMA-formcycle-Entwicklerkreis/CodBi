@@ -33,6 +33,19 @@ interface TableViewColumn {
 }
 
 /**
+ * A single **URL-part replacement** pair of the {@link DQ_Table_View.functionality }.
+ *
+ * Whenever a URL is rendered as text within a table-cell, the {@link UrlPartReplacement.from }-part of that URL is
+ * replaced with the {@link UrlPartReplacement.to }-part.
+ */
+interface UrlPartReplacement {
+  /** The part of the URL that shall be replaced. */
+  from: string;
+  /** The replacement for {@link UrlPartReplacement.from }. */
+  to: string;
+}
+
+/**
  * Provides the {@link DQ_Table_View.functionality }.
  *
  * @remarks
@@ -354,35 +367,25 @@ export class DQ_Table_View {
     return /(?:https?:\/\/|ftp:\/\/|mailto:|tel:|www\.)[^\s<>&"')\]]+/gi;
   }
   /**
-   * Whether the given URL is a Formcycle **form-provide** link (its path contains `form/provide` or its query
-   * contains `fcpuid`). Such a link points back at a Formcycle form — often the very form the table lives in.
-   *
-   * Formcycle's client-side form processing scans the rendered DOM for these links during **page load** and tries to
-   * re-instantiate the referenced form fragment. If the raw URL is placed in the anchor's `href`, a self-referencing
-   * link makes Formcycle recurse, so the form (and the table) never finishes loading. To keep the cell clickable
-   * without triggering that recursion, such links are rendered with the URL held in a `data-url` attribute (not in
-   * `href`) and opened on click via `window.open`.
-   *
-   * @param href The resolved link URL.
-   *
-   * @returns `true` when the URL is a Formcycle form-provide link. */
-  protected static isFormcycleLink(href: string): boolean {
-    return /\/form\/provide\/|(\?|&)fcpuid=/i.test(href);
-  }
-  /**
    * Renders a plain (non-JSON) cell. Any URL found in the value is turned into a clickable {@link HTMLAnchorElement }
    * that opens in a **new tab/window**, while the surrounding text is kept as-is. Multiple URLs per cell are
    * supported. Trailing sentence punctuation (`.`, `,`, `;`, `:`, `!`, `?` and closing brackets/quote characters) is
    * left outside the link.
    *
-   * Regular (external) URLs use a standard `href` + `target="_blank"` + `rel="noopener noreferrer"` anchor.
-   * **Formcycle form-provide links** (see {@link isFormcycleLink }) instead keep the raw URL out of the `href` at
-   * injection time to avoid Formcycle re-instantiating (recursively) the surrounding form on page load — the URL is
-   * stored in a `data-url` attribute and opened via `window.open` when the link is clicked.
+   * Every recognised URL is rendered identically as a standard `href` + `target="_blank"` +
+   * `rel="noopener noreferrer"` anchor — no URL is ever hidden behind `data-url`/`href="#"`.
    *
-   * @param td  The {@link HTMLTableCellElement } to fill.
-   * @param raw The raw cell value. */
-  protected static renderTextCell(td: HTMLTableCellElement, raw: string): void {
+   * When {@link UrlPartReplacement }s are provided, they are applied to **every** recognised URL *before* it is
+   * rendered, so both the link's text and its `href` show the rewritten URL.
+   *
+   * @param td           The {@link HTMLTableCellElement } to fill.
+   * @param raw          The raw cell value.
+   * @param replacements The {@link UrlPartReplacement }s to apply to every recognised URL (optional). */
+  protected static renderTextCell(
+    td: HTMLTableCellElement,
+    raw: string,
+    replacements: UrlPartReplacement[] = [],
+  ): void {
     const text = typeof raw === "string" ? raw : String(raw ?? "");
 
     let cursor = 0;
@@ -403,27 +406,32 @@ export class DQ_Table_View {
       // Trim trailing sentence punctuation/closing characters so they are not absorbed into the link (e.g.
       // "See https://a.example." should link only "https://a.example", keeping the final "." as plain text).
       const trimmed = match[0].replace(/[.,;:!?)\]}>"']+$/, "");
+      // Characters removed by the trailing-punctuation trim; they belong to the surrounding text, not the link.
+      const trailing = match[0].substring(trimmed.length);
 
       if (trimmed.length > 0) {
-        const href = trimmed.toLowerCase().startsWith("www.") ? `http://${trimmed}` : trimmed;
-        const anchor = document.createElement("a");
-        const formcycleLink = DQ_Table_View.isFormcycleLink(href);
+        // Apply the configured URL-part replacements (if any) before the URL is rendered as a link.
+        const url = DQ_Table_View.applyUrlReplacements(trimmed, replacements);
 
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-        anchor.textContent = trimmed;
-        // For a Formcycle form-provide link the URL is NOT written into `href` during load (Formcycle scans the DOM
-        // for such links and re-instantiating the surrounding form would recurse and prevent the page from loading).
-        // Instead the URL is kept in `data-url` and opened when the link is clicked.
-        anchor.setAttribute("data-url", href);
-        anchor.href = formcycleLink ? "#" : href;
-        anchor.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
+        // A replacement may remove the whole URL; in that case nothing is rendered for it.
+        if (url.length > 0) {
+          const href = url.toLowerCase().startsWith("www.") ? `http://${url}` : url;
+          const anchor = document.createElement("a");
 
-          window.open(href, "_blank", "noopener,noreferrer");
-        });
-        td.appendChild(anchor);
+          anchor.target = "_blank";
+          anchor.rel = "noopener noreferrer";
+          anchor.textContent = url;
+          // Keep the real URL in `href` so native behaviours (status-bar preview, "copy link address",
+          // middle-click / Ctrl-click, "open in new tab", keyboard activation) all work as expected.
+          anchor.href = href;
+
+          td.appendChild(anchor);
+        }
+      }
+
+      // Keep the punctuation that was trimmed off the URL as plain text, so it is not swallowed.
+      if (trailing.length > 0) {
+        td.append(trailing);
       }
 
       cursor = match.index + match[0].length;
@@ -619,6 +627,108 @@ export class DQ_Table_View {
     return excluded.has(column.label.trim().toLowerCase()) || excluded.has(column.dataColumn.trim().toLowerCase());
   }
   /**
+   * Parses the `UrlPartToReplace`- and `UrlPartReplacement`-parameters into a list of {@link UrlPartReplacement }s.
+   *
+   * Both parameters are **CSV**s and are combined **by position**: the first entry of `UrlPartToReplace` is replaced
+   * with the first entry of `UrlPartReplacement`, the second with the second and so on. E.g.
+   * `UrlPartToReplace = "https://intern.example,http://intern.example"` together with
+   * `UrlPartReplacement = "https://public.example,https://public.example"` rewrites every internal host of a rendered
+   * URL to its public counterpart. Only as many pairs as the shorter of both CSVs provides are used; entries of
+   * `UrlPartToReplace` without a counterpart are ignored. An **empty** entry in `UrlPartReplacement` removes the
+   * corresponding part from the URL.
+   *
+   * As with {@link parseColumns } the CodBi-attribute-processor may already have turned a comma containing value into
+   * a {@link string }-{@link Array }, so both a pre-split {@link Array } and a raw {@link string } are accepted. When
+   * either of the parameters is absent/empty, **no** replacement takes place.
+   *
+   * @param partToReplace The raw `UrlPartToReplace`-parameter value (CSV of the parts to replace).
+   * @param replacement   The raw `UrlPartReplacement`-parameter value (CSV of the replacements).
+   *
+   * @returns The parsed {@link UrlPartReplacement }s (empty when the parameters are not both set). */
+  protected static parseUrlReplacements(partToReplace: unknown, replacement: unknown): UrlPartReplacement[] {
+    const hasValue = (value: unknown): boolean =>
+      Array.isArray(value) ? value.length > 0 : String(value ?? "").trim().length > 0;
+
+    if (!hasValue(partToReplace) || !hasValue(replacement)) {
+      return [];
+    }
+    const toStringList = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? (value as unknown[]).map((entry) => String(entry ?? "").trim())
+        : String(value ?? "")
+            .split(",")
+            .map((entry) => entry.trim());
+
+    const parts = toStringList(partToReplace);
+    const replacements = toStringList(replacement);
+    const pairCount = Math.min(parts.length, replacements.length);
+    const urlReplacements: UrlPartReplacement[] = [];
+
+    for (let index = 0; index < pairCount; index++) {
+      // An empty "part to replace" would match everywhere — such entries are skipped.
+      if (parts[index].length === 0) {
+        continue;
+      }
+      urlReplacements.push({ from: parts[index], to: replacements[index] });
+    }
+
+    return urlReplacements;
+  }
+  /**
+   * Applies the given {@link UrlPartReplacement }s to a single URL.
+   *
+   * Every pair replaces **all** literal occurrences of its `from`-part within the URL (case-sensitively) — a plain
+   * text replacement is used instead of a {@link RegExp } so that characters such as `.`, `?`, `+` or `(` in a URL
+   * are not interpreted as pattern syntax.
+   *
+   * @param url          The URL whose parts shall be replaced.
+   * @param replacements The {@link UrlPartReplacement }s to apply.
+   *
+   * @returns The rewritten URL (the original one when there is nothing to replace). */
+  protected static applyUrlReplacements(url: string, replacements: UrlPartReplacement[]): string {
+    let result = url;
+
+    for (const { from, to } of replacements) {
+      if (from.length === 0 || from === to) {
+        continue;
+      }
+      result = result.split(from).join(to);
+    }
+
+    return result;
+  }
+  /**
+   * Applies the given {@link UrlPartReplacement }s to **every URL** contained in a text.
+   *
+   * Everything outside the recognised URLs is kept verbatim, so the text of a non-link cell stays untouched; only the
+   * URL-matches themselves are rewritten. Used for the Excel-export so its values match the (rewritten) links shown
+   * in the table.
+   *
+   * @param text         The text that may contain URLs.
+   * @param replacements The {@link UrlPartReplacement }s to apply.
+   *
+   * @returns The text with every contained URL rewritten. */
+  protected static replaceUrlsInText(text: string, replacements: UrlPartReplacement[]): string {
+    if (replacements.length === 0) {
+      return text;
+    }
+    // IMPORTANT: capture the pattern ONCE, otherwise the global `lastIndex` would reset on every access (see
+    // `renderTextCell`).
+    const urlPattern = DQ_Table_View.urlPattern;
+    let result = "";
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+
+    // biome-ignore lint/suspicious/noAssignInExpressions: Iterating the pattern's matches.
+    while ((match = urlPattern.exec(text)) !== null) {
+      result += text.substring(cursor, match.index);
+      result += DQ_Table_View.applyUrlReplacements(match[0], replacements);
+      cursor = match.index + match[0].length;
+    }
+
+    return result + text.substring(cursor);
+  }
+  /**
    * Registers the "DQ.Table.View"-Functionality which injects a table showing the result of a Formcycle-DataQuery into
    * the tagged {@link HTMLElement } and enables exporting that table to an **Excel**-file (`.xlsx`) via a button.
    *
@@ -648,6 +758,14 @@ export class DQ_Table_View {
    *  - ```ExcludeColumns```: An **optional** CSV of column names (matched against the column's `label` or
    *                     `datacolumn`) that shall be **excluded from the Excel-export** (they remain visible in the
    *                     table). E.g. `Nachricht,Wichtige_Hinweise`.
+   *  - ```UrlPartToReplace```: An **optional** CSV of URL-parts that shall be replaced in **every URL** rendered as
+   *                     text inside a cell (and in the Excel-export). Only applied when `UrlPartReplacement` is set
+   *                     as well; both CSVs are combined **by position**: the first entry is replaced with the first
+   *                     entry of `UrlPartReplacement`, the second with the second and so on. E.g.
+   *                     `https://intern.example,http://intern.example`.
+   *  - ```UrlPartReplacement```: An **optional** CSV of replacements for `UrlPartToReplace`, combined by position.
+   *                     An empty entry removes the corresponding part from the URL. E.g.
+   *                     `https://public.example,https://public.example`.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi - the container the table shall be injected into. */
@@ -662,9 +780,14 @@ export class DQ_Table_View {
     ExportButton: { type: "string" },
     Centered: { type: "string" },
     ExcludeColumns: { type: "string" },
+    UrlPartToReplace: { type: "string" },
+    UrlPartReplacement: { type: "string" },
   })
   public static functionality(
-    @TYPE.PRE("string", "dataquery :: css :: filename :: sheetname :: exportbutton :: centered :: excludecolumns")
+    @TYPE.PRE(
+      "string",
+      "dataquery :: css :: filename :: sheetname :: exportbutton :: centered :: excludecolumns :: urlparttoreplace :: urlpartreplacement",
+    )
     @TYPE.PRE("string | object", "columns")
     toLoad: { [key: string]: unknown },
 
@@ -708,6 +831,13 @@ export class DQ_Table_View {
 
     // Columns to exclude from the Excel-export (CSV of column names, matched against label or datacolumn).
     const excludedColumns: Set<string> = DQ_Table_View.parseExcludedColumns(toLoad.excludecolumns);
+
+    // URL-parts that shall be replaced in every URL rendered as text. The two CSVs are combined by position; the
+    // list is empty when only one of the two parameters is set.
+    const urlReplacements: UrlPartReplacement[] = DQ_Table_View.parseUrlReplacements(
+      toLoad.urlparttoreplace,
+      toLoad.urlpartreplacement,
+    );
     // #endregion Normalize parameters.
     // #region Generate a unique id for this table-view instance.
     const instanceId = `codbi-table-view-${Math.random().toString(36).substring(2, 11)}`;
@@ -796,7 +926,11 @@ export class DQ_Table_View {
 
             exportColumns.forEach((column, columnIndex) => {
               const raw = row[column.dataColumn] ?? "";
-              const value = column.isJson ? DQ_Table_View.prettyPrintJson(raw) : String(raw);
+              // URLs inside plain columns are exported with the configured URL-part replacements applied, so the
+              // exported values match the links shown in the table.
+              const value = column.isJson
+                ? DQ_Table_View.prettyPrintJson(raw)
+                : DQ_Table_View.replaceUrlsInText(String(raw), urlReplacements);
 
               ws[`${rowNumberToColumnName(columnIndex)}${excelRow}`] = { t: "s", v: value };
             });
@@ -884,7 +1018,7 @@ export class DQ_Table_View {
               if (column.isJson) {
                 DQ_Table_View.renderJsonCell(td, raw, column.label);
               } else {
-                DQ_Table_View.renderTextCell(td, raw);
+                DQ_Table_View.renderTextCell(td, raw, urlReplacements);
               }
 
               tr.appendChild(td);

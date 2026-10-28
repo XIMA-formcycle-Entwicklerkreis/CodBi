@@ -127,31 +127,46 @@ export class AI_OCR {
         document.querySelector(`div .CXUpload:has( #${toProcess.getAttribute("id")})`).parentElement;
 
       // #region Symbol resolution for pattern/question
-      // If the pattern contains symbols like <[FieldName]>, replace them with the value of the field with that CSS class in the same container
-      if (typeof toLoad.pattern === "string") {
-        toLoad.pattern = toLoad.pattern.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
+      // Read the RAW data-cb-* attributes instead of the resolved toLoad values: CodBi resolves
+      // <[...]> references for EVERY parameter at functionality initialization, but this functionality
+      // needs the LIVE field values at file-change time. CodBi never mutates the element's attributes,
+      // so the raw tokens are still available here. Only parameters that originate from a global
+      // variable (i.e. have no attribute) fall back to the already resolved toLoad value.
+      const resolveSymbols = (value: string): string =>
+        value.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
           const trimmed = identifier.trim();
           const field = container.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+
           if (field && "value" in field) {
             return field.value;
           }
+
           return match;
         });
+      const rawPattern = toProcess.getAttribute("data-cb-pattern") ?? toLoad.pattern;
+
+      if (typeof rawPattern === "string") {
+        toLoad.pattern = resolveSymbols(rawPattern);
       }
-      // Also resolve symbols in Pattern_* fields (for Extract Fields mode)
-      // biome-ignore lint/complexity/noForEach: <explanation>
-      Object.keys(toLoad).forEach((key) => {
-        if (key.startsWith("pattern_") && typeof toLoad[key] === "string") {
-          toLoad[key] = (toLoad[key] as string).replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
-            const trimmed = identifier.trim();
-            const field = container.querySelector(`.${trimmed}`) as HTMLInputElement | null;
-            if (field && "value" in field) {
-              return field.value;
-            }
-            return match;
-          });
+
+      // Also resolve symbols in Pattern_* fields (for Extract Fields mode).
+      for (const attribute of toProcess.attributes) {
+        const key = attribute.name.toLowerCase();
+
+        if (key.startsWith("data-cb-pattern_")) {
+          toLoad[key.substring(8)] = resolveSymbols(attribute.value);
         }
-      });
+      }
+
+      for (const key of Object.keys(toLoad)) {
+        if (
+          key.startsWith("pattern_") &&
+          typeof toLoad[key] === "string" &&
+          !toProcess.hasAttribute(`data-cb-${key}`)
+        ) {
+          toLoad[key] = resolveSymbols(toLoad[key] as string);
+        }
+      }
       // #endregion Symbol resolution for pattern/question
       const $ = getJQuery();
       const files = (toProcess as HTMLInputElement).files;

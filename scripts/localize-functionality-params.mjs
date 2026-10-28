@@ -476,6 +476,14 @@ const TRANSLATIONS = {
       de: "Optionale CSV von Spaltennamen (abgeglichen gegen Label oder Datacolumn), die vom Excel-Export ausgeschlossen werden sollen (sie bleiben in der Tabelle sichtbar).",
       it: "CSV opzionale di nomi di colonne (abbinati a label o datacolumn) da escludere dall'esportazione Excel (restano visibili nella tabella).",
     },
+    UrlPartToReplace: {
+      de: "Optionale CSV von URL-Teilen, die in jeder als Text dargestellten URL einer Zelle (und im Excel-Export) ersetzt werden sollen. Wird nur angewendet, wenn auch UrlPartReplacement gesetzt ist; beide CSVs werden positionsweise kombiniert: der erste Eintrag wird durch den ersten Eintrag von UrlPartReplacement ersetzt, der zweite durch den zweiten usw.",
+      it: "CSV opzionale di parti di URL da sostituire in ogni URL visualizzata come testo in una cella (e nell'esportazione Excel). Viene applicato solo se è impostato anche UrlPartReplacement; entrambi i CSV vengono combinati per posizione: il primo elemento viene sostituito con il primo elemento di UrlPartReplacement, il secondo con il secondo e così via.",
+    },
+    UrlPartReplacement: {
+      de: "Optionale CSV von Ersetzungen für UrlPartToReplace, positionsweise kombiniert. Ein leerer Eintrag entfernt den entsprechenden Teil aus der URL.",
+      it: "CSV opzionale di sostituzioni per UrlPartToReplace, combinate per posizione. Un elemento vuoto rimuove la parte corrispondente dall'URL.",
+    },
   },
   "form.navigator.json": {
     Preview: {

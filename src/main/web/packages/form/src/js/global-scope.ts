@@ -89,6 +89,8 @@ export interface CodbiGlobal {
   configTemplate: ConfigTemplate | undefined;
   /** See {@link CodBi.checkAttributes }. */
   checkAttributes: () => Promise<boolean>;
+  /** See {@link CodBi.resolveFieldPlaceholders }. */
+  resolveFieldPlaceholders(value: string, reference?: Element | null): string;
   /** See {@link CodBi.registerFunctionality }. */
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
@@ -273,6 +275,46 @@ declare global {
 function isStandardConfigMetadataKey(key: string): boolean {
   return key === "supportedFormelementtypes";
 }
+/**
+ * Sentinel used to park an escaped field-reference opener (`°<[`) while `<[...]>` references are
+ * resolved. It never matches the reference or placeholder patterns, so escaped openers survive a
+ * resolution pass untouched.
+ */
+const ESCAPED_FIELD_REFERENCE = "\u0000FIELD_REFERENCE_OPEN";
+/**
+ * Path segments that must never be traversed by a `<[field::path]>` reference — they would reach the
+ * JavaScript prototype chain instead of field data.
+ */
+const FORBIDDEN_FIELD_PATH_SEGMENTS: ReadonlySet<string> = new Set(["__proto__", "prototype", "constructor"]);
+/**
+ * DOM properties a `<[field::property]>` reference may read. Restricting the set keeps a reference
+ * from reaching functions, owners or other internals of the element.
+ */
+const DOM_FIELD_PATH_PROPERTIES: ReadonlySet<string> = new Set([
+  "checked",
+  "className",
+  "cols",
+  "disabled",
+  "hidden",
+  "href",
+  "id",
+  "innerHTML",
+  "innerText",
+  "maxLength",
+  "multiple",
+  "name",
+  "outerHTML",
+  "placeholder",
+  "readOnly",
+  "rows",
+  "selectedIndex",
+  "src",
+  "tagName",
+  "textContent",
+  "title",
+  "type",
+  "value",
+]);
 /** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
   /**
@@ -938,55 +980,542 @@ export class CodBi implements CodbiGlobal {
     if (typeof value !== "string" || !value || value.indexOf("[%") === -1 || value.indexOf("%]") === -1) {
       return value;
     }
-    // Index the form's fields once per call so multiple placeholders resolve without re-scanning.
-    // The FIRST match wins (like the V EP) — within a repeatable container the first row's value is
-    // used, which keeps the behaviour deterministic.
+
+    const byName = this.indexFieldsByName();
+
+    return value.replace(/\[%([^%\]]+?)%\]/g, (_m, rawName: string) => {
+      const name = rawName.trim();
+
+      if (!name) {
+        return _m;
+      }
+
+      const el = byName.get(name);
+
+      return el ? this.formcycleValueOfElement(el) : _m;
+    });
+  }
+  /**
+   * Indexes the form's fields by their CodBi `data-name` attribute (falling back to the native
+   * `name` attribute). The FIRST match wins (like the V EP) — within a repeatable container the
+   * first row's value is used, which keeps the behaviour deterministic.
+   *
+   * @returns A map of field name → {@link Element }. */
+  protected indexFieldsByName(): Map<string, Element> {
     const byName = new Map<string, Element>();
+
     for (const candidate of document.querySelectorAll("[data-name],[name]")) {
       const key = candidate.getAttribute("data-name") ?? candidate.getAttribute("name");
+
       if (key && !byName.has(key)) {
         byName.set(key, candidate);
       }
     }
-    return value.replace(/\[%([^%\]]+?)%\]/g, (_m, rawName: string) => {
-      const name = rawName.trim();
-      if (!name) {
-        return _m;
+
+    return byName;
+  }
+  /**
+   * Reads the current value of the given field {@link Element } the way Formcycle's `[%field%]`
+   * placeholders do: controls contribute their live `value`, other elements their `value` attribute
+   * or their trimmed text content.
+   *
+   * @param field The referenced {@link Element }.
+   *
+   * @returns The field's current value. */
+  protected formcycleValueOfElement(field: Element): string {
+    const control = field as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+
+    if (
+      control instanceof HTMLInputElement ||
+      control instanceof HTMLTextAreaElement ||
+      control instanceof HTMLSelectElement
+    ) {
+      return control.value;
+    }
+
+    const valueAttr = field.getAttribute("value");
+
+    if (valueAttr !== null) {
+      return valueAttr;
+    }
+
+    return (field.textContent ?? "").trim();
+  }
+  /**
+   * Reads the current value of an element referenced by the CodBi `<[...]>` notation. In addition to
+   * the `[%field%]` semantics a wrapper element (e.g. a container that carries the referenced CSS
+   * class) delegates to the first control it contains.
+   *
+   * @param field The referenced {@link Element }.
+   *
+   * @returns The field's current value or NULL if it cannot be determined. */
+  protected fieldReferenceValueOfElement(field: Element): string | null {
+    if (
+      field instanceof HTMLInputElement ||
+      field instanceof HTMLTextAreaElement ||
+      field instanceof HTMLSelectElement
+    ) {
+      return field.value;
+    }
+
+    const inner = field.querySelector("input, textarea, select") as
+      | HTMLInputElement
+      | HTMLTextAreaElement
+      | HTMLSelectElement
+      | null;
+
+    if (inner !== null) {
+      return inner.value;
+    }
+
+    const valueAttr = field.getAttribute("value");
+
+    if (valueAttr !== null) {
+      return valueAttr;
+    }
+
+    return (field.textContent ?? "").trim();
+  }
+  /**
+   * Executes {@link Node.querySelector } and swallows invalid-selector errors so a reference that is
+   * not a valid CSS selector (e.g. a class name starting with a digit) cannot break resolution.
+   *
+   * @param root     The {@link ParentNode } to search in.
+   * @param selector The CSS selector to search for.
+   *
+   * @returns The first matching {@link Element } or NULL. */
+  protected querySelectorSafe(root: ParentNode, selector: string): Element | null {
+    try {
+      return root.querySelector(selector);
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Escapes a single CSS identifier part (e.g. a class name) for use in a selector.
+   *
+   * @param part The raw identifier part.
+   *
+   * @returns The escaped part. */
+  protected cssEscapeSelectorPart(part: string): string {
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      return CSS.escape(part);
+    }
+
+    return part.replace(/([^\w-])/g, "\\$1");
+  }
+  /**
+   * Splits a CodBi `<[...]>` reference into the field part and an optional property/JSON path.
+   *
+   * Three notations are supported:
+   *  - `<[Base]>`            — the field's value (unchanged).
+   *  - `<[Base::path]>`      — explicit path; `Base` may be `this`, any name or any CSS selector.
+   *  - `<[Base.path]>`       — shorthand, ONLY when `Base` is a bare name (no leading selector
+   *                            character and no combinator) — e.g. `<[tfJson.total]>`.
+   *
+   * The shorthand is deliberately not applied to selector-like references, because `.tfName` would
+   * otherwise be split into the class `tfName` and the path `...`. Use `<[.tfName::value]>` there.
+   *
+   * @param fieldReference The raw reference between `<[` and `]>`.
+   *
+   * @returns The field part and the parsed path segments. */
+  protected parseFieldReference(fieldReference: string): {
+    base: string;
+    path: Array<{ key?: string; index?: number }>;
+  } {
+    const explicitSeparator = fieldReference.indexOf("::");
+
+    if (explicitSeparator !== -1) {
+      return {
+        base: fieldReference.substring(0, explicitSeparator).trim(),
+        path: this.parseFieldPath(fieldReference.substring(explicitSeparator + 2).trim()),
+      };
+    }
+
+    const selectorLike = /^[.#\[:*>+~\s]/.test(fieldReference) || /[\s>+~,]/.test(fieldReference);
+
+    if (selectorLike) {
+      return { base: fieldReference.trim(), path: [] };
+    }
+
+    const pathStart = fieldReference.search(/[.[]/);
+
+    if (pathStart === -1) {
+      return { base: fieldReference.trim(), path: [] };
+    }
+
+    return {
+      base: fieldReference.substring(0, pathStart).trim(),
+      path: this.parseFieldPath(fieldReference.substring(pathStart)),
+    };
+  }
+  /**
+   * Parses a property path such as `foo.bar[0]["baz"]` into its segments.
+   *
+   * @param path The raw path (without the leading separator).
+   *
+   * @returns The path segments in traversal order. */
+  protected parseFieldPath(path: string): Array<{ key?: string; index?: number }> {
+    const segments: Array<{ key?: string; index?: number }> = [];
+    const pattern = /([^.[\]]+)|\[\s*(\d+)\s*\]|\[\s*["']([^"']+)["']\s*\]/g;
+    let match = pattern.exec(path);
+
+    while (match !== null) {
+      if (match[1] !== undefined) {
+        segments.push({ key: match[1] });
+      } else if (match[2] !== undefined) {
+        segments.push({ index: Number(match[2]) });
+      } else {
+        segments.push({ key: match[3] });
       }
-      const el = byName.get(name);
-      if (!el) {
-        return _m;
+
+      match = pattern.exec(path);
+    }
+
+    return segments;
+  }
+  /**
+   * Resolves a field reference (`Base`) to the {@link Element } it designates.
+   *
+   * A selector is searched in the nearest ancestor **XContainer** / **XFieldSet** of the referencing
+   * element first and in the document as fallback — which keeps repeatable containers isolated. A
+   * bare identifier is treated as a CSS class first (backwards compatible with the AI
+   * functionalities), then as a `data-name` and finally as a plain selector.
+   *
+   * @param base    The field part of the reference.
+   * @param origin  The element the parameter belongs to (scope + `this`).
+   *
+   * @returns The referenced {@link Element } or NULL. */
+  protected resolveReferencedElement(base: string, origin: Element | null): Element | null {
+    if (!base) {
+      return null;
+    }
+
+    if (base.toLowerCase() === "this") {
+      return origin;
+    }
+
+    const scope = origin?.closest(".XContainer, .XFieldSet") ?? null;
+    const selectorLike = /^[.#\[:*>+~\s]/.test(base) || /[\s>+~,]/.test(base);
+    const candidates = selectorLike
+      ? [base]
+      : [`.${this.cssEscapeSelectorPart(base)}`, `[data-name="${base.replace(/"/g, '\\"')}"]`, base];
+    const roots: Array<ParentNode> = scope === null ? [document] : [scope, document];
+
+    for (const root of roots) {
+      for (const selector of candidates) {
+        const el = this.querySelectorSafe(root, selector);
+
+        if (el !== null) {
+          return el;
+        }
       }
-      const control = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-      if (
-        control instanceof HTMLInputElement ||
-        control instanceof HTMLTextAreaElement ||
-        control instanceof HTMLSelectElement
-      ) {
-        return control.value;
+    }
+
+    return null;
+  }
+  /**
+   * Reads a property/JSON path from a referenced field.
+   *
+   * A value that parses as JSON is traversed FIRST (this is what makes `<[tfJson.total]>` and
+   * `<[tfJson::items[0].name]>` work); otherwise the path is read as a whitelisted DOM property
+   * (e.g. `<[tfName::innerHTML]>`, `<[this::value]>`). Unknown paths resolve to NULL so the literal
+   * token is kept.
+   *
+   * @param field The referenced {@link Element }.
+   * @param path  The parsed path segments.
+   *
+   * @returns The path value as a string, or NULL when it cannot be resolved. */
+  protected fieldReferencePathValue(field: Element, path: Array<{ key?: string; index?: number }>): string | null {
+    const raw = this.fieldReferenceValueOfElement(field);
+    const json = raw === null ? undefined : this.tryParseJson(raw);
+
+    if (json !== undefined) {
+      const resolved = this.walkFieldPath(json, path);
+
+      if (resolved.found) {
+        return this.stringifyFieldPathValue(resolved.value);
       }
-      const valueAttr = el.getAttribute("value");
-      if (valueAttr !== null) {
-        return valueAttr;
+    }
+
+    const resolvedDom = this.walkDomFieldPath(field, path);
+
+    return resolvedDom.found ? this.stringifyFieldPathValue(resolvedDom.value) : null;
+  }
+  /**
+   * Parses a field value as JSON. Only objects, arrays and quoted strings qualify, so a plain value
+   * like `Anna` is never mistaken for JSON.
+   *
+   * @param raw The raw field value.
+   *
+   * @returns The parsed value, or undefined when the value is not JSON. */
+  protected tryParseJson(raw: string): unknown {
+    const trimmed = raw.trim();
+
+    if (trimmed.length === 0 || (trimmed[0] !== "{" && trimmed[0] !== "[" && trimmed[0] !== '"')) {
+      return undefined;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  /**
+   * Walks a JSON value along the given path. Only own properties are read, so the prototype chain
+   * (and thereby `__proto__` / `constructor`) can never be reached.
+   *
+   * @param root The parsed JSON value.
+   * @param path The parsed path segments.
+   *
+   * @returns The found value and whether the path existed. */
+  protected walkFieldPath(
+    root: unknown,
+    path: Array<{ key?: string; index?: number }>,
+  ): { found: boolean; value: unknown } {
+    let current = root;
+
+    for (const segment of path) {
+      if (current === null || current === undefined) {
+        return { found: false, value: undefined };
       }
-      return (el.textContent ?? "").trim();
+
+      if (segment.index !== undefined) {
+        if (!Array.isArray(current) || segment.index >= current.length) {
+          return { found: false, value: undefined };
+        }
+
+        current = current[segment.index];
+        continue;
+      }
+
+      const key = segment.key ?? "";
+
+      if (FORBIDDEN_FIELD_PATH_SEGMENTS.has(key) || typeof current !== "object") {
+        return { found: false, value: undefined };
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(current, key)) {
+        return { found: false, value: undefined };
+      }
+
+      current = (current as { [key: string]: unknown })[key];
+    }
+
+    return { found: true, value: current };
+  }
+  /**
+   * Walks the path as DOM properties of the referenced element (whitelist + `dataset`).
+   *
+   * @param field The referenced {@link Element }.
+   * @param path  The parsed path segments.
+   *
+   * @returns The found value and whether the path existed. */
+  protected walkDomFieldPath(
+    field: Element,
+    path: Array<{ key?: string; index?: number }>,
+  ): { found: boolean; value: unknown } {
+    let current: unknown = field;
+    let atElement = true;
+
+    for (const segment of path) {
+      if (segment.index !== undefined || current === null || current === undefined) {
+        return { found: false, value: undefined };
+      }
+
+      const key = segment.key ?? "";
+
+      if (atElement) {
+        atElement = false;
+
+        if (key === "dataset") {
+          current = (field as HTMLElement).dataset;
+          continue;
+        }
+
+        if (!DOM_FIELD_PATH_PROPERTIES.has(key)) {
+          return { found: false, value: undefined };
+        }
+
+        current = (field as unknown as { [key: string]: unknown })[key];
+
+        if (typeof current === "function") {
+          return { found: false, value: undefined };
+        }
+
+        continue;
+      }
+
+      if (FORBIDDEN_FIELD_PATH_SEGMENTS.has(key) || typeof current !== "object") {
+        return { found: false, value: undefined };
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(current, key)) {
+        return { found: false, value: undefined };
+      }
+
+      current = (current as { [key: string]: unknown })[key];
+    }
+
+    return { found: true, value: current };
+  }
+  /**
+   * Converts a resolved path value to the string a parameter expects. Objects and arrays are
+   * serialized as JSON; NULL/undefined become an empty string (the path itself existed).
+   *
+   * @param value The resolved path value.
+   *
+   * @returns The string representation. */
+  protected stringifyFieldPathValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return "";
+    }
+
+    if (typeof value === "string") {
+      return value;
+    }
+
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  }
+  /**
+   * Resolves a single CodBi `<[...]>` field reference against the DOM.
+   *
+   * The reference is either `this` (the value of the element the parameter belongs to) or a CSS
+   * selector / CSS class of another field. A selector is searched in the nearest ancestor
+   * **XContainer** / **XFieldSet** of the referencing element first and in the document as fallback —
+   * which keeps repeatable containers isolated. A bare identifier is treated as a CSS class first
+   * (backwards compatible with the AI functionalities), then as a `data-name` and finally as a plain
+   * selector.
+   *
+   * A path may be appended — `<[tfJson.total]>` (JSON property), `<[.tfJson::items[0].name]>` (JSON
+   * path) or `<[this::innerHTML]>` (DOM property). See {@link CodBi.parseFieldReference }.
+   *
+   * @param fieldReference The raw reference between `<[` and `]>`.
+   * @param reference      The element the parameter belongs to (context for `this` and the scope).
+   *
+   * @returns The referenced field's current value or NULL if it cannot be resolved. */
+  protected resolveFieldReference(fieldReference: string, reference?: Element | null): string | null {
+    if (!fieldReference) {
+      return null;
+    }
+
+    const origin = reference != null && typeof reference.closest === "function" ? reference : null;
+    const parsed = this.parseFieldReference(fieldReference);
+
+    if (!parsed.base) {
+      return null;
+    }
+
+    const el = this.resolveReferencedElement(parsed.base, origin);
+
+    if (el === null) {
+      return null;
+    }
+
+    if (parsed.path.length > 0) {
+      return this.fieldReferencePathValue(el, parsed.path);
+    }
+
+    const value = this.fieldReferenceValueOfElement(el);
+
+    // Keep the token when the field is currently empty: a config-time resolution must not destroy a
+    // placeholder that a functionality resolves later against the live value (e.g. on blur).
+    if (parsed.base.toLowerCase() === "this") {
+      return value === null || value === "" ? null : value;
+    }
+
+    return value;
+  }
+  /**
+   * Resolves all CodBi `<[reference]>` field references in the given parameter value.
+   *
+   * References that cannot be resolved are left untouched, so literal text like `<[Example]>` never
+   * silently disappears. A literal `°<[` is unescaped to `<[` — use it when the text itself shall
+   * show a reference-looking token.
+   *
+   * @param value     The parameter value that may contain `<[...]>` references.
+   * @param reference The element the parameter belongs to (context for `this` and the scope).
+   *
+   * @returns The value with every resolvable reference replaced by the field's current value. */
+  public resolveFieldPlaceholders(value: string, reference?: Element | null): string {
+    if (typeof value !== "string" || value.indexOf("<[") === -1) {
+      return value;
+    }
+
+    // Park escaped openers so they are neither resolved nor mistaken for a reference.
+    const prepared = value.split("°<[").join(ESCAPED_FIELD_REFERENCE);
+    const resolved = prepared.replace(/<\[([\s\S]*?)\]>/g, (_match: string, fieldReference: string) => {
+      const resolvedField = this.resolveFieldReference(fieldReference.trim(), reference);
+
+      return resolvedField === null ? _match : resolvedField;
     });
+
+    return resolved.split(ESCAPED_FIELD_REFERENCE).join("<[");
+  }
+  /**
+   * Resolves both Formcycle `[%field%]` and CodBi `<[reference]>` placeholders in a parameter value in
+   * ONE pass, so a value substituted by one notation is never re-scanned by the other — otherwise the
+   * content of a field could smuggle further placeholders into a parameter.
+   *
+   * @param value     The parameter value that may contain both notations.
+   * @param reference The element the parameter belongs to (context for `this` and the scope).
+   *
+   * @returns The value with every resolvable placeholder replaced. */
+  protected resolveParameterPlaceholders(value: string, reference?: Element | null): string {
+    if (typeof value !== "string" || value.length === 0) {
+      return value;
+    }
+
+    if (value.indexOf("[%") === -1 && value.indexOf("<[") === -1) {
+      return value;
+    }
+
+    // Park escaped openers so they are neither resolved nor mistaken for a reference.
+    const prepared = value.split("°<[").join(ESCAPED_FIELD_REFERENCE);
+    const byName = prepared.indexOf("[%") === -1 ? null : this.indexFieldsByName();
+    const resolved = prepared.replace(
+      /\[%([^%\]]+?)%\]|<\[([\s\S]*?)\]>/g,
+      (_match: string, fcName: string | undefined, fieldReference: string | undefined) => {
+        if (fcName !== undefined) {
+          if (byName === null) {
+            return _match;
+          }
+
+          const el = byName.get(fcName.trim());
+
+          return el ? this.formcycleValueOfElement(el) : _match;
+        }
+
+        const resolvedField = this.resolveFieldReference((fieldReference ?? "").trim(), reference);
+
+        return resolvedField === null ? _match : resolvedField;
+      },
+    );
+
+    return resolved.split(ESCAPED_FIELD_REFERENCE).join("<[");
   }
   /**
    * Resolves nested **E**lement **P**laceholder within **E**lement **P**laceholder Parameter
    * recursively ({@link CodBi.epSeparator }'s count of initiators determine the level of possible nesting).
    *
-   * @param params The **E**lement **P**laceholder Parameter to check for **E**lement **P**laceholder.
+   * @param params    The **E**lement **P**laceholder Parameter to check for **E**lement **P**laceholder.
+   * @param reference The element the parameters belong to — context for `<[this]>` and for the scope
+   *                  of `<[selector]>` field references.
    *
    * @returns The resolved incoming **params**. */
-  public resolveEPParams(params: Array<string>): Promise<Array<string>> {
+  public resolveEPParams(params: Array<string>, reference?: Element | null): Promise<Array<string>> {
     return new Promise((resolve, reject) => {
       let cntPromises = 0;
 
       const result: Array<string> = new Array<string>();
 
       for (let i = 0; i < params.length; i++) {
-        const candidate = this.resolveFormcyclePlaceholders((params[i] as string).trim());
+        const candidate = this.resolveParameterPlaceholders((params[i] as string).trim(), reference);
         const outermostEP = this.getOutermostEP(candidate);
 
         if (outermostEP !== null) {
@@ -997,7 +1526,7 @@ export class CodBi implements CodbiGlobal {
 
             this.checkEPOverride(outermostEP.keyPlaceholder).then(() => {
               // The "candidate" is an EP, parameter are provided.
-              this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
+              this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string), reference)
                 .then((real) => {
                   const epResult = DEFINED.tsCheck<
                     (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
@@ -1068,7 +1597,7 @@ export class CodBi implements CodbiGlobal {
 
                 await this.importRemoteModule(response.result);
 
-                this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
+                this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string), reference)
                   .then((real) => {
                     const epResult = DEFINED.tsCheck<
                       (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
@@ -1130,10 +1659,18 @@ export class CodBi implements CodbiGlobal {
   /**
    * Resolves all {@link CodBi.availableEPs } in all {@link string }-values
    * and {@link Array <string >}-values that're defined within the given
-   * {@params config} recursively.
+   * {@params config} recursively. Plain parameters additionally get their Formcycle `[%field%]` and
+   * CodBi `<[reference]>` placeholders resolved.
    *
-   * @param config The JSON-Config to resolve each EP in.*/
-  public resolveEP(config: { [key: string]: unknown }): Promise<{ [key: string]: unknown }> {
+   * @param config    The JSON-Config to resolve each EP in.
+   * @param reference The element the config belongs to — context for `<[this]>` and for the scope of
+   *                  `<[selector]>` field references.
+   *
+   * @returns A {@link Promise } resolving the resolved config.*/
+  public resolveEP(
+    config: { [key: string]: unknown },
+    reference?: Element | null,
+  ): Promise<{ [key: string]: unknown }> {
     return new Promise((resolve, reject) => {
       try {
         let cntPromises = 0;
@@ -1150,9 +1687,10 @@ export class CodBi implements CodbiGlobal {
                     const outermostEP = this.getOutermostEP(candidate);
 
                     if (outermostEP === null) {
-                      // No element placeholder — still resolve Formcycle [%field%] placeholders so a
-                      // plain parameter like "[%tfVorname%]" yields the referenced field's value.
-                      (config[key] as [])[i] = this.resolveFormcyclePlaceholders(candidate);
+                      // No element placeholder — still resolve Formcycle [%field%] and CodBi <[field]>
+                      // placeholders so a plain parameter like "[%tfVorname%]" or "<[.tfVorname]>"
+                      // yields the referenced field's value.
+                      (config[key] as [])[i] = this.resolveParameterPlaceholders(candidate, reference);
                       continue;
                     }
 
@@ -1161,7 +1699,7 @@ export class CodBi implements CodbiGlobal {
                         cntPromises++;
 
                         this.checkEPOverride(outermostEP.keyPlaceholder.toLowerCase()).then(() => {
-                          this.resolveEPParams(this.splitUnbracedParams(outermostEP.params))
+                          this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference)
                             .then((real) => {
                               const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
                                 outermostEP.params === "" ? new Array<string>() : real,
@@ -1219,7 +1757,7 @@ export class CodBi implements CodbiGlobal {
 
                             await this.importRemoteModule(response.result);
                             // Promises counter for this already set in advance 'cause of asynchronous download of EP code.
-                            this.resolveEPParams(this.splitUnbracedParams(outermostEP.params))
+                            this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference)
                               .then((real) => {
                                 const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
                                   outermostEP.params === "" ? new Array<string>() : real,
@@ -1272,8 +1810,9 @@ export class CodBi implements CodbiGlobal {
               const outermostEP = this.getOutermostEP(config[key] as string);
 
               if (outermostEP === null) {
-                // No element placeholder — resolve Formcycle [%field%] placeholders in the plain value.
-                config[key] = this.resolveFormcyclePlaceholders(config[key] as string);
+                // No element placeholder — resolve Formcycle [%field%] and CodBi <[field]>
+                // placeholders in the plain value.
+                config[key] = this.resolveParameterPlaceholders(config[key] as string, reference);
                 continue;
               }
 
@@ -1282,7 +1821,7 @@ export class CodBi implements CodbiGlobal {
                   cntPromises++;
 
                   this.checkEPOverride(outermostEP.keyPlaceholder.toLowerCase()).then(() => {
-                    this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
+                    this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference).then((real) => {
                       const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
                         outermostEP.params === "" ? new Array<string>() : real,
                       );
@@ -1341,7 +1880,7 @@ export class CodBi implements CodbiGlobal {
 
                       await this.importRemoteModule(response.result);
 
-                      this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
+                      this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference).then((real) => {
                         const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
                           outermostEP.params === "" ? new Array<string>() : real,
                         );
@@ -1809,6 +2348,48 @@ export class CodBi implements CodbiGlobal {
     }
   }
   /**
+   * Turns a `data-cb-*` attribute value into either the plain string or — when it contains commas —
+   * an array of trimmed entries. Commas inside a CodBi `<[field reference]>` are NOT separators, so a
+   * reference may carry a CSS selector list without being torn apart.
+   *
+   * @param value The raw attribute value.
+   *
+   * @returns The plain value, an array of trimmed entries, or the brace-escaped value for `^`-prefixed
+   *          attributes (see {@link CodBi.getOutermostEP }). */
+  protected parseAttributeValue(value: string): unknown {
+    // A leading "^" escapes the value: no CSV splitting and braces are not treated as EP markers.
+    if (value[0] === "^") {
+      return value.substring(1).replace(/\{/g, "°{").replace(/\}/g, "°}");
+    }
+
+    const parts: Array<string> = [];
+    let current = "";
+    let referenceDepth = 0;
+
+    for (let i = 0; i < value.length; i++) {
+      const char = value[i];
+
+      if (char === "<" && value[i + 1] === "[") {
+        referenceDepth++;
+        current += "<[";
+        i++;
+      } else if (char === "]" && referenceDepth > 0 && value[i + 1] === ">") {
+        referenceDepth--;
+        current += "]>";
+        i++;
+      } else if (char === "," && referenceDepth === 0) {
+        parts.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+
+    parts.push(current.trim());
+
+    return parts.length > 1 ? parts : value;
+  }
+  /**
    * Retrieves the Attributes out of the given {@link Element } **toExtractFrom** that are related
    * to the CodBi (**data-cb-** prefixed).
    * Those attributes may contain **E**lement **P**laceholder that are introduced by an
@@ -1829,13 +2410,7 @@ export class CodBi implements CodbiGlobal {
         candidate.name.trim() !== "data-cb-apply" &&
         candidate.name.substring(0, 8) === "data-cb-"
       ) {
-        // Turn every attribute that contains a "," into a String-Array.
-        codbiAttributes[candidate.name.substring(8)] =
-          candidate.value.indexOf(",") !== -1 && candidate.value[0] !== "^"
-            ? candidate.value.split(",").map((str) => str.trim())
-            : candidate.value[0] === "^"
-              ? candidate.value.substring(1).replace(/\{/g, "°{").replace(/\}/g, "°}")
-              : candidate.value;
+        codbiAttributes[candidate.name.substring(8)] = this.parseAttributeValue(candidate.value);
       }
     }
 
@@ -2086,7 +2661,7 @@ export class CodBi implements CodbiGlobal {
             //            if not deactivated.
             toProcess.classList.add("Processing", "CodBi");
 
-            this.resolveEP(codbiAttributes)
+            this.resolveEP(codbiAttributes, toProcess)
               .then((real) => {
                 codbiAttributes = real;
                 const currentElement = this.reQueryIfDetached(toProcess);
@@ -2143,7 +2718,7 @@ export class CodBi implements CodbiGlobal {
                   for (const toApplyOn of document.querySelectorAll(selector)) {
                     cntPromises++;
 
-                    this.resolveEP(codbiAttributesLocal)
+                    this.resolveEP(codbiAttributesLocal, toApplyOn)
                       .then((real) => {
                         codbiAttributesLocal = real;
 
@@ -2221,7 +2796,7 @@ export class CodBi implements CodbiGlobal {
 
                 cntPromises++;
 
-                this.resolveEP(codbiAttributes)
+                this.resolveEP(codbiAttributes, toProcess)
                   .then((real) => {
                     codbiAttributes = real;
                     const currentElement = this.reQueryIfDetached(toProcess);

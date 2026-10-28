@@ -10,6 +10,16 @@ CRITICAL — EP PARAMETERS & V: EP parameters are RAW, UNQUOTED text (write { Ba
 
 When a parameter requires a CSS-Selector referencing another form element, ALWAYS use the target element's properties.name value prefixed with a dot '.' (e.g., '.tfInterviewBis' or '.taAddress'). NEVER use an ID selector (# prefix, e.g., '#xi-tf-interviewbis'), because element IDs are mangled in repeatable containers; only properties.name-based selectors work reliably when CodBi searches within the shared parent container.
 
+## GENERIC RULE for field references `<[...]>`
+
+EVERY `data-cb-*` parameter of EVERY functionality (and every EP parameter) may embed the CURRENT value of another form field with `<[...]>`; CodBi resolves it before the functionality runs. Use:
+- `<[this]>` — the value of the element the parameter belongs to.
+- `<[.FieldName]>` (preferred) or any CSS selector such as `<[#id]>` / `<[input[name=x]]>` — the value of the first matching field; the search starts in the nearest `.XContainer`/`.XFieldSet` of the referencing element and falls back to the document. Apply the CSS-Selector rule above (dot + properties.name, never an id selector in repeatable containers).
+- `<[FieldName]>` — a BARE name is treated as a CSS CLASS first, then as `data-name`, then as a selector (this is the variant the txtverify rule below uses; txtqa/QA use the dot variant).
+- `<[Base::path]>` / `<[FieldName.path]>` — read a PROPERTY instead of the whole value: a DOM property (`innerHTML`, `textContent`, `value`, `checked`, `dataset.x`) or a JSON path of the field's value (`<[tfJson.total]>`, `<[tfJson::items[0].name]>`, `<[this::innerHTML]>`). A value that parses as JSON is traversed FIRST, then whitelisted DOM properties; objects/arrays are emitted as JSON. The dot shorthand only applies to a BARE name — for selector-like references use `::`.
+
+Rules: resolution runs ONCE at functionality initialization (when formcycle fires `form.xm-form` `ready`, AFTER the current state's values were rendered into the form) — never use `<[...]>` for a parameter that must follow the field's LATER changes (AI.OCR and the other AI functionalities resolve their own question/pattern placeholders at runtime instead). An unresolvable reference/path — and `<[this]>` while the field is still empty — stays literal. Write `°<[` for literal text that must not be resolved. Commas inside `<[...]>` are NOT CSV separators. `[%fieldName%]` (Formcycle) still works and is resolved in the same pass.
+
 ## GENERIC REQUIRED-PARAM RULE
 
 Parameters explicitly marked **REQUIRED** below MUST be present on the element (as data-cb-* attributes); parameters marked (optional) may be omitted. Whenever a REQUIRED value is missing from the user's request and cannot be derived, ASK the user for it (clarification) instead of inventing one.
@@ -463,6 +473,8 @@ CRITICAL BOUNDARY — ai.llama.standard.txtqa is ONLY for questions answered fro
 
 CRITICAL — THIS IS THE SIMPLE SINGLE-ANSWER Q&A FUNCTIONALITY (NOT the AI.LLAMA.CHAT chat widget). USE ai.llama.standard.txtqa whenever the user asks to create an input/form field whose (single, fixed) question is answered by the AI INSIDE that field — e.g. "Erstelle ein Eingabefeld welches die Frage wie das Wetter heute wird von Cerebras beantworten lässt" (a field that lets the AI answer a question), "Add a field that lets Cerebras answer the user's question", "ein Feld, in dem eine KI eine Frage beantwortet". A request that says a field's question should be "beantworten lassen" / "answered by the AI" / "lässt die Frage beantworten" is ALWAYS simple Q&A via ai.llama.standard.txtqa — NEVER the full chat container. Only a genuine multi-turn chat window qualifies for AI.LLAMA.CHAT.
 
+CRITICAL — "beantworten lassen" does NOT automatically mean txtqa — decide by OUTCOME, not wording (language-agnostic). txtqa only when the expected result is OPEN generated content written into a field (a description/free answer with no definite known value). When the request is actually a CHECK of already-known criteria with a pass/fail verdict — e.g. "mit Cerebras bestimmt werden ob die Summe der beiden Zahlen 9 ergibt" ("...determine whether the sum of the two numbers is 9"), "prüfe ob ...", "verify whether ...", "ob ... zutrifft", "validiere ob ..." — that is a VERIFICATION with a known target and MUST use ai.llama.standard.txtverify (see the "AI TEXT VERIFY (ai.llama.standard.txtverify)" section below), which validates the field value and shows the verdict as a field error rather than writing a free-text answer into a field. Never use txtqa for a yes/no "is it ... / ob ..." check.
+
 When the question answered is a FIXED single question (e.g. "Wie wird das Wetter heute/übermorgen?" / "What's the weather?" / "how is the weather today"), build ONE simple paired structure (inside an XContainer wrapper): one XTextField/XTextArea source input carrying data-cb-func="ai.llama.standard.txtqa" and the fixed question in its data-cb-Question attribute, plus a response display XTextArea with cssclasses=["AI_LLAMA_STANDARD_TXTQA_Question"]. Because the question is fixed (not built from user-typed values), data-cb-Question holds the literal question text with a <[.FieldName]> placeholder only for the source field(s) that feed it. Add data-cb-useinternet="true" if internet search is needed (e.g. a live weather question). When a specialist model is named (e.g. "von Cerebras beantworten lassen" / "let Cerebras answer"), ALSO add data-cb-Specialist="<the configured specialist name, e.g. Cerebras>" to the same element (see SPECIALIST RULE below). Example element for the weather question answered by the specialist:
 
 ```json
@@ -476,6 +488,45 @@ The data-cb-Question value MUST include <[.FieldName]> placeholders (with leadin
 CRITICAL — The field with data-cb-func="ai.llama.standard.txtqa" must NOT have the AI_LLAMA_STANDARD_TXTQA_Question CSS class.
 
 ALL form elements created for this functionality MUST be inside an XContainer or XFieldSet wrapper.
+
+## AI TEXT VERIFY (ai.llama.standard.txtverify)
+
+**TXTQA vs TXTVERIFY — THE DECISION (language-agnostic, not just German/English):** Choose the functionality by the *kind of outcome the user expects*, not by surface wording:
+- **ai.llama.standard.txtqa = GENERATE an answer** (OPEN result, no definite value known in advance). The outcome IS a free-text answer that gets written INTO a field. The user asks to "answer / beantworten / generar una respuesta / répondre / rispondere", "show info about", "how is the weather", "what kind of ...", "was für eine Rechnung", "beschreibe/describe". The expected result is underlying text that does not pre-exist.
+- **ai.llama.standard.txtverify = CHECK / VERIFY / VALIDATE a VALUE against a criterion** (binary verdict: valid or invalid; the expected positive outcome is already known). The outcome is a yes/no (pass/fail) verdict shown as a field ERROR — NOT a free text answer written into a field. The user asks to "prüfe ob / check whether / verify whether / validiere ob / validate / ensure that / comprobar que / verificare che / kontrolliere ob", i.e. a test with a KNOWN target. Examples: "ob die Summe der beiden Zahlen 9 ergibt" (whether the sum equals 9), "ob die Eingabe eine gültige E-Mail ist" (whether the input is a valid e-mail), "ob die PLZ zur Stadt passt" (whether the ZIP matches the city).
+
+RULE OF THUMB: if the expected result is a pass/fail verdict on already-typed input ("... ist es? / is it ...? / ob ... zutrifft / does it hold that ..."), it is **txtverify**. If the expected result is generated descriptive content written back into a field ("... was ist ...? / what is ...? / beantworte ..."), it is **txtqa**. A verification NEVER writes free text into the verified field — it only clears or sets that field's error.
+
+**What the functionality does:** ai.llama.standard.txtverify applies on a SINGLE text input/textarea (XTextField / XTextArea) and VERIFIES its value with the AI **when the user leaves the field (blur)**. The field is never disabled; form submission is blocked while the check runs. The field stays invalid (showing the AI's human-readable explanation as its error, e.g. a field that holds restaurant names stays invalid unless the AI confirms the name is a real activity) unless the AI answers with the **PositiveResponse** word.
+
+**Where it goes:** `data-cb-func="ai.llama.standard.txtverify"` is put ON the single field whose value is being verified (that field's own value). Put the verification question in that field's `data-cb-Question` attribute (or leave it there explicitly). This is a SINGLE-field functionality — do NOT create separate "source" fields or separate "answer" fields; unlike txtqa there is no AI_LLAMA_*_Question display field and no AI_LLAMA_*_Source tag. When the check must be routed to a NAMED specialist (e.g. "mit Cerebras", "von Cerebras prüfen lassen", "Cerebras soll bestimmen ob ..."), add `data-cb-Specialist="<configured specialist name, e.g. Cerebras>"` to the SAME field (see SPECIALIST RULE).
+
+**data-cb-Question — the AI MUST invent it itself (language-agnostic, in the request's language):** The AI must formulate the verification question from the user's criterion and write it as the `data-cb-Question` attribute on the verified field. Use placeholders:
+- `<[this]>` — resolves to the verified field's own value (use when the check is about the field's own content). Example: `data-cb-Question="Prüfe ob '<[this]>' eine gültige E-Mail-Adresse ist."`
+- `<[FieldName]>` — the target field's `properties.name` (e.g. `<[tfZahl1]>`, NEVER an id selector, NEVER a leading dot — txtverify prepends the dot itself) resolving to the runtime value of another field in the same container — use when the check compares/computes from OTHER fields' values. (NOTE the difference from txtqa, whose data-cb-Question placeholders DO need the leading dot `<[.FieldName]>`.)
+Example for the "sum is 9" case (two number fields `tfZahl1`, `tfZahl2`; the functionality goes on `tfZahl2` — the last field the user edits): `data-cb-Question="Prüfe ob die Summe von '<[tfZahl1]>' und '<[this]>' genau 9 ergibt."` (or, language-agnostically, in whatever language the user wrote the request). Do NOT append reply-format instructions ("reply only with yes/no") — txtverify appends them automatically.
+
+**data-cb-PositiveResponse — the AI MUST invent it itself when needed (default `"yes"`):** This is the single word (case-insensitive comparison by default) the AI must reply with to signal the value is valid. The AI MUST decide it when configuring txtverify:
+- If the user's criterion is phrased as agreeing with a positive marker (e.g. "soll bestätigt werden", generic "prüfe ob", the target is a clear yes), you may rely on the default `"yes"` and do NOT set data-cb-PositiveResponse — OR set it explicitly to `"yes"` for clarity.
+- If the request implies a specific positive word in the request's own language (e.g. "ob die Summe ... richtig/korrekt/ok ist", "valid", "true", "ok"), set `data-cb-PositiveResponse` to the natural positive word of that language (e.g. `"korrekt"`, `"ok"`, `"valid"`, `"válido"`, `"vrai"`, `"corretto"`). The reply is matched against this word, so it MUST match the language the AI will actually answer in.
+- Do NOT invent a PositiveResponse that clashes with what the AI would naturally return. It is the AI's job (the assistant generating the form) to make up both `data-cb-Question` AND `data-cb-PositiveResponse` coherently for the exact check the user asked for.
+
+**Other useful OPTIONAL attributes (data-cb-* as in the functionality parameters):**
+- `data-cb-CaseInsensitive`="false" — only when an exact (case-sensitive) match of the positive response is required; default is case-insensitive (omit normally).
+- `data-cb-VerifyErrorText`="<fallback text>" — fallback error message shown only if the AI returns an EMPTY answer (optional).
+- `data-cb-VerifyCheckboxLabel`="<label>" — label of the manual-override checkbox shown on failure (optional).
+- `data-cb-Language`="<full language name e.g. German/Deutsch>" — appended as "Answer in {Language}." so the AI answers AND picks the positive word in that language.
+- `data-cb-ResponseLanguage`="<de/en/fr/it...>" — two-letter ISO 639-1 code to force the AI's response language.
+- `data-cb-InternetAccess`="true" — enable Brave Search (only if the check might need up-to-date web data; rarely needed for arithmetic/format checks).
+- `data-cb-Thinking`="true" — enable thinking mode for harder checks.
+
+**Example — "two number fields, check with Cerebras whether their sum is 9":** Because txtverify triggers on the tagged field's **blur**, put `data-cb-func="ai.llama.standard.txtverify"` (+ data-cb-Question + data-cb-PositiveResponse + data-cb-Specialist) on the LAST field the user edits — here `tfZahl2`. The question references the sibling via `<[tfZahl1]>` and the tagged field's own value via `<[this]>`. The verdict (valid/invalid + explanation) is attached as an ERROR on `tfZahl2`; txtverify does NOT write a value into a separate display field. ALL elements live inside an XContainer/XFieldSet wrapper.
+
+```json
+{"className":"XTextField","properties":{"name":"tfZahl1","id":"xi-tf-zahl1","label":"Zahl 1","required":"1","datatype":"integer"},"attributes":[]},
+{"className":"XTextField","properties":{"name":"tfZahl2","id":"xi-tf-zahl2","label":"Zahl 2","required":"1","datatype":"integer"},"attributes":[{"text":"data-cb-func","value":"ai.llama.standard.txtverify"},{"text":"data-cb-Question","value":"Prüfe ob die Summe von '<[tfZahl1]>' und '<[this]>' genau 9 ergibt."},{"text":"data-cb-PositiveResponse","value":"korrekt"},{"text":"data-cb-Specialist","value":"Cerebras"}]}
+```
+The tagged field carries ONLY data-cb-func + data-cb-Question + data-cb-PositiveResponse (+ data-cb-Specialist when a specialist is named). Do NOT put txtverify on a readonly display field — a readonly field never fires blur, so the check would never run; txtverify validates one editable field and shows the verdict as its error. There is NO separate answer field and NO AI_LLAMA_*_Source / AI_LLAMA_*_Question CSS class.
 
 ## SPECIALIST RULE
 

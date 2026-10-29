@@ -452,6 +452,40 @@ class PromptSectionGateTest {
   }
 
   @Test
+  fun `a date-range request keeps the Date-frame wiring rules`() {
+    // Regression: "Füge zwei Datumsfelder ein die einen Zeitrahmen abbilden." produced two plain
+    // date fields — no CodBi_DateFrame_* class and no data-cb-func=Date.Frame — because the `date`
+    // block (the only date block that survives gating) carried the BIRTH-DATE rule only, and the
+    // detector did not fire for range wording at all. The renderer then accepts a begin date AFTER
+    // the end date.
+    val prompt = "Füge zwei Datumsfelder ein die einen Zeitrahmen abbilden."
+    val detected = PromptSectionGate.detect(prompt)
+    assertTrue("date" in detected, "detected=$detected")
+    assertTrue("field_creation" in detected, "detected=$detected")
+
+    val keep = PromptSectionGate.resolveKeepTags(null, prompt)
+    assertTrue("date" in keep, "keep=$keep")
+    val general =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(
+                "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general.decision.md")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("no such resource: codbi-general.decision.md")
+    val gated = PromptSectionGate.applySectionGates(general, keep)
+    assertTrue(gated.contains("CodBi_DateFrame_"), "the Date.Frame wiring must survive gating")
+    assertTrue(
+        gated.contains("data-cb-maxfield"), "the Date.Frame fallback parameter must survive gating")
+    assertTrue(
+        gated.contains("CodBi_NoFutureDate"), "the birth-date rule must still survive gating")
+
+    // Other phrasings of the same requirement must fire the detector too.
+    assertTrue("date" in PromptSectionGate.detect("Datumsbereich von Beginn bis Ende anlegen"))
+    assertTrue("date" in PromptSectionGate.detect("Add two date fields for a date range."))
+  }
+
+  @Test
   fun `the German einfuegen and platzieren verbs fire the build-scope detector`() {
     // Regression for the detector expansion: a request phrased purely as placement/insertion must
     // still be recognised as build-scope — otherwise the placement rules are dropped for a request

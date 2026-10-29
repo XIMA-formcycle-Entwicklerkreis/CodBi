@@ -226,6 +226,16 @@ A birth-date field (labels "Geburtsdatum", "Geburtstag", "birth date", "date of 
 
 A constraint like "keine Vergangenheitsdaten"/"no past dates"/"no future dates" on a birth date also means **NO FUTURE DATES** → the `CodBi_NoFutureDate` class (already applied). Do NOT add `Date.Min` and do NOT add any weekend restriction. A `Date.Min` on a birth date is valid ONLY as a PAST minimum (e.g. "mindestens 18 Jahre" → `data-cb-minimum=18, unit=y`, no `reverse`) and only when an age limit is requested.
 
+## CRITICAL — Date/time RANGE = ONE CONNECTED FRAME (Zeitrahmen / Datumsbereich)
+
+When the request asks for TWO fields that together form ONE range — "zwei Datumsfelder, die einen Zeitrahmen abbilden", "Datumsbereich", "Zeitraum", "Zeitspanne", "von/bis", "Beginn/Ende", "Start/End", "Kursbeginn/Kursende", "date range", "period from-to" (decide from the MEANING, ANY language) — the pair MUST be wired. Two date fields with NO frame function are a FAIL: nothing then prevents a begin date AFTER the end date.
+
+- WIDGET: BOTH fields of a range are `XTextField` with `datatype` "dateDE" (a time pair: "time"). There is NO `XDatePicker` / `XDateField` widget — never emit one (the item is unknown and gets dropped); the picker comes from the date datatype.
+- DATE pair → apply the CSS class `CodBi_DateFrame_<N>_Begin` to the START field AND `CodBi_DateFrame_<N>_End` to the END field. SAME N for both, the LOWEST of 1-5 not already used in the form. Every field carries exactly ONE of the two classes — there is NO `CodBi_DateFrame_<N>_Begin_End` class (never invent it) and the classes go ONLY on the two date fields, never on a container/fieldset/page. The classes belong in `properties.cssclasses` (never in `data-cb-func`). The class pair is self-contained: it wires `Date.Frame` with the matching `MaxField` selector itself, so NO `data-cb-func` is needed on either field.
+- TIME pair → `CodBi_TimeFrame_<N>_Begin` on the START time field + `CodBi_TimeFrame_<N>_End` on the END time field (same N rules).
+- FALLBACK only when all five N are already taken by the form: on the START field ONLY `data-cb-func="Date.Frame"` (a time range: `"Time.Frame"`) plus `data-cb-maxfield=".tfEndDatum"` — the END field's name, DOT-PREFIXED (`#id` selectors break in repeatable containers; never put the functionality on the END field; never on both fields; never on a container).
+- A date range is NEVER modelled as `Date.Min`/`Date.Max`, and never as two unconnected date fields. Never ASK which class/parameter to use — derive it (only the numbering is derived from the form's existing classes).
+
 ## CRITICAL — Print removal / hiding data when printing (Print.Remove)
 
 Distinguish the two cases:

@@ -8324,9 +8324,11 @@ class AICodBiAssistant : IPluginServletAction {
 
   private fun warnUnknownClassNames(element: JsonElement) {
     val items = element.takeIf { it.isJsonObject }?.asJsonObject?.getAsJsonArray("items") ?: return
-    // Canonicalize first (see canonicalizeLangSwitchClassName) so the language switch is not
-    // flagged as an unknown className before sanitizeAiFormItems gets to it.
+    // Canonicalize first (see canonicalizeLangSwitchClassName / canonicalizeDatePickerClassName) so
+    // an equivalent-but-wrong className is not flagged as unknown before sanitizeAiFormItems
+    // repairs it.
     canonicalizeLangSwitchClassName(items)
+    canonicalizeDatePickerClassName(items)
     items.forEach { el ->
       if (!el.isJsonObject) return@forEach
       val className = el.asJsonObject.get("className")?.takeIf { it.isJsonPrimitive }?.asString
@@ -8361,6 +8363,45 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
   }
+
+  /**
+   * Canonicalize the AI-emitted "date picker" className. Formcycle has NO `XDatePicker` widget — a
+   * date field is an `XTextField` whose `datatype` is `dateDE` (German) or `date` (native HTML5
+   * picker); the date picker itself is the `datepicker` property the pipeline already sets for a
+   * date datatype. The model nevertheless emits `XDatePicker` regularly when a request asks for
+   * date fields, and [sanitizeAiFormItems] then DROPS the item as an unknown className — so a
+   * requested date field silently disappeared from the form (observed with "Füge zwei Datumsfelder
+   * ein die einen Zeitrahmen abbilden.": both fields dropped, nothing created at all). Rewriting
+   * the className keeps the item AND its CodBi wiring (e.g. the `CodBi_DateFrame_<N>_Begin/_End`
+   * classes) intact. Only these date-picker aliases get this treatment; anything else is left
+   * untouched so genuinely unknown classes are still dropped.
+   */
+  private fun canonicalizeDatePickerClassName(items: JsonArray) {
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      val cls = o.get("className")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      if (cls.lowercase() !in DATE_PICKER_CLASS_ALIASES) continue
+      o.addProperty("className", "XTextField")
+      val props =
+          o.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
+              ?: JsonObject().also { o.add("properties", it) }
+      val datatype = props.stringProp("datatype").orEmpty()
+      // Keep an already-correct date datatype (date / dateDE / dateEN / ...); default to the German
+      // one otherwise, which ALSO makes the existing datepicker post-processing fire.
+      if (!datatype.startsWith("date", ignoreCase = true)) props.addProperty("datatype", "dateDE")
+      logger.warn(
+          "[AICodBiAssistant] Normalized AI className '{}' -> 'XTextField' (datatype=dateDE; there is no XDatePicker widget)",
+          cls)
+    }
+  }
+
+  /**
+   * className aliases the model uses for a date field, all mapping to `XTextField` + a date
+   * datatype.
+   */
+  private val DATE_PICKER_CLASS_ALIASES =
+      setOf("xdatepicker", "xdatefield", "xdatepickerfield", "xdatumsfeld")
 
   /**
    * Null/type-safe read of an array-valued `properties` member. The AI sometimes emits `null` or a
@@ -8422,10 +8463,12 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private fun sanitizeAiFormItems(root: JsonObject) {
     val items = root.getAsJsonArray("items") ?: return
-    // 0) Canonicalize the language-switch className so the unknown-class check below does not drop
-    //    the widget (the model emits the correctly-spelled "XLanguageSwitch", but Formcycle's
-    //    persisted className is the historic misspelling "XLanguageSwich").
+    // 0) Canonicalize the language-switch and date-picker classNames so the unknown-class check
+    //    below does not drop the widget (the model emits "XLanguageSwitch" for Formcycle's historic
+    //    misspelling "XLanguageSwich", and "XDatePicker" for an XTextField with a date datatype —
+    //    there is no XDatePicker widget, so such an item would be dropped entirely).
     canonicalizeLangSwitchClassName(items)
+    canonicalizeDatePickerClassName(items)
     // 1) Fold standalone button-like items into XButtonLists.
     val buttonLike = setOf("BUTTON", "BUTTONS", "XSUBMITBUTTON", "SUBMITBUTTON", "SUBMIT_BUTTON")
     val listItems =

@@ -281,7 +281,24 @@ internal object PromptSectionGate {
                   "\\bstyle\\b"),
           "date" to
               patterns(
-                  "geburtsdatum", "birthdate", "birth date", "no future date", "zukunftsdatum"),
+                  "geburtsdatum",
+                  "birthdate",
+                  "birth date",
+                  "no future date",
+                  "zukunftsdatum",
+                  // RANGES need the SAME date block as a single date request: its rules carry the
+                  // Date.Frame / Time.Frame wiring (CodBi_DateFrame_N_Begin/_End). Without them a
+                  // "zwei Datumsfelder, die einen Zeitrahmen abbilden" request produced two
+                  // unconnected date fields — the begin date could be after the end date.
+                  "zeitraum",
+                  "zeitrahmen",
+                  "zeitspanne",
+                  "datumsbereich",
+                  "datumsfeld",
+                  "date range",
+                  "daterange",
+                  "time range",
+                  "timerange"),
           "appointment" to
               patterns(
                   "termin",

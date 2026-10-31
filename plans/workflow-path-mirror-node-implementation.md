@@ -430,6 +430,20 @@ Fix in [`MirrorTriggerPaths`](../src/main/kotlin/com/github/xima_formcycle_entwi
 - **`action=fixsearchterms&target=<formKey>`** repairs an existing workflow and returns
   `{checked, fixed, errors[]}` (the failure text is otherwise only in the server log).
 
+The definitive fix does not hand-write the terms at all: a reflected trigger now runs FORMCYCLE's OWN
+"custom parameters → data model" transfer — the step every designer save performs
+(`WorkflowVersionStager.updateTrigger` → `WorkflowCustomParametersHelper.transferToDataModel`).
+Decompiled, that helper deserializes the props, recomputes `name`/`description`
+(`findName`/`findDescription`) and **clears and rebuilds the search terms**
+(`findSearchTerms(handler, trigger, props)`). [`ensureTriggerDataModel()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
+runs it on an ATTACHED entity in its own transaction (the `searchTerms` list is lazy, so doing it on
+the API-loaded entity persists nothing) and is called for every created and every re-pointed trigger.
+
+This is also why re-selecting the very same button in the designer's trigger dialog makes such a path
+work: that dialog save re-runs exactly this transfer. Verified on the dev server — after
+`action=fixsearchterms&target=project-1002` the reflected trigger carries `name='mir1_btn2.mir1_btnWOW'`
+and `buttonName=mir1_btnWOW`, `buttonQualifier=mir1_btn2` (`[trigger-sync#10]`).
+
 Diagnostics (all `[CodBi][Mirror]` INFO lines):
 
 ```

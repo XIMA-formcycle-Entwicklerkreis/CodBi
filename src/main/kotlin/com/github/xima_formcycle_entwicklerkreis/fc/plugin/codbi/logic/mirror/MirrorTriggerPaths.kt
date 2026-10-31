@@ -36,7 +36,7 @@ internal object MirrorTriggerPaths {
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#10"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#11"
 
   /** Node type of the CodBi workflow Mirror node. */
   private const val MIRROR_NODE_TYPE = "Mirror"
@@ -817,6 +817,49 @@ internal object MirrorTriggerPaths {
         helper
             .getMethod("transferToDataModel", triggerClass, mandantClass)
             .invoke(null, trigger, mandant)
+        // The transfer derives the search terms only for handlers that provide them, and for our
+        // hand-built trigger it yields NOTHING (verified in the log: `searchTerms=[]` even though
+        // the
+        // trigger NAME was already correct). Without those rows the event engine can never select
+        // the
+        // trigger, so the terms are additionally derived from the (already re-pointed) params and
+        // inserted here.
+        val triggerType =
+            runCatching { triggerClass.getMethod("getType").invoke(trigger) as? String }
+                .getOrNull()
+                .orEmpty()
+        val triggerParams =
+            runCatching { triggerClass.getMethod("getCustomParameters").invoke(trigger) as? String }
+                .getOrNull()
+                .orEmpty()
+        val wanted = triggerSearchTerms(triggerType, triggerParams)
+        if (wanted.isNotEmpty()) {
+          val existing = readSearchTerms(trigger).toSet()
+          val missing = wanted.filter { it !in existing }
+          if (missing.isNotEmpty()) {
+            val termClass = Class.forName("de.xima.fc.entities.WorkflowTriggerSearchTerm")
+            // `setElement(TElement)` is GENERIC — resolve by name/arity, not by parameter type.
+            val setElement =
+                termClass.methods.firstOrNull { it.name == "setElement" && it.parameterCount == 1 }
+            @Suppress("UNCHECKED_CAST")
+            val collection =
+                runCatching {
+                      triggerClass.getMethod("getSearchTerms").invoke(trigger) as? MutableList<Any?>
+                    }
+                    .getOrNull()
+            var index = existing.size
+            for ((key, value) in missing) {
+              val term = termClass.getDeclaredConstructor().newInstance()
+              termClass.getMethod("setKey", String::class.java).invoke(term, key)
+              termClass.getMethod("setValue", String::class.java).invoke(term, value)
+              termClass.getMethod("setIndex", Int::class.javaPrimitiveType).invoke(term, index)
+              setElement?.invoke(term, trigger)
+              collection?.add(term)
+              em.javaClass.getMethod("persist", Any::class.java).invoke(em, term)
+              index++
+            }
+          }
+        }
         em.javaClass.getMethod("flush").invoke(em)
         tx.javaClass.getMethod("commit").invoke(tx)
         applied = true

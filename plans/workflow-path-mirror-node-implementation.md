@@ -440,9 +440,35 @@ runs it on an ATTACHED entity in its own transaction (the `searchTerms` list is 
 the API-loaded entity persists nothing) and is called for every created and every re-pointed trigger.
 
 This is also why re-selecting the very same button in the designer's trigger dialog makes such a path
-work: that dialog save re-runs exactly this transfer. Verified on the dev server — after
-`action=fixsearchterms&target=project-1002` the reflected trigger carries `name='mir1_btn2.mir1_btnWOW'`
-and `buttonName=mir1_btnWOW`, `buttonQualifier=mir1_btn2` (`[trigger-sync#10]`).
+work: that dialog save re-runs exactly this transfer.
+
+Measured on the dev server, the transfer alone is **not** sufficient for a hand-built trigger — it fixed
+the name but produced no terms at all:
+
+```
+[CodBi][Mirror] trigger 2461 data model transferred: name='mir1_btn2.mir1_btnWOW' searchTerms=[]
+```
+
+So `ensureTriggerDataModel()` additionally derives the terms from the (already re-pointed) params with
+[`triggerSearchTerms()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
+and inserts the missing rows in the SAME transaction. Result (`[trigger-sync#11]`):
+
+```
+fix -> {"checked":1,"fixed":1,"errors":[]}
+trigger=2461 name=mir1_btn2.mir1_btnWOW
+terms  =2461:buttonName=mir1_btnWOW|buttonQualifier=mir1_btn2
+```
+
+and the reflected lane then really runs — verified in the server log:
+
+```
+[WP] Processing task 'Verarbeitungskette 3' (ID: '2461')
+[WP] Starting execution of workflow node 'Mirror' ['Mirror']
+[WP] Starting execution of workflow node 'Vorgangsprotokoll als PDF' ['FC_PROCESS_LOG_PDF']
+[WP] Starting execution of workflow node 'Datei ausliefern' ['FC_RETURN_FILE']
+[WP] Copying …\output.pdf …
+[WP] Successfully processed task 'Verarbeitungskette 3' (ID: '2461)'
+```
 
 Diagnostics (all `[CodBi][Mirror]` INFO lines):
 

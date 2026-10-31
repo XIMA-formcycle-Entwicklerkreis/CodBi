@@ -338,28 +338,61 @@ The next round showed the real blocker in the server log:
         manipulated!
 ```
 
-FORMCYCLE validates the submitted `xf-action` (= the button key) against the **published form model**.
-`XMirror.namespaceLinkedIds()` prefixes the rendered `name`/`data-xn`/`xn` of the mirrored subtree,
-but the *copy* in the form model only namespaced the ITEM name — its `buttons[].name` entries kept the
-source name. Model (`btnWOW`) and markup (`mir1_btnWOW`) therefore disagreed and every mirrored click
-was rejected before any workflow ran.
+**The lookup is NOT done against the published form model — it is done against the FORM REQUEST
+SESSION**, which is filled at RENDER time. Decompiled `de.xima.fc.form.FormProcessUtil`
+(`fc-web-common-8.5.3.jar`):
 
-The fix keeps the namespacing (it is what prevents DUPLICATE button keys when the same element is
-mirrored twice or the target form has a button of the same name) and makes the model agree:
+```java
+// getAndValidateButtonAction(IExtendedFormRequestContext ctx)
+XButtonDescriptor d = decodeSubmittedXfAction(qualifier, action, ctx.getFRQSession());
+if (d == null && !ctx.isSkipSubmitButtonValidation()) handleInvalidSubmitButton(ctx, action);
+```
 
-1. [`MirrorChildItems.propertiesForNode()`](../src/main/web/packages/designer/src/js/MirrorChildItems.ts)
-   now prefixes the `buttons[].name` (and `buttonEntries[].name`) of a copied `XButtonList`, exactly
-   like it already prefixes the item name.
-2. [`MirrorTriggerPaths.remapTriggerParams()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
+```java
+// decodeSubmittedXfAction(qualifier, action, FRQSession session)
+session.get("xfc-pp-actionmap")  -> Map<action, XButtonDescriptor>            // random key when
+                                                                             // validateSubmitAction
+session.get("xfc-pp-buttonmap")  -> Map<Pair<buttonListName, buttonName>, XButtonDescriptor>
+```
+
+Both maps are written by `XButtonList.renderButton()` **while the item renders**
+(`XItemRenderCtx.storeSubmitButton()` / `encodeXfAction()`), using the model names of the item that is
+being rendered — `<button name="<descriptor.getName()>" data-xf-action="<key>">`.
+
+They can only come from `XFormRenderer`'s render context (`IXFormRenderContext`), not from a plugin
+map. The critical point: the maps are keyed by whatever names the **rendered model** carried, not by
+what the HTML later says.
+
+The Mirror renders the SOURCE subtree **live** (plain source names → the session map got
+`Pair("btn2","btnWOW")`), and `XMirror.namespaceLinkedIds()` only renamed the *emitted markup*
+afterwards → the browser submitted `mir1_btnWOW`, the session map only knew `btnWOW`, and every
+mirrored click was rejected before any workflow ran.
+
+Fix: the names are now prefixed in the **MODEL of the rendered subtree** — before it renders:
+
+1. [`MirrorFormAccess.namespaceElementNames()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorFormAccess.kt)
+   prefixes `properties.name` of the element and all its descendants plus the `buttons[].name` /
+   `buttonEntries[].name` entries of every `XButtonList` in that subtree, and follows the renames in
+   `parentid` / `parent` / `elements` (id-based references are left alone). It is called from
+   [`renderElementNode()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorFormAccess.kt)
+   right after the element reference is resolved, so `XButtonList` registers
+   `Pair("mir1_btn2","mir1_btnWOW")` and emits the same names it registers.
+2. [`XMirror.namespaceLinkedIds()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/XMirror.kt)
+   now rewrites **ids only** (`id`, `for`, `list`, `headers`, `data-xi`, `xi`, `aria-*`) — prefixing
+   the names again here would double them.
+3. [`MirrorChildItems.propertiesForNode()`](../src/main/web/packages/designer/src/js/MirrorChildItems.ts)
+   continues to prefix the item name and the `buttons[].name` (and `buttonEntries[].name`) of a copied
+   `XButtonList`, so the persisted copy, the live render and the trigger use the same names.
+4. [`MirrorTriggerPaths.remapTriggerParams()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
    walks the params JSON and re-points every element reference — INCLUDING the button keys (top-level
    `name`, `button.name`, `button.qualifier`), per segment for qualified names.
    `mirroredNameOf()` only uses the namespaced form when the reflecting form actually has it, so an
    older copy that is not namespaced yet keeps its plain keys (self-healing, no broken clicks).
-3. [`XMirror.namespaceLinkedIds()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/XMirror.kt)
-   therefore continues to namespace the whole subtree (model and markup agree).
 
-Existing mirror copies are re-created by the designer's normal child sync; `action=triggerdiag` shows
-`presentNamespaced` for the button key so the state is verifiable.
+The namespacing is kept because it is what prevents DUPLICATE button keys when the same element is
+mirrored twice or the target form has a button of the same name. Existing mirror copies are re-created
+by the designer's normal child sync; `action=triggerdiag` shows `presentNamespaced` for the button key
+so the state is verifiable, and the build marker was bumped to `trigger-sync#5`.
 
 Diagnostics (all `[CodBi][Mirror]` INFO lines):
 

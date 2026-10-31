@@ -36,7 +36,7 @@ internal object MirrorTriggerPaths {
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#4"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#5"
 
   /** Node type of the CodBi workflow Mirror node. */
   private const val MIRROR_NODE_TYPE = "Mirror"
@@ -170,8 +170,8 @@ internal object MirrorTriggerPaths {
     val tokens = elementTokens(userContext, sourceFormKey, elementRef, elementKey)
     // Names that actually exist in the REFLECTING form (item names/ids and XButtonList button
     // entries). The trigger remap only re-points a reference when the namespaced form really exists
-    // there — a button name, for instance, is NOT namespaced by the Mirror copy, so prefixing it
-    // would make the reflected trigger never match the click.
+    // there — this is what keeps the reflected trigger in sync with the names the mirror copy AND
+    // the live render register (both use `<mirrorName>_`).
     val targetNames = reflectingFormNames(userContext, targetFormKey, namePrefix)
     val triggered = findTriggeredPaths(userContext, sourceFormKey, elementRef, elementKey)
     val prefix = namePrefix?.trim().orEmpty()
@@ -1134,8 +1134,11 @@ internal object MirrorTriggerPaths {
       val itemName = props.getString("name").orEmpty()
       add(itemName)
       add(props.getString("id"))
-      // BUTTON entries keep their SOURCE names everywhere (persisted copy AND rendered markup): a
-      // submit is validated against the published form model, so namespacing them breaks the click.
+      // BUTTON entries are namespaced too: `.MirrorChildItems.propertiesForNode` prefixes the
+      // copy's
+      // `buttons[].name`, and the live render registers its buttons with the SAME namespaced names
+      // (`MirrorFormAccess.namespaceElementNames`), which is what FORMCYCLE's submit validation
+      // looks up in the form request session.
       for (key in listOf("buttons", "buttonEntries")) {
         val buttons = props.getJSONArray(key) ?: continue
         for (index in 0 until buttons.size) {

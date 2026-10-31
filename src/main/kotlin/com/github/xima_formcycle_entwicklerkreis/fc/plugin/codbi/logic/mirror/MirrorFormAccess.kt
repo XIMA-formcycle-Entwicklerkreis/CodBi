@@ -918,11 +918,15 @@ object MirrorFormAccess {
       renderContext: IXFormRenderContext?,
       formName: String? = null,
       elementKey: String? = null,
-      validationModel: JSONObject? = null
+      validationModel: JSONObject? = null,
+      namePrefix: String? = null
   ): Div? {
     if (renderConfig == null || renderContext == null) return null
     val json = loadFormJson(userContext, formKey, formName) ?: return null
     val ref = resolveElementRef(json, elementRef, elementKey) ?: return null
+    // Rename the subtree's items BEFORE rendering, so the item widgets themselves use the mirrored
+    // names (see `namespaceElementNames` for why the emitted markup alone is not enough).
+    namespaceElementNames(json, ref, namePrefix)
     return try {
       val form = XForm(json)
       val item = findItem(form, formKey, ref) ?: return null
@@ -967,11 +971,101 @@ object MirrorFormAccess {
       renderConfig: IXFormRenderConfig?,
       renderContext: IXFormRenderContext?,
       formName: String? = null,
-      elementKey: String? = null
+      elementKey: String? = null,
+      namePrefix: String? = null
   ): String? =
       renderElementNode(
-              userContext, formKey, elementRef, renderConfig, renderContext, formName, elementKey)
+              userContext,
+              formKey,
+              elementRef,
+              renderConfig,
+              renderContext,
+              formName,
+              elementKey,
+              namePrefix = namePrefix)
           ?.write()
+
+  /**
+   * Prefixes the **names** of one element subtree (the element itself and all of its descendants)
+   * with [namePrefix] inside the parsed persist JSON — i.e. *before* the subtree is rendered.
+   *
+   * This is what makes the mirrored SUBMIT BUTTONS work. While an item renders, FORMCYCLE registers
+   * its submit buttons in the form request session (`xfc-pp-buttonmap` keyed by
+   * `Pair(buttonListName, buttonName)`, plus `xfc-pp-actionmap` when submit-action validation is
+   * enabled) and a later submit is looked up in exactly those maps:
+   * `FormProcessUtil.decodeSubmittedXfAction` → `null` → "Button key … not found in current form
+   * request session - was the form submit manipulated?" → "Request not accepted."
+   *
+   * The registration uses the names of the item that is being rendered. Mirroring the SOURCE
+   * element therefore registers the SOURCE names, and prefixing only the emitted markup (which is
+   * what the client submits) leaves session and markup disagreeing — every mirrored click is
+   * rejected. Renaming the model first makes model, markup and session agree, and it keeps two
+   * mirrored button lists from colliding on identical keys.
+   *
+   * Ids are deliberately left untouched: the item's technical id is what the persisted copies, the
+   * `data-xm-appendable` marker and the namespaced validation model refer to.
+   *
+   * @return `true` when at least one of the names of [namePrefix] was applied.
+   */
+  fun namespaceElementNames(json: JSONObject, rootRef: String?, namePrefix: String?): Boolean {
+    val prefix = namePrefix?.trim().orEmpty()
+    if (prefix.isEmpty()) return false
+    val root = itemJsonByRef(json, rootRef) ?: return false
+    // Build the child index BEFORE renaming: it resolves the parent links by id AND name, so
+    // renaming an item first would cut it off from its children.
+    val index = childrenIndex(json)
+    val items = ArrayList<JSONObject>()
+    val seen = HashSet<String>()
+    val queue = ArrayDeque<JSONObject>()
+    queue.add(root)
+    while (queue.isNotEmpty()) {
+      val item = queue.removeFirst()
+      val props = item.getJSONObject("properties") ?: continue
+      val ref = props.getString("id").orEmpty().ifBlank { props.getString("name").orEmpty() }
+      if (ref.isNotEmpty() && !seen.add(ref)) continue
+      items.add(item)
+      for (child in childrenOf(index, props)) queue.add(child)
+    }
+    val renames = LinkedHashMap<String, String>()
+    for (item in items) {
+      val name = item.getJSONObject("properties")?.getString("name").orEmpty()
+      if (name.isNotEmpty() && !name.startsWith(prefix)) renames[name] = prefix + name
+    }
+    if (renames.isEmpty()) return false
+    for (item in items) {
+      val props = item.getJSONObject("properties") ?: continue
+      renames[props.getString("name").orEmpty()]?.let { props.put("name", it) }
+      // The BUTTON ENTRIES of an `XButtonList` are part of the form MODEL: every `buttons[].name`
+      // becomes a submit-button key. They are not items, so they need the prefix explicitly.
+      for (key in listOf("buttons", "buttonEntries")) {
+        val entries = props.getJSONArray(key) ?: continue
+        for (i in 0 until entries.size) {
+          val entry = entries.getJSONObject(i) ?: continue
+          val name = entry.getString("name").orEmpty()
+          if (name.isNotEmpty() && !name.startsWith(prefix)) entry.put("name", prefix + name)
+        }
+      }
+    }
+    // Follow the renames in the parent references INSIDE the subtree, so the structure survives
+    // when
+    // FORMCYCLE stores names (not ids) in `parentid` / `elements`.
+    for (item in items) {
+      val props = item.getJSONObject("properties") ?: continue
+      for (key in listOf("parentid", "parent")) {
+        renames[props.getString(key).orEmpty()]?.let { props.put(key, it) }
+      }
+      val elements = props.getJSONArray("elements") ?: continue
+      for (i in 0 until elements.size) {
+        renames[elements.getString(i).orEmpty()]?.let { elements.set(i, it) }
+      }
+    }
+    logger.debug(
+        "[MirrorFormAccess] namespaced {} element name(s) of '{}' with '{}'",
+        renames.size,
+        rootRef,
+        prefix)
+    return true
+  }
 
   /**
    * Renders a single element (and its children) of the CURRENT form from an already-parsed form

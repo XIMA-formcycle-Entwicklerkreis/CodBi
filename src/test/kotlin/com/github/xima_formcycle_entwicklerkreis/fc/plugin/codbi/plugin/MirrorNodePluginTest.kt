@@ -1,6 +1,7 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
 
 import com.alibaba.fastjson.JSON
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorFormAccess
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorTriggerPaths
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.WorkflowLaneMaterializer
 import de.xima.cmn.reader.JsonReader
@@ -421,6 +422,80 @@ class MirrorNodePluginTest {
         JSON.parseObject(
             """{"button":{"name":"btnWOW","qualifier":"btn2"},"name":"btnWOW","field":"mir1_tf1"}"""),
         JSON.parseObject(remapped))
+  }
+
+  /**
+   * The live-rendered mirrored subtree must carry the NAMESPACED names already in its MODEL:
+   * FORMCYCLE registers a button list's submit buttons in the form request session while the item
+   * renders, keyed by `Pair(buttonListName, buttonName)`, and rejects a submit whose key is missing
+   * there ("Button key … not found in current form request session - was the form submit
+   * manipulated?"). Prefixing only the emitted markup is therefore not enough.
+   */
+  @Test
+  fun `namespacing an element names its items and button entries in the model`() {
+    val form =
+        JSON.parseObject(
+            """
+            {"items":[
+              {"className":"XFieldSet","properties":{"id":"xi-fs-2","name":"fs2",
+                "elements":["xi-btn2","xi-tf"]}},
+              {"className":"XButtonList","properties":{"id":"xi-btn2","name":"btn2",
+                "parentid":"xi-fs-2","buttons":[{"name":"btnWOW","value":"-1"}]}},
+              {"className":"XTextField","properties":{"id":"xi-tf","name":"tf1",
+                "parentid":"xi-fs-2"}}
+            ]}
+            """
+                .trimIndent())
+
+    assertTrue(MirrorFormAccess.namespaceElementNames(form, "xi-fs-2", "mir1_"))
+
+    val items = form.getJSONArray("items")
+    val names = (0 until items.size).map { items.getJSONObject(it).getJSONObject("properties") }
+    assertEquals("mir1_fs2", names[0].getString("name"))
+    assertEquals("mir1_btn2", names[1].getString("name"))
+    assertEquals("mir1_tf1", names[2].getString("name"))
+    // ids stay untouched — the persisted copies, the `data-xm-appendable` marker and the namespaced
+    // validation model refer to them.
+    assertEquals("xi-btn2", names[1].getString("id"))
+    assertEquals("xi-fs-2", names[1].getString("parentid"))
+    // A button entry is not an item, so its key needs the prefix explicitly: this IS the key
+    // FORMCYCLE validates the click against.
+    assertEquals("mir1_btnWOW", names[1].getJSONArray("buttons").getJSONObject(0).getString("name"))
+  }
+
+  @Test
+  fun `namespacing an element follows name based parent references`() {
+    val form =
+        JSON.parseObject(
+            """
+            {"items":[
+              {"className":"XFieldSet","properties":{"id":"xi-fs-2","name":"fs2"}},
+              {"className":"XTextField","properties":{"id":"xi-tf","name":"tf1","parentid":"fs2"}}
+            ]}
+            """
+                .trimIndent())
+
+    assertTrue(MirrorFormAccess.namespaceElementNames(form, "xi-fs-2", "mir1_"))
+
+    val child = form.getJSONArray("items").getJSONObject(1).getJSONObject("properties")
+    assertEquals("mir1_tf1", child.getString("name"))
+    assertEquals("mir1_fs2", child.getString("parentid"))
+  }
+
+  @Test
+  fun `namespacing an element is idempotent and ignores a blank prefix`() {
+    val form =
+        JSON.parseObject(
+            """{"items":[{"className":"XTextField","properties":{"id":"xi-tf","name":"tf1"}}]}""")
+
+    assertFalse(MirrorFormAccess.namespaceElementNames(form, "xi-tf", " "))
+    assertTrue(MirrorFormAccess.namespaceElementNames(form, "xi-tf", "mir1_"))
+    assertFalse(
+        MirrorFormAccess.namespaceElementNames(form, "xi-tf", "mir1_"),
+        "a second pass must not double the prefix")
+    assertEquals(
+        "mir1_tf1",
+        form.getJSONArray("items").getJSONObject(0).getJSONObject("properties").getString("name"))
   }
 
   @Test

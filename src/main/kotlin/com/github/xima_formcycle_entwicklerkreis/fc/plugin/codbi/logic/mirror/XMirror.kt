@@ -86,10 +86,15 @@ class XMirror : IXItemWidget, IXItemAppendable {
               formRenderCtx,
               formName,
               elementKey,
-              validationModel)
+              validationModel,
+              // The names are prefixed in the MODEL of the rendered subtree (not in the emitted
+              // markup): FORMCYCLE registers the subtree's submit buttons in the form request
+              // session while it renders, and a submit is only accepted when the submitted key is
+              // in that session map — see `MirrorFormAccess.namespaceElementNames`.
+              namePrefix)
         }
     if (mirrored != null) {
-      namespaceLinkedIds(mirrored, idPrefix, namePrefix)
+      namespaceLinkedIds(mirrored, idPrefix)
       // Keep only the CONDITION parts (not the value-validation rules) and rewrite the SOURCE ids
       // to the namespaced ids used by the markup, so the client-side condition engine can resolve
       // them.
@@ -332,13 +337,17 @@ class XMirror : IXItemWidget, IXItemAppendable {
   }
 
   /**
-   * Rewrites the identifiers inside the live-rendered subtree: `id` (and everything that references
-   * an id) gets [idPrefix] so the mirrored copy's DOM ids stay unique within the target form; the
-   * FIELD NAMES (`name`/`data-name`) get [namePrefix] so a mirrored field cannot collide with a
-   * field of the same name in the target form. The namespaced name is what the workflow placeholder
-   * dialog lists (the registration copies use the identical prefix).
+   * Rewrites the **ids** inside the live-rendered subtree: `id` (and everything that references an
+   * id) gets [idPrefix] so the mirrored copy's DOM ids stay unique within the target form.
+   *
+   * The FIELD NAMES are NOT prefixed here — they are prefixed in the MODEL of the rendered subtree
+   * (`MirrorFormAccess.namespaceElementNames`, called while rendering). That distinction is
+   * essential for submit buttons: FORMCYCLE registers a list's buttons in the form request session
+   * from the model names *while the item renders* and rejects a submit whose key is missing there
+   * ("Button key … not found in current form request session - was the form submit manipulated?"),
+   * so post-processing the markup alone made every mirrored click fail.
    */
-  private fun namespaceLinkedIds(node: Node, idPrefix: String, namePrefix: String) {
+  private fun namespaceLinkedIds(node: Node, idPrefix: String) {
     // `data-xi` / `xi` are the item's own technical ID, written next to `id` by FORMCYCLE's item
     // renderer. They must be prefixed as well: the client-side condition engine resolves the ids of
     // its validation model (`hif`, `revids`, …) against them, and those ids are namespaced with the
@@ -354,20 +363,8 @@ class XMirror : IXItemWidget, IXItemAppendable {
             attr, value.split(' ').filter { it.isNotEmpty() }.joinToString(" ") { idPrefix + it })
       }
     }
-    // `data-xn` / `xn` carry the item's technical NAME and therefore follow the field-name prefix,
-    // exactly like `name` and `data-name` (so they cannot collide with a target-form field).
-    //
-    // This ALSO covers submit buttons (`xf-action` = the button key): FORMCYCLE validates that key
-    // against the form MODEL ("Button key <key> not found … was the form submit manipulated?"), so
-    // the model must contain the SAME namespaced key. That is why the Mirror's copy of an
-    // `XButtonList` prefixes its `buttons[].name` entries (`MirrorChildItems.propertiesForNode`);
-    // model and markup therefore agree, and two mirrored lists cannot collide on identical keys.
-    for (attr in listOf("name", "data-name", "data-xn", "xn")) {
-      val value = node.getAttribute(attr)
-      if (!value.isNullOrBlank()) node.setAttribute(attr, namePrefix + value)
-    }
     if (node is FertileNode) {
-      node.children.forEach { namespaceLinkedIds(it, idPrefix, namePrefix) }
+      node.children.forEach { namespaceLinkedIds(it, idPrefix) }
     }
   }
 

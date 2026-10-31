@@ -592,6 +592,53 @@ immediately, and as a diagnostic because it reports created/deleted counts):
 - i18n: `workflow.mirror.sync`, `workflow.mirror.sync.tooltip`, `workflow.mirror.sync.running`,
   `workflow.mirror.sync.result` (en/de).
 
+### Incident (fixed): the reflected button stopped firing because the plugin deleted its OWN index
+
+Symptom: the click was accepted (the form record reached `Received`), the trigger row looked perfect
+(namespaced `customParameters`, `custom_params_ver = 8.5.3`), but no path ran — and the workflow started
+working again only after the workflow was saved in the designer by hand.
+
+Cause: `refreshWorkflowModel()` ran FORMCYCLE's `WorkflowVersionStager` as
+`forVersion(ctx, version, version)`. That stager expects a freshly STAGED copy as its "new" version and
+therefore re-inserts every child row, so with `old == new` it aborts on
+`UC_WF_NSTERM_ELEMENT_KEY_IDX_INDEX_5 (element_id, term_key, term_index)` and
+`UC_WF_STATE_VERSION_ORDER_INDEX_9 (version_id, idx_order)`. Worse, the companion
+`clearTriggerSearchTerms()` added to make that save pass DELETED the `workflow_tsterm` rows of **every**
+trigger of the version — the index `EventTaskLocator.findCandidates` →
+`IWorkflowTriggerDao.getForActiveVersionBy` looks triggers up by. A failing save therefore left the
+whole workflow without its trigger index: the engine found no candidate and did nothing at all.
+
+Fix, in three parts:
+
+1. [`ensureTriggerDataModel()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
+   owns the search terms again, per trigger and inside ONE transaction: it removes **only this
+   trigger's** term entities, runs `WorkflowCustomParametersHelper.transferToDataModel` (which rebuilds
+   name/description/terms in memory) and then `persist`s the rebuilt terms — the helper itself writes
+   nothing, which is why the rows were missing in the first place.
+2. `refreshWorkflowModel()` no longer runs the stager and wipes nothing; it only bumps the version's
+   lock version through `WORKFLOW_VERSION_API` (the one write that really drops the cached model).
+3. `syncTriggerParams()` reports a change only when the PERSISTED trigger row changed. The idempotent
+   term repair must not look like a change, otherwise every sync answers `updated=1`.
+
+### The save + reload the form assistant performs
+
+Saving the form alone never made the new path usable; what makes it usable is the sequence the AI
+assistant runs after a workflow inference (`projects/manager/.../ai-assistant.ts`:
+`publish()` → `reloadDesigner()`).
+
+[`saveMirrorForm()`](../src/main/web/packages/designer/src/js/MirrorChildItems.ts) now does the same:
+
+1. wait until the designer finished its async rendering (`_isLoading`),
+2. `await designer.publish()` — a real server save of the form and its workflow binding,
+3. write the assistant's `codbi-pending-workflow-reload` session marker, so the reloaded page loads the
+   WORKFLOW tab iframe again (it otherwise keeps the workflow it rendered when it was opened),
+4. after 1.5 s reload THIS designer tab by navigating its `<iframe>` to its own `data-target-url`
+   (`Formcycle.DesignerTabbing.reloadIframe`), falling back to `window.location.reload()`.
+
+A `sessionStorage` guard (`codbi-mirror-reload`, 30 s, keyed by form + element) keeps the
+reload → re-sync → reload cycle from looping; a re-sync that finds the path already correct reports
+`created=0 updated=0 removed=0` and therefore does not save at all.
+
 ## Notes / limits
 
 - Workflow nodes have no appendable-container concept, so the node reflects path data; it does not

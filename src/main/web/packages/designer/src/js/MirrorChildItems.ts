@@ -886,18 +886,152 @@ function mirrorActionUrl(): string {
 }
 
 /**
- * Saves + publishes the CURRENT form through the designer — the same call the form assistant makes
- * after an inference that created a workflow, and the same one the toolbar's save button performs.
- *
- * It is REQUIRED after this module created a reflected WORKFLOW path: FORMCYCLE keeps the workflow
- * model in a cache that is only dropped by a real save of the form/workflow. Without it the created
- * trigger exists in the database (correct parameters, correct search terms) but the engine keeps
- * using its stale model — the reflected button then does nothing until the user saves the workflow by
- * hand, which is exactly the symptom this call removes.
- *
- * Best-effort: a failed save must never break the Mirror's own sync.
+ * `sessionStorage` marker the AI assistant consumes on page load: the reloaded page then loads the
+ * WORKFLOW tab iframe again (an already rendered workflow tab keeps the workflow it loaded when it
+ * was opened). Written with the same key and marker shape, so the assistant performs that refresh.
  */
-async function saveMirrorForm(designer: IDesignerLike): Promise<void> {
+const WORKFLOW_RELOAD_KEY = "codbi-pending-workflow-reload";
+
+/** `sessionStorage` guard: at most ONE Mirror-driven reload per form + element within this window. */
+const MIRROR_RELOAD_KEY = "codbi-mirror-reload";
+
+/** The guard window of {@link MIRROR_RELOAD_KEY}. */
+const MIRROR_RELOAD_GUARD_MS = 30_000;
+
+/** Delay between `publish()` and the reload — the assistant waits the same before reloading. */
+const MIRROR_RELOAD_DELAY_MS = 1500;
+
+/** The `<iframe>` this designer page runs in, plus the shell window that owns it. */
+function designerTabFrame(): { shell: Window; frame: HTMLIFrameElement } | undefined {
+  try {
+    const shell = (window.top ?? window) as Window & { document?: Document };
+    if (!shell || !shell.document || (shell as unknown as Window) === window) {
+      return undefined;
+    }
+    let pageId = "";
+    try {
+      pageId = window.frameElement?.getAttribute("data-page-id")?.trim() ?? "";
+    } catch {
+      pageId = "";
+    }
+    const frames = Array.from(shell.document.querySelectorAll<HTMLIFrameElement>("iframe"));
+    const frame = frames.find((candidate) => {
+      const id = candidate.getAttribute("data-page-id")?.trim() ?? "";
+      if (pageId !== "") {
+        return id === pageId;
+      }
+      try {
+        return candidate.contentWindow === window;
+      } catch {
+        return false;
+      }
+    });
+    return frame ? { shell, frame } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Appends a cache-busting parameter, so the browser really re-fetches the designer page. */
+function cacheBustedUrl(url: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}codbiReload=${Date.now()}`;
+}
+
+/**
+ * Reloads THIS designer tab — the very path FORMCYCLE's own tab reload uses
+ * (`Formcycle.DesignerTabbing.reloadIframe` navigates the same `data-target-url`) and the one the
+ * form assistant's `reloadDesigner()` takes. Falls back to reloading this frame.
+ */
+function reloadDesignerTab(): void {
+  const tab = designerTabFrame();
+  const target = tab?.frame.getAttribute("data-target-url") ?? tab?.frame.getAttribute("src") ?? "";
+  if (tab && target.trim() !== "") {
+    try {
+      tab.frame.src = cacheBustedUrl(target);
+      return;
+    } catch {
+      /* fall through to the plain page reload below */
+    }
+  }
+  window.location.reload();
+}
+
+/** Tells the assistant's page-load hook that the workflow tab must be loaded again. */
+function markWorkflowReloadPending(): void {
+  try {
+    sessionStorage.setItem(WORKFLOW_RELOAD_KEY, JSON.stringify({ ts: Date.now(), path: window.location.pathname }));
+  } catch {
+    /* storage unavailable — the reload still re-reads the form and the workflow itself */
+  }
+}
+
+/** Whether this form + element was already reloaded recently (loop guard). */
+function recentlyReloaded(identity: string): boolean {
+  try {
+    const raw = sessionStorage.getItem(MIRROR_RELOAD_KEY);
+    if (!raw) {
+      return false;
+    }
+    const marker = JSON.parse(raw) as { ts?: unknown; identity?: unknown };
+    if (marker.identity !== identity) {
+      return false;
+    }
+    const ts = Number(marker.ts ?? 0);
+    return Number.isFinite(ts) && Date.now() - ts < MIRROR_RELOAD_GUARD_MS;
+  } catch {
+    return false;
+  }
+}
+
+/** Records the reload, so a re-sync caused by the reload itself cannot loop. */
+function rememberReload(identity: string): void {
+  try {
+    sessionStorage.setItem(MIRROR_RELOAD_KEY, JSON.stringify({ ts: Date.now(), identity }));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** The designer's internal "still rendering" flag (read by the assistant's save flow as well). */
+interface IDesignerLoadingState {
+  _isLoading?: boolean;
+}
+
+/** Waits until the designer finished its async rendering, so `publish()` is not refused. */
+function waitForDesignerIdle(designer: IDesignerLike): Promise<void> {
+  const internal = designer as unknown as IDesignerLoadingState;
+  return new Promise<void>((resolve) => {
+    const maxWaitMs = 10_000;
+    const startedAt = Date.now();
+    const poll = (): void => {
+      if (!internal._isLoading || Date.now() - startedAt >= maxWaitMs) {
+        resolve();
+        return;
+      }
+      window.setTimeout(poll, 100);
+    };
+    poll();
+  });
+}
+
+/**
+ * Saves the form through the designer and RELOADS the designer afterwards — the exact sequence the
+ * form assistant performs after a workflow inference (`publish()` → `reloadDesigner()`), and the
+ * reason its newly created workflow is usable immediately.
+ *
+ * Required after this module created a reflected WORKFLOW path: FORMCYCLE keeps the workflow model in
+ * a cache keyed by the version's lock version, and a designer tab keeps the workflow it loaded when
+ * it was opened. Without the save + reload the created trigger exists in the database (correct
+ * parameters, correct search terms) but the engine keeps using its stale model — the reflected button
+ * then does nothing until the user saves the workflow and reloads by hand.
+ *
+ * @param designer the form designer instance.
+ * @param identity a stable `form + element` key, so the reload cannot loop (see {@link recentlyReloaded}).
+ *
+ * Best-effort: a failed save or reload must never break the Mirror's own sync.
+ */
+async function saveMirrorForm(designer: IDesignerLike, identity: string): Promise<void> {
   const publish = designer.publish;
   if (typeof publish !== "function") {
     console.warn(
@@ -907,11 +1041,24 @@ async function saveMirrorForm(designer: IDesignerLike): Promise<void> {
     return;
   }
   try {
+    await waitForDesignerIdle(designer);
     await publish.call(designer);
-    console.info("[CodBi] Mirror: form saved + published after changing the reflected workflow paths");
+    console.info("[CodBi] Mirror: form saved after changing the reflected workflow paths");
   } catch (error) {
     console.warn("[CodBi] Mirror: saving the form after the reflected workflow paths failed", error);
+    return;
   }
+  if (recentlyReloaded(identity)) {
+    console.info(
+      "[CodBi] Mirror: skipping the designer reload — this form was reloaded for the same element " + "just now",
+    );
+    return;
+  }
+  rememberReload(identity);
+  // The reloaded page must refresh the WORKFLOW tab as well (it keeps the workflow it rendered when
+  // it was opened). The assistant consumes this marker on page load, so writing it is enough.
+  markWorkflowReloadPending();
+  window.setTimeout(reloadDesignerTab, MIRROR_RELOAD_DELAY_MS);
 }
 
 /** Whether the server's `{note:"created=… updated=… removed=…"}` reports an actual change. */
@@ -961,7 +1108,7 @@ function applyTriggeredPaths(
     .then(async (data: unknown) => {
       console.info("[CodBi] Mirror: triggered workflow paths", data);
       if (triggeredPathsChanged(data)) {
-        await saveMirrorForm(designer);
+        await saveMirrorForm(designer, `project-${formId}:${element}`);
       }
     })
     .catch((error) => console.warn("[CodBi] Mirror: triggered workflow paths failed", error));

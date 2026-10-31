@@ -36,7 +36,7 @@ internal object MirrorTriggerPaths {
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#16"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#17"
 
   /**
    * Fallback for `WorkflowTrigger.customParametersVersion` when the source trigger does not carry
@@ -826,6 +826,7 @@ internal object MirrorTriggerPaths {
       triggerId: Long,
       errors: MutableList<String>? = null,
   ): Boolean {
+    if (triggerId <= 0L) return false
     val em = WorkflowMirrorAccess.entityManager(userContext) ?: return false
     var applied = false
     try {
@@ -845,24 +846,72 @@ internal object MirrorTriggerPaths {
         val mandant =
             mandantOfTrigger(trigger)
                 ?: throw IllegalStateException("no mandant for trigger $triggerId")
+        // 1. Drop the trigger's OWN search terms. `transferToDataModel` rebuilds the collection
+        // from
+        //    the parameters but never deletes the rows already in the table, so a second run would
+        //    collide on `UC_WF_TSTERM_ELEMENT_KEY_IDX_INDEX_6 (element_id, term_key, term_index)`.
+        //    Only THIS trigger's rows are touched — clearing them for a whole version made every
+        //    other trigger undiscoverable.
+        val staleTerms =
+            runCatching {
+                  (triggerClass.getMethod("getSearchTerms").invoke(trigger) as? Collection<*>)
+                      .orEmpty()
+                      .filterIsInstance<Any>()
+                      .toList()
+                }
+                .getOrDefault(emptyList())
+        for (term in staleTerms) {
+          runCatching { em.javaClass.getMethod("remove", Any::class.java).invoke(em, term) }
+        }
+        if (staleTerms.isNotEmpty()) {
+          runCatching { em.javaClass.getMethod("flush").invoke(em) }
+        }
         val helper = Class.forName("de.xima.fc.plugin.workflow.WorkflowCustomParametersHelper")
         helper
             .getMethod("transferToDataModel", triggerClass, mandantClass)
             .invoke(null, trigger, mandant)
-        // NOTE: the search terms are deliberately NOT written here. FORMCYCLE's own workflow save
-        // (`WorkflowVersionStager`, run by `WorkflowLaneMaterializer.refreshWorkflowModel`) derives
-        // and inserts them, and rows inserted here would collide with that insert on
-        // `UC_WF_TSTERM_ELEMENT_KEY_IDX_INDEX_6 (element_id, term_key, term_index)` — which in turn
-        // makes FORMCYCLE's save fail, i.e. exactly the "the workflow is never saved" symptom.
+        // 2. Persist the terms the helper just rebuilt. It only fills the in-memory collection —
+        // the
+        //    rows are written by the workflow designer's stager, which this plugin does not run (it
+        //    requires a freshly STAGED copy of the version). Without this the trigger has no entry
+        // in
+        //    the index the engine looks triggers up by (`EventTaskLocator.findCandidates` →
+        //    `IWorkflowTriggerDao.getForActiveVersionBy`), so the click is accepted, the form
+        // record
+        //    reaches `Received`, and no path runs.
+        var inserted = 0
+        val terms =
+            runCatching {
+                  (triggerClass.getMethod("getSearchTerms").invoke(trigger) as? Collection<*>)
+                      .orEmpty()
+                      .filterIsInstance<Any>()
+                      .toList()
+                }
+                .getOrDefault(emptyList())
+        for (term in terms) {
+          val persisted =
+              runCatching {
+                    em.javaClass.getMethod("persist", Any::class.java).invoke(em, term)
+                    true
+                  }
+                  .getOrElse { false }
+          if (persisted) inserted++
+        }
         em.javaClass.getMethod("flush").invoke(em)
         tx.javaClass.getMethod("commit").invoke(tx)
         applied = true
         logger.info(
-            "[CodBi][Mirror] trigger {} data model transferred: name='{}' searchTerms={}",
+            "[CodBi][Mirror] trigger {} data model transferred: name='{}' terms={} persisted={}",
             triggerId,
             runCatching { triggerClass.getMethod("getName").invoke(trigger) as? String }
                 .getOrNull(),
-            readSearchTerms(trigger).map { "${it.first}=${it.second}" })
+            terms.map { term ->
+              val key = runCatching { term.javaClass.getMethod("getKey").invoke(term) }.getOrNull()
+              val value =
+                  runCatching { term.javaClass.getMethod("getValue").invoke(term) }.getOrNull()
+              "$key=$value"
+            },
+            inserted)
       } catch (x: Exception) {
         runCatching { tx.javaClass.getMethod("rollback").invoke(tx) }
         throw x
@@ -905,10 +954,12 @@ internal object MirrorTriggerPaths {
           .getOrDefault(emptyList())
 
   /**
-   * Re-points an existing trigger when its `customParameters` (or its search terms) no longer match
-   * the mirrored names.
+   * Re-points an existing trigger when its `customParameters` (or its params version) no longer
+   * match the mirrored names, and always re-runs FORMCYCLE's data-model transfer so the trigger's
+   * name/description/search terms exist.
    *
-   * Returns `true` when the trigger was rewritten.
+   * Returns `true` only when the PERSISTED trigger row really changed — the idempotent term repair
+   * is not reported (see below), otherwise every sync would look like a change.
    */
   private fun syncTriggerParams(
       userContext: Any,
@@ -951,10 +1002,12 @@ internal object MirrorTriggerPaths {
       }
     }
     // A trigger without search terms is invisible to the event engine — this is what made a
-    // correctly configured reflected path never run.
+    // correctly configured reflected path never run. The transfer is IDEMPOTENT repair (it rebuilds
+    // the search terms every time), so it deliberately does NOT count as a change: reporting it as
+    // one made every sync answer `updated=1`, and the client answers that with publish + reload.
     val triggerId = reflectId(trigger) ?: 0L
     if (triggerId > 0) {
-      if (ensureTriggerDataModel(userContext, triggerId)) changed = true
+      ensureTriggerDataModel(userContext, triggerId)
     }
     if (changed) updateEntity(triggerApi, userContext, trigger)
     if (current != expected) {
@@ -965,7 +1018,7 @@ internal object MirrorTriggerPaths {
           current.take(300),
           expected.take(300))
     }
-    return true
+    return changed
   }
 
   /** Id of the root-level (`parent IS NULL`) node of [taskId], or null when there is none. */

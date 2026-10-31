@@ -324,17 +324,19 @@ object WorkflowLaneMaterializer {
    */
   fun refreshWorkflowModel(userContext: Any?, workflowVersionId: Long) {
     if (userContext == null) return
-    // 1. FORMCYCLE's own WORKFLOW save (the stager the WORKFLOW designer uses). This is the step
-    //    that persists/normalises the version's triggers, nodes, tasks and their search terms —
-    //    saving only the FORM (the form designer's publish) does not touch the workflow model.
-    val staged = stagedWorkflowSave(userContext, workflowVersionId)
-    logger.info(
-        "[WorkflowLaneMaterializer] workflow save of WorkflowVersion {}: {}",
-        workflowVersionId,
-        staged)
-    // 2. Bump the version's lock version so every cached workflow model is dropped, then restore
-    // the
-    //    invalid flag so a healthy workflow stays ONLINE.
+    // ONLY the lock version is bumped here — through the entity API, which is the one write that
+    // really drops FORMCYCLE's cached workflow model (a raw SQL flag update does not).
+    //
+    // `stagedWorkflowSave` is deliberately NOT called: `WorkflowVersionStager.forVersion(ctx, v,
+    // v)`
+    // expects a freshly STAGED copy as its "new" version and therefore re-inserts every child row.
+    // With `old == new` it aborts on `UC_WF_NSTERM_ELEMENT_KEY_IDX_INDEX_5` and
+    // `UC_WF_STATE_VERSION_ORDER_INDEX_9`, and the `clearTriggerSearchTerms` companion it needed
+    // DELETED the trigger search terms of the whole version — which is exactly what made reflected
+    // buttons stop firing. The triggers, nodes and search terms this plugin creates are persisted
+    // through the entity API already; the actual SAVE is performed by the designer afterwards: the
+    // client publishes the form and reloads the designer tab, the same sequence the AI assistant
+    // uses after a workflow inference.
     val wasInvalid = readWorkflowInvalid(userContext, workflowVersionId)
     val report = saveWorkflowVersionReport(userContext, workflowVersionId)
     logger.info("[WorkflowLaneMaterializer] save WorkflowVersion {}: {}", workflowVersionId, report)
@@ -374,10 +376,8 @@ object WorkflowLaneMaterializer {
       report.addProperty("error", "no userContext")
       return report.toString()
     }
-    // Older builds inserted the trigger search terms themselves; FORMCYCLE's save then tries to
-    // insert the identical rows and fails on UC_WF_TSTERM_ELEMENT_KEY_IDX_INDEX_6, which left the
-    // workflow UNSAVED. Drop them first — FORMCYCLE writes its own index below.
-    clearTriggerSearchTerms(userContext, workflowVersionId)
+    // NOTE: the trigger search terms are NOT cleared here any more. That wipe removed the engine's
+    // index for EVERY trigger of the version, so a failing save left the whole workflow dead.
     var entityContext: Any? = null
     try {
       entityContext =
@@ -418,54 +418,6 @@ object WorkflowLaneMaterializer {
       runCatching { entityContext?.javaClass?.getMethod("close")?.invoke(entityContext) }
     }
     return report.toString()
-  }
-
-  /**
-   * Deletes the `workflow_tsterm` (trigger search term) rows of every trigger of
-   * [workflowVersionId], in its own transaction.
-   *
-   * Needed because earlier builds wrote those rows by hand: FORMCYCLE's workflow save computes and
-   * inserts the same `(element_id, term_key, term_index)` tuples and aborts on the unique index
-   * `UC_WF_TSTERM_ELEMENT_KEY_IDX_INDEX_6`. Clearing them makes the save succeed, after which
-   * FORMCYCLE's own index is in place.
-   */
-  private fun clearTriggerSearchTerms(userContext: Any, workflowVersionId: Long) {
-    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return
-    try {
-      val ids =
-          WorkflowMirrorAccess.query(
-                  em,
-                  "SELECT tr.id FROM de.xima.fc.entities.WorkflowTrigger tr JOIN tr.task t " +
-                      "JOIN t.process p JOIN p.version v WHERE v.id = :vid",
-                  mapOf("vid" to workflowVersionId))
-              .mapNotNull { (it as? Number)?.toLong() }
-      if (ids.isEmpty()) return
-      val tx = em.javaClass.getMethod("getTransaction").invoke(em)
-      tx.javaClass.getMethod("begin").invoke(tx)
-      try {
-        val sql = "DELETE FROM workflow_tsterm WHERE element_id IN (${ids.joinToString(",")})"
-        val query = em.javaClass.getMethod("createNativeQuery", String::class.java).invoke(em, sql)
-        val deleted = (query.javaClass.getMethod("executeUpdate").invoke(query) as? Int) ?: 0
-        tx.javaClass.getMethod("commit").invoke(tx)
-        if (deleted > 0) {
-          logger.info(
-              "[WorkflowLaneMaterializer] Removed {} stale trigger search term row(s) of " +
-                  "WorkflowVersion {} so FORMCYCLE can write its own index",
-              deleted,
-              workflowVersionId)
-        }
-      } catch (x: Exception) {
-        runCatching { tx.javaClass.getMethod("rollback").invoke(tx) }
-        throw x
-      }
-    } catch (x: Exception) {
-      logger.warn(
-          "[WorkflowLaneMaterializer] Could not clear the trigger search terms of {}: {}",
-          workflowVersionId,
-          x.message)
-    } finally {
-      WorkflowMirrorAccess.closeQuietly(em)
-    }
   }
 
   /**

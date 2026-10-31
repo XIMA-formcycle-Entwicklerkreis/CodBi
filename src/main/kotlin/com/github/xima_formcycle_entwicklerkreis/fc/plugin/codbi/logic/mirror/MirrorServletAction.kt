@@ -133,6 +133,16 @@ class MirrorServletAction : IPluginServletAction {
           logger.info("[MirrorServletAction] action='triggerdiag' -> {} chars", json.length)
           jsonResponse(json)
         }
+        "fixsearchterms" -> {
+          // Makes every submit-button trigger of the reflecting workflow FINDABLE by the event
+          // engine (the search-term index it looks triggers up by) and reports what happened —
+          // including the failure text, which is otherwise only visible in the server log.
+          val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
+          val json = MirrorTriggerPaths.repairSearchTerms(userContext, target)
+          logger.info(
+              "[MirrorServletAction] action='fixsearchterms' target='{}' -> {}", target, json)
+          jsonResponse(json)
+        }
         "sync" -> {
           // Manual "materialize now" used by the Mirror node's properties panel. It is the only
           // trigger available in the WORKFLOW designer, where FORMCYCLE offers no save hook.

@@ -36,7 +36,7 @@ internal object MirrorTriggerPaths {
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#5"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#9"
 
   /** Node type of the CodBi workflow Mirror node. */
   private const val MIRROR_NODE_TYPE = "Mirror"
@@ -459,17 +459,21 @@ internal object MirrorTriggerPaths {
             reflectId(placeholder),
             PLACEHOLDER_ENDPOINT_TYPE)
 
-        // 4. Trigger, re-pointed at the MIRRORED element names.
+        // 4. Trigger, re-pointed at the MIRRORED element names — INCLUDING the search terms the
+        //    event engine filters candidate triggers by, otherwise the path can never fire.
         val trigger = triggerClass.getDeclaredConstructor().newInstance()
         triggerClass.getMethod("setType", String::class.java).invoke(trigger, source.triggerType)
         triggerClass.getMethod("setName", String::class.java).invoke(trigger, source.triggerName)
         triggerClass.getMethod("setActive", Boolean::class.java).invoke(trigger, true)
         triggerClass.getMethod("setUUIDObject", UUID::class.java).invoke(trigger, UUID.randomUUID())
         triggerClass.getMethod("setTask", taskClass).invoke(trigger, savedTask)
+        val reflectedParams = triggerParamsOf(source, tokens, namePrefix, targetNames)
         triggerClass
             .getMethod("setCustomParameters", String::class.java)
-            .invoke(trigger, triggerParamsOf(source, tokens, namePrefix, targetNames))
+            .invoke(trigger, reflectedParams)
         val savedTrigger = createEntity(triggerApi, userContext, trigger)
+        ensureSearchTerms(
+            userContext, reflectId(savedTrigger) ?: 0L, source.triggerType, reflectedParams)
         logger.info(
             "[CodBi][Mirror] create-path 4/5: trigger id={} '{}:{}'",
             reflectId(savedTrigger),
@@ -599,6 +603,8 @@ internal object MirrorTriggerPaths {
             .getMethod("setCustomParameters", String::class.java)
             .invoke(trigger, expectedTriggerParams)
         val savedTrigger = createEntity(triggerApi, userContext, trigger)
+        ensureSearchTerms(
+            userContext, reflectId(savedTrigger) ?: 0L, source.triggerType, expectedTriggerParams)
         taskClass.getMethod("setTrigger", triggerClass).invoke(task, savedTrigger)
         updateEntity(taskApi, userContext, task)
         repaired = true
@@ -607,7 +613,7 @@ internal object MirrorTriggerPaths {
             reflectId(savedTrigger),
             taskId)
       } else if (syncTriggerParams(
-          userContext, triggerApi, existingTrigger, expectedTriggerParams)) {
+          userContext, triggerApi, existingTrigger, expectedTriggerParams, source.triggerType)) {
         repaired = true
       }
 
@@ -722,15 +728,161 @@ internal object MirrorTriggerPaths {
       runCatching { target?.javaClass?.getMethod("getType")?.invoke(target) as? String }.getOrNull()
 
   /**
-   * Re-points an existing trigger when its `customParameters` no longer match the mirrored names.
+   * The `WorkflowTriggerSearchTerm` keys FORMCYCLE's submit-button trigger handlers filter by.
    *
-   * Returns `true` when the params were rewritten.
+   * The event engine does **not** scan every trigger of a workflow version: `EventTaskLocator
+   * .findCandidates` runs `IWorkflowTriggerDao.getForActiveVersionBy(ctx, project, criterion)`
+   * whose criterion the trigger HANDLER builds from the event (`IWorkflowTriggerHandler
+   * .getFilterCriteriaForEvent`). For a submit button that criterion matches the trigger's SEARCH
+   * TERMS (`buttonName` / `buttonQualifier`, see `FcQualifiedFormSubmitButtonProps`).
+   *
+   * A trigger written straight into the entity tables — like the reflected one — therefore has NO
+   * search terms and is never a CANDIDATE: the click is accepted, the form record is saved, and no
+   * workflow path runs at all (the designer save is what normally creates these rows).
+   */
+  private val TRIGGER_SEARCH_TERM_KEYS =
+      mapOf(
+          "FC_FORM_SUBMIT_BUTTON" to listOf("buttonName"),
+          "FC_QUALIFIED_FORM_SUBMIT_BUTTON" to listOf("buttonName", "buttonQualifier"))
+
+  /**
+   * The search terms a trigger of [triggerType] needs to be FOUND by the event engine, derived from
+   * its (already re-pointed) `customParameters`.
+   */
+  internal fun triggerSearchTerms(triggerType: String, params: String): List<Pair<String, String>> {
+    val keys = TRIGGER_SEARCH_TERM_KEYS[triggerType].orEmpty()
+    if (keys.isEmpty() || params.isBlank()) return emptyList()
+    val root = runCatching { JSON.parseObject(params) }.getOrNull() ?: return emptyList()
+    val button = runCatching { root.getJSONObject("button") }.getOrNull()
+    val name =
+        sequenceOf(button?.getString("name"), root.getString("buttonName"), root.getString("name"))
+            .mapNotNull { it?.trim() }
+            .firstOrNull { it.isNotEmpty() }
+    val qualifier =
+        sequenceOf(button?.getString("qualifier"), root.getString("buttonQualifier"))
+            .mapNotNull { it?.trim() }
+            .firstOrNull { it.isNotEmpty() }
+    val out = ArrayList<Pair<String, String>>()
+    for (key in keys) {
+      val value = if (key == "buttonQualifier") qualifier else name
+      if (!value.isNullOrBlank()) out.add(key to value)
+    }
+    return out
+  }
+
+  /**
+   * (Re)writes the `WorkflowTriggerSearchTerm` rows of [trigger] for [triggerType]/[params], so the
+   * event engine can FIND the trigger for a submit (see [TRIGGER_SEARCH_TERM_KEYS]).
+   *
+   * Only missing terms are appended: a stale extra term is harmless, because the engine
+   * re-validates every candidate against its props (`ITriggerHandler.isAppliesToEvent`).
+   *
+   * @return `true` when the entity was modified and therefore has to be (re)saved.
+   */
+  private fun ensureSearchTerms(
+      userContext: Any,
+      triggerId: Long,
+      triggerType: String,
+      params: String,
+      errors: MutableList<String>? = null,
+  ): Boolean {
+    val wanted = triggerSearchTerms(triggerType, params)
+    if (wanted.isEmpty()) {
+      errors?.add("trigger $triggerId ($triggerType): no search term keys, params=$params")
+      return false
+    }
+    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return false
+    var added = false
+    try {
+      // Same pattern as `MirrorDataRepair`: the search terms are written in their OWN transaction
+      // through the EntityManager. The trigger's `searchTerms` list is a LAZY collection, so
+      // mutating the entity loaded via the API outside its session silently persists nothing —
+      // which is exactly how a correctly configured reflected path stayed invisible to the engine.
+      val tx = em.javaClass.getMethod("getTransaction").invoke(em)
+      tx.javaClass.getMethod("begin").invoke(tx)
+      try {
+        val triggerClass = Class.forName("de.xima.fc.entities.WorkflowTrigger")
+        val termClass = Class.forName("de.xima.fc.entities.WorkflowTriggerSearchTerm")
+        val trigger =
+            em.javaClass
+                .getMethod("find", Class::class.java, Any::class.java)
+                .invoke(em, triggerClass, triggerId)
+                ?: throw IllegalStateException("trigger $triggerId not found")
+        val existing = readSearchTerms(trigger).toSet()
+        val missing = wanted.filter { it !in existing }
+        @Suppress("UNCHECKED_CAST")
+        val collection =
+            runCatching {
+                  trigger.javaClass.getMethod("getSearchTerms").invoke(trigger)
+                      as? MutableList<Any?>
+                }
+                .getOrNull()
+        // `AWorkflowElementSearchTerm.setElement(TElement)` is GENERIC, so its erased signature is
+        // `setElement(IWorkflowElementEntity)` — `getMethod("setElement", WorkflowTrigger.class)`
+        // throws NoSuchMethodException. Resolve it by name/arity instead.
+        val setElement =
+            termClass.methods.firstOrNull { it.name == "setElement" && it.parameterCount == 1 }
+                ?: throw IllegalStateException("WorkflowTriggerSearchTerm.setElement missing")
+        var index = existing.size
+        for ((key, value) in missing) {
+          val term = termClass.getDeclaredConstructor().newInstance()
+          termClass.getMethod("setKey", String::class.java).invoke(term, key)
+          termClass.getMethod("setValue", String::class.java).invoke(term, value)
+          termClass.getMethod("setIndex", Int::class.javaPrimitiveType).invoke(term, index)
+          setElement.invoke(term, trigger)
+          // Two ways, because only one of them is guaranteed to flush: attach to the managed
+          // collection (cascade) AND persist explicitly.
+          collection?.add(term)
+          em.javaClass.getMethod("persist", Any::class.java).invoke(em, term)
+          index++
+        }
+        tx.javaClass.getMethod("commit").invoke(tx)
+        added = missing.isNotEmpty()
+        logger.info(
+            "[CodBi][Mirror] trigger {} search terms written: {} (already had {})",
+            triggerId,
+            missing.map { "${it.first}=${it.second}" },
+            existing.map { "${it.first}=${it.second}" })
+      } catch (x: Exception) {
+        runCatching { tx.javaClass.getMethod("rollback").invoke(tx) }
+        throw x
+      }
+    } catch (x: Exception) {
+      errors?.add("trigger $triggerId: ${describe(x)}")
+      logger.warn(
+          "[CodBi][Mirror] ensureSearchTerms failed for trigger {}: {}", triggerId, describe(x))
+    } finally {
+      WorkflowMirrorAccess.closeQuietly(em)
+    }
+    return added
+  }
+
+  /** The `key`/`value` pairs of a trigger's (lazy) search terms, read inside its own session. */
+  private fun readSearchTerms(trigger: Any): List<Pair<String, String>> =
+      runCatching {
+            (trigger.javaClass.getMethod("getSearchTerms").invoke(trigger) as? List<*>)
+                .orEmpty()
+                .mapNotNull { term ->
+                  val entity = term ?: return@mapNotNull null
+                  val key = entity.javaClass.getMethod("getKey").invoke(entity) as? String
+                  val value = entity.javaClass.getMethod("getValue").invoke(entity) as? String
+                  if (key == null || value == null) null else key.trim() to value.trim()
+                }
+          }
+          .getOrDefault(emptyList())
+
+  /**
+   * Re-points an existing trigger when its `customParameters` (or its search terms) no longer match
+   * the mirrored names.
+   *
+   * Returns `true` when the trigger was rewritten.
    */
   private fun syncTriggerParams(
       userContext: Any,
       triggerApi: Any,
       trigger: Any,
       expected: String,
+      triggerType: String,
   ): Boolean {
     val current =
         runCatching {
@@ -738,15 +890,28 @@ internal object MirrorTriggerPaths {
             }
             .getOrNull()
             .orEmpty()
-    if (current == expected) return false
-    trigger.javaClass.getMethod("setCustomParameters", String::class.java).invoke(trigger, expected)
-    updateEntity(triggerApi, userContext, trigger)
-    logger.info(
-        "[CodBi][Mirror] trigger '{}' params re-pointed: {} -> {}",
-        runCatching { trigger.javaClass.getMethod("getName").invoke(trigger) as? String }
-            .getOrNull(),
-        current.take(300),
-        expected.take(300))
+    var changed = false
+    if (current != expected) {
+      trigger.javaClass
+          .getMethod("setCustomParameters", String::class.java)
+          .invoke(trigger, expected)
+      changed = true
+    }
+    // A trigger without search terms is invisible to the event engine — this is what made a
+    // correctly configured reflected path never run.
+    val triggerId = reflectId(trigger) ?: 0L
+    if (triggerId > 0) {
+      if (ensureSearchTerms(userContext, triggerId, triggerType, expected)) changed = true
+    }
+    if (changed) updateEntity(triggerApi, userContext, trigger)
+    if (current != expected) {
+      logger.info(
+          "[CodBi][Mirror] trigger '{}' params re-pointed: {} -> {}",
+          runCatching { trigger.javaClass.getMethod("getName").invoke(trigger) as? String }
+              .getOrNull(),
+          current.take(300),
+          expected.take(300))
+    }
     return true
   }
 
@@ -938,9 +1103,177 @@ internal object MirrorTriggerPaths {
       }
     }
     body["targetPaths"] = targetArray
+    // Raw rows of both versions: a trigger only fires when the row FORMCYCLE's engine reads looks
+    // exactly like the one the designer writes (active flag, params VERSION, task linkage).
+    val triggerArray = triggerRows(userContext, targetVersionId)
+    body["targetTriggers"] = triggerArray
+    // Search terms per trigger — an EMPTY list means the event engine can never FIND that trigger,
+    // so the click is accepted while no workflow path runs.
+    val termArray = JSONArray()
+    for (index in 0 until triggerArray.size) {
+      val trigger = triggerArray.getJSONObject(index) ?: continue
+      val triggerId = trigger.getLongValue("triggerId")
+      if (triggerId <= 0L) continue
+      val entry = JSONObject()
+      entry["triggerId"] = triggerId
+      entry["terms"] =
+          JSONArray().also { arr ->
+            for ((key, value) in searchTermsOf(userContext, triggerId)) {
+              arr.add("$key=$value")
+            }
+          }
+      termArray.add(entry)
+    }
+    body["targetSearchTerms"] = termArray
+    body["targetTasks"] = taskRows(userContext, targetVersionId)
+    body["sourceTriggers"] =
+        triggerRows(userContext, WorkflowMirrorAccess.activeVersionId(userContext, sourceFormKey))
     val json = body.toJSONString()
     logger.info("[CodBi][Mirror] [{}] diagnose: {}", TRIGGER_SYNC_VERSION, json)
     return json
+  }
+
+  /**
+   * Writes the missing `WorkflowTriggerSearchTerm` rows of every submit-button trigger of the
+   * ACTIVE workflow version of [targetFormKey] and reports the outcome — including the failure
+   * text, so a refused insert can be diagnosed without the server log.
+   *
+   * Used by `action=fixsearchterms&target=<formKey>`.
+   */
+  fun repairSearchTerms(userContext: Any?, targetFormKey: String?): String {
+    val body = JSONObject()
+    body["marker"] = TRIGGER_SYNC_VERSION
+    body["targetForm"] = targetFormKey.orEmpty()
+    if (userContext == null) {
+      body["error"] = "no userContext"
+      return body.toJSONString()
+    }
+    val versionId = WorkflowMirrorAccess.activeVersionId(userContext, targetFormKey)
+    body["targetVersion"] = versionId
+    if (versionId == null) {
+      body["error"] = "no active workflow version"
+      return body.toJSONString()
+    }
+    val errors = ArrayList<String>()
+    val triggers = triggerRows(userContext, versionId)
+    var checked = 0
+    var fixed = 0
+    for (index in 0 until triggers.size) {
+      val trigger = triggers.getJSONObject(index) ?: continue
+      val triggerId = trigger.getLongValue("triggerId")
+      if (triggerId <= 0L) continue
+      checked++
+      val type = trigger.getString("type").orEmpty()
+      val params = trigger.getString("params").orEmpty()
+      if (ensureSearchTerms(userContext, triggerId, type, params, errors)) fixed++
+    }
+    body["checked"] = checked
+    body["fixed"] = fixed
+    body["errors"] = JSONArray().also { arr -> errors.forEach { arr.add(it) } }
+    val json = body.toJSONString()
+    logger.info("[CodBi][Mirror] [{}] fixsearchterms: {}", TRIGGER_SYNC_VERSION, json)
+    return json
+  }
+
+  /**
+   * Every TRIGGER row of [versionId] with the fields the runtime engine evaluates.
+   *
+   * A reflect trigger that looks right in the designer but never fires is almost always a row-level
+   * difference: `flag_active = 0`, a NULL `custom_params_ver` (the props deserializer then reads
+   * the parameters as the WRONG version) or a trigger that is not linked to its task.
+   */
+  private fun triggerRows(userContext: Any?, versionId: Long?): JSONArray {
+    val out = JSONArray()
+    if (versionId == null) return out
+    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return out
+    return try {
+      val rows =
+          WorkflowMirrorAccess.query(
+              em,
+              "SELECT tr.id, t.id, t.name, tr.type, tr.name, tr.active, tr.customParameters " +
+                  "FROM de.xima.fc.entities.WorkflowTrigger tr JOIN tr.task t " +
+                  "JOIN t.process p JOIN p.version v WHERE v.id = :vid ORDER BY t.id",
+              mapOf("vid" to versionId))
+      for (row in rows) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 7) continue
+        val obj = JSONObject()
+        obj["triggerId"] = (cols[0] as? Number)?.toLong()
+        obj["taskId"] = (cols[1] as? Number)?.toLong()
+        obj["taskName"] = cols[2]?.toString()
+        obj["type"] = cols[3]?.toString()
+        obj["name"] = cols[4]?.toString()
+        obj["active"] = cols[5]
+        obj["params"] = cols[6]?.toString()
+        out.add(obj)
+      }
+      out
+    } catch (x: Exception) {
+      logger.warn("[CodBi][Mirror] triggerRows failed: {}", describe(x))
+      out.add(JSONObject().also { it["error"] = describe(x) })
+      out
+    } finally {
+      WorkflowMirrorAccess.closeQuietly(em)
+    }
+  }
+
+  /**
+   * The `key/value` search terms of [triggerId] — the INDEX the event engine looks triggers up by
+   * (`buttonName` / `buttonQualifier`).
+   *
+   * The terms are read through the trigger ENTITY (in its own context): the `searchTerms` list is a
+   * lazy collection and the polymorphic `element` association cannot be queried reliably.
+   */
+  private fun searchTermsOf(userContext: Any?, triggerId: Long): List<Pair<String, String>> {
+    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return emptyList()
+    return try {
+      val triggerClass = Class.forName("de.xima.fc.entities.WorkflowTrigger")
+      val trigger =
+          em.javaClass
+              .getMethod("find", Class::class.java, Any::class.java)
+              .invoke(em, triggerClass, triggerId) ?: return emptyList()
+      readSearchTerms(trigger)
+    } catch (x: Exception) {
+      logger.warn("[CodBi][Mirror] searchTermsOf failed for trigger {}: {}", triggerId, describe(x))
+      emptyList()
+    } finally {
+      WorkflowMirrorAccess.closeQuietly(em)
+    }
+  }
+
+  /** Every TASK row of [versionId] (linkage: trigger + root node, workflow order index). */
+  private fun taskRows(userContext: Any?, versionId: Long?): JSONArray {
+    val out = JSONArray()
+    if (versionId == null) return out
+    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return out
+    return try {
+      val rows =
+          WorkflowMirrorAccess.query(
+              em,
+              "SELECT t.id, t.name, t.description, tr.id, rn.id " +
+                  "FROM de.xima.fc.entities.WorkflowTask t " +
+                  "LEFT JOIN t.trigger tr LEFT JOIN t.rootNode rn " +
+                  "JOIN t.process p JOIN p.version v WHERE v.id = :vid ORDER BY t.id",
+              mapOf("vid" to versionId))
+      for (row in rows) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 5) continue
+        val obj = JSONObject()
+        obj["taskId"] = (cols[0] as? Number)?.toLong()
+        obj["name"] = cols[1]?.toString()
+        obj["description"] = cols[2]?.toString()
+        obj["triggerId"] = (cols[3] as? Number)?.toLong()
+        obj["rootNodeId"] = (cols[4] as? Number)?.toLong()
+        out.add(obj)
+      }
+      out
+    } catch (x: Exception) {
+      logger.warn("[CodBi][Mirror] taskRows failed: {}", describe(x))
+      out.add(JSONObject().also { it["error"] = describe(x) })
+      out
+    } finally {
+      WorkflowMirrorAccess.closeQuietly(em)
+    }
   }
 
   /** All workflow paths of [versionId] with their trigger, unfiltered. */

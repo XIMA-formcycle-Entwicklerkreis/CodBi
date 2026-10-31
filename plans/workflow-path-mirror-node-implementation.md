@@ -394,6 +394,42 @@ mirrored twice or the target form has a button of the same name. Existing mirror
 by the designer's normal child sync; `action=triggerdiag` shows `presentNamespaced` for the button key
 so the state is verifiable, and the build marker was bumped to `trigger-sync#5`.
 
+#### The click was ACCEPTED but no path ran (missing trigger SEARCH TERMS)
+
+With the form-model fix in place the log no longer showed `Button key … not found … manipulated` and the
+form record reached `Received` — yet no workflow path executed.
+
+The event engine does **not** scan all triggers of a version. Decompiled
+`de.xima.fc.workflow.processor.logic.event.EventTaskLocator` (in `fc-workflow-processor-8.5.3.jar`):
+
+```java
+findCandidates(ctx, eventData)
+  → IWorkflowTriggerDao.getForActiveVersionBy(ctx, project, criterion)   // criterion built by
+  → ITriggerHandler.getFilterCriteriaForEvent(eventData)                 // the trigger HANDLER
+```
+
+For a submit-button trigger that criterion matches the trigger's **search terms**
+(`workflow_trigger_search_term`: `buttonName` / `buttonQualifier`, see
+`FcQualifiedFormSubmitButtonProps.SEARCH_TERM_BUTTON_NAME/_QUALIFIER`). A trigger written straight into
+the entity tables has none of those rows, so it is never a CANDIDATE — no queue item, no
+`[WP] Processing …`, no visible error. The designer save is what normally creates them
+(`WorkflowVersionStager.triggerSearchTermStager`).
+
+Fix in [`MirrorTriggerPaths`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt):
+
+- [`triggerSearchTerms()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
+  derives the terms from the (already re-pointed) trigger params —
+  `buttonName=mir1_btnWOW`, `buttonQualifier=mir1_btn2`.
+- [`ensureSearchTerms()`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
+  writes the missing rows in their own transaction (same pattern as `MirrorDataRepair`); it runs on
+  every created / re-pointed trigger.
+  Two traps, both fixed: the trigger's `searchTerms` collection is a LAZY list (mutating an entity
+  loaded through the API persists nothing), and `AWorkflowElementSearchTerm.setElement` is GENERIC,
+  so `getMethod("setElement", WorkflowTrigger.class)` throws `NoSuchMethodException` — the method has
+  to be resolved by name/arity.
+- **`action=fixsearchterms&target=<formKey>`** repairs an existing workflow and returns
+  `{checked, fixed, errors[]}` (the failure text is otherwise only in the server log).
+
 Diagnostics (all `[CodBi][Mirror]` INFO lines):
 
 ```

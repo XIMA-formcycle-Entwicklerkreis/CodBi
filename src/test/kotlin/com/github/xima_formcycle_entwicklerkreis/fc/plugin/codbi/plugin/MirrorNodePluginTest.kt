@@ -425,6 +425,32 @@ class MirrorNodePluginTest {
   }
 
   /**
+   * The event engine never SCANS all triggers: it queries them by the search terms the trigger
+   * handler filters for (`buttonName` / `buttonQualifier`). A reflected trigger without those rows
+   * is never a candidate, so the click is accepted but no workflow path runs.
+   */
+  @Test
+  fun `qualified submit trigger needs button name and qualifier search terms`() {
+    val terms =
+        MirrorTriggerPaths.triggerSearchTerms(
+            "FC_QUALIFIED_FORM_SUBMIT_BUTTON",
+            """{"button":{"qualifier":"mir1_btn2","name":"mir1_btnWOW"},"name":"mir1_btnWOW"}""")
+
+    assertEquals(listOf("buttonName" to "mir1_btnWOW", "buttonQualifier" to "mir1_btn2"), terms)
+  }
+
+  @Test
+  fun `plain submit trigger needs only the button name and other types need none`() {
+    assertEquals(
+        listOf("buttonName" to "btnWOW"),
+        MirrorTriggerPaths.triggerSearchTerms(
+            "FC_FORM_SUBMIT_BUTTON", """{"buttonName":"btnWOW"}"""))
+    assertTrue(
+        MirrorTriggerPaths.triggerSearchTerms("FC_MANUAL", """{"name":"manuell"}""").isEmpty(),
+        "a manual trigger is not looked up by a button search term")
+  }
+
+  /**
    * The live-rendered mirrored subtree must carry the NAMESPACED names already in its MODEL:
    * FORMCYCLE registers a button list's submit buttons in the form request session while the item
    * renders, keyed by `Pair(buttonListName, buttonName)`, and rejects a submit whose key is missing

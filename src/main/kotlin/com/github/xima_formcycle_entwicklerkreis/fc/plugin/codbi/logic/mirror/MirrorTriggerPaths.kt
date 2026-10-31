@@ -36,7 +36,18 @@ internal object MirrorTriggerPaths {
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#13"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#16"
+
+  /**
+   * Fallback for `WorkflowTrigger.customParametersVersion` when the source trigger does not carry
+   * one.
+   *
+   * That value selects the props deserializer (`WorkflowTriggerPropsFactory`). A freshly created
+   * entity keeps FORMCYCLE's default `0.0.0`, which cannot read `customParameters` written by 8.5.3
+   * — the trigger then looks perfect (active, right params, right search terms) but
+   * `ITriggerHandler.isAppliesToEvent` never matches, so the reflected path silently never fires.
+   */
+  internal const val FORMCYCLE_PROPS_VERSION = "8.5.3"
 
   /** Node type of the CodBi workflow Mirror node. */
   private const val MIRROR_NODE_TYPE = "Mirror"
@@ -66,6 +77,15 @@ internal object MirrorTriggerPaths {
       val triggerType: String,
       val triggerName: String,
       val triggerParams: String,
+      /**
+       * `WorkflowTrigger.customParametersVersion` of the SOURCE trigger (e.g. `8.5.3`).
+       *
+       * The reflected trigger must carry the SAME value: `WorkflowTriggerPropsFactory` deserializes
+       * `customParameters` "as of" that version, and a NULL/foreign version makes the props
+       * unreadable, so `ITriggerHandler.isAppliesToEvent` never matches and the path silently never
+       * fires — even though the row, the params and the search terms are perfect.
+       */
+      val paramsVersion: String? = null,
   )
 
   /**
@@ -97,7 +117,8 @@ internal object MirrorTriggerPaths {
       val rows =
           WorkflowMirrorAccess.query(
               em,
-              "SELECT t.id, t.name, tr.type, tr.name, tr.customParameters " +
+              "SELECT t.id, t.name, tr.type, tr.name, tr.customParameters, " +
+                  "tr.customParametersVersion " +
                   "FROM de.xima.fc.entities.WorkflowTask t JOIN t.trigger tr " +
                   "JOIN t.process p JOIN p.version v WHERE v.id = :vid",
               mapOf("vid" to versionId))
@@ -113,7 +134,8 @@ internal object MirrorTriggerPaths {
                 taskName = cols[1]?.toString().orEmpty(),
                 triggerType = cols[2]?.toString().orEmpty(),
                 triggerName = cols[3]?.toString().orEmpty(),
-                triggerParams = params))
+                triggerParams = params,
+                paramsVersion = cols.getOrNull(5)?.toString()?.takeIf { it.isNotBlank() }))
       }
       logger.info(
           "[CodBi][Mirror] triggered paths: source='{}' element='{}' tokens={} tasks={} matches={}",
@@ -467,6 +489,11 @@ internal object MirrorTriggerPaths {
         triggerClass.getMethod("setActive", Boolean::class.java).invoke(trigger, true)
         triggerClass.getMethod("setUUIDObject", UUID::class.java).invoke(trigger, UUID.randomUUID())
         triggerClass.getMethod("setTask", taskClass).invoke(trigger, savedTask)
+        // The SOURCE trigger's params version must be carried over — see SourcePath.paramsVersion.
+        // Without it the entity keeps its `0.0.0` default and the props cannot be deserialized.
+        triggerClass
+            .getMethod("setCustomParametersVersion", String::class.java)
+            .invoke(trigger, source.paramsVersion ?: FORMCYCLE_PROPS_VERSION)
         val reflectedParams = triggerParamsOf(source, tokens, namePrefix, targetNames)
         triggerClass
             .getMethod("setCustomParameters", String::class.java)
@@ -614,7 +641,12 @@ internal object MirrorTriggerPaths {
             reflectId(savedTrigger),
             taskId)
       } else if (syncTriggerParams(
-          userContext, triggerApi, existingTrigger, expectedTriggerParams, source.triggerType)) {
+          userContext,
+          triggerApi,
+          existingTrigger,
+          expectedTriggerParams,
+          source.triggerType,
+          source.paramsVersion)) {
         repaired = true
       }
 
@@ -817,49 +849,11 @@ internal object MirrorTriggerPaths {
         helper
             .getMethod("transferToDataModel", triggerClass, mandantClass)
             .invoke(null, trigger, mandant)
-        // The transfer derives the search terms only for handlers that provide them, and for our
-        // hand-built trigger it yields NOTHING (verified in the log: `searchTerms=[]` even though
-        // the
-        // trigger NAME was already correct). Without those rows the event engine can never select
-        // the
-        // trigger, so the terms are additionally derived from the (already re-pointed) params and
-        // inserted here.
-        val triggerType =
-            runCatching { triggerClass.getMethod("getType").invoke(trigger) as? String }
-                .getOrNull()
-                .orEmpty()
-        val triggerParams =
-            runCatching { triggerClass.getMethod("getCustomParameters").invoke(trigger) as? String }
-                .getOrNull()
-                .orEmpty()
-        val wanted = triggerSearchTerms(triggerType, triggerParams)
-        if (wanted.isNotEmpty()) {
-          val existing = readSearchTerms(trigger).toSet()
-          val missing = wanted.filter { it !in existing }
-          if (missing.isNotEmpty()) {
-            val termClass = Class.forName("de.xima.fc.entities.WorkflowTriggerSearchTerm")
-            // `setElement(TElement)` is GENERIC — resolve by name/arity, not by parameter type.
-            val setElement =
-                termClass.methods.firstOrNull { it.name == "setElement" && it.parameterCount == 1 }
-            @Suppress("UNCHECKED_CAST")
-            val collection =
-                runCatching {
-                      triggerClass.getMethod("getSearchTerms").invoke(trigger) as? MutableList<Any?>
-                    }
-                    .getOrNull()
-            var index = existing.size
-            for ((key, value) in missing) {
-              val term = termClass.getDeclaredConstructor().newInstance()
-              termClass.getMethod("setKey", String::class.java).invoke(term, key)
-              termClass.getMethod("setValue", String::class.java).invoke(term, value)
-              termClass.getMethod("setIndex", Int::class.javaPrimitiveType).invoke(term, index)
-              setElement?.invoke(term, trigger)
-              collection?.add(term)
-              em.javaClass.getMethod("persist", Any::class.java).invoke(em, term)
-              index++
-            }
-          }
-        }
+        // NOTE: the search terms are deliberately NOT written here. FORMCYCLE's own workflow save
+        // (`WorkflowVersionStager`, run by `WorkflowLaneMaterializer.refreshWorkflowModel`) derives
+        // and inserts them, and rows inserted here would collide with that insert on
+        // `UC_WF_TSTERM_ELEMENT_KEY_IDX_INDEX_6 (element_id, term_key, term_index)` — which in turn
+        // makes FORMCYCLE's save fail, i.e. exactly the "the workflow is never saved" symptom.
         em.javaClass.getMethod("flush").invoke(em)
         tx.javaClass.getMethod("commit").invoke(tx)
         applied = true
@@ -922,6 +916,7 @@ internal object MirrorTriggerPaths {
       trigger: Any,
       expected: String,
       triggerType: String,
+      paramsVersion: String? = null,
   ): Boolean {
     val current =
         runCatching {
@@ -935,6 +930,25 @@ internal object MirrorTriggerPaths {
           .getMethod("setCustomParameters", String::class.java)
           .invoke(trigger, expected)
       changed = true
+    }
+    // The params VERSION selects the props deserializer. A freshly created entity defaults to
+    // `0.0.0`, which cannot read `customParameters` written by FORMCYCLE 8.5.3 — the trigger then
+    // exists (correct params, correct search terms, active) yet `ITriggerHandler.isAppliesToEvent`
+    // never matches, so the path silently never fires. Adopt the source trigger's version.
+    if (!paramsVersion.isNullOrBlank()) {
+      val currentVersion =
+          runCatching {
+                trigger.javaClass.getMethod("getCustomParametersVersion").invoke(trigger) as? String
+              }
+              .getOrNull()
+      if (currentVersion != paramsVersion) {
+        runCatching {
+              trigger.javaClass
+                  .getMethod("setCustomParametersVersion", String::class.java)
+                  .invoke(trigger, paramsVersion)
+            }
+            .onSuccess { changed = true }
+      }
     }
     // A trigger without search terms is invisible to the event engine — this is what made a
     // correctly configured reflected path never run.
@@ -1229,7 +1243,8 @@ internal object MirrorTriggerPaths {
       val rows =
           WorkflowMirrorAccess.query(
               em,
-              "SELECT tr.id, t.id, t.name, tr.type, tr.name, tr.active, tr.customParameters " +
+              "SELECT tr.id, t.id, t.name, tr.type, tr.name, tr.active, tr.customParameters, " +
+                  "tr.customParametersVersion " +
                   "FROM de.xima.fc.entities.WorkflowTrigger tr JOIN tr.task t " +
                   "JOIN t.process p JOIN p.version v WHERE v.id = :vid ORDER BY t.id",
               mapOf("vid" to versionId))
@@ -1244,6 +1259,7 @@ internal object MirrorTriggerPaths {
         obj["name"] = cols[4]?.toString()
         obj["active"] = cols[5]
         obj["params"] = cols[6]?.toString()
+        obj["paramsVersion"] = cols.getOrNull(7)?.toString()
         out.add(obj)
       }
       out
@@ -1322,7 +1338,8 @@ internal object MirrorTriggerPaths {
       val rows =
           WorkflowMirrorAccess.query(
               em,
-              "SELECT t.id, t.name, tr.type, tr.name, tr.customParameters " +
+              "SELECT t.id, t.name, tr.type, tr.name, tr.customParameters, " +
+                  "tr.customParametersVersion " +
                   "FROM de.xima.fc.entities.WorkflowTask t JOIN t.trigger tr " +
                   "JOIN t.process p JOIN p.version v WHERE v.id = :vid",
               mapOf("vid" to versionId))
@@ -1336,7 +1353,8 @@ internal object MirrorTriggerPaths {
                 taskName = cols[1]?.toString().orEmpty(),
                 triggerType = cols[2]?.toString().orEmpty(),
                 triggerName = cols[3]?.toString().orEmpty(),
-                triggerParams = cols[4]?.toString().orEmpty()))
+                triggerParams = cols[4]?.toString().orEmpty(),
+                paramsVersion = cols.getOrNull(5)?.toString()?.takeIf { it.isNotBlank() }))
       }
       out
     } catch (x: Exception) {

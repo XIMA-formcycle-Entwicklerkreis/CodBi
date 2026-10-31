@@ -143,7 +143,14 @@ class MirrorServletAction : IPluginServletAction {
           val report =
               if (versionId == null)
                   "{\"target\":\"$target\",\"error\":\"no active workflow version\"}"
-              else WorkflowLaneMaterializer.saveWorkflowVersionReport(userContext, versionId)
+              else {
+                // FORMCYCLE's own workflow save (stager) FIRST, then the API save that drops the
+                // cached model — the pair the workflow designer performs on "save".
+                val staged = WorkflowLaneMaterializer.stagedWorkflowSave(userContext, versionId)
+                val apiSave =
+                    WorkflowLaneMaterializer.saveWorkflowVersionReport(userContext, versionId)
+                "{\"staged\":$staged,\"apiSave\":$apiSave}"
+              }
           logger.info(
               "[MirrorServletAction] action='saveworkflow' target='{}' -> {}", target, report)
           jsonResponse(report)

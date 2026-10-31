@@ -504,7 +504,33 @@ save2 -> {"version":1002,"lockingBefore":38,"lockingAfter":40,"invalidAfter":fal
 Every save bumps the lock version (→ the cached workflow model is dropped) and leaves the workflow
 ONLINE, so a reflected path created from the Mirror's configuration runs without any designer save.
 
-#### The designer now SAVES the form after creating the reflected paths
+#### ROOT CAUSE: `customParametersVersion` was `0.0.0`
+
+The decisive difference between a reflected trigger and one the designer writes is the column
+`workflow_trigger.custom_params_ver` (`AWorkflowElement.customParametersVersion`). Measured with
+`action=triggerdiag` (`[trigger-sync#15]`):
+
+```
+SOURCE trigger 2408  paramsVersion = 8.5.3
+TARGET trigger 2471  paramsVersion = 0.0.0     <-- created by this plugin
+```
+
+A new entity keeps FORMCYCLE's default `0.0.0`. `WorkflowTriggerPropsFactory` deserializes
+`customParameters` **as of that version**, so with `0.0.0` the props of a real 8.5.3 trigger cannot be
+read, `ITriggerHandler.isAppliesToEvent` never returns true and the path never fires — while every
+other signal (active flag, params, name, search terms) looks perfect. Saving the workflow in the
+designer rewrites the column to `8.5.3`, which is exactly why "just save the workflow" made it work.
+
+Fix: [`SourcePath.paramsVersion`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorTriggerPaths.kt)
+now carries the SOURCE trigger's params version, and both the create path and the re-point path write
+it onto the reflected trigger (`FORMCYCLE_PROPS_VERSION` as fallback). Verified:
+
+```
+TARGET id=2471 name=mir1_btn2.mir1_btnWOW paramsVersion=8.5.3 active=True
+SOURCE id=2408 paramsVersion=8.5.3
+```
+
+#### The designer saves the form after creating the reflected paths
 
 The server-side save alone is not enough either — the designer's own save/publish is what the form
 assistant performs after an inference, and it is what the user's manual "save the workflow" does. So

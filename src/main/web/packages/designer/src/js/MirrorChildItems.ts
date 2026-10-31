@@ -58,6 +58,11 @@ interface IDesignerLike {
   items?: Record<string, IMirrorItemLike>;
   getSelectedMasterItem?(): IMirrorItemLike | undefined;
   getSelectedItemsData?(): IMirrorItemLike[];
+  /**
+   * The designer's own "save + publish" (what the toolbar's save button and the form assistant call).
+   * Required after this module created a reflected WORKFLOW path — see [saveMirrorForm].
+   */
+  publish?: () => Promise<unknown>;
   getSelectedItems?(): JQuery;
   getItem?(el: unknown): IMirrorItemLike | undefined;
   getValueAbleItems?(useCached?: boolean): unknown[];
@@ -881,11 +886,50 @@ function mirrorActionUrl(): string {
 }
 
 /**
+ * Saves + publishes the CURRENT form through the designer — the same call the form assistant makes
+ * after an inference that created a workflow, and the same one the toolbar's save button performs.
+ *
+ * It is REQUIRED after this module created a reflected WORKFLOW path: FORMCYCLE keeps the workflow
+ * model in a cache that is only dropped by a real save of the form/workflow. Without it the created
+ * trigger exists in the database (correct parameters, correct search terms) but the engine keeps
+ * using its stale model — the reflected button then does nothing until the user saves the workflow by
+ * hand, which is exactly the symptom this call removes.
+ *
+ * Best-effort: a failed save must never break the Mirror's own sync.
+ */
+async function saveMirrorForm(designer: IDesignerLike): Promise<void> {
+  const publish = designer.publish;
+  if (typeof publish !== "function") {
+    console.warn(
+      "[CodBi] Mirror: designer publish() is unavailable — the reflected workflow path was created " +
+        "but the form was NOT saved (save it manually once)",
+    );
+    return;
+  }
+  try {
+    await publish.call(designer);
+    console.info("[CodBi] Mirror: form saved + published after changing the reflected workflow paths");
+  } catch (error) {
+    console.warn("[CodBi] Mirror: saving the form after the reflected workflow paths failed", error);
+  }
+}
+
+/** Whether the server's `{note:"created=… updated=… removed=…"}` reports an actual change. */
+function triggeredPathsChanged(data: unknown): boolean {
+  const note = String((data as { note?: unknown } | undefined)?.note ?? "");
+  return /(created|updated|removed)=[1-9]/.test(note);
+}
+
+/**
  * Applies the opt-in "create triggered workflow paths" option on the server: every workflow path of
  * the SOURCE form whose trigger references the mirrored element (or one of its children) is created
  * in THIS form with a Mirror node pointing at the source path; paths created that way are removed
  * again when their trigger disappears. The trigger's element references are re-pointed at the
  * mirrored child items by the server (`<mirrorName>_<sourceName>` namespace).
+ *
+ * When the server reports a change, the form is SAVED through the designer afterwards (see
+ * [saveMirrorForm]) — without that save FORMCYCLE's cached workflow model never learns about the new
+ * trigger and the reflected button stays dead until someone saves manually.
  *
  * Fire-and-forget — it must never block or break the Mirror's own sync.
  */
@@ -914,7 +958,12 @@ function applyTriggeredPaths(
     `&prefix=${encodeURIComponent(namePrefix)}`;
   void fetch(url, { credentials: "same-origin" })
     .then((response) => response.json())
-    .then((data) => console.info("[CodBi] Mirror: triggered workflow paths", data))
+    .then(async (data: unknown) => {
+      console.info("[CodBi] Mirror: triggered workflow paths", data);
+      if (triggeredPathsChanged(data)) {
+        await saveMirrorForm(designer);
+      }
+    })
     .catch((error) => console.warn("[CodBi] Mirror: triggered workflow paths failed", error));
 }
 

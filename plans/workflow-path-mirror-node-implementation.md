@@ -502,8 +502,21 @@ save2 -> {"version":1002,"lockingBefore":38,"lockingAfter":40,"invalidAfter":fal
 ```
 
 Every save bumps the lock version (→ the cached workflow model is dropped) and leaves the workflow
-ONLINE, so a reflected path created from the Mirror's configuration runs without any designer save
-(`[trigger-sync#13]`).
+ONLINE, so a reflected path created from the Mirror's configuration runs without any designer save.
+
+#### The designer now SAVES the form after creating the reflected paths
+
+The server-side save alone is not enough either — the designer's own save/publish is what the form
+assistant performs after an inference, and it is what the user's manual "save the workflow" does. So
+[`MirrorChildItems.applyTriggeredPaths()`](../src/main/web/packages/designer/src/js/MirrorChildItems.ts)
+now calls [`saveMirrorForm()`](../src/main/web/packages/designer/src/js/MirrorChildItems.ts) — the
+designer's `publish()` — whenever the server reports `created`/`updated`/`removed > 0` for the reflected
+paths. That is the same entry point `AICodBiAssistantDialog` wraps for the Mirror push hook
+(`DesignerWithSave.publish`), i.e. a full form save + publish (`[WP] Saving workflow version …` /
+`[Publish] Updating form version …`), which also reloads the published form for the frontend.
+
+So selecting a form + container in the Mirror widget now ends with a real save of the form, exactly
+like the form assistant does after a workflow inference.
 
 Diagnostics (all `[CodBi][Mirror]` INFO lines):
 

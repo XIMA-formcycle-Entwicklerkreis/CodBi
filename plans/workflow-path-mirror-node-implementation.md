@@ -487,7 +487,23 @@ in the database and in the search index, yet the engine never saw it.
 `refreshWorkflowModel()` now does what `AICodBiAssistant.touchWorkflowVersion` does — a real
 `WORKFLOW_VERSION_API.update(...)`: first with `workflowInvalid = true` (this is the "save" that drops
 the cached model), then again with the previous value so a healthy workflow stays ONLINE. The raw-SQL
-flag toggle remains only as a fallback when the API refuses the update (`[trigger-sync#12]`).
+flag toggle remains only as a fallback when the API refuses the update.
+
+It is also called **unconditionally** from `syncTriggeredPaths` (not only when a path was created or
+re-pointed), because a cache left stale by an earlier run would otherwise keep ignoring a path that is
+already correct.
+
+`action=saveworkflow&target=<formKey>` verifies it and reports the lock version before/after:
+
+```
+save  -> {"version":1002,"lockingBefore":34,"lockingAfter":36,"invalidAfter":false,"saved":true}
+apply -> {"note":"created=0 updated=1 removed=0","status":"ok"}
+save2 -> {"version":1002,"lockingBefore":38,"lockingAfter":40,"invalidAfter":false,"saved":true}
+```
+
+Every save bumps the lock version (→ the cached workflow model is dropped) and leaves the workflow
+ONLINE, so a reflected path created from the Mirror's configuration runs without any designer save
+(`[trigger-sync#13]`).
 
 Diagnostics (all `[CodBi][Mirror]` INFO lines):
 

@@ -133,6 +133,21 @@ class MirrorServletAction : IPluginServletAction {
           logger.info("[MirrorServletAction] action='triggerdiag' -> {} chars", json.length)
           jsonResponse(json)
         }
+        "saveworkflow" -> {
+          // Saves the reflecting workflow version through the entity API (the same "save" a
+          // designer
+          // or the form assistant performs) and reports the LOCK VERSION before/after — the only
+          // honest proof that FORMCYCLE dropped its cached workflow model.
+          val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
+          val versionId = WorkflowMirrorAccess.activeVersionId(userContext, target)
+          val report =
+              if (versionId == null)
+                  "{\"target\":\"$target\",\"error\":\"no active workflow version\"}"
+              else WorkflowLaneMaterializer.saveWorkflowVersionReport(userContext, versionId)
+          logger.info(
+              "[MirrorServletAction] action='saveworkflow' target='{}' -> {}", target, report)
+          jsonResponse(report)
+        }
         "fixsearchterms" -> {
           // Makes every submit-button trigger of the reflecting workflow FINDABLE by the event
           // engine (the search-term index it looks triggers up by) and reports what happened —

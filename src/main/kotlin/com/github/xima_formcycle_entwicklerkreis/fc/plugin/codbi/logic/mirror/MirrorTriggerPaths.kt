@@ -36,7 +36,7 @@ internal object MirrorTriggerPaths {
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#12"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#13"
 
   /** Node type of the CodBi workflow Mirror node. */
   private const val MIRROR_NODE_TYPE = "Mirror"
@@ -233,11 +233,11 @@ internal object MirrorTriggerPaths {
       if (isWanted) continue
       if (removePath(userContext, task.taskId)) removed++
     }
-    if (created + updated + removed > 0) {
-      // Tickle + restore (never leave the version invalid): a version that stays `workflowInvalid`
-      // is served to the frontend as OFFLINE until someone saves the workflow in the designer.
-      WorkflowLaneMaterializer.refreshWorkflowModel(userContext, targetVersionId)
-    }
+    // ALWAYS save the version, even when nothing changed: FORMCYCLE caches the workflow model per
+    // version (locked by the version's lock version), and a stale cache silently ignores a trigger
+    // this plugin created — that is why the path only ran after someone saved the workflow in the
+    // designer. Saving through the entity API bumps the lock version and drops the cache.
+    WorkflowLaneMaterializer.refreshWorkflowModel(userContext, targetVersionId)
     val note = "created=$created updated=$updated removed=$removed"
     logger.info(
         "[CodBi][Mirror] [{}] triggered paths for '{}' -> '{}': {}",

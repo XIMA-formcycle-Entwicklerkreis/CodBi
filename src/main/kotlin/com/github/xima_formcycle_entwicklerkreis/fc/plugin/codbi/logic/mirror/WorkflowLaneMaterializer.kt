@@ -325,15 +325,16 @@ object WorkflowLaneMaterializer {
   fun refreshWorkflowModel(userContext: Any?, workflowVersionId: Long) {
     if (userContext == null) return
     val wasInvalid = readWorkflowInvalid(userContext, workflowVersionId)
-    if (saveWorkflowVersion(userContext, workflowVersionId, wasInvalid ?: false)) return
+    val report = saveWorkflowVersionReport(userContext, workflowVersionId)
+    logger.info("[WorkflowLaneMaterializer] save WorkflowVersion {}: {}", workflowVersionId, report)
+    if (report.contains("\"saved\":true")) return
     // Fallback: the API refused (e.g. the version is not visible to this user) — at least toggle
-    // the
-    // flag natively so an open designer re-analyses on its next save.
+    // the flag natively so an open designer re-analyses on its next save.
     setWorkflowInvalid(userContext, workflowVersionId, true)
     setWorkflowInvalid(userContext, workflowVersionId, wasInvalid ?: false)
     logger.warn(
-        "[WorkflowLaneMaterializer] Could not save WorkflowVersion {} through the API — only the " +
-            "flag was toggled (restored to {})",
+        "[WorkflowLaneMaterializer] The API save of WorkflowVersion {} failed — only the flag was " +
+            "toggled (restored to {})",
         workflowVersionId,
         wasInvalid ?: false)
   }
@@ -341,46 +342,73 @@ object WorkflowLaneMaterializer {
   /**
    * Persists [workflowVersionId] through `WORKFLOW_VERSION_API` — first with `workflowInvalid =
    * true` (that is the "save" that invalidates FORMCYCLE's cached workflow model), then with the
-   * flag restored to [restoreInvalid].
+   * flag restored so the workflow stays ONLINE.
    *
-   * @return `true` when both updates succeeded.
+   * The report contains the **lock version** before and after, which is the only honest proof that
+   * FORMCYCLE really dropped its cached workflow model (a raw SQL flag update does not bump it, and
+   * a stale cache silently ignores a freshly created trigger).
+   *
+   * Also used by `action=saveworkflow&target=<formKey>` so the save can be verified without the
+   * server log.
    */
-  private fun saveWorkflowVersion(
-      userContext: Any,
-      workflowVersionId: Long,
-      restoreInvalid: Boolean,
-  ): Boolean =
-      try {
-        val api = Class.forName("de.xima.fc.api.APIProvider")
-        val versionApi = api.getField("WORKFLOW_VERSION_API").get(null)
-        val ucClass = Class.forName("de.xima.fc.user.UserContext")
-        val transferable = Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
-        val getById = versionApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
-        val update = versionApi.javaClass.getMethod("update", ucClass, transferable)
-        var ok = true
-        // 1. mark invalid + save  → bumps the lock version, the cached model is dropped
-        // 2. restore the flag + save → the workflow stays ONLINE
-        for (invalid in listOf(true, restoreInvalid)) {
-          val version = getById.invoke(versionApi, userContext, workflowVersionId) ?: return false
-          version.javaClass
-              .getMethod("setWorkflowInvalid", Boolean::class.javaPrimitiveType)
-              .invoke(version, invalid)
-          update.invoke(versionApi, userContext, version)
-          ok = ok && true
-        }
-        logger.info(
-            "[WorkflowLaneMaterializer] Saved WorkflowVersion {} via the API " +
-                "(cached workflow model dropped, flag_wf_invalid restored to {})",
-            workflowVersionId,
-            restoreInvalid)
-        ok
-      } catch (x: Exception) {
-        logger.warn(
-            "[WorkflowLaneMaterializer] Saving WorkflowVersion {} via the API failed: {}",
-            workflowVersionId,
-            x.message)
-        false
+  fun saveWorkflowVersionReport(userContext: Any?, workflowVersionId: Long): String {
+    val report = JsonObject()
+    report.addProperty("version", workflowVersionId)
+    if (userContext == null) {
+      report.addProperty("error", "no userContext")
+      return report.toString()
+    }
+    val restoreInvalid = readWorkflowInvalid(userContext, workflowVersionId) ?: false
+    report.addProperty("invalidBefore", restoreInvalid)
+    try {
+      val api = Class.forName("de.xima.fc.api.APIProvider")
+      val versionApi = api.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val transferable = Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val getById = versionApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val update = versionApi.javaClass.getMethod("update", ucClass, transferable)
+      fun lockingVersion(version: Any?): Int? =
+          runCatching {
+                version?.javaClass?.getMethod("getLockingVersion")?.invoke(version) as? Int
+              }
+              .getOrNull()
+
+      val before = getById.invoke(versionApi, userContext, workflowVersionId)
+      if (before == null) {
+        report.addProperty("error", "workflow version $workflowVersionId not visible")
+        return report.toString()
       }
+      val lockingBefore = lockingVersion(before)
+      report.addProperty("lockingBefore", lockingBefore)
+      // 1. mark invalid + save → bumps the lock version, the cached model is dropped
+      // 2. restore the flag + save → the workflow stays ONLINE
+      for (invalid in listOf(true, restoreInvalid)) {
+        val version = getById.invoke(versionApi, userContext, workflowVersionId)
+        if (version == null) {
+          report.addProperty("error", "workflow version $workflowVersionId vanished mid-save")
+          return report.toString()
+        }
+        version.javaClass
+            .getMethod("setWorkflowInvalid", Boolean::class.javaPrimitiveType)
+            .invoke(version, invalid)
+        update.invoke(versionApi, userContext, version)
+      }
+      val after = getById.invoke(versionApi, userContext, workflowVersionId)
+      val lockingAfter = lockingVersion(after)
+      report.addProperty("lockingAfter", lockingAfter)
+      report.addProperty(
+          "invalidAfter",
+          runCatching {
+                after?.javaClass?.getMethod("isWorkflowInvalid")?.invoke(after) as? Boolean
+              }
+              .getOrNull())
+      report.addProperty(
+          "saved", lockingBefore != null && lockingAfter != null && lockingAfter > lockingBefore)
+    } catch (x: Exception) {
+      report.addProperty("error", "${x.javaClass.simpleName}: ${x.message}")
+    }
+    return report.toString()
+  }
 
   /**
    * Sets `workflow_version.flag_wf_invalid` via a native update so FORMCYCLE re-analyzes the

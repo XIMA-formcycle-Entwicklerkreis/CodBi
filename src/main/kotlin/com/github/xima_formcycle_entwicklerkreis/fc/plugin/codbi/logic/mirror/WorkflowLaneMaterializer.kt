@@ -305,29 +305,82 @@ object WorkflowLaneMaterializer {
   }
 
   /**
-   * Cache-invalidation tickle for workflow changes this plugin performs **without a designer**.
+   * "Saves" the workflow version after this plugin changed it without a designer — the equivalent
+   * of the designer's save / the form assistant's touch.
    *
-   * `workflow_version.flag_wf_invalid` tells FORMCYCLE that its workflow analysis is stale — but a
-   * version that STAYS invalid is served to the frontend as **offline**; only a designer save (or a
-   * form publish) clears the flag again. That is exactly the "form goes offline until I open the
-   * designer and save the workflow" symptom.
+   * Two different things are needed, and only the first one is a flag:
+   * 1. `workflow_version.flag_wf_invalid` marks the analysis stale, but a version that STAYS
+   *    invalid is served to the frontend as **offline** — so the flag has to be restored.
+   * 2. FORMCYCLE keeps the workflow model in a CACHE keyed by the version entity. Writing the flag
+   *    with a raw SQL `UPDATE` does **not** bump the entity's lock version, so the cache keeps its
+   *    stale model: the reflected trigger exists in the database but the engine never sees it — the
+   *    click is accepted and nothing runs (exactly the "only saving the workflow in the designer
+   *    makes it work" symptom; the form assistant's `touchWorkflowVersion` gets it right because it
+   *    goes through `WORKFLOW_VERSION_API.update`).
    *
-   * Because the lane written here is complete (trigger + root + nodes + endpoint), the flag is
-   * restored to its **previous** value right after the tickle:
-   * - a workflow that was already invalid (for a real reason) stays invalid — the user must fix it,
-   * - a healthy workflow stays online, and FORMCYCLE still drops any cached analysis it kept.
+   * So: an API-level `update` is sent twice (invalid → true, then back to the previous value). Each
+   * update bumps the lock version and therewith drops the cached model; the second one leaves a
+   * healthy workflow online.
    */
   fun refreshWorkflowModel(userContext: Any?, workflowVersionId: Long) {
     if (userContext == null) return
     val wasInvalid = readWorkflowInvalid(userContext, workflowVersionId)
+    if (saveWorkflowVersion(userContext, workflowVersionId, wasInvalid ?: false)) return
+    // Fallback: the API refused (e.g. the version is not visible to this user) — at least toggle
+    // the
+    // flag natively so an open designer re-analyses on its next save.
     setWorkflowInvalid(userContext, workflowVersionId, true)
     setWorkflowInvalid(userContext, workflowVersionId, wasInvalid ?: false)
-    logger.info(
-        "[WorkflowLaneMaterializer] Refreshed the workflow model of WorkflowVersion {} " +
-            "(flag_wf_invalid restored to {})",
+    logger.warn(
+        "[WorkflowLaneMaterializer] Could not save WorkflowVersion {} through the API — only the " +
+            "flag was toggled (restored to {})",
         workflowVersionId,
         wasInvalid ?: false)
   }
+
+  /**
+   * Persists [workflowVersionId] through `WORKFLOW_VERSION_API` — first with `workflowInvalid =
+   * true` (that is the "save" that invalidates FORMCYCLE's cached workflow model), then with the
+   * flag restored to [restoreInvalid].
+   *
+   * @return `true` when both updates succeeded.
+   */
+  private fun saveWorkflowVersion(
+      userContext: Any,
+      workflowVersionId: Long,
+      restoreInvalid: Boolean,
+  ): Boolean =
+      try {
+        val api = Class.forName("de.xima.fc.api.APIProvider")
+        val versionApi = api.getField("WORKFLOW_VERSION_API").get(null)
+        val ucClass = Class.forName("de.xima.fc.user.UserContext")
+        val transferable = Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+        val getById = versionApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+        val update = versionApi.javaClass.getMethod("update", ucClass, transferable)
+        var ok = true
+        // 1. mark invalid + save  → bumps the lock version, the cached model is dropped
+        // 2. restore the flag + save → the workflow stays ONLINE
+        for (invalid in listOf(true, restoreInvalid)) {
+          val version = getById.invoke(versionApi, userContext, workflowVersionId) ?: return false
+          version.javaClass
+              .getMethod("setWorkflowInvalid", Boolean::class.javaPrimitiveType)
+              .invoke(version, invalid)
+          update.invoke(versionApi, userContext, version)
+          ok = ok && true
+        }
+        logger.info(
+            "[WorkflowLaneMaterializer] Saved WorkflowVersion {} via the API " +
+                "(cached workflow model dropped, flag_wf_invalid restored to {})",
+            workflowVersionId,
+            restoreInvalid)
+        ok
+      } catch (x: Exception) {
+        logger.warn(
+            "[WorkflowLaneMaterializer] Saving WorkflowVersion {} via the API failed: {}",
+            workflowVersionId,
+            x.message)
+        false
+      }
 
   /**
    * Sets `workflow_version.flag_wf_invalid` via a native update so FORMCYCLE re-analyzes the

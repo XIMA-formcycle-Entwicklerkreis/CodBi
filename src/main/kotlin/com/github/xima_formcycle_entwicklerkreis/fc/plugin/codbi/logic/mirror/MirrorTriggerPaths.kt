@@ -36,7 +36,7 @@ internal object MirrorTriggerPaths {
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#11"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#12"
 
   /** Node type of the CodBi workflow Mirror node. */
   private const val MIRROR_NODE_TYPE = "Mirror"

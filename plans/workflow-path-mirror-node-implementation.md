@@ -470,6 +470,25 @@ and the reflected lane then really runs — verified in the server log:
 [WP] Successfully processed task 'Verarbeitungskette 3' (ID: '2461)'
 ```
 
+#### The last missing step: SAVING the workflow version (cache invalidation)
+
+Even with `custom_params` correct and the search terms present, a reflected path only ran after the
+workflow was **saved** — in the designer, or by the form assistant. The reason is FORMCYCLE's cached
+workflow model, which is tied to the `WorkflowVersion` entity and its **lock version**:
+
+- `[WP] … (ID: 1002, locking version: 95)` — a submit with the stale model,
+- designer save at 22:02:01 → lock version 96,
+- the same click at 22:02:07 runs the lane.
+
+A raw SQL `UPDATE workflow_version SET flag_wf_invalid = …` (what [WorkflowLaneMaterializer] used to
+do) changes the flag but **not** the lock version, so the cache kept the old model: the trigger existed
+in the database and in the search index, yet the engine never saw it.
+
+`refreshWorkflowModel()` now does what `AICodBiAssistant.touchWorkflowVersion` does — a real
+`WORKFLOW_VERSION_API.update(...)`: first with `workflowInvalid = true` (this is the "save" that drops
+the cached model), then again with the previous value so a healthy workflow stays ONLINE. The raw-SQL
+flag toggle remains only as a fallback when the API refuses the update (`[trigger-sync#12]`).
+
 Diagnostics (all `[CodBi][Mirror]` INFO lines):
 
 ```

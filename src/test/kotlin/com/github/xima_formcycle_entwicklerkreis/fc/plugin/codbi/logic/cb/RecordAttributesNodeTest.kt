@@ -25,7 +25,8 @@ class RecordAttributesNodeTest {
           ?.use { it.readText() } ?: error("bundled $path not found on the classpath")
 
   private val detailed =
-      resource("com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
+      resource(
+          "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
   private val compact =
       resource(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/formcycle-workflow-nodes-compact.md")
@@ -45,7 +46,8 @@ class RecordAttributesNodeTest {
 
   @Test
   fun `the real props key is accepted`() {
-    val json = fragment(mapOf("customAttributes" to listOf(mapOf("name" to "zzz", "value" to "xxx"))))
+    val json =
+        fragment(mapOf("customAttributes" to listOf(mapOf("name" to "zzz", "value" to "xxx"))))
     assertTrue(json != null && json.contains("\"name\":\"zzz\""), json ?: "null")
   }
 
@@ -106,7 +108,10 @@ class RecordAttributesNodeTest {
 
   @Test
   fun `the build instruction uses customAttributes in its examples`() {
-    val line = taskInstruction.lines().first { it.contains("EXACT nodeParams: FC_WRITE_FORM_RECORD_ATTRIBUTES") }
+    val line =
+        taskInstruction.lines().first {
+          it.contains("EXACT nodeParams: FC_WRITE_FORM_RECORD_ATTRIBUTES")
+        }
     assertTrue(line.contains("customAttributes"), line)
   }
 }

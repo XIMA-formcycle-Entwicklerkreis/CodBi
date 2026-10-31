@@ -11,17 +11,16 @@ import org.junit.jupiter.api.Test
  *
  * The reported run produced exactly that single mail with `[%tf3%] [%tf4%]` although the fields sat
  * inside a repeatable container. The guidance must be language-agnostic and reach every pass:
- *
  * 1. the always-sent build instruction (`codbi-workflow-task-instruction.md`, repeatable section),
  * 2. the pass-1 compact catalogue (`formcycle-workflow-nodes-compact.md`, FIRST line only),
  * 3. the pass-2 detailed reference (`formcycle-workflow-nodes.md`), and
- * 4. the repeatable-container context the workflow prompt receives (`buildRepeatableContainersContext`),
- *    which must resolve NESTED child fields and explicitly flag an unresolved container.
+ * 4. the repeatable-container context the workflow prompt receives
+ *    (`buildRepeatableContainersContext`), which must resolve NESTED child fields and explicitly
+ *    flag an unresolved container.
  */
 class WorkflowRepeatableListPromptTest {
 
-  private val resourceBase =
-      "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
+  private val resourceBase = "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
 
   private fun read(resource: String): String =
       WorkflowRepeatableListPromptTest::class
@@ -37,7 +36,8 @@ class WorkflowRepeatableListPromptTest {
 
   /** The first (non-blank) line beneath a `### <heading>` section — the line pass-1 receives. */
   private fun firstLineAfterHeading(text: String, heading: String): String =
-      text.lineSequence()
+      text
+          .lineSequence()
           .dropWhile { !it.startsWith("### $heading") }
           .drop(1)
           .firstOrNull { it.isNotBlank() }
@@ -87,7 +87,8 @@ class WorkflowRepeatableListPromptTest {
             loopLine.contains("list", ignoreCase = true),
         "pass 1 only sees the compact entry's FIRST line, so it must mention repeatable rows and the " +
             "mail/list use case: $loopLine")
-    assertTrue(loopLine.length <= 200, "the compact first line must fit the 200-char cap: $loopLine")
+    assertTrue(
+        loopLine.length <= 200, "the compact first line must fit the 200-char cap: $loopLine")
 
     val mailLine = firstLineAfterHeading(compact, "FC_EMAIL")
     assertTrue(
@@ -95,7 +96,8 @@ class WorkflowRepeatableListPromptTest {
             mailLine.contains("FIRST row", ignoreCase = true) &&
             mailLine.contains("FC_FOR_EACH_LOOP"),
         "the FC_EMAIL compact line must warn against a bare repeatable-row placeholder: $mailLine")
-    assertTrue(mailLine.length <= 200, "the compact first line must fit the 200-char cap: $mailLine")
+    assertTrue(
+        mailLine.length <= 200, "the compact first line must fit the 200-char cap: $mailLine")
   }
 
   @Test
@@ -144,7 +146,8 @@ class WorkflowRepeatableListPromptTest {
 
   @Test
   fun `the repeatable-container context flags an unresolved container explicitly`() {
-    val persist = """{"items":[{"className":"XContainer","properties":{"name":"xi-rows","dynamic":"1","elements":[]}}]}"""
+    val persist =
+        """{"items":[{"className":"XContainer","properties":{"name":"xi-rows","dynamic":"1","elements":[]}}]}"""
     val context = repeatableContext(persist).orEmpty()
     assertTrue(
         context.contains("xi-rows") && context.contains("<none resolved"),

@@ -5,8 +5,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Tests for [StandardConfigClasses], i.e. the class → owning standard configuration index read from the
- * shipped configuration metadata.
+ * Tests for [StandardConfigClasses], i.e. the class → owning standard configuration index read from
+ * the shipped configuration metadata.
  */
 class StandardConfigClassesTest {
 
@@ -22,8 +22,9 @@ class StandardConfigClassesTest {
   fun `keeps ALL functionalities of a class that applies more than one`() {
     // `CodBi_DateFrame_*_Begin` applies both the Cleave formatting and the date-range check — the
     // END class only applies Cleave. Resolving both must not collapse them onto a single FUNC list.
-    val providers = StandardConfigClasses.providersOf(
-        listOf("CodBi_DateFrame_1_Begin", "CodBi_DateFrame_1_End"))
+    val providers =
+        StandardConfigClasses.providersOf(
+            listOf("CodBi_DateFrame_1_Begin", "CodBi_DateFrame_1_End"))
 
     val funcs = providers.filter { it.configId == "Appointments" }.flatMap { it.funcs }
 
@@ -41,7 +42,8 @@ class StandardConfigClassesTest {
 
   @Test
   fun `ignores Holistic exclusion markers and unrelated classes`() {
-    // `Holistic.*` classes are EXCLUSION markers (`CodBi_XCL_*`): a field carrying one opts OUT of a
+    // `Holistic.*` classes are EXCLUSION markers (`CodBi_XCL_*`): a field carrying one opts OUT of
+    // a
     // form-wide configuration, so they must never auto-activate it.
     val providers =
         StandardConfigClasses.providersOf(

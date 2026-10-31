@@ -22,6 +22,11 @@ enum class ECodbiWorkflowElementCategory(
       "fc-element-cat-40-20",
       GuiIcon.valueOf("fa-external-link"),
       "workflow.category.extended_access",
+  ),
+  SUB_CODBI_MIRROR(
+      "fc-element-cat-40-30",
+      GuiIcon.valueOf("fa-clone"),
+      "workflow.category.mirror",
   );
 
   override fun getName(locale: Locale): String = localize(labelKey, locale, name)

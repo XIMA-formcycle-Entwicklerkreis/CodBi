@@ -8,33 +8,34 @@ import java.util.logging.Logger
  * Static index of the CSS classes provided by the CodBi **S**tandard **C**onfigurations.
  *
  * A standard configuration is applied to a form element by putting one of its CSS classes (e.g.
- * `CodBi_NoFutureDate`) into the element's class list. The class itself carries **no** behaviour: the
- * behaviour is applied by the configuration's own script
- * (`window.codbi.loadConfig({ targets: ".CodBi_NoFutureDate", FUNC: "Date.Min", … })`).
+ * `CodBi_NoFutureDate`) into the element's class list. The class itself carries **no** behaviour:
+ * the behaviour is applied by the configuration's own script (`window.codbi.loadConfig({ targets:
+ * ".CodBi_NoFutureDate", FUNC: "Date.Min", … })`).
  *
  * Historically that script was injected **only** while the configuration was activated FORM-wide in
- * the designer's CodBi section (the `codbi-prop-standards` CSV). A class that was applied without that
- * activation was therefore nothing but a dead marker — the element *looked* configured, while the
- * functionality behind it was never even loaded. A manually applied functionality
+ * the designer's CodBi section (the `codbi-prop-standards` CSV). A class that was applied without
+ * that activation was therefore nothing but a dead marker — the element *looked* configured, while
+ * the functionality behind it was never even loaded. A manually applied functionality
  * (`data-cb-func="Date.Min"`) works in exactly the same form, because the [FormRenderCallback]
  * injects the functionality's script for every `data-cb-func` it finds.
  *
- * This index closes that gap: it maps every config class to the configuration that owns it AND to the
- * functionalities that class applies, so the render callback can inject both for the classes that the
- * RENDERED form actually uses — no matter how the class got there and without the form-level toggle.
+ * This index closes that gap: it maps every config class to the configuration that owns it AND to
+ * the functionalities that class applies, so the render callback can inject both for the classes
+ * that the RENDERED form actually uses — no matter how the class got there and without the
+ * form-level toggle.
  *
- * The data is read from the shipped configuration metadata (the `Configurations` folder's `<id>.json`
- * files, the same files the designer
- * uses), which is generated from the `loadConfig`/`loadConfigs` calls of the configuration sources:
- *
+ * The data is read from the shipped configuration metadata (the `Configurations` folder's
+ * `<id>.json` files, the same files the designer uses), which is generated from the
+ * `loadConfig`/`loadConfigs` calls of the configuration sources:
  * ```json
  * { "classes": { "CodBi_NoFutureDate": { "description": "…" } },
  *   "funcs":   { "CodBi_NoFutureDate": "Date.Min" } }
  * ```
  *
- * `Holistic.*` configurations are deliberately **excluded**: their CSS classes are EXCLUSION markers
- * (`CodBi_XCL_*`) that a field carries to opt OUT of a form-wide configuration. Resolving them here
- * would activate that configuration for the whole form just because one field excludes it.
+ * `Holistic.*` configurations are deliberately **excluded**: their CSS classes are EXCLUSION
+ * markers (`CodBi_XCL_*`) that a field carries to opt OUT of a form-wide configuration. Resolving
+ * them here would activate that configuration for the whole form just because one field excludes
+ * it.
  */
 internal object StandardConfigClasses {
 
@@ -42,16 +43,24 @@ internal object StandardConfigClasses {
   private const val BASE_PACKAGE =
       "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Configurations"
 
-  /** A plain CSS class token — selectors (e.g. `[data-vdt="phone"]`) are not usable as class names. */
+  /**
+   * A plain CSS class token — selectors (e.g. `[data-vdt="phone"]`) are not usable as class names.
+   */
   private val CSS_CLASS = Regex("^\\.?[A-Za-z_][A-Za-z0-9_-]*$")
 
   private val LOG: Logger = Logger.getLogger(StandardConfigClasses::class.java.name)
 
   /** One standard configuration that provides a CSS class. */
   data class Provider(
-      /** The configuration id, i.e. the name of its script/`codbi-prop-standards` entry (e.g. `Appointments`). */
+      /**
+       * The configuration id, i.e. the name of its script/`codbi-prop-standards` entry (e.g.
+       * `Appointments`).
+       */
       val configId: String,
-      /** The functionalities (`FUNC`) that configuration applies for this very class (e.g. `Date.Min`). */
+      /**
+       * The functionalities (`FUNC`) that configuration applies for this very class (e.g.
+       * `Date.Min`).
+       */
       val funcs: List<String>
   )
 
@@ -73,14 +82,10 @@ internal object StandardConfigClasses {
 
     // Distinct by configuration AND functionality list: two classes of the SAME configuration may
     // apply DIFFERENT functionalities (e.g. `CodBi_DateFrame_1_Begin` = "HTML.Input.Cleave,
-    // Date.Frame" but `CodBi_DateFrame_1_End` = "HTML.Input.Cleave"), so collapsing on the config id
+    // Date.Frame" but `CodBi_DateFrame_1_End` = "HTML.Input.Cleave"), so collapsing on the config
+    // id
     // alone would silently drop a functionality the used class needs.
-    return cssClasses
-        .asSequence()
-        .mapNotNull { index[it] }
-        .flatten()
-        .distinct()
-        .toList()
+    return cssClasses.asSequence().mapNotNull { index[it] }.flatten().distinct().toList()
   }
 
   /** Drops the cache, e.g. after a plugin (re-)initialization changed the shipped metadata. */
@@ -135,11 +140,7 @@ internal object StandardConfigClasses {
       val funcsByClass = mutableMapOf<String, List<String>>()
       node.path("funcs")?.fields()?.forEach { (cssClass, funcsNode) ->
         funcsByClass[cssClass.removePrefix(".")] =
-            funcsNode
-                .asText("")
-                .split(",")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
+            funcsNode.asText("").split(",").map { it.trim() }.filter { it.isNotEmpty() }
       }
 
       val declaredClasses =

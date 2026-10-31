@@ -1,4 +1,4 @@
-import { instance as getDesignerInstance } from "@de-xima/fc-form-designer";
+import { getJQuery, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 import { codbiManagerCacheSuffix } from "./CodbiManagerBundle.js";
 
 /**
@@ -51,6 +51,13 @@ export function enableAICodBiAssistantDialog(): void {
   if (!document.querySelector("cb-prompt-manager")) {
     document.body.appendChild(document.createElement("cb-prompt-manager"));
   }
+
+  // Phase-2d Mirror push listener (source-save hook): wrap the designer's server publish() so that
+  // the instant a source form/workflow is saved and published, the backend is told to re-push the
+  // latest source lane into every registered reflecting form. This is what makes a Mirror execute on
+  // the FIRST run (the reflecting form's designer never has to be opened). Best-effort wrapper — it
+  // must never break the designer's own save flow.
+  installMirrorPushListener();
 
   // ALT+A => show the AI assistant (only when CodBi is enabled for the current form). The
   // assistant focuses the prompt textarea automatically on open.
@@ -117,6 +124,117 @@ export function enableAICodBiAssistantDialog(): void {
     },
     true,
   );
+}
+
+/**
+ * Phase-2d Mirror push listener (source-save hook).
+ *
+ * Runs on every designer page load. When the currently edited form is a SOURCE of one or more
+ * Mirror nodes, it wraps the designer's server-save (`publish()`) so that after a successful save
+ * the backend's `MirrorPush` servlet action is called with the just-saved `workflowVersionId`; the
+ * backend then re-pushes the latest source lane into every reflecting form immediately.
+ *
+ * This is the "listener" that makes a Mirror run correctly on the FIRST reflecting submit: a client
+ * submit runs the frozen reflecting lane only until the source is saved+published, at which point
+ * this hook fires the push and re-materializes the reflecting form's lane.
+ *
+ * It is strictly best-effort: if the designer/config/publish is unavailable it simply does nothing
+ * and never alters the designer's own save flow (the original `publish` is always invoked with the
+ * same receiver/arguments and its return value is passed through untouched).
+ */
+interface DesignerWithSave {
+  config?: { workflowVersionId?: string | number };
+  publish?: () => Promise<unknown>;
+}
+
+/**
+ * @returns the designer instance, or `undefined` while it has not been created yet. The designer's
+ * `instance()` **throws** until the form designer is fully initialized, so every access is guarded.
+ */
+function designerInstanceForMirrorHook(): DesignerWithSave | undefined {
+  try {
+    return getDesignerInstance() as unknown as DesignerWithSave | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function installMirrorPushListener(): void {
+  const RETRY_DELAY_MS = 250;
+  // ~60 s: designer.js is evaluated BEFORE the designer instance exists (it is injected into
+  // <head>), so a single install attempt at script evaluation time always found `undefined` and
+  // silently did nothing — the source-save push therefore never fired.
+  const MAX_ATTEMPTS = 240;
+  let attempts = 0;
+  let installed = false;
+
+  const tryInstall = (): void => {
+    if (installed) {
+      return;
+    }
+    attempts += 1;
+    try {
+      const designer = designerInstanceForMirrorHook();
+      if (!designer || typeof designer.publish !== "function") {
+        if (attempts < MAX_ATTEMPTS) {
+          window.setTimeout(tryInstall, RETRY_DELAY_MS);
+        }
+        return;
+      }
+      installed = true;
+
+      const publish = designer.publish;
+      const $ = getJQuery();
+      const baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+
+      // Coalesce rapid consecutive saves (e.g. auto-save + manual save) into a single push.
+      let debounceHandle: number | undefined;
+      const schedulePush = (): void => {
+        if (debounceHandle) {
+          window.clearTimeout(debounceHandle);
+        }
+        debounceHandle = window.setTimeout(() => {
+          // Read the id at SAVE time: `config` may be filled (or replaced) after this hook was
+          // installed, and the designer can switch forms without a page reload.
+          const workflowVersionId = designer.config?.workflowVersionId;
+          if (workflowVersionId === undefined || workflowVersionId === null || `${workflowVersionId}` === "") {
+            return;
+          }
+          $.ajax({
+            url: `${baseURL}plugin?name=CodBi_AICodBiAssistant`,
+            type: "GET",
+            headers: {
+              "X-Action": "MirrorPush",
+            },
+            data: {
+              workflowVersionId: String(workflowVersionId),
+            },
+            dataType: "json",
+          }).fail(() => {
+            /* fire-and-forget: the reflecting lazy re-sync still converges on the next submit */
+          });
+        }, 400);
+      };
+
+      const wrapped: typeof publish = function (this: unknown) {
+        const result = publish.apply(this);
+        if (result !== undefined && typeof (result as Promise<unknown>).then === "function") {
+          (result as Promise<unknown>).then(schedulePush).catch(() => {});
+        } else {
+          schedulePush();
+        }
+        return result;
+      };
+      designer.publish = wrapped;
+    } catch {
+      // Best-effort — never break the designer's save flow.
+      if (attempts < MAX_ATTEMPTS) {
+        window.setTimeout(tryInstall, RETRY_DELAY_MS);
+      }
+    }
+  };
+
+  tryInstall();
 }
 
 /**

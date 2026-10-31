@@ -86,6 +86,12 @@
       "descriptionDe": "Auf ein XTextField anwenden, dessen Wert der KI als Quellkontext für die Fragebeantwortung übergeben werden soll.",
       "descriptionIt": "Applicare a un XTextField il cui valore deve essere fornito all'IA come contesto di origine per la risposta alle domande.",
       "formelementtypes": ["XTextField", "XTextArea"]
+    },
+    "CodBi_AI_OCR_Receiver": {
+      "description": "Tags the field that receives the response from a AI.OCR functionality.",
+      "descriptionDe": "Markiert das Feld welches die Antwort von einem AI.OCR erhält.",
+      "descriptionIt": "Campo destinato alla risposta dell'AI OCR.",
+      "formelementtypes": ["XTextField", "XTextArea"]
     }
   },
   "funcs": {

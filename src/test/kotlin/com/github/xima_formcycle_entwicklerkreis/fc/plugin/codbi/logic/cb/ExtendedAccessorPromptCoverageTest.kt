@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test
  * silent regression (deleting an entry, renaming a parameter, dropping the `$` from the result
  * placeholder) would leave the assistant unable to answer "the HTML arrives escaped" requests
  * again. These assertions pin the three places that must stay in sync:
- *
  * 1. the pass-1 compact catalogue (`compact.formcycle_workflow_nodes`) — the node must be offered,
  * 2. the pass-2 detailed catalogue (`formcycle.workflow_nodes.node_types.*`) — the exact
  *    `nodeParams` the builder consumes must be documented,
@@ -22,8 +21,7 @@ import org.junit.jupiter.api.Test
  */
 class ExtendedAccessorPromptCoverageTest {
 
-  private val resourceBase =
-      "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
+  private val resourceBase = "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
 
   private val nodeFqcn = WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS
 

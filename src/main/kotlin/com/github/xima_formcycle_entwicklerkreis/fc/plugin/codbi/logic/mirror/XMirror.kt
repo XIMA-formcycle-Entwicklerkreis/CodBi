@@ -101,10 +101,12 @@ class XMirror : IXItemWidget, IXItemAppendable {
     }
 
     // The PERSISTED CHILD items (the “registration copies” that make the mirrored fields show up in
-    // the workflow placeholder dialog) must NOT be part of the published form: the source element is
+    // the workflow placeholder dialog) must NOT be part of the published form: the source element
+    // is
     // rendered LIVE above, so their markup would be a duplicate item tree — including the item
     // wrappers, labels and error containers that the `codbi-mirror-copy` class does not cover. Nest
-    // them into a HIDDEN host instead; `FormRenderProcessor.insertHideMirrorCopiesScript` removes that
+    // them into a HIDDEN host instead; `FormRenderProcessor.insertHideMirrorCopiesScript` removes
+    // that
     // host from the DOM again, so the page only contains the live-rendered element.
     val copyHost = Div()
     copyHost.setCSSClass(Constants.MIRROR_COPIES_CSS_CLASS)
@@ -180,13 +182,13 @@ class XMirror : IXItemWidget, IXItemAppendable {
         else "${Constants.MIRROR_CSS_CLASS} $customClasses")
     renderData.id?.takeIf { it.isNotBlank() }?.let { wrapper.setAttribute("id", it) }
     // Mark the wrapper as THIS widget's append target, exactly like FORMCYCLE's own containers and
-    // fieldsets do (`data-xm-appendable="<item ref>"`). The designer nests an item's PERSISTED child
+    // fieldsets do (`data-xm-appendable="<item ref>"`). The designer nests an item's PERSISTED
+    // child
     // items into the element carrying this marker. Without it the children were appended to the
     // widget's CONTENT CELL instead, i.e. AFTER the widget's preview — which made the mirrored
     // elements appear BELOW the widget (e.g. below the unconfigured mirror icon/label hint).
     val appendRef =
-        renderData.id?.takeIf { it.isNotBlank() }
-            ?: renderData.name?.takeIf { it.isNotBlank() }
+        renderData.id?.takeIf { it.isNotBlank() } ?: renderData.name?.takeIf { it.isNotBlank() }
     appendRef?.let { wrapper.setAttribute("data-xm-appendable", it) }
     renderCtx.addHtmlAttributes(wrapper)
     removePreviousRender(container)
@@ -299,8 +301,7 @@ class XMirror : IXItemWidget, IXItemAppendable {
   private fun appendHintLine(parent: Div, label: String, value: String) {
     val line = Div()
     line.appendText(
-        "${org.owasp.encoder.Encode.forHtml(label)}: " +
-            org.owasp.encoder.Encode.forHtml(value))
+        "${org.owasp.encoder.Encode.forHtml(label)}: " + org.owasp.encoder.Encode.forHtml(value))
     parent.appendChild(line)
   }
 
@@ -355,6 +356,12 @@ class XMirror : IXItemWidget, IXItemAppendable {
     }
     // `data-xn` / `xn` carry the item's technical NAME and therefore follow the field-name prefix,
     // exactly like `name` and `data-name` (so they cannot collide with a target-form field).
+    //
+    // This ALSO covers submit buttons (`xf-action` = the button key): FORMCYCLE validates that key
+    // against the form MODEL ("Button key <key> not found … was the form submit manipulated?"), so
+    // the model must contain the SAME namespaced key. That is why the Mirror's copy of an
+    // `XButtonList` prefixes its `buttons[].name` entries (`MirrorChildItems.propertiesForNode`);
+    // model and markup therefore agree, and two mirrored lists cannot collide on identical keys.
     for (attr in listOf("name", "data-name", "data-xn", "xn")) {
       val value = node.getAttribute(attr)
       if (!value.isNullOrBlank()) node.setAttribute(attr, namePrefix + value)
@@ -365,8 +372,8 @@ class XMirror : IXItemWidget, IXItemAppendable {
   }
 
   /**
-   * Wraps the (already namespaced) validation model of the mirrored subtree in an INERT
-   * `<script type="application/json">` element.
+   * Wraps the (already namespaced) validation model of the mirrored subtree in an INERT `<script
+   * type="application/json">` element.
    *
    * The model must reach the client, but the widget's markup is emitted BEFORE the page's
    * `XM_FORM_MODEL` assignment, so it cannot be applied inline. A small script injected by
@@ -422,6 +429,8 @@ class XMirror : IXItemWidget, IXItemAppendable {
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_ELEMENT, ""),
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_ELEMENT_KEY, ""),
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_ELEMENT_NAME, ""),
+        // Opt-in: also create the workflow paths triggered by the mirrored element in this form.
+        XItemPropertyDesc(Constants.MIRROR_PROPERTY_CREATE_TRIGGERED_PATHS, ""),
         XItemPropertyDesc(XPropertyEnum.cssclasses),
         XItemPropertyDesc(XPropertyEnum.cssclasseswrapper),
         XItemPropertyDesc(XPropertyEnum.ishidden),

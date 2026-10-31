@@ -135,8 +135,7 @@ object ExtendedAccessorResolver {
     val transformed = allValues.map { row -> row.map { transformValue(it, props) } }
     val flat = transformed.flatten()
     val joined = flat.joinToString(props.joinSeparator.orEmpty().ifEmpty { "," })
-    val meta =
-        if (props.includeMeta) buildMeta(technicalName, selectedAdapter, env) else emptyMap()
+    val meta = if (props.includeMeta) buildMeta(technicalName, selectedAdapter, env) else emptyMap()
     logger.info(
         "[CodBi][ExtendedAccessor] resolved field='{}' adapter={} nonEmpty={} rows={} flatValues={} resultLength={}",
         technicalName,
@@ -158,8 +157,8 @@ object ExtendedAccessorResolver {
 
   /**
    * Candidate field identifiers for the configured value. The mirror tree usually provides the
-   * technical `name`, but aliases (and the resolved alias) are also accepted — this is what makes the
-   * node work for elements whose submitted key is an alias or a repetition-suffixed name.
+   * technical `name`, but aliases (and the resolved alias) are also accepted — this is what makes
+   * the node work for elements whose submitted key is an alias or a repetition-suffixed name.
    */
   private fun fieldNameCandidates(
       configuredName: String,
@@ -185,9 +184,9 @@ object ExtendedAccessorResolver {
   }
 
   /**
-   * Adapters to consult, in order. `CURRENT` reads the workflow context adapter first (so repeated /
-   * form-element-context nodes see their current value) and then the raw submission adapter. `INDEX`
-   * and `ALL` always read the raw submission data.
+   * Adapters to consult, in order. `CURRENT` reads the workflow context adapter first (so repeated
+   * / form-element-context nodes see their current value) and then the raw submission adapter.
+   * `INDEX` and `ALL` always read the raw submission data.
    */
   private fun adaptersFor(
       mode: EExtendedAccessorRepetitionMode,
@@ -256,7 +255,8 @@ object ExtendedAccessorResolver {
     val meta =
         linkedMapOf<String, Any?>(
             "name" to technicalName,
-            "exists" to (runCatching { adapter?.getFieldValues(technicalName) }.getOrNull() != null),
+            "exists" to
+                (runCatching { adapter?.getFieldValues(technicalName) }.getOrNull() != null),
             "alias" to (fieldMeta?.fieldAlias ?: item?.alias),
             "resolvedAlias" to item?.resolvedAlias,
             "className" to item?.className,

@@ -612,6 +612,27 @@ function propertiesForNode(node: IMirrorNode, mirrorId: string, namePrefix: stri
     // name the workflow placeholder dialog lists and that `[%name%]` must use.
     properties.name = `${namePrefix}${node.name}`;
   }
+  // The BUTTON ENTRIES of an XButtonList are not items, but they are part of the form MODEL: every
+  // key in `buttons[].name` becomes a submit-button key (`xf-action`). FORMCYCLE validates a
+  // submitted key against the model, so the copy must carry the SAME namespaced names the live
+  // render produces (`XMirror.namespaceLinkedIds`) — otherwise every mirrored click is rejected as
+  // "manipulated", and two mirrored lists would collide on identical keys.
+  for (const key of ["buttons", "buttonEntries"]) {
+    const entries = properties[key];
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+    properties[key] = entries.map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return entry;
+      }
+      const name = String((entry as TItemProperties).name ?? "").trim();
+      if (!name) {
+        return entry;
+      }
+      return { ...(entry as TItemProperties), name: `${namePrefix}${name}` };
+    });
+  }
   properties[MIRROR_OWNER_PROPERTY] = mirrorId;
   // The generated items exist so the fields appear in the placeholder dialog. At RUNTIME the Mirror
   // renders the source LIVE and submits those inputs; the copies must therefore not duplicate them:
@@ -742,11 +763,30 @@ async function syncMirrorChildrenWorker(
   const fullSignature = `${signature}${tree.version}|${tree.revision}`;
   if (materializedByMirror.get(mirrorId) === fullSignature) {
     // Same source, already materialized. Nothing to do — avoid the destructive remove + recreate.
+    // The opt-in triggered workflow paths are still applied (it may have been switched on after the
+    // children were materialized).
+    applyTriggeredPaths(
+      designer,
+      mirror,
+      form,
+      element,
+      elementKey,
+      `${String(propertiesOf(mirror)?.name ?? "") || mirrorId}_`,
+    );
     return;
   }
   if (tree.items.length === 0) {
     removeGeneratedChildren(designer, mirrorId);
     materializedByMirror.set(mirrorId, fullSignature);
+    // Still manage the opt-in triggered paths (the element itself may be the trigger).
+    applyTriggeredPaths(
+      designer,
+      mirror,
+      form,
+      element,
+      elementKey,
+      `${String(propertiesOf(mirror)?.name ?? "") || mirrorId}_`,
+    );
     return;
   }
 
@@ -813,12 +853,69 @@ async function syncMirrorChildrenWorker(
   // This source is now materialized; a later request for the identical source can be skipped.
   materializedByMirror.set(mirrorId, fullSignature);
 
+  // Opt-in: keep the workflow paths that this element triggers in sync with the reflecting form.
+  applyTriggeredPaths(designer, mirror, form, element, elementKey, namePrefix);
+
   try {
     // Drop the designer's cached value-able items so the placeholder dialog sees the new fields.
     designer.getValueAbleItems?.(false);
   } catch {
     /* ignore */
   }
+}
+
+/** Opt-in property: also create the workflow paths that the mirrored element triggers. */
+const CREATE_TRIGGERED_PATHS_PROPERTY = String(Constants["mirror.property.create_triggered_paths"]);
+
+/** Whether the Mirror's opt-in "create triggered workflow paths" option is enabled. */
+function createTriggeredPathsEnabled(mirror: IMirrorItemLike): boolean {
+  const raw = propertiesOf(mirror)?.[CREATE_TRIGGERED_PATHS_PROPERTY];
+  return raw === true || raw === "1" || raw === "true";
+}
+
+/** The plugin servlet URL the Mirror dropdowns and this module use. */
+function mirrorActionUrl(): string {
+  const baseURL = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+  const action = encodeURIComponent(String(Constants["mirror.servlet_action.name"]));
+  return `${baseURL}plugin?name=${action}`;
+}
+
+/**
+ * Applies the opt-in "create triggered workflow paths" option on the server: every workflow path of
+ * the SOURCE form whose trigger references the mirrored element (or one of its children) is created
+ * in THIS form with a Mirror node pointing at the source path; paths created that way are removed
+ * again when their trigger disappears. The trigger's element references are re-pointed at the
+ * mirrored child items by the server (`<mirrorName>_<sourceName>` namespace).
+ *
+ * Fire-and-forget — it must never block or break the Mirror's own sync.
+ */
+function applyTriggeredPaths(
+  designer: IDesignerLike,
+  mirror: IMirrorItemLike,
+  form: string,
+  element: string,
+  elementKey: string | undefined,
+  namePrefix: string,
+): void {
+  if (!createTriggeredPathsEnabled(mirror) || !form || !element) {
+    return;
+  }
+  const formId = (designer as unknown as { config?: { formId?: number } }).config?.formId;
+  if (!formId) {
+    console.warn("[CodBi] Mirror: this form's id is unknown — triggered workflow paths not applied");
+    return;
+  }
+  const url =
+    `${mirrorActionUrl()}&action=applytriggerpaths` +
+    `&form=${encodeURIComponent(form)}` +
+    `&element=${encodeURIComponent(element)}` +
+    `${elementKey ? `&element_key=${encodeURIComponent(elementKey)}` : ""}` +
+    `&target=${encodeURIComponent(`project-${formId}`)}` +
+    `&prefix=${encodeURIComponent(namePrefix)}`;
+  void fetch(url, { credentials: "same-origin" })
+    .then((response) => response.json())
+    .then((data) => console.info("[CodBi] Mirror: triggered workflow paths", data))
+    .catch((error) => console.warn("[CodBi] Mirror: triggered workflow paths failed", error));
 }
 
 /**

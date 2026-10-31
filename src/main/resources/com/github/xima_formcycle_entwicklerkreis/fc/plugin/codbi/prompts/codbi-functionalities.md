@@ -50,10 +50,48 @@ CRITICAL — Distinguish from Form Chatbot Plugin (XIMA Chatbot): Use XNavigatio
 ## AI.OCR
 
 Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR. USE whenever the request asks to extract/text-recognize the content of an uploaded image/PDF into a text field (e.g. "per OCR den Text extrahieren und in ein Feld schreiben").
-- **REQUIRED**: Mode ("print" or "verify") AND the receiver field link data-cb-field (dot-prefixed class selector of the target field's `name`, e.g. data-cb-field=".tfExtractedText" — never an ID selector, never without it).
-- Create the receiver field (e.g. an XTextArea `tfExtractedText`) when the request names a target field that does not exist yet, link it via data-cb-field, and enable AutoResize on it (autosize="1") so the extracted text is displayed comfortably.
-- Mode="print": except when a specific mode is requested, this is the default for writing extracted text into a receiver field — still set data-cb-field so the target is explicit.
-- Mode="verify": additionally **REQUIRED** to set Pattern, RegExFlags, WrongFileMessage, InvalidImageText (ALL five for verify).
+
+**Mode** ("print" | "verify" | "extract fields"):
+- **print** (DEFAULT for writing text into a single receiver field) — write the OCR text into ONE receiver (a textarea).
+- **verify** — check the uploaded document matches a pattern (yes/no).
+- **extract fields** — write several separately-extracted substrings into DIFFERENT fields.
+
+### Receiver field (all modes besides the table-driven configuration)
+- **REQUIRED**: give the receiver field (the XTextArea that receives the OCR result) the CSS class `CodBi_AI_OCR_Receiver`. The functionality finds the receiver ONLY by that CSS class (there is NO `data-cb-Receiver` and NO `data-cb-field` attribute for print-mode lookup — never invent one). Create the receiver (an XTextArea, e.g. `taOcrResult`) when the request names a target that does not exist yet, and add `CodBi_AI_OCR_Receiver` to its `class` property.
+- Enable AutoResize (autosize="1") on the receiver so the extracted text is displayed comfortably.
+
+### Language-agnostic pattern rule (KEY)
+When the user wants ONLY specific substrings of the scanned text (e.g. "alle Wörter, die mit 'Aus' beginnen", "only the date from the text", "extrahiere nur die Kundennummer und den Betrag"), you MUST derive a regular expression that matches exactly those substrings and encode it into the **data-cb-pattern** attribute (or a `data-cb-pattern_<field>` in extract-fields mode). Do NOT wait for the user to name a regex — derive it yourself from the natural-language description:
+- Describe the selection in the user's own words first, then convert it to a regex, e.g. "alle Wörter, die mit 'Aus' beginnen" → pattern `\bAus\w*\b` (word boundary, then `Aus`, then any letters, then word boundary). Greedy/alternative examples: "nur das Datum" → `\b\d{1,2}\.\d{1,2}\.\d{4}\b`; "das Wort nach 'Betrag:'" → `Betrag:\s*([^\s]+)` (with a capture group, see below).
+- If the user wants to KEEP the whole text (no filter), do not put an overly narrow pattern on `data-cb-pattern`; an empty/unset pattern means "whole text".
+- Print mode with a filter: set data-cb-pattern to extract only the matching substrings into the receiver. Use a capturing group in the regex so ONLY the captured part is written (the whole match is written when there is no group).
+- REGEX ESCAPING: inside data-cb-pattern write a literal caret `^` as `°`, and literal braces `{`/`}` as `°{`/`°}` (they are unescaped at run time). Backslashes for `\b`, `\d`, `\s`, classes etc. remain as-is.
+- For case-insensitive matching (e.g. "Aus"/"aus"), additionally set data-cb-regexflags="i" (see RegExFlags below).
+
+### ALL parameters (data-cb-* attributes on the XUpload)
+| Parameter (attr) | Meaning / when to set |
+|---|---|
+| `data-cb-mode` | `print` (default), `verify`, or `extract fields`. |
+| `data-cb-pattern` | Regex that extracts substrings from the scanned text (print/verify) — set it whenever only specific parts are wanted. |
+| `data-cb-pattern_<field>` | Extract-fields mode: one regex per target field `field` (a `Pattern_<field>` parameter). |
+| `data-cb-separator` | Extract-fields mode only: separator between the results of multiple files (default comma). |
+| `data-cb-regexflags` | Optional regex flags applied to all patterns, e.g. `i` (case-insensitive), `m` (multiline), `s` (dotall); combine e.g. `im`. |
+| `data-cb-maxpages` | Max PDF pages to process (default 5); `0` = unlimited. PDFs only. |
+| `data-cb-preprocess` | `true` to enable image preprocessing (grayscale, binarization, noise reduction) before OCR. |
+| `data-cb-processingimagetext` | Text appended to the field label while images are processed. |
+| `data-cb-invalidimagetext` | Text shown when one or more images do not match the pattern in verify mode. |
+| `data-cb-wrongfilemessage` | Label of the manual verification checkbox in verify mode. |
+| `data-cb-maximum` | Max number of uploadable files; processing aborts if exceeded. |
+| `data-cb-field` | Extract-fields mode only: the `data-cb-Field` attribute carried by EACH receiver element (the named capture group it maps to). For print mode the receiver is found ONLY via the `CodBi_AI_OCR_Receiver` CSS class — do NOT use `data-cb-field` to locate the print receiver. |
+| `data-cb-queuebadge` | `true` to show a badge with the current queue position while waiting. |
+| `data-cb-queuetext` | Text appended after the queue position in the badge (e.g. `in queue` → "3 in queue"). |
+
+### Mode specifics
+- **print (default when writing into a receiver)**: put the functionality on the XUpload and the class `CodBi_AI_OCR_Receiver` on the target XTextArea; set `data-cb-mode="print"` + (when filtering) `data-cb-pattern` + optionally `data-cb-regexflags`. The filtered matches are written into the receiver.
+- **verify**: **REQUIRED** to set ALL of Pattern, RegExFlags, WrongFileMessage, InvalidImageText (the match-check pattern plus its flags and the two texts); also put class `CodBi_AI_OCR_Receiver` on the verification receiver field.
+- **extract fields**: requires the receiver fields (each with class `CodBi_AI_OCR_Receiver` and a `data-cb-Field` name), one `data-cb-pattern_<field>` per target field, and cross-file output is joined with `data-cb-separator`.
+
+CRITICAL — always convert a natural-language substring selection from the user's prompt into a concrete `data-cb-pattern` regex expressed in whatever language the request was made; never leave it unset when the user explicitly asks to extract only certain parts.
 
 ## Date.Frame
 

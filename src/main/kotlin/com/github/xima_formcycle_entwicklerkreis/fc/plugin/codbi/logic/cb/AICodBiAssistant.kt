@@ -16,6 +16,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorFormAccess
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorPushService
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -456,6 +457,7 @@ class AICodBiAssistant : IPluginServletAction {
           "SensitiveCheck" -> handleSensitiveCheck(params)
           "ApplyLogEntry" -> handleApplyLogEntry(params)
           "TouchWorkflow" -> handleTouchWorkflow(params)
+          "MirrorPush" -> handlePushMirror(params)
           else -> jsonResponse("""{"error":"Unknown action"}""")
         }
       }
@@ -507,6 +509,69 @@ class AICodBiAssistant : IPluginServletAction {
       jsonResponse("""{"error":${gson.toJson(e.message ?: "TouchWorkflow failed")}}""")
     }
   }
+
+  /**
+   * Phase-2d Mirror push (source-save listener). Called with `X-Action: MirrorPush` and request
+   * parameter `workflowVersionId` by the frontend designer immediately after a SOURCE form/workflow
+   * is published. It resolves the just-saved `WorkflowVersion`'s project id and lets
+   * [MirrorPushService.pushForSourceProject] re-materialize the latest source lane into **every**
+   * Mirror lane that mirrors that project.
+   *
+   * The reflectors are discovered LIVE from the persisted workflow model (falling back to the
+   * runtime registry), so the push also works the very first time — i.e. before the reflecting
+   * Mirror node has ever executed, which is exactly the state of a freshly configured reflecting
+   * path that still contains nothing but the Mirror node.
+   */
+  private fun handlePushMirror(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val workflowVersionId =
+        params.requestParameters["workflowVersionId"]?.firstOrNull()?.trim()?.toLongOrNull()
+            ?: return jsonResponse("""{"error":"Missing or invalid workflowVersionId"}""")
+    return try {
+      val userContext = getUserContext(params)
+      val projectId = workflowVersionProjectId(userContext, workflowVersionId)
+      if (projectId == null) {
+        logger.warn(
+            "[AICodBiAssistant] MirrorPush: cannot resolve project of WorkflowVersion {}",
+            workflowVersionId)
+        return jsonResponse("""{"error":"WorkflowVersion project could not be resolved"}""")
+      }
+      val note = MirrorPushService.pushForSourceProject(userContext, projectId)
+      logger.info(
+          "[AICodBiAssistant] MirrorPush for WorkflowVersion {} (project {}): {}",
+          workflowVersionId,
+          projectId,
+          note)
+      jsonResponse("""{"status":"ok","note":${gson.toJson(note)}}""")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] MirrorPush failed for WorkflowVersion {}: {}",
+          workflowVersionId,
+          e.message)
+      jsonResponse("""{"error":${gson.toJson(e.message ?: "MirrorPush failed")}}""")
+    }
+  }
+
+  /**
+   * Resolves the project id of [workflowVersionId], or `null` when it cannot be loaded/traversed.
+   */
+  private fun workflowVersionProjectId(userContext: Any, workflowVersionId: Long): Long? =
+      try {
+        val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+        val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+        val ucClass = Class.forName("de.xima.fc.user.UserContext")
+        val workflowVersion =
+            workflowVersionApi.javaClass
+                .getMethod("getById", ucClass, Long::class.javaObjectType)
+                .invoke(workflowVersionApi, userContext, workflowVersionId)
+        val project = workflowVersion?.javaClass?.getMethod("getProject")?.invoke(workflowVersion)
+        (project?.javaClass?.getMethod("getId")?.invoke(project) as? Number)?.toLong()
+      } catch (e: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] Could not resolve project of WorkflowVersion {}: {}",
+            workflowVersionId,
+            e.message)
+        null
+      }
 
   /**
    * Returns the list of all widgets / workflow nodes / workflow triggers that CodBi knows (from the

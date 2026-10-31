@@ -8,12 +8,10 @@ import org.junit.jupiter.api.Test
  * the SAME field, each with its OWN actions, must be built as ONE `FC_SWITCH` — never as nested or
  * chained `FC_MULTIPLE_CONDITION` ("if") nodes.
  *
- * The reported case produced two nested `FC_MULTIPLE_CONDITION` nodes for
- * "wenn in Popel 'Haus' steht eine Mail …, wenn dort aber 'AST' steht, die Datei herunterladen",
- * although the backend already creates a real switch/case structure from `_cases` /
- * `_defaultChildNodes`. The guidance must be LANGUAGE-AGNOSTIC (judged by meaning, never keywords)
- * and reach every pass:
- *
+ * The reported case produced two nested `FC_MULTIPLE_CONDITION` nodes for "wenn in Popel 'Haus'
+ * steht eine Mail …, wenn dort aber 'AST' steht, die Datei herunterladen", although the backend
+ * already creates a real switch/case structure from `_cases` / `_defaultChildNodes`. The guidance
+ * must be LANGUAGE-AGNOSTIC (judged by meaning, never keywords) and reach every pass:
  * 1. the always-sent build instruction (`codbi-workflow-task-instruction.md`),
  * 2. the pass-1 compact catalogue (`formcycle-workflow-nodes-compact.md`, whose FIRST line is the
  *    only text pass-1 ships per node), and
@@ -25,8 +23,7 @@ import org.junit.jupiter.api.Test
  */
 class WorkflowSwitchVsConditionPromptTest {
 
-  private val resourceBase =
-      "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
+  private val resourceBase = "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
 
   private fun read(resource: String): String =
       WorkflowSwitchVsConditionPromptTest::class
@@ -42,7 +39,8 @@ class WorkflowSwitchVsConditionPromptTest {
 
   /** The first (non-blank) line beneath a `### <heading>` section — the line pass-1 receives. */
   private fun firstLineAfterHeading(text: String, heading: String): String =
-      text.lineSequence()
+      text
+          .lineSequence()
           .dropWhile { !it.startsWith("### $heading") }
           .drop(1)
           .firstOrNull { it.isNotBlank() }

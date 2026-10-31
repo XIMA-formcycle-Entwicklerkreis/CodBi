@@ -449,6 +449,37 @@ describe("DQ_Table_View JSON-column handling", () => {
       expect(anchors[1].getAttribute("href")).toBe("https://y.example");
     });
 
+    it("keeps a multi-parameter query string inside the link (does not truncate at &)", () => {
+      const td = document.createElement("td");
+      const url = "https://alpha/beta/form-management/designer/1010?vn=1&client=form-management&pid=1010";
+
+      helpers.renderTextCell(td, url);
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.getAttribute("href")).toBe(url);
+      expect(anchor.textContent).toBe(url);
+      expect(td.textContent).toBe(url);
+    });
+
+    it("applies the URL-part replacement to the whole URL including & query params", () => {
+      const td = document.createElement("td");
+      const replacements = helpers.parseUrlReplacements("https://alpha/beta", "https://gamma/jojo");
+
+      helpers.renderTextCell(
+        td,
+        "https://alpha/beta/form-management/designer/1010?vn=1&client=form-management&pid=1010",
+        replacements,
+      );
+      const anchor = td.querySelector("a")!;
+
+      expect(anchor.getAttribute("href")).toBe(
+        "https://gamma/jojo/form-management/designer/1010?vn=1&client=form-management&pid=1010",
+      );
+      expect(anchor.textContent).toBe(
+        "https://gamma/jojo/form-management/designer/1010?vn=1&client=form-management&pid=1010",
+      );
+    });
+
     it("renders without replacements when none are given", () => {
       const td = document.createElement("td");
 

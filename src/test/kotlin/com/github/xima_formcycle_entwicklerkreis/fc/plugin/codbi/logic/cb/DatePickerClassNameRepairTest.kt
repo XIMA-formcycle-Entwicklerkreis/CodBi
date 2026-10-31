@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test
  *
  * The model emitted the NON-EXISTENT widget `XDatePicker` (Formcycle has no such className; a date
  * field is an `XTextField` with `datatype` "dateDE"/"date"). [AICodBiAssistant]'
- * `sanitizeAiFormItems` drops every item with an unknown className, so BOTH date fields vanished and
- * the run produced nothing at all — even though the requested CodBi wiring
+ * `sanitizeAiFormItems` drops every item with an unknown className, so BOTH date fields vanished
+ * and the run produced nothing at all — even though the requested CodBi wiring
  * (`CodBi_DateFrame_1_Begin` + `CodBi_DateFrame_1_End`) was already correct. The canonicalization
  * must convert such an item into a real date field and keep everything else (id, label, cssclasses,
  * container references).
@@ -25,15 +25,15 @@ class DatePickerClassNameRepairTest {
   private fun sanitize(itemsJson: String): JsonObject {
     val root = JsonParser.parseString(itemsJson).asJsonObject
     val method =
-        AICodBiAssistant::class.java.getDeclaredMethod(
-            "sanitizeAiFormItems", JsonObject::class.java)
+        AICodBiAssistant::class
+            .java
+            .getDeclaredMethod("sanitizeAiFormItems", JsonObject::class.java)
     method.isAccessible = true
     method.invoke(assistant, root)
     return root
   }
 
-  private fun JsonObject.name(): String =
-      getAsJsonObject("properties")?.get("name")?.asString ?: ""
+  private fun JsonObject.name(): String = getAsJsonObject("properties")?.get("name")?.asString ?: ""
 
   @Test
   fun `an invented XDatePicker becomes an XTextField date field instead of being dropped`() {
@@ -48,7 +48,8 @@ class DatePickerClassNameRepairTest {
               {"className":"XDatePicker","properties":{"name":"tfEndDatum","id":"xi-end-datum",
                 "label":"Enddatum","cssclasses":["CodBi_DateFrame_1_End"]}}
             ]}
-            """.trimIndent())
+            """
+                .trimIndent())
 
     val items = root.getAsJsonArray("items")
     assertEquals(3, items.size(), "no item may be dropped: $root")
@@ -91,7 +92,8 @@ class DatePickerClassNameRepairTest {
               {"className":"XTextField","properties":{"name":"tfGeburtsdatum","id":"xi-tf-geburtsdatum",
                 "label":"Geburtsdatum","datatype":"dateDE","cssclasses":["CodBi_NoFutureDate"]}}
             ]}
-            """.trimIndent())
+            """
+                .trimIndent())
     val item = root.getAsJsonArray("items").first().asJsonObject
     assertEquals("XTextField", item.get("className").asString)
     assertEquals("dateDE", item.getAsJsonObject("properties").get("datatype").asString)
@@ -105,7 +107,8 @@ class DatePickerClassNameRepairTest {
             {"items":[
               {"className":"XBananaWidget","properties":{"name":"tfBanane","id":"xi-tf-banane"}}
             ]}
-            """.trimIndent())
+            """
+                .trimIndent())
     val items = root.getAsJsonArray("items")
     assertFalse(
         items.map { it.asJsonObject.get("className").asString }.contains("XBananaWidget"),

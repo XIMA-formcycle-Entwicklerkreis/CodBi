@@ -56,7 +56,12 @@ class MirrorFormAccessValidationModelTest {
     val revids = validation.getJSONObject("revids")
     revids
         .getJSONObject("hidden")
-        .put("xi-sel-1", JSONArray().apply { add("xi-span-1"); add("xi-span-2") })
+        .put(
+            "xi-sel-1",
+            JSONArray().apply {
+              add("xi-span-1")
+              add("xi-span-2")
+            })
     revids.getJSONObject("formula").getJSONArray("hidden").add("xi-span-1")
     return model
   }
@@ -125,8 +130,7 @@ class MirrorFormAccessValidationModelTest {
     assertTrue(fields.containsKey("mir-1_xi-sel-1"))
     assertTrue(fields.containsKey("mir-1_xi-span-1"))
     // … and the condition references point at the namespaced controller.
-    assertEquals(
-        "mir-1_xi-sel-1", fields.getJSONObject("mir-1_xi-span-1").getString("hif"))
+    assertEquals("mir-1_xi-sel-1", fields.getJSONObject("mir-1_xi-span-1").getString("hif"))
     // `hif_c`/`hif_v` are NOT ids and must survive unchanged.
     assertEquals("1", fields.getJSONObject("mir-1_xi-span-1").getString("hif_c"))
     assertEquals("hide", fields.getJSONObject("mir-1_xi-span-1").getString("hif_v"))

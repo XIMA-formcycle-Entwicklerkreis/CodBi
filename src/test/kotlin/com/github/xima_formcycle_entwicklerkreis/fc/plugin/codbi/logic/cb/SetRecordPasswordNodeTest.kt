@@ -20,7 +20,8 @@ class SetRecordPasswordNodeTest {
           ?.use { it.readText() } ?: error("bundled $path not found on the classpath")
 
   private val detailed =
-      resource("com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
+      resource(
+          "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
   private val compact =
       resource(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/formcycle-workflow-nodes-compact.md")
@@ -28,7 +29,8 @@ class SetRecordPasswordNodeTest {
       resource(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-workflow-task-instruction.md")
   private val clarification =
-      resource("com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
+      resource(
+          "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
 
   // region the params builder
 

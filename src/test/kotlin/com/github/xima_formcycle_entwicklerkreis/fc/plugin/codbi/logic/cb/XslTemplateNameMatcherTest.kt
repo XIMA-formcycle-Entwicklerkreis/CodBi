@@ -39,14 +39,12 @@ class XslTemplateNameMatcherTest {
         XslTemplateNameMatcher.resolve("Anschriftenreport", available).match?.name)
     assertEquals(
         "Import_Vorlage", XslTemplateNameMatcher.resolve("Import Vorlage", available).match?.name)
-    assertEquals(
-        "Adressen_XSL", XslTemplateNameMatcher.resolve("Adressen", available).match?.name)
+    assertEquals("Adressen_XSL", XslTemplateNameMatcher.resolve("Adressen", available).match?.name)
   }
 
   @Test
   fun `a clear partial match is accepted and marked as not exact`() {
-    val result =
-        XslTemplateNameMatcher.resolve("Import_Vorlage2", listOf("Import_Vorlage2_Final"))
+    val result = XslTemplateNameMatcher.resolve("Import_Vorlage2", listOf("Import_Vorlage2_Final"))
     assertEquals("Import_Vorlage2_Final", result.match?.name)
     assertFalse(result.match?.exact ?: true)
   }
@@ -54,8 +52,7 @@ class XslTemplateNameMatcherTest {
   @Test
   fun `ambiguity is never guessed`() {
     val result =
-        XslTemplateNameMatcher.resolve(
-            "Import", listOf("Import_Vorlage_A", "Import_Vorlage_B"))
+        XslTemplateNameMatcher.resolve("Import", listOf("Import_Vorlage_A", "Import_Vorlage_B"))
     assertNull(result.match)
     assertEquals(listOf("Import_Vorlage_A", "Import_Vorlage_B"), result.candidates)
   }

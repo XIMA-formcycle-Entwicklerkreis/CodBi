@@ -214,7 +214,13 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: 320px;
+  /*
+   * Wide by default: the designer leaves plenty of room to the LEFT of the settings panel, and the
+   * 320px card used only a fraction of it (the mirrored element was squeezed into a narrow strip).
+   * The JS still positions/fits it, so this is the desired width, not a hard constraint.
+   */
+  width: min(900px, calc(100vw - 32px));
+  min-width: 420px;
   /* Safety net: never let the (JS-fitted) floating width overflow the viewport. */
   max-width: calc(100vw - 16px);
   max-height: 84vh;

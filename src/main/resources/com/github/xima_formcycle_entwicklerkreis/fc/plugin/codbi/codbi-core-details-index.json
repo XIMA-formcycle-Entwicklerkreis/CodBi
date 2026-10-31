@@ -46,9 +46,22 @@
       "id": "AI.OCR",
       "type": "functionality",
       "summary": "Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.",
-      "tsdoc": "Provides the {@link AI.functionality }.",
+      "tsdoc": "Applicable on an XUpload field to extract and return text from the uploaded images or PDFs via OCR into a SEPARATE text field (an XTextArea). Use it for requests like \u0027OCR das Dokument\u0027, \u0027extrahiere den Text\u0027, \u0027Auslesen des Belegs\u0027. RECEIVER (CRITICAL, all modes): the OCR result is written into the target text field via the CSS class CodBi_AI_OCR_Receiver. Add the class CodBi_AI_OCR_Receiver to the target XTextArea\u0027s \u0027class\u0027 property. Do NOT use any \u0027data-cb-Receiver\u0027 attribute — there is no such attribute; the receiver is selected ONLY by that CSS class. CLASSIC MODE (Mode \u0027print\u0027, the default): a single XUpload with AI.OCR and the target XTextArea that carries class CodBi_AI_OCR_Receiver; when the user uploads a document the OCR text is written into that textarea. PATTERN / SUBSTRING EXTRACTION (KEY RULE): when the user asks to extract only CERTAIN words/numbers/lines (e.g. \u0027alle W\u00F6rter, die mit \u0022Aus\u0022 beginnen\u0027, \u0027alle Zahlen\u0027, \u0027nur die E-Mail-Adressen\u0027), you MUST set data-cb-pattern on the XUpload with a regex capturing exactly the wanted tokens. Derive the regex from the natural-language term LANGUAGE-AGNOSTICALLY (do not hardcode language): \u0027beginnt mit X\u0027/\u0027starts with X\u0027/\u0027empieza con X\u0027 becomes the word-boundary regex \\bX\\w*\\b; a plain word becomes that word; a number becomes \\d+(?:[.,]\\d+)? etc. For example \u0027alle W\u00F6rter, die mit \u0022Aus\u0022 beginnen\u0027 => data-cb-pattern=\u0022\\bAus\\w*\\b\u0022. In the pattern the special chars { } ^ are written as \u00B0{ \u00B0} \u00B0 to avoid markup corruption. When cleaned output is preferred, use a capturing group so ONLY group 1 is written out: e.g. data-cb-pattern=\u0022Aus(\\w+)\u0022 extracts the rest of each \u0027Aus\u2026\u0027 word. When Mode=\u0027print\u0027 with a data-cb-pattern, ONLY the matching substrings are written into the receiver; without a pattern the whole text is written.",
       "parameters": {
-        "Field": "CSS-Class-Selector for the field receiving the OCR output (e.g., \u0027.tfExtractedText\u0027). Use dot-prefixed class selector based on the target element\u0027s name. Do NOT use an ID selector."
+        "Mode": "data-cb-Mode: \u0027print\u0027 (default, whole text or data-cb-pattern substrings into the CodBi_AI_OCR_Receiver field), \u0027verify\u0027, or \u0027extractfields\u0027.",
+        "Pattern": "data-cb-pattern: the regex for substring/capture extraction. Set it whenever the user wants only specific parts of the scanned text.",
+        "FieldPattern_": "The regex with named capture groups for the extractfields mode (rarely used).",
+        "Field": "In extractfields mode, CSS-Class-Selector of a target field. In the OTHER modes the receiver is chosen by the CodBi_AI_OCR_Receiver CSS class, NOT by Field.",
+        "InvalidImageText": "Text shown when one or more images do not match the pattern in verify mode.",
+        "MaxPages": "A number limiting how many pages of a PDF are OCR-processed (0 = all).",
+        "Maximum": "Max number of uploadable files; processing aborts if exceeded.",
+        "Preprocess": "\u0027true\u0027 to enable image preprocessing (grayscale, binarization, noise reduction) before OCR.",
+        "ProcessingImageText": "Text appended to the field label while images are processed.",
+        "QueueBadge": "\u0027true\u0027 to show a badge with the current queue position while waiting.",
+        "QueueText": "Text appended after the queue position in the badge.",
+        "RegExFlags": "Optional regex flags applied to all patterns, e.g. \u0027i\u0027 (case-insensitive), \u0027m\u0027 (multiline), \u0027s\u0027 (dotall).",
+        "Separator": "Extract-fields mode only: separator between the results of multiple files (default comma).",
+        "WrongFileMessage": "Label of the manual verification checkbox in verify mode."
       },
       "classDescriptions": {}
     },

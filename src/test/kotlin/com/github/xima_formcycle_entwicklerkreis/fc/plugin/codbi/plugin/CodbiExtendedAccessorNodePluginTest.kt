@@ -78,7 +78,8 @@ class CodbiExtendedAccessorNodePluginTest {
     assertTrue(view.contains("data-codbi-accessor-tree"))
     assertTrue(view.contains("workflow-extended-accessor.js"))
     assertTrue(view.contains("elementPreview"))
-    // The selected element is persisted through a normally submitted input, not a widget-only value.
+    // The selected element is persisted through a normally submitted input, not a widget-only
+    // value.
     assertTrue(view.contains("id=\"codbiAccessorFieldName\""))
     assertTrue(view.contains("codbi-accessor-field-name"))
     assertTrue(view.contains("codbiAccessorSelectField"))
@@ -107,7 +108,8 @@ class CodbiExtendedAccessorNodePluginTest {
     // i.e. strict acceptance criteria. Declaring `value` as `largeString` would reject the
     // plain `String` and silently store `LargeString.empty()`, making the system placeholder
     // `[%$Node.RESULT.value%]` resolve to an empty string.
-    val descriptor = plugin.getSuccessValueDescriptor(ValueDescriptorFactory.getInstance()).asRecord()
+    val descriptor =
+        plugin.getSuccessValueDescriptor(ValueDescriptorFactory.getInstance()).asRecord()
 
     val result =
         descriptor

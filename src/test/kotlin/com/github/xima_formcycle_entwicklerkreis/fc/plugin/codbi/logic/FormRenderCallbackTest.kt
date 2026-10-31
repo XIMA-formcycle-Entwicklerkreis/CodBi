@@ -59,8 +59,10 @@ class FormRenderCallbackTest {
 
     FormRenderCallback.onAfterRenderForm(params)
 
-    // Only the CODE LIBRARY resources are gated on the enable flag. The Mirror's "hide the persisted
-    // copies" script is injected for EVERY form (a form may use the Mirror without the code library),
+    // Only the CODE LIBRARY resources are gated on the enable flag. The Mirror's "hide the
+    // persisted
+    // copies" script is injected for EVERY form (a form may use the Mirror without the code
+    // library),
     // so the assertion is scoped to the resources that belong to the library.
     val ids = scriptIds(params.doc.form)
     assertFalse("codbi-script" in ids, "codbi.js must not be injected when disabled: $ids")

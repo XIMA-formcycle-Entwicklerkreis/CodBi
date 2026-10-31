@@ -1,0 +1,220 @@
+<ui:composition xmlns="http://www.w3.org/1999/xhtml"
+    xmlns:h="http://xmlns.jcp.org/jsf/html"
+    xmlns:f="http://xmlns.jcp.org/jsf/core"
+    xmlns:ui="http://xmlns.jcp.org/jsf/facelets"
+    xmlns:o="http://omnifaces.org/ui"
+    xmlns:p="http://primefaces.org/ui"
+    xmlns:xi="http://www.xima.de/taglib/xfc">
+
+    <xi:namingContainer id="MirrorNode">
+
+        <script>
+            (function () {
+                var amp = String.fromCharCode(38);
+                var prefix = "#{request.contextPath}/plugin?name=Resource" + amp + "Path=";
+                if (!document.querySelector("link[data-codbi-mirror-node-css]")) {
+                    var css = document.createElement("link");
+                    css.rel = "stylesheet";
+                    css.setAttribute("data-codbi-mirror-node-css", "true");
+                    css.href = prefix + "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.css";
+                    document.head.appendChild(css);
+                }
+                if (!document.querySelector("script[data-codbi-mirror-node-js]")) {
+                    var js = document.createElement("script");
+                    js.setAttribute("data-codbi-mirror-node-js", "true");
+                    js.src = prefix + "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.js";
+                    document.head.appendChild(js);
+                }
+            })();
+        </script>
+
+        <xi:newWorkflowActionBase id="base" value="#{model}"
+            legend="#{msg['Mirror.name']}" />
+
+        <div class="codbi-mirror-node">
+
+            <p:fieldset id="sourceSection"
+                legend="#{msg['workflow.mirror.section_source']}"
+                styleClass="fc-fieldset">
+
+                <!--
+                    Hidden but fully rendered text inputs. The dropdowns write the selected form key,
+                    form title, path id and path name into them and invoke the remote command below,
+                    which persists the node configuration exactly like the shared xi:inputText
+                    controls. The values are also part of every normal property-form submit.
+                -->
+                <p:inputText id="mirrorSourceForm" value="#{model.sourceForm}"
+                    style="display:none !important"
+                    styleClass="codbi-mirror-source-form" />
+                <p:inputText id="mirrorSourceFormName" value="#{model.sourceFormName}"
+                    style="display:none !important"
+                    styleClass="codbi-mirror-source-form-name" />
+                <p:inputText id="mirrorPathId" value="#{model.pathId}"
+                    style="display:none !important"
+                    styleClass="codbi-mirror-path-id" />
+                <p:inputText id="mirrorPathName" value="#{model.pathName}"
+                    style="display:none !important"
+                    styleClass="codbi-mirror-path-name" />
+
+                <p:outputLabel for="mirrorSourceForm"
+                    styleClass="codbi-mirror-node__label"
+                    title="#{msg['workflow.mirror.form.tooltip']}"
+                    value="#{msg['workflow.mirror.form']}" />
+                <div id="codbiMirrorPicker" class="codbi-mirror-node__picker"
+                    data-codbi-mirror-node="true"
+                    data-context-path="#{request.contextPath}"
+                    data-form-value="#{model.sourceForm}"
+                    data-form-name="#{model.sourceFormName}"
+                    data-path-value="#{model.pathId}"
+                    data-path-name="#{model.pathName}"
+                    data-input-form-id="#{mirrorSourceForm.clientId}"
+                    data-input-form-name-id="#{mirrorSourceFormName.clientId}"
+                    data-input-path-id="#{mirrorPathId.clientId}"
+                    data-input-path-name-id="#{mirrorPathName.clientId}"
+                    data-msg-loading="#{msg['workflow.mirror.loading']}"
+                    data-msg-no-form="#{msg['workflow.mirror.noForm']}"
+                    data-msg-no-paths="#{msg['workflow.mirror.noPaths']}"
+                    data-msg-preview-empty="#{msg['workflow.mirror.preview.empty']}"
+                    data-msg-node-count="#{msg['workflow.mirror.nodeCount']}"
+                    data-msg-sync-running="#{msg['workflow.mirror.sync.running']}"
+                    data-msg-sync-result="#{msg['workflow.mirror.sync.result']}">
+                    <select data-codbi-mirror-form="true"
+                        class="codbi-mirror-node__select"
+                        title="#{msg['workflow.mirror.form.tooltip']}">
+                        <option value="">#{msg['workflow.mirror.loading']}</option>
+                    </select>
+                    <select data-codbi-mirror-path="true"
+                        class="codbi-mirror-node__select"
+                        title="#{msg['workflow.mirror.path.tooltip']}">
+                        <option value="">#{msg['workflow.mirror.loading']}</option>
+                    </select>
+                    <div class="codbi-mirror-node__preview"
+                        data-codbi-mirror-preview="true"></div>
+                </div>
+
+                <!--
+                    Manual "materialize now" trigger. FORMCYCLE exposes no workflow-save hook to
+                    plugins, so this button is the reliable way to create/update this path's nodes
+                    from the source path while working in the WORKFLOW designer.
+                -->
+                <button type="button" class="codbi-mirror-node__sync"
+                    data-codbi-mirror-sync="true"
+                    title="#{msg['workflow.mirror.sync.tooltip']}">#{msg['workflow.mirror.sync']}</button>
+                <div class="codbi-mirror-node__sync-result"
+                    data-codbi-mirror-sync-result="true"></div>
+
+                <p:remoteCommand name="codbiMirrorStore"
+                    process="@this mirrorSourceForm mirrorSourceFormName mirrorPathId mirrorPathName"
+                    actionListener="#{elementPropertiesBean.storeCurrent}"
+                    update=":flowchartForm:flowchart codbiMirrorPreview" />
+
+                <h:outputText styleClass="codbi-mirror-node__hint"
+                    value="#{msg['workflow.mirror.hint']}" />
+
+                <p:outputPanel id="codbiMirrorPreview" layout="block"
+                    styleClass="codbi-mirror-node__summary">
+                    <div class="codbi-mirror-node__row">
+                        <span class="codbi-mirror-node__row-label">
+                            <h:outputText
+                                value="#{msg['workflow.mirror.preview.form']}" />
+                        </span>
+                        <code class="codbi-mirror-node__row-value">#{empty model.sourceFormName ? '&#8212;' : model.sourceFormName}</code>
+                    </div>
+                    <div class="codbi-mirror-node__row">
+                        <span class="codbi-mirror-node__row-label">
+                            <h:outputText
+                                value="#{msg['workflow.mirror.preview.path']}" />
+                        </span>
+                        <code class="codbi-mirror-node__row-value">#{empty model.pathName ? '&#8212;' : model.pathName}</code>
+                    </div>
+                    <div class="codbi-mirror-node__row">
+                        <span class="codbi-mirror-node__row-label">
+                            <h:outputText
+                                value="#{msg['workflow.mirror.preview.placeholder']}" />
+                        </span>
+                        <code class="codbi-mirror-node__row-value"
+                            data-codbi-mirror-placeholder="true"
+                            data-node-name="#{model.name}">[%$#{model.name}.RESULT.value%]</code>
+                    </div>
+                </p:outputPanel>
+
+            </p:fieldset>
+
+            <p:fieldset legend="#{msg['workflow.mirror.section_options']}"
+                styleClass="fc-fieldset">
+
+                <p:outputLabel for="outputMode"
+                    styleClass="codbi-mirror-node__label"
+                    title="#{msg['workflow.mirror.outputMode.tooltip']}"
+                    value="#{msg['workflow.mirror.outputMode']}" />
+                <p:selectOneMenu id="outputMode" value="#{model.outputMode}"
+                    title="#{msg['workflow.mirror.outputMode.tooltip']}">
+                    <f:selectItem itemValue="SUMMARY"
+                        itemLabel="#{msg['workflow.mirror.outputMode.summary']}" />
+                    <f:selectItem itemValue="NODES"
+                        itemLabel="#{msg['workflow.mirror.outputMode.nodes']}" />
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        update=":flowchartForm:flowchart" global="false" />
+                </p:selectOneMenu>
+
+                <br/>
+                <p:outputLabel for="autoSync" styleClass="codbi-mirror-node__label"
+                    title="#{msg['workflow.mirror.autoSync.tooltip']}"
+                    value="#{msg['workflow.mirror.autoSync']}" />
+                <p:selectBooleanCheckbox id="autoSync" value="#{model.autoSync}"
+                    title="#{msg['workflow.mirror.autoSync.tooltip']}">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        update=":flowchartForm:flowchart" global="false" />
+                </p:selectBooleanCheckbox>
+
+                <br/>
+                <p:outputLabel for="syncEndpoint" styleClass="codbi-mirror-node__label"
+                    title="#{msg['workflow.mirror.syncEndpoint.tooltip']}"
+                    value="#{msg['workflow.mirror.syncEndpoint']}" />
+                <p:selectBooleanCheckbox id="syncEndpoint" value="#{model.syncEndpoint}"
+                    title="#{msg['workflow.mirror.syncEndpoint.tooltip']}">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        update=":flowchartForm:flowchart" global="false" />
+                </p:selectBooleanCheckbox>
+
+                <br/>
+                <p:outputLabel for="pauseSync" styleClass="codbi-mirror-node__label"
+                    title="#{msg['workflow.mirror.pauseSync.tooltip']}"
+                    value="#{msg['workflow.mirror.pauseSync']}" />
+                <p:selectBooleanCheckbox id="pauseSync" value="#{model.pauseSync}"
+                    title="#{msg['workflow.mirror.pauseSync.tooltip']}">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        update=":flowchartForm:flowchart" global="false" />
+                </p:selectBooleanCheckbox>
+
+            </p:fieldset>
+
+            <!-- TEMPORARY Phase-0 spike toggle. DELETE after the Go/No-Go. -->
+            <p:fieldset legend="TEMPORARY SPIKE (debug)" styleClass="fc-fieldset"
+                style="border-color:#ff8c00">
+                <p:outputLabel for="spikeProbe" styleClass="codbi-mirror-node__label"
+                    value="Run 1 - inject SpikeProbe child into downstream lane" />
+                <p:selectBooleanCheckbox id="spikeProbe" value="#{model.spikeProbe}">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        update=":flowchartForm:flowchart" global="false" />
+                </p:selectBooleanCheckbox>
+                <br/>
+                <p:outputLabel for="spikeProbe2" styleClass="codbi-mirror-node__label"
+                    value="Run 2 - mutate downstream node params IN PLACE" />
+                <p:selectBooleanCheckbox id="spikeProbe2" value="#{model.spikeProbe2}">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        update=":flowchartForm:flowchart" global="false" />
+                </p:selectBooleanCheckbox>
+            </p:fieldset>
+
+        </div>
+
+    </xi:namingContainer>
+
+</ui:composition>

@@ -1,4 +1,4 @@
-﻿package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
@@ -20,8 +20,8 @@ import org.slf4j.LoggerFactory
  * Servlet action that exposes the cross-form element access of [MirrorFormAccess] to the browser.
  *
  * It is used by
- * - the form designer, to populate the Mirror widget's â€œsource formâ€ / â€œsource elementâ€ dropdowns
- *   (`action=forms`, `action=elements&form=<formKey>`), and
+ * - the form designer, to populate the Mirror widget's â€œsource formâ€ / â€œsource elementâ€
+ *   dropdowns (`action=forms`, `action=elements&form=<formKey>`), and
  * - (indirectly) the assistant, through [MirrorFormAccess].
  *
  * Endpoint: `plugin?name=CodBi_Mirror&action=â€¦`.
@@ -63,6 +63,88 @@ class MirrorServletAction : IPluginServletAction {
           val json = elementsJson(userContext, params)
           logger.info("[MirrorServletAction] action='elements' -> {} chars", json.length)
           jsonResponse(json)
+        }
+        "paths" -> {
+          val json = pathsJson(userContext, params)
+          logger.info("[MirrorServletAction] action='paths' -> {} chars", json.length)
+          jsonResponse(json)
+        }
+        "pathtree" -> {
+          val json = pathTreeJson(userContext, params)
+          logger.info("[MirrorServletAction] action='pathtree' -> {} chars", json.length)
+          jsonResponse(json)
+        }
+        "triggerpaths" -> {
+          // Read-only: the source form's workflow paths whose trigger references the mirrored
+          // element (or one of its children). Used by the Mirror widget's opt-in option.
+          val formKey = params.requestParameters["form"]?.firstOrNull()?.trim().orEmpty()
+          val element = params.requestParameters["element"]?.firstOrNull()?.trim().orEmpty()
+          val elementKey = params.requestParameters["element_key"]?.firstOrNull()?.trim()
+          val array = JSONArray()
+          for (path in
+              MirrorTriggerPaths.findTriggeredPaths(userContext, formKey, element, elementKey)) {
+            val obj = JSONObject()
+            obj["taskId"] = path.taskId
+            obj["taskName"] = path.taskName
+            obj["triggerType"] = path.triggerType
+            obj["triggerName"] = path.triggerName
+            array.add(obj)
+          }
+          logger.info(
+              "[MirrorServletAction] action='triggerpaths' form='{}' element='{}' -> {}",
+              formKey,
+              element,
+              array.size)
+          jsonResponse(array.toJSONString())
+        }
+        "applytriggerpaths" -> {
+          // Opt-in: create/update the triggered paths in the reflecting form and remove the ones
+          // whose trigger disappeared. Only tasks carrying the Mirror marker are ever touched.
+          val formKey = params.requestParameters["form"]?.firstOrNull()?.trim().orEmpty()
+          val element = params.requestParameters["element"]?.firstOrNull()?.trim().orEmpty()
+          val elementKey = params.requestParameters["element_key"]?.firstOrNull()?.trim()
+          val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
+          val prefix = params.requestParameters["prefix"]?.firstOrNull()?.trim()
+          val note =
+              MirrorTriggerPaths.syncTriggeredPaths(
+                  userContext, formKey, element, elementKey, target, prefix)
+          logger.info(
+              "[MirrorServletAction] action='applytriggerpaths' form='{}' -> '{}' target='{}': {}",
+              formKey,
+              element,
+              target,
+              note)
+          val body = JSONObject()
+          body["status"] = "ok"
+          body["note"] = note
+          jsonResponse(body.toJSONString())
+        }
+        "triggerdiag" -> {
+          // Read-only diagnostic (no writes): tokens, names present plain vs. namespaced in the
+          // reflecting form, the source paths with raw/re-pointed trigger params and every path of
+          // the reflecting workflow. Answers "which trigger fires on this button click?".
+          val formKey = params.requestParameters["form"]?.firstOrNull()?.trim().orEmpty()
+          val element = params.requestParameters["element"]?.firstOrNull()?.trim().orEmpty()
+          val elementKey = params.requestParameters["element_key"]?.firstOrNull()?.trim()
+          val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
+          val prefix = params.requestParameters["prefix"]?.firstOrNull()?.trim()
+          val json =
+              MirrorTriggerPaths.diagnose(userContext, formKey, element, elementKey, target, prefix)
+          logger.info("[MirrorServletAction] action='triggerdiag' -> {} chars", json.length)
+          jsonResponse(json)
+        }
+        "sync" -> {
+          // Manual "materialize now" used by the Mirror node's properties panel. It is the only
+          // trigger available in the WORKFLOW designer, where FORMCYCLE offers no save hook.
+          val formKey = params.requestParameters["form"]?.firstOrNull()?.trim().orEmpty()
+          val pathId = params.requestParameters["path"]?.firstOrNull()?.trim()?.toLongOrNull() ?: 0L
+          val note = MirrorPushService.syncSourcePath(userContext, formKey, pathId)
+          logger.info(
+              "[MirrorServletAction] action='sync' form='{}' path={} -> {}", formKey, pathId, note)
+          val body = JSONObject()
+          body["status"] = "ok"
+          body["note"] = note
+          jsonResponse(body.toJSONString())
         }
         "fields" -> {
           val json = fieldsJson(userContext, params)
@@ -110,7 +192,8 @@ class MirrorServletAction : IPluginServletAction {
   /**
    * Lists the FORMCYCLE form-element TYPES available on this installation: FORMCYCLE's core widgets
    * plus every plugin-provided widget detected via [InstalledFormcycleElements]. Used so a
-   * contained element can be one of ANY installed widget type â€” not just the hard-coded core list.
+   * contained element can be one of ANY installed widget type â€” not just the hard-coded core
+   * list.
    */
   private fun widgetsJson(params: IPluginServletActionParams): String {
     val types = LinkedHashSet<String>()
@@ -333,11 +416,11 @@ class MirrorServletAction : IPluginServletAction {
           XFormRenderConfig().apply {
             setDesignerPreview(true)
             setFormOnly(true)
-            setProjektID(
-                MirrorFormAccess.resolveProjectId(userContext, formKey, formName) ?: 0L)
+            setProjektID(MirrorFormAccess.resolveProjectId(userContext, formKey, formName) ?: 0L)
           }
       MirrorFormAccess.renderElementHtml(
-          userContext, formKey, elementRef, config, XFormRenderContext(), formName, elementKey) ?: ""
+          userContext, formKey, elementRef, config, XFormRenderContext(), formName, elementKey)
+          ?: ""
     } catch (x: Exception) {
       logger.warn("[MirrorServletAction] preview render failed: {}", x.message)
       ""
@@ -379,8 +462,8 @@ class MirrorServletAction : IPluginServletAction {
     val elementRef = params.requestParameters["element"]?.firstOrNull()
     val elementKey = elementKeyParam(params)
     val array = JSONArray()
-    for (field in MirrorFormAccess.valueAbleFields(
-        userContext, formKey, elementRef, formName, elementKey)) {
+    for (field in
+        MirrorFormAccess.valueAbleFields(userContext, formKey, elementRef, formName, elementKey)) {
       array.add(
           JSONObject()
               .fluentPut("id", field.id)
@@ -429,6 +512,62 @@ class MirrorServletAction : IPluginServletAction {
   }
 
   /**
+   * Lists the workflow paths (FORMCYCLE `WorkflowTask`s) of a form (`form` request param) as `[{id,
+   * name, triggerType, triggerName, nodeCount}]`. Used by the workflow Mirror node to populate its
+   * path dropdown.
+   */
+  private fun pathsJson(userContext: Any?, params: IPluginServletActionParams): String {
+    val formKey = params.requestParameters["form"]?.firstOrNull()
+    val formName = formNameParam(params)
+    val array = JSONArray()
+    for (path in WorkflowMirrorAccess.listPaths(userContext, formKey, formName)) {
+      array.add(
+          JSONObject()
+              .fluentPut("id", path.id)
+              .fluentPut("name", path.name)
+              .fluentPut("triggerType", path.triggerType)
+              .fluentPut("triggerName", path.triggerName)
+              .fluentPut("nodeCount", path.nodeCount))
+    }
+    return array.toJSONString()
+  }
+
+  /**
+   * Returns the CURRENT structure of one workflow path (`form`, `path` request params) as `{ form,
+   * path, pathName, triggerType, triggerName, revision, nodes:
+   * [{id, type, name, description, depth}] }`. Used by the workflow Mirror node for its preview and
+   * as the same data the node exposes at runtime.
+   */
+  private fun pathTreeJson(userContext: Any?, params: IPluginServletActionParams): String {
+    val formKey = params.requestParameters["form"]?.firstOrNull()
+    val formName = formNameParam(params)
+    val pathId = params.requestParameters["path"]?.firstOrNull()?.trim()?.toLongOrNull()
+    val snapshot = WorkflowMirrorAccess.snapshot(userContext, formKey, pathId, formName)
+    if (snapshot == null) {
+      return "{\"error\":\"not_found\",\"nodes\":[]}"
+    }
+    val nodes = JSONArray()
+    for (node in snapshot.nodes) {
+      nodes.add(
+          JSONObject()
+              .fluentPut("id", node.id)
+              .fluentPut("type", node.type)
+              .fluentPut("name", node.name)
+              .fluentPut("description", node.description)
+              .fluentPut("depth", node.depth))
+    }
+    return JSONObject()
+        .fluentPut("form", snapshot.formName)
+        .fluentPut("path", snapshot.pathId)
+        .fluentPut("pathName", snapshot.pathName)
+        .fluentPut("triggerType", snapshot.triggerType)
+        .fluentPut("triggerName", snapshot.triggerName)
+        .fluentPut("revision", snapshot.revision)
+        .fluentPut("nodes", nodes)
+        .toJSONString()
+  }
+
+  /**
    * Reads the backend user from the request without a compile-time dependency on the entity type.
    */
   private fun backendUser(params: IPluginServletActionParams): Any? =
@@ -437,8 +576,8 @@ class MirrorServletAction : IPluginServletAction {
   /**
    * Returns the CSS needed to render the previewed element like a published form: the FORMCYCLE
    * frontend FORM THEME CSS (shipped in the `fc-form-renderer` jar) followed by the form's own user
-   * CSS. The server-rendered element markup is frontend markup, so it must be styled by this CSS â€”
-   * not by the designer's own styles (which do not apply to that markup).
+   * CSS. The server-rendered element markup is frontend markup, so it must be styled by this CSS
+   * â€” not by the designer's own styles (which do not apply to that markup).
    */
   private fun formCss(userContext: Any?, params: IPluginServletActionParams): String {
     val formKey = params.requestParameters["form"]?.firstOrNull() ?: return ""
@@ -446,8 +585,9 @@ class MirrorServletAction : IPluginServletAction {
     val themeCss = THEME_CSS_PATHS.joinToString("\n") { path -> readClasspathText(path) }
     val userCss =
         try {
-          MirrorFormAccess.loadFormJson(userContext, formKey, formName)
-              ?.let { XForm(it).getUserCSS() } ?: ""
+          MirrorFormAccess.loadFormJson(userContext, formKey, formName)?.let {
+            XForm(it).getUserCSS()
+          } ?: ""
         } catch (x: Exception) {
           logger.warn("[MirrorServletAction] form user CSS failed: {}", x.message)
           ""

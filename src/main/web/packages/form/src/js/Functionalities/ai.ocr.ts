@@ -311,9 +311,11 @@ export class AI_OCR {
       // #region Send the request to the Tesseract AI OCR API
       const ajaxHeaders: { [key: string]: string } = { "X-Mode": toLoad.mode as string };
 
-      if ((toLoad.mode as string).toLowerCase() !== "print") {
+      // Send the pattern for every mode (print included) so the OCR endpoint can apply a substring
+      // filter when Mode="print" with a data-cb-pattern set.
+      if (toLoad.pattern) {
         ajaxHeaders["X-Pattern"] = encodeURIComponent(
-          toLoad.pattern ? (toLoad.pattern as string).replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^") : "",
+          (toLoad.pattern as string).replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^"),
         );
       }
 
@@ -555,7 +557,36 @@ export class AI_OCR {
     for (const [filename, text] of Object.entries(pdfTextResults)) {
       switch (mode.toLowerCase()) {
         case "print":
-          results[filename] = text;
+          if (pattern) {
+            const decoded = pattern.replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^");
+            const globalRegex = new RegExp(decoded, `${regexFlags || ""}g`);
+            const matched = text.match(globalRegex);
+            // Determine whether the pattern has a capturing group.
+            const probe = new RegExp(decoded, regexFlags || "").exec(text);
+
+            if (!matched || matched.length === 0) {
+              results[filename] = "";
+            } else if (probe && probe.length > 1) {
+              // Use only the captured part of each match when a group is present.
+              const collected: string[] = [];
+
+              for (const m of matched) {
+                const local = new RegExp(decoded, regexFlags || "").exec(m);
+
+                if (local && local.length > 1 && local[1] !== undefined && local[1] !== "") {
+                  collected.push(local[1]);
+                } else {
+                  collected.push(m);
+                }
+              }
+
+              results[filename] = collected.join("\n");
+            } else {
+              results[filename] = matched.join("\n");
+            }
+          } else {
+            results[filename] = text;
+          }
           break;
         case "verify":
           if (pattern) {

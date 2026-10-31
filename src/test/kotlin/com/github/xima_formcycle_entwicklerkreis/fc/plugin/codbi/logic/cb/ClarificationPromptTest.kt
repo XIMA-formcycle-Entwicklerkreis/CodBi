@@ -195,9 +195,11 @@ class ClarificationPromptTest {
     //
     // HISTORY: the cap used to be 34,000 (post-condensation ~30.8 k + headroom). The file had
     // already grown past it BEFORE the XSLT-transformation rules were added (measured 40,233 chars
-    // at the previous commit), so that bound no longer described reality and failed independently of
+    // at the previous commit), so that bound no longer described reality and failed independently
+    // of
     // any new rule. The guard now blocks a regrowth toward the PRE-condensation reference: it must
-    // stay clearly below 44,328 chars, i.e. new rules must keep replacing/condensing prose instead of
+    // stay clearly below 44,328 chars, i.e. new rules must keep replacing/condensing prose instead
+    // of
     // simply appending to the file.
     assertTrue(p.length < 43600, "clarification template grew back to ${p.length} chars")
   }

@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Test
 
 /**
  * FC_RENEW_PROCESS_ID mints a new process ID for the CURRENT record. `FcRenewProcessIdProps` is
- * EMPTY (it only inherits name/description from BaseActionProps) and the executor always generates a
- * full UUID itself, so the node must be documented as parameterless and the assistant must never ask
- * the user for a prefix/mask/value.
+ * EMPTY (it only inherits name/description from BaseActionProps) and the executor always generates
+ * a full UUID itself, so the node must be documented as parameterless and the assistant must never
+ * ask the user for a prefix/mask/value.
  */
 class RenewProcessIdNodeTest {
 
@@ -21,7 +21,8 @@ class RenewProcessIdNodeTest {
           ?.use { it.readText() } ?: error("bundled $path not found on the classpath")
 
   private val detailed =
-      resource("com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
+      resource(
+          "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
   private val compact =
       resource(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/formcycle-workflow-nodes-compact.md")
@@ -29,7 +30,8 @@ class RenewProcessIdNodeTest {
       resource(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-workflow-task-instruction.md")
   private val clarification =
-      resource("com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
+      resource(
+          "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
 
   @Test
   fun `both workflow references document the node as parameterless`() {

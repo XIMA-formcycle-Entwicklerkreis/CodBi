@@ -109,22 +109,17 @@ class ForeignElementCopyTest {
     assertEquals("XContainer", copiedRoot.get("className").asString)
     // parentid must be the parent's technical ID, not its name.
     assertEquals("xi-p1", copiedRoot.props().get("parentid").asString)
-    assertEquals(
-        listOf("div6_selKind", "div6_tfName"), copiedRoot.props().stringArray("elements"))
+    assertEquals(listOf("div6_selKind", "div6_tfName"), copiedRoot.props().stringArray("elements"))
 
     val copiedSelect = root.item("div6_selKind")
-    assertEquals(copiedRoot.props().get("id").asString, copiedSelect.props().get("parentid").asString)
+    assertEquals(
+        copiedRoot.props().get("id").asString, copiedSelect.props().get("parentid").asString)
     assertEquals("XSelect", copiedSelect.get("className").asString)
     // Configuration is copied verbatim, not re-authored.
     assertEquals(2, copiedSelect.props().getAsJsonArray("options").size())
     assertEquals(
         "HTML.Input.REGEX",
-        copiedSelect
-            .props()
-            .getAsJsonArray("attributes")[0]
-            .asJsonObject
-            .get("value")
-            .asString)
+        copiedSelect.props().getAsJsonArray("attributes")[0].asJsonObject.get("value").asString)
     // Row ids stay grouped but are namespaced so they cannot merge with target rows.
     assertEquals("div6_row-1", copiedSelect.props().get("rowid").asString)
 
@@ -159,7 +154,11 @@ class ForeignElementCopyTest {
     val pageNodes =
         listOf(
             node(
-                "xi-p9", null, "p9", "XPage", """{"name":"p9","id":"xi-p9","header":"Seite 9","elements":["tfNine"]}"""),
+                "xi-p9",
+                null,
+                "p9",
+                "XPage",
+                """{"name":"p9","id":"xi-p9","header":"Seite 9","elements":["tfNine"]}"""),
             node(
                 "xi-tf-nine",
                 "xi-p9",
@@ -188,7 +187,8 @@ class ForeignElementCopyTest {
                 """)
             .asJsonObject
 
-    val result = JsonParser.parseString(ForeignElementCopy.apply(withMarker.toString(), null)).asJsonObject
+    val result =
+        JsonParser.parseString(ForeignElementCopy.apply(withMarker.toString(), null)).asJsonObject
 
     assertFalse(result.has(ForeignElementCopy.MARKER))
     assertTrue(result.has("items"))
@@ -198,14 +198,11 @@ class ForeignElementCopyTest {
   fun `sanitizes names and keeps the configured after-order`() {
     val root = targetForm()
     ForeignElementCopy.copySubtree(
-        root,
-        spec(name = "Kopie div 6", after = "tfExisting"),
-        sourceNodes().take(1))
+        root, spec(name = "Kopie div 6", after = "tfExisting"), sourceNodes().take(1))
 
     assertEquals("Kopie_div_6", root.items().last().asJsonObject.props().get("name").asString)
     assertEquals(
-        listOf("tfExisting", "Kopie_div_6"),
-        root.item("p1").props().stringArray("elements"))
+        listOf("tfExisting", "Kopie_div_6"), root.item("p1").props().stringArray("elements"))
   }
 
   private fun JsonObject.itemNameIs(name: String): Boolean =

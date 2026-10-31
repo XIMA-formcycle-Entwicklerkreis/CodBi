@@ -364,7 +364,9 @@ export class DQ_Table_View {
    * The text is not validated against a TLD: a `www.`-prefix alone (e.g. `www.ima` vs `www.imap`) would otherwise
    * be ambiguous, so any `www.`-sequence followed by a dot-separated label is treated as a link. */
   protected static get urlPattern(): RegExp {
-    return /(?:https?:\/\/|ftp:\/\/|mailto:|tel:|www\.)[^\s<>&"')\]]+/gi;
+    // The `&` must stay INSIDE the match so multi-parameter query strings (e.g. `?vn=1&client=...&pid=...`)
+    // are kept in the link (and fully URL-part-replaced) instead of being truncated at the first `&`.
+    return /(?:https?:\/\/|ftp:\/\/|mailto:|tel:|www\.)[^\s<>"')\]]+/gi;
   }
   /**
    * Renders a plain (non-JSON) cell. Any URL found in the value is turned into a clickable {@link HTMLAnchorElement }

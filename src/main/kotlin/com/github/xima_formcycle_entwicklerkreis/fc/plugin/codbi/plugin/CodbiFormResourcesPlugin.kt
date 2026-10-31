@@ -5,6 +5,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEnti
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.Resource
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.PromptLoader
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.TinyMCEUpdater
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorAutoSync
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_FORM_RESOURCES_ID
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_CSS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_SCRIPT
@@ -91,6 +92,26 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
       }
     } catch (e: Exception) {
       LOG.warning("Failed to seed AI prompts: ${e.message}")
+    }
+
+    // Automatic Mirror synchronisation: FORMCYCLE exposes no "workflow saved" event to plugins, so
+    // a
+    // background watcher pushes changed source paths into their reflecting paths (no user action).
+    // The interval is configurable through the plugin property `Mirror_WatcherIntervalSeconds`.
+    try {
+      val configuredInterval =
+          initData
+              ?.properties
+              ?.getProperty(MirrorAutoSync.INTERVAL_PROPERTY)
+              ?.trim()
+              ?.toLongOrNull()
+      if (configuredInterval != null) {
+        LOG.info(
+            "Mirror auto-sync interval set to ${configuredInterval} s via ${MirrorAutoSync.INTERVAL_PROPERTY}")
+      }
+      MirrorAutoSync.start(configuredInterval ?: MirrorAutoSync.DEFAULT_INTERVAL_SECONDS)
+    } catch (e: Exception) {
+      LOG.warning("Failed to start the Mirror auto-sync watcher: ${e.message}")
     }
 
     val stable = initData?.manifest?.versionSemVer?.isStable ?: false
@@ -210,6 +231,7 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
 
   override fun shutdown(shutdownData: IPluginShutdownData?) {
     formResources = emptyMap()
+    runCatching { MirrorAutoSync.stop() }
   }
 
   override fun getResources(
@@ -297,14 +319,14 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
    * Registers one scanned plugin resource under BOTH its folder-prefixed relative path (e.g.
    * `Configurations/Appointments.js`) and its BARE file name (`Appointments.js`).
    *
-   * The form render callback resolves a functionality / element placeholder / standard configuration
-   * by the element id, i.e. `<id>.js` (see `FormRenderCallback`), while the class path scan yields
-   * folder-prefixed paths. Without the bare-name alias every one of those lookups missed and the code
-   * was requested from the `codbi_local_apidoc` DB table instead — which is only filled by an
-   * explicit API-doc sync. On a form whose standard configuration was never synced that made
-   * class-based configurations (e.g. `CodBi_NoFutureDate`) silently do nothing, because neither the
-   * configuration script nor the functionality it applies was ever loaded. Registering the alias lets
-   * the shipped resource win (the DB stays a fallback via `nncHandler`).
+   * The form render callback resolves a functionality / element placeholder / standard
+   * configuration by the element id, i.e. `<id>.js` (see `FormRenderCallback`), while the class
+   * path scan yields folder-prefixed paths. Without the bare-name alias every one of those lookups
+   * missed and the code was requested from the `codbi_local_apidoc` DB table instead — which is
+   * only filled by an explicit API-doc sync. On a form whose standard configuration was never
+   * synced that made class-based configurations (e.g. `CodBi_NoFutureDate`) silently do nothing,
+   * because neither the configuration script nor the functionality it applies was ever loaded.
+   * Registering the alias lets the shipped resource win (the DB stays a fallback via `nncHandler`).
    *
    * @param target The resource map to register the descriptor in.
    * @param relativePath The folder-prefixed path of the resource within the plugin package.

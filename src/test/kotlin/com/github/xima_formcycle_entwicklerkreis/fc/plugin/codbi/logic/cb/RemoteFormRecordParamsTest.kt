@@ -13,12 +13,11 @@ import org.junit.jupiter.api.Test
  * Regression tests for the cross-form record node, whose properties stayed EMPTY in the designer
  * although the node itself was created correctly.
  *
- * The installed plugin's props class is
- * `de.xima.advanced.model.node.CreateRemoteFormRecordProps` with the fields `inboxRef`, `useNewWf`,
- * `projectRef` ("Formular", @NotNull), `statusRef` ("Ziel-Status",
- * `de.xima.fc.entities.Status`), `transferAttachments`, `copyAll`, `elementsToCopy` and
- * `attachmentFilter`. The previously emitted keys (`project`, `stateNewRecord`, `otherAttachments`,
- * `copyOtherAttachments`) do not exist there and were therefore ignored.
+ * The installed plugin's props class is `de.xima.advanced.model.node.CreateRemoteFormRecordProps`
+ * with the fields `inboxRef`, `useNewWf`, `projectRef` ("Formular", @NotNull), `statusRef`
+ * ("Ziel-Status", `de.xima.fc.entities.Status`), `transferAttachments`, `copyAll`, `elementsToCopy`
+ * and `attachmentFilter`. The previously emitted keys (`project`, `stateNewRecord`,
+ * `otherAttachments`, `copyOtherAttachments`) do not exist there and were therefore ignored.
  */
 class RemoteFormRecordParamsTest {
 
@@ -46,8 +45,10 @@ class RemoteFormRecordParamsTest {
       nodeParams: Map<String, Any?>,
       projectUuid: UUID? = this.projectUuid,
       target: RemoteFormRecordTarget? = defaultTarget()
-  ) = JsonParser.parseString("{${RemoteFormRecordParams.propsJson(nodeParams, projectUuid, target)}}")
-      .asJsonObject
+  ) =
+      JsonParser.parseString(
+              "{${RemoteFormRecordParams.propsJson(nodeParams, projectUuid, target)}}")
+          .asJsonObject
 
   @Test
   fun `the target form is written to projectRef with the Projekt entity class`() {
@@ -55,7 +56,8 @@ class RemoteFormRecordParamsTest {
 
     val projectRef = props.getAsJsonObject("projectRef")
     assertEquals(projectUuid.toString(), projectRef.get("uuid").asString)
-    assertEquals(RemoteFormRecordParams.PROJEKT_ENTITY_CLASS, projectRef.get("entityClass").asString)
+    assertEquals(
+        RemoteFormRecordParams.PROJEKT_ENTITY_CLASS, projectRef.get("entityClass").asString)
     // The old, non-existent keys must never come back.
     assertNull(props.get("project"))
     assertNull(props.get("stateNewRecord"))
@@ -84,7 +86,8 @@ class RemoteFormRecordParamsTest {
 
   @Test
   fun `an inbox name matches the stored spelling modulo spacing and zero padding`() {
-    // The user wrote "FOR 308" while the client's inbox is named "FOR 0308" — the NAME is translated,
+    // The user wrote "FOR 308" while the client's inbox is named "FOR 0308" — the NAME is
+    // translated,
     // the decision (which inbox) is not touched.
     assertEquals(
         RemoteFormRecordParams.normalizeInboxKey("FOR 0308"),
@@ -101,9 +104,7 @@ class RemoteFormRecordParamsTest {
   fun `the attachments array of the model is accepted like files`() {
     // A live run emitted the REAL MultiFile items instead of the documented "files" list.
     val props =
-        props(
-            mapOf(
-                "attachments" to listOf(mapOf("type" to "UPLOAD", "identifier" to "upload1"))))
+        props(mapOf("attachments" to listOf(mapOf("type" to "UPLOAD", "identifier" to "upload1"))))
 
     assertTrue(props.get("transferAttachments").asBoolean)
     val resources = props.getAsJsonObject("attachmentFilter").getAsJsonArray("resources")
@@ -122,9 +123,12 @@ class RemoteFormRecordParamsTest {
 
   @Test
   fun `the inbox name is read from the node params in its alternative spellings`() {
-    assertEquals("FOR 308", RemoteFormRecordParams.requestedInboxName(mapOf("inboxName" to "FOR 308")))
-    assertEquals("FOR 308", RemoteFormRecordParams.requestedInboxName(mapOf("postfach" to " FOR 308 ")))
-    assertEquals("FOR 308", RemoteFormRecordParams.requestedInboxName(mapOf("targetInbox" to "FOR 308")))
+    assertEquals(
+        "FOR 308", RemoteFormRecordParams.requestedInboxName(mapOf("inboxName" to "FOR 308")))
+    assertEquals(
+        "FOR 308", RemoteFormRecordParams.requestedInboxName(mapOf("postfach" to " FOR 308 ")))
+    assertEquals(
+        "FOR 308", RemoteFormRecordParams.requestedInboxName(mapOf("targetInbox" to "FOR 308")))
     assertEquals("", RemoteFormRecordParams.requestedInboxName(emptyMap()))
     // The attribute mapping of the SAME node must never be mistaken for an inbox name.
     assertEquals(
@@ -156,7 +160,8 @@ class RemoteFormRecordParamsTest {
                     requestedStatusFound = true,
                     availableStatuses = listOf("Eingegangen")))
 
-    // `useNewWf` mirrors Projekt.isUsesNewWorkflow() — the plugin hides the status selector then and
+    // `useNewWf` mirrors Projekt.isUsesNewWorkflow() — the plugin hides the status selector then
+    // and
     // the target workflow processes the new record instead.
     assertTrue(props.get("useNewWf").asBoolean)
     assertNull(props.get("statusRef"))

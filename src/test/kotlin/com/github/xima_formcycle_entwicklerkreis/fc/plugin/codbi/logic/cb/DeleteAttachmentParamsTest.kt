@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test
 
 /**
  * The AI sends the REAL props shape (`attachmentsToDelete`), and the builder used to read only flat
- * keys — so a correct model answer still produced an FC_DELETE_ATTACHMENT node without any selection.
- * The payload below is the one observed in the production log.
+ * keys — so a correct model answer still produced an FC_DELETE_ATTACHMENT node without any
+ * selection. The payload below is the one observed in the production log.
  */
 class DeleteAttachmentParamsTest {
 
@@ -60,7 +60,9 @@ class DeleteAttachmentParamsTest {
                 "attachmentsToDelete" to
                     mapOf(
                         "attachments" to
-                            listOf(mapOf("type" to "SEARCH"), mapOf("type" to "UPLOAD", "identifier" to "uplA")),
+                            listOf(
+                                mapOf("type" to "SEARCH"),
+                                mapOf("type" to "UPLOAD", "identifier" to "uplA")),
                         "searchFilenamePattern" to "*.pdf")))
     assertTrue(json != null && json.contains("\"SEARCH\"") && json.contains("\"uplA\""))
   }
@@ -74,9 +76,9 @@ class DeleteAttachmentParamsTest {
                     mapOf(
                         "attachments" to listOf(mapOf("type" to "SEARCH")),
                         "searchFilenamePattern" to "KOALA.JPG",
-                        "searchSourceTypes" to
-                            listOf("form_upload", "NotASource", "WORKFLOW"))))
-    assertTrue(json != null && json.contains("\"searchSourceTypes\":[\"FORM_UPLOAD\",\"WORKFLOW\"]"))
+                        "searchSourceTypes" to listOf("form_upload", "NotASource", "WORKFLOW"))))
+    assertTrue(
+        json != null && json.contains("\"searchSourceTypes\":[\"FORM_UPLOAD\",\"WORKFLOW\"]"))
   }
 
   @Test

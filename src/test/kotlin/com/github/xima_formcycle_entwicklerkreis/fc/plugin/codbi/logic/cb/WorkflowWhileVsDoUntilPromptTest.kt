@@ -4,15 +4,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Guard for the WORKFLOW loop decision: whether a request becomes a `FC_WHILE_LOOP` (PRE-check) or a
- * `FC_DO_UNTIL_LOOP` (POST-check) follows the ORDER of the request's clauses, not a keyword.
+ * Guard for the WORKFLOW loop decision: whether a request becomes a `FC_WHILE_LOOP` (PRE-check) or
+ * a `FC_DO_UNTIL_LOOP` (POST-check) follows the ORDER of the request's clauses, not a keyword.
  *
  * The reported case "Setze den Wert Koala in Popel solange der Wert Nice in Popel steht" names the
  * ACTION first and the STATE afterwards, so the action must run at least once (POST-check) —
  * building a pre-check loop there lets the action run zero times, which contradicts the request.
  * The guidance must be LANGUAGE-AGNOSTIC (the words "solange"/"while"/"as long as" appear in BOTH
  * shapes) and reach every pass:
- *
  * 1. the always-sent build instruction (`codbi-workflow-task-instruction.md`),
  * 2. the pass-1 compact catalogue (`formcycle-workflow-nodes-compact.md`, whose FIRST line is the
  *    only text pass-1 ships per node), and
@@ -40,7 +39,8 @@ class WorkflowWhileVsDoUntilPromptTest {
 
   /** The first (non-blank) line beneath a `### <heading>` section — the line pass-1 receives. */
   private fun firstLineAfterHeading(text: String, heading: String): String =
-      text.lineSequence()
+      text
+          .lineSequence()
           .dropWhile { !it.startsWith("### $heading") }
           .drop(1)
           .firstOrNull { it.isNotBlank() }

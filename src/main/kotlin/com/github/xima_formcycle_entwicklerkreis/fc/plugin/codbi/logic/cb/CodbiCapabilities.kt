@@ -526,17 +526,36 @@ internal object CodbiCapabilities {
         if (norm.isNotEmpty()) wanted.add(norm)
       }
       if (wanted.isEmpty()) return null
-      val bySuffix = HashMap<String, String>()
+      // The parameter-complete API reference blobs (codbi.api_reference.<category>, seeded from
+      // codbi-core-api-compact.md) are RE-SEEDED on every plugin update, so they hold the CURRENT
+      // authoritative teaching for every functionality (e.g. AI.OCR). Each entry is a top-level
+      // `- NAME: ...` block at column 0 followed by indented `  - Param:` lines. Prefer extracting
+      // the requested entry from these fresh blobs: the per-id editable rows
+      // (codbi.functionalities.<id>, ...) can be STALE because a seed is skipped when the row was
+      // user-modified (prompt_text != original_text).
+      val apiBlobs = HashMap<String, String>()
+      // Per-id editable rows (codbi.functionalities.<id> / codbi.element_placeholders.<id> /
+      // codbi.standard_configurations.<id>) — used only as a fallback when no fresh API-reference
+      // entry matches.
+      val perId = HashMap<String, String>()
       for ((key, text) in sections) {
         if (!key.startsWith("codbi.") || key in localKeys) continue
         if (CodBiElementAccess.isHidden(key, null)) continue
-        val norm = normalizeId(key.substringAfterLast('.'))
-        if (norm.isNotEmpty() && text.isNotBlank()) bySuffix.getOrPut(norm) { text }
+        if (key.startsWith("codbi.api_reference.") && text.isNotBlank()) {
+          apiBlobs[key] = text
+        } else {
+          val norm = normalizeId(key.substringAfterLast('.'))
+          if (norm.isNotEmpty() && text.isNotBlank()) perId.putIfAbsent(norm, text)
+        }
       }
       val sb = StringBuilder("\n\nCODBI REQUESTED DETAILS\n")
       var added = false
       for (norm in wanted) {
-        val text = bySuffix[norm] ?: continue
+        // 1) Prefer an entry extracted from the fresh API-reference blob (authoritative teaching).
+        val fromApi = extractFromApiReference(apiBlobs, norm)
+        // 2) Fall back to the per-id editable row (honours Prompt-Manager edits for entries that
+        //    do not live in the API reference).
+        val text = fromApi ?: perId[norm] ?: continue
         sb.append("\n## ").append(norm).append("\n")
         sb.append(text).append("\n")
         added = true
@@ -548,6 +567,48 @@ internal object CodbiCapabilities {
     } finally {
       em.close()
     }
+  }
+
+  /**
+   * Extracts a single `<name>` entry from the parameter-complete API-reference blobs
+   * (`codbi.api_reference.<category>`, e.g. `codbi.api_reference.functionalities`). Entries are
+   * top-level `- NAME: ...` blocks at column 0 followed by indented ` - Param:` lines; the next
+   * top-level `- ` (column 0, not indented) terminates the current entry. Returns `null` when no
+   * entry's normalized name matches [wanted].
+   */
+  private fun extractFromApiReference(apiBlobs: Map<String, String>, wanted: String): String? {
+    for ((_, blob) in apiBlobs) {
+      if (blob.isBlank()) continue
+      val lines = blob.lines()
+      var i = 0
+      while (i < lines.size) {
+        val line = lines[i]
+        if (!line.startsWith("- ")) {
+          i++
+          continue
+        }
+        val header = line.removePrefix("- ").trim()
+        val name = header.substringBefore(':').trim()
+        if (name.isEmpty() || normalizeId(name) != wanted) {
+          i++
+          continue
+        }
+        // Found the entry: collect the header plus its indented lines until the next top-level `-
+        // `.
+        val entry = StringBuilder()
+        entry.append(header).append("\n")
+        i++
+        while (i < lines.size) {
+          val l = lines[i]
+          if (l.startsWith("- ") && !l.startsWith("  - ")) break
+          entry.append(l).append("\n")
+          i++
+        }
+        val text = entry.toString().trim()
+        if (text.isNotEmpty()) return text
+      }
+    }
+    return null
   }
 
   /**

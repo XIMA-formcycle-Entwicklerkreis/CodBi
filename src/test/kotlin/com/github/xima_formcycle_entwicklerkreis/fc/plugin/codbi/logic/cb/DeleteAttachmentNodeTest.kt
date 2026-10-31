@@ -21,7 +21,8 @@ class DeleteAttachmentNodeTest {
           ?.use { it.readText() } ?: error("bundled $path not found on the classpath")
 
   private val detailed =
-      resource("com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
+      resource(
+          "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md")
   private val compact =
       resource(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/formcycle-workflow-nodes-compact.md")
@@ -29,7 +30,8 @@ class DeleteAttachmentNodeTest {
       resource(
           "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-workflow-task-instruction.md")
   private val clarification =
-      resource("com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
+      resource(
+          "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
 
   @Test
   fun `the references document the real property and the name search`() {
@@ -58,8 +60,7 @@ class DeleteAttachmentNodeTest {
     assertTrue(line.contains("searchFilenamePattern"), "must emit the pattern")
     assertTrue(line.contains("\"type\":\"SEARCH\""), "must emit the SEARCH item")
     assertTrue(line.contains("KOALA.JPG"), "must show the named-file example")
-    assertTrue(
-        line.contains("NEVER emit the old shape"), "must forbid the old attachments shape")
+    assertTrue(line.contains("NEVER emit the old shape"), "must forbid the old attachments shape")
   }
 
   @Test

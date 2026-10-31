@@ -103,7 +103,8 @@ class ClarifyWorkflowStructureCoreTest {
   fun `blank or null workflow structure injects no workflow block`() {
     val promptNonNull = buildSystemPrompt("   ")
     // The templates themselves mention "CURRENT WORKFLOW STRUCTURE" in an inline cross-reference
-    // ("see CURRENT WORKFLOW STRUCTURE"), so the assertion pins the BLOCK HEADER — only the injected
+    // ("see CURRENT WORKFLOW STRUCTURE"), so the assertion pins the BLOCK HEADER — only the
+    // injected
     // block carries the "(existing triggers and nodes)" suffix.
     assertFalse(
         promptNonNull.contains("CURRENT WORKFLOW STRUCTURE (existing triggers and nodes)"),

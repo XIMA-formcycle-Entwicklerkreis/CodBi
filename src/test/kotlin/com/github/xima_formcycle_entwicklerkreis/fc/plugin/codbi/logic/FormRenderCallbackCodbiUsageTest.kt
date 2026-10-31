@@ -5,14 +5,14 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.testDest
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.testInit
 import de.xima.fc.interfaces.plugin.retval.form.IPluginFormResourceDescriptor
 import de.xima.fc.interfaces.workflow.IResourceDescriptor
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.net.URI
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.io.ByteArrayInputStream
-import java.io.InputStream
-import java.net.URI
 
 /**
  * Tests for [FormRenderCallback.collectCodbiUsage]: the CodBi functionalities/EPs of the RENDERED
@@ -28,12 +28,7 @@ class FormRenderCallbackCodbiUsageTest {
     // The generated web bundle is not on the test classpath as a directory the plugin's resource
     // scan can walk, so seed the resources these tests reference.
     val seeded =
-        listOf(
-                "media.multipleupload.js",
-                "date.min.js",
-                "date.max.js",
-                "date.today.js",
-                "codbi.js")
+        listOf("media.multipleupload.js", "date.min.js", "date.max.js", "date.today.js", "codbi.js")
             .associateWith { name -> descriptor(name) }
     CodbiFormResourcesPlugin.formResources = CodbiFormResourcesPlugin.formResources + seeded
   }
@@ -47,7 +42,8 @@ class FormRenderCallbackCodbiUsageTest {
   fun collectsFunctionalitiesFromMirroredMarkup() {
     val functionalities = mutableSetOf<String>()
     val eps = mutableSetOf<String>()
-    // A mirrored XUpload inside the target form's rendered markup. Its `data-cb-func` comes from the
+    // A mirrored XUpload inside the target form's rendered markup. Its `data-cb-func` comes from
+    // the
     // SOURCE form and must still cause the functionality script to be injected.
     val markup =
         """

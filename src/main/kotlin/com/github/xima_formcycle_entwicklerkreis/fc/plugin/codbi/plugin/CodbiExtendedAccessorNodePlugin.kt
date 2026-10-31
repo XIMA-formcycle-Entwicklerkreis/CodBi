@@ -3,9 +3,9 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.workflow.ExtendedAccessorResolver
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import de.xima.fc.beans.interfaces.IGuiIcon
+import de.xima.fc.interfaces.plugin.retval.workflow.IFastJsonConverter
 import de.xima.fc.interfaces.workflow.execution.INormalCompletionResult
 import de.xima.fc.interfaces.workflow.mixin.IElementCategory
-import de.xima.fc.interfaces.plugin.retval.workflow.IFastJsonConverter
 import de.xima.fc.interfaces.workflow.params.IGetElementPrototypesParams
 import de.xima.fc.interfaces.workflow.params.INodeExecutionParams
 import de.xima.fc.interfaces.workflow.value.IValueDescriptor

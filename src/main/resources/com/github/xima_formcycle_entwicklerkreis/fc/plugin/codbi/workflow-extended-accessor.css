@@ -151,7 +151,10 @@
   position: fixed;
   z-index: 10050;
   box-sizing: border-box;
-  width: 390px;
+  /* Wide by default: the workflow designer has plenty of free space to the left of the node panel,
+     and the previous 390px card used only a small part of it. */
+  width: min(900px, calc(100vw - 32px));
+  min-width: 420px;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   display: flex;

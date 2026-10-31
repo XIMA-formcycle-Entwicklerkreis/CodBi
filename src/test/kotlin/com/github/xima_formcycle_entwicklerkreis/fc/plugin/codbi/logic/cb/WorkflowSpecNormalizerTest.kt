@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test
 /**
  * Regression tests for the two defects observed on a live workflow build (see
  * [WorkflowSpecNormalizer]):
- *
  * 1. the AI emitted the handler CLASS as `nodeType`, which formcycle persists but cannot resolve
  *    ("no handler was registered for that node") — the node never executes;
  * 2. the FC_EMAIL body referenced `[%$Mail an A@B.C senden.RESULT.value%]` while the persisted node
@@ -20,7 +19,8 @@ class WorkflowSpecNormalizerTest {
   fun `the handler class is canonicalised to the registered node type`() {
     assertEquals(
         WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
-        WorkflowSpecNormalizer.canonicalNodeType(WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS))
+        WorkflowSpecNormalizer.canonicalNodeType(
+            WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS))
     assertEquals(
         WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
         WorkflowSpecNormalizer.canonicalNodeType(
@@ -71,7 +71,9 @@ class WorkflowSpecNormalizerTest {
   @Test
   fun `unrelated node types are left untouched`() {
     assertEquals("FC_EMAIL", WorkflowSpecNormalizer.canonicalNodeType("FC_EMAIL"))
-    assertEquals("FC_MULTIPLE_CONDITION", WorkflowSpecNormalizer.canonicalNodeType(" FC_MULTIPLE_CONDITION "))
+    assertEquals(
+        "FC_MULTIPLE_CONDITION",
+        WorkflowSpecNormalizer.canonicalNodeType(" FC_MULTIPLE_CONDITION "))
     assertEquals("", WorkflowSpecNormalizer.canonicalNodeType(null))
   }
 
@@ -88,8 +90,7 @@ class WorkflowSpecNormalizerTest {
   @Test
   fun `a result placeholder follows the sanitized node name`() {
     val renames = LinkedHashMap<String, String>()
-    WorkflowSpecNormalizer.collectRenames(
-        mapOf("taskName" to "Mail an A@B.C senden"), renames)
+    WorkflowSpecNormalizer.collectRenames(mapOf("taskName" to "Mail an A@B.C senden"), renames)
     assertEquals("Mail an A@B.C senden" to "Mail an ABC senden", renames.entries.first().toPair())
 
     val body = "<p>[%\$Mail an A@B.C senden.RESULT.value%]</p>"
@@ -135,8 +136,7 @@ class WorkflowSpecNormalizerTest {
     WorkflowSpecNormalizer.collectRenames(spec, renames)
     val normalized = WorkflowSpecNormalizer.normalizeNode(spec, renames)
 
-    assertEquals(
-        WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE, normalized["nodeType"])
+    assertEquals(WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE, normalized["nodeType"])
     val email = (normalized["chainedNodes"] as List<*>).first() as Map<*, *>
     val body = (email["nodeParams"] as Map<*, *>)["body"] as String
     assertTrue(body.contains("[%\$Mail an ABC senden.RESULT.value%]"), "got: $body")
@@ -158,8 +158,7 @@ class WorkflowSpecNormalizerTest {
                         "nodeType" to "FC_PROVIDE_RESOURCE",
                         "nodeParams" to
                             mapOf(
-                                "exportName" to "formularzustand.xml",
-                                "sourceNode" to "%prev%"))))
+                                "exportName" to "formularzustand.xml", "sourceNode" to "%prev%"))))
 
     val normalized = WorkflowSpecNormalizer.normalizeNode(spec, emptyMap())
     val chained = (normalized["chainedNodes"] as List<*>).first() as Map<*, *>
@@ -172,9 +171,7 @@ class WorkflowSpecNormalizerTest {
   @Test
   fun `a standalone provide-resource node keeps its own node type`() {
     val spec: Map<String, Any> =
-        mapOf(
-            "nodeType" to "FC_PROVIDE_RESOURCE",
-            "nodeParams" to mapOf("exportName" to "x.txt"))
+        mapOf("nodeType" to "FC_PROVIDE_RESOURCE", "nodeParams" to mapOf("exportName" to "x.txt"))
 
     val normalized = WorkflowSpecNormalizer.normalizeNode(spec, emptyMap())
     assertEquals("FC_PROVIDE_RESOURCE", normalized["nodeType"])

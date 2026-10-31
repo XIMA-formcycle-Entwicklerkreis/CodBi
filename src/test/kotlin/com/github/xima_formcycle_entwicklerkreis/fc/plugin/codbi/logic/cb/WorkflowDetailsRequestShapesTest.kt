@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test
  *
  * Shapes 3 and 5 previously aborted the build; shape 4 did too (an OBJECT element was not read as a
  * name, so both lists came back empty, the request was mistaken for a task and produced 0 specs →
- * "The AI did not return a workflow specification"). All must resolve to the same signal, and a real
- * TASK object must still NOT be mistaken for a details request.
+ * "The AI did not return a workflow specification"). All must resolve to the same signal, and a
+ * real TASK object must still NOT be mistaken for a details request.
  */
 class WorkflowDetailsRequestShapesTest {
 

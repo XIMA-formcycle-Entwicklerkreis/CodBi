@@ -83,14 +83,19 @@ when CodBi searches within the shared parent container.
   - Thinking: Configures 'Thinking' for this functionality.
   - VerifyCheckboxLabel: Configures 'VerifyCheckboxLabel' for this functionality.
   - VerifyErrorText: Configures 'VerifyErrorText' for this functionality.
-- AI.OCR: Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
-  - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
-  - FieldPattern_: Configures 'FieldPattern_' for this functionality.
+- AI.OCR: Applicable on an XUpload field to extract and return text/lines from the uploaded images or PDFs via OCR into a SEPARATE text field (an XTextArea). Use it for requests like 'OCR das Dokument', 'extrahiere den Text', 'Auslesen des Belegs' etc.
+  - RECEIVER (CRITICAL, all modes): the OCR result is written into the target text field via the CSS class CodBi_AI_OCR_Receiver. You MUST add the class CodBi_AI_OCR_Receiver to the target XTextArea's 'class' property (e.g. class:"CodBi_AI_OCR_Receiver"). Do NOT use any 'data-cb-Receiver' attribute — there is no such attribute; the receiver is selected ONLY by that CSS class.
+  - CLASSIC MODE (Mode 'print', the default): a single XUpload with AI.OCR and the target XTextArea that carries class CodBi_AI_OCR_Receiver. When the user uploads a document the OCR text of the whole document is written into that textarea.
+  - PATTERN / SUBSTRING EXTRACTION (KEY RULE): when the user asks to extract only CERTAIN words/numbers/lines from the document (e.g. 'alle Wörter, die mit "Aus" beginnen', 'alle Zahlen', 'nur die E-Mail-Adressen'), you MUST set data-cb-pattern on the XUpload with a regex that captures exactly the wanted tokens. Derive the regex from the natural-language term, LANGUAGE-AGNOSTICALLY (do not hardcode language): the term 'beginnt mit X' / 'starts with X' / 'empieza con X' becomes the word-boundary regex \bX\w*\b; a plain word becomes that word; a number pattern becomes \d+(?:[.,]\d+)? etc. For example 'alle Wörter, die mit "Aus" beginnen' => data-cb-pattern="\bAus\w*\b". In the pattern the special chars { } ^ are written as °{ °} ° to avoid markup corruption, e.g. data-cb-pattern="°{2,°}" means {2,}. When the word boundary/cleanup would remove needed content, prefer a capturing group so ONLY group 1 is written out: e.g. data-cb-pattern="Aus(\w+)" extracts the rest of each 'Aus…' word. When Mode='print' with a data-cb-pattern, ONLY the matching substrings are written into the receiver (separated by newlines); without a pattern the whole text is written.
+  - VERIFY MODE (Mode 'verify'): the upload checks the document against a condition; data-cb-Mode="verify".
+  - EXTRACT-FIELDS MODE (Mode 'extractfields'): multiple named captures in ONE data-cb-pattern; each capturing group must have a name that equals the CSS class of its target field (class CodBi_AI_OCR_Receiver on every output field too). Rarely needed.
+  - FieldPattern_: The regex with named capture groups for the extractfields mode (rarely used).
+  - Field: In extractfields mode, CSS-Class-Selector of the target field; in the OTHER modes the receiver is chosen by the CodBi_AI_OCR_Receiver CSS class, NOT by Field.
   - InvalidImageText: Configures 'InvalidImageText' for this functionality.
+  - MaxPages: A number limiting how many pages of a PDF are OCR-processed (0 = all).
   - Maximum: Configures 'Maximum' for this functionality.
-  - MaxPages: Configures 'MaxPages' for this functionality.
-  - Mode: Configures 'Mode' for this functionality.
-  - Pattern: Configures 'Pattern' for this functionality.
+  - Mode: 'print' (default, whole text or data-cb-pattern substrings into the CodBi_AI_OCR_Receiver field), 'verify', or 'extractfields'.
+  - Pattern: The regex for substring/capture extraction (also set via data-cb-pattern).
   - Preprocess: Configures 'Preprocess' for this functionality.
   - ProcessingImageText: Configures 'ProcessingImageText' for this functionality.
   - QueueBadge: Configures 'QueueBadge' for this functionality.

@@ -602,6 +602,15 @@ connected by darkorange arrows and indented by the node's tree depth, the endpoi
 of the workflow designer's canvas without needing its renderer. It is rendered client-side from
 `action=pathtree` (`{triggerType, triggerName, pathName, nodes:[{type, name, description, depth}]}`).
 
+**The preview also follows the pointer over the path entries.** A native `<select>` popup is drawn by
+the browser and reports no hover at all, so the path `<select>` is only the data holder: it is hidden
+and skinned by `upgradePathSelect()` into a CodBi dropdown (button + list, same frame as the source
+picker). Hovering/focusing an entry renders THAT path's flowchart in the preview panel below; leaving
+the list restores the selected path; clicking an entry writes it back into the hidden `<select>` and
+dispatches `change`, so the existing handlers (hidden inputs, `codbiMirrorStore`, preview) run
+unchanged. The list expands in flow (not absolutely positioned), so the preview stays visible while
+hovering.
+
 The "Optionen" fieldset follows the CodBi form-designer editors
 ([`frame.css`](../src/main/web/packages/designer/src/css/frame.css)) instead of the FORMCYCLE theme:
 

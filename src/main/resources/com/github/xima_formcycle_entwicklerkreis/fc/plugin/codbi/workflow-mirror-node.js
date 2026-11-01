@@ -64,6 +64,120 @@
     return option;
   }
 
+  /** Caption of the selected path, falling back to the configured name while the list loads. */
+  function selectedPathLabel(root, select) {
+    const option = select ? select.options[select.selectedIndex] : null;
+    const text = option && select.value ? String(option.textContent || "").trim() : "";
+    return text || String(root.getAttribute("data-path-name") || "").trim();
+  }
+
+  /**
+   * Skins the native workflow-path `<select>` as a CodBi dropdown that previews a path on HOVER.
+   *
+   * A native `<select>` popup is drawn by the browser/OS and reports no hover at all, so the entries
+   * cannot be previewed there. The entries are therefore mirrored into a real list:
+   *
+   * - hovering (or focusing) an entry renders THAT path's flowchart in the preview panel below;
+   * - leaving the list restores the preview of the selected path;
+   * - clicking an entry selects it through the hidden `<select>`, so every existing handler (hidden
+   *   inputs, `codbiMirrorStore`, preview refresh) keeps working unchanged.
+   */
+  function upgradePathSelect(root, select, preview) {
+    if (!select || select.getAttribute("data-codbi-dressed") === "true") {
+      return;
+    }
+    select.setAttribute("data-codbi-dressed", "true");
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "codbi-mirror-node__dd";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "codbi-mirror-node__dd-button";
+    // Carry the tooltip of the hidden select over to the visible control.
+    button.title = String(select.getAttribute("title") || "");
+    const caption = document.createElement("span");
+    caption.className = "codbi-mirror-node__dd-label";
+    button.appendChild(caption);
+    const list = document.createElement("div");
+    list.className = "codbi-mirror-node__dd-list";
+    list.hidden = true;
+    wrapper.appendChild(button);
+    wrapper.appendChild(list);
+    select.parentNode.insertBefore(wrapper, select.nextSibling);
+    select.classList.add("codbi-mirror-node__dd-native");
+
+    const syncCaption = () => {
+      caption.textContent = selectedPathLabel(root, select) || "\u2014";
+    };
+
+    const showSelectedPreview = () => {
+      loadPreview(root, String(root.getAttribute("data-form-value") || ""), select.value, preview);
+    };
+
+    const close = () => {
+      list.hidden = true;
+      wrapper.classList.remove("codbi-mirror-node__dd--open");
+    };
+
+    const open = () => {
+      list.textContent = "";
+      const formKey = String(root.getAttribute("data-form-value") || "");
+      for (let i = 0; i < select.options.length; i += 1) {
+        const option = select.options[i];
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "codbi-mirror-node__dd-item";
+        item.textContent = String(option.textContent || "").trim() || "\u2014";
+        if (option.value === select.value) {
+          item.classList.add("codbi-mirror-node__dd-item--active");
+        }
+        if (!option.value) {
+          // The placeholder / "loading" entry cannot be chosen.
+          item.disabled = true;
+        } else {
+          item.addEventListener("mouseenter", () => loadPreview(root, formKey, option.value, preview));
+          item.addEventListener("focus", () => loadPreview(root, formKey, option.value, preview));
+        }
+        item.addEventListener("click", () => {
+          select.value = option.value;
+          syncCaption();
+          close();
+          // Runs the existing change handler: hidden inputs, codbiMirrorStore and the preview.
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        list.appendChild(item);
+      }
+      list.hidden = false;
+      wrapper.classList.add("codbi-mirror-node__dd--open");
+    };
+
+    button.addEventListener("click", () => {
+      if (list.hidden) {
+        open();
+      } else {
+        close();
+      }
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    });
+    list.addEventListener("mouseleave", showSelectedPreview);
+
+    // The paths are (re)loaded asynchronously and JSF may re-render the panel: keep the caption and
+    // a previously opened list in sync with the underlying select.
+    select.addEventListener("change", syncCaption);
+    new MutationObserver(() => {
+      syncCaption();
+      if (!list.hidden) {
+        open();
+      }
+    }).observe(select, { childList: true });
+
+    syncCaption();
+  }
+
   function invokeStore(root) {
     try {
       if (typeof window.codbiMirrorStore === "function") {
@@ -343,6 +457,9 @@
     const formSelect = root.querySelector(FORM_SELECT_SELECTOR);
     const pathSelect = root.querySelector(PATH_SELECT_SELECTOR);
     const preview = root.querySelector(PREVIEW_SELECTOR);
+
+    // The path dropdown previews every entry it shows (hover), which a native select cannot do.
+    upgradePathSelect(root, pathSelect, preview);
 
     const syncButton = root.querySelector(SYNC_SELECTOR);
     if (syncButton) {

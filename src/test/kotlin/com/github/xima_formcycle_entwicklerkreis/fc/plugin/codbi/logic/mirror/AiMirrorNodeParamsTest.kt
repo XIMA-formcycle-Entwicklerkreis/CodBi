@@ -67,6 +67,21 @@ class AiMirrorNodeParamsTest {
   }
 
   @Test
+  fun `matches a loosely named source form by MEANING`() {
+    val wirbeltiere = "meldeformular für xbesonders geschützte wirbeltiere gem.§7 abs. 2 bartschv"
+    val streuobst = "streuobstbeförderung"
+    val unrelated = "qa · portal"
+
+    // A German compound is abbreviated by its stem: "Wirbeltier|formular" -> "Wirbeltiere".
+    assertTrue(AiMirrorNodeParams.overlapScore("wirbeltierformular", wirbeltiere) >= 0.5)
+    // A suffix is not part of the name; the shared word is enough.
+    assertTrue(AiMirrorNodeParams.overlapScore("streuobst-formular", streuobst) >= 0.5)
+    // An unrelated title must stay unmatched instead of binding a random form.
+    assertTrue(AiMirrorNodeParams.overlapScore("wirbeltierformular", unrelated) < 0.5)
+    assertTrue(AiMirrorNodeParams.overlapScore("streuobst-formular", unrelated) < 0.5)
+  }
+
+  @Test
   fun `keeps a numeric path id untouched`() {
     val resolved =
         build(mapOf("sourceForm" to "project-42", "pathId" to "4711", "pathName" to "Senden"))

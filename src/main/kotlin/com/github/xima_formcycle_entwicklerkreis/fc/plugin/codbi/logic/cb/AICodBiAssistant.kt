@@ -2525,18 +2525,21 @@ class AICodBiAssistant : IPluginServletAction {
       clarification = ClarificationRequest(freshQuestions)
       break
     }
-    // Deterministic fallback when the clarification model answered with PROSE instead of a
-    // structured request: a cross-form element cannot be copied before the user chose COPY vs.
-    // MIRROR. Ask that exact question ourselves (the source form/elements are already loaded
-    // above).
-    if (clarification == null && foreignFormMentioned) {
+    // Cross-form fallback — ONLY for an ELEMENT copy, never for a WORKFLOW request.
+    // A workflow that links/mirrors another form's path needs neither a COPY-vs-MIRROR decision nor
+    // a forced form choice: the model receives the AVAILABLE FORMS list and resolves the source
+    // form
+    // by MEANING (a loosely named form such as "Wirbeltierformular" matches "Meldeformular für
+    // xbesonders geschützte Wirbeltiere gem. §7 Abs. 2 BArtSchV"), and the build pass resolves the
+    // title once more when it writes the node. Forcing "Which form did you mean?" while the list
+    // holds an obvious match was a FAIL, so the server no longer asks it: it only keeps the
+    // COPY-vs-MIRROR question, and only when the source form was really resolved (its elements are
+    // loaded, so a copy is actually possible).
+    if (clarification == null && foreignFormMentioned && intent != "workflow") {
       if (resolvedForeignFormKey == null) {
-        val choice = buildFormChoiceClarification(formListContext)
-        if (choice != null) {
-          clarification = ClarificationRequest(listOf(choice))
-          logger.info(
-              "[AICodBiAssistant] Cross-form request: form title could not be matched — asking the user which form")
-        }
+        logger.info(
+            "[AICodBiAssistant] Cross-form request: the form title was not matched server-side — " +
+                "leaving the choice to the assistant (the AVAILABLE FORMS list is in its prompt)")
       } else if (!hasCopyMirrorChoice(clarificationHistory, prompt, clarificationContext)) {
         clarification = ClarificationRequest(listOf(copyMirrorClarification()))
         logger.info(

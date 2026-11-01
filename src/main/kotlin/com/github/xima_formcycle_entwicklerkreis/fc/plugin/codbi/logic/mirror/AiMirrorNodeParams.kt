@@ -38,6 +38,12 @@ object AiMirrorNodeParams {
   /** Registered node type of the CodBi workflow Mirror node. */
   const val NODE_TYPE = "Mirror"
 
+  /** Minimum number of leading characters that make a compound stem a usable match. */
+  private const val MIN_PREFIX = 6
+
+  /** Minimum [overlapScore] for the loose-name fallback to accept a form. */
+  private const val MIN_MATCH_SCORE = 0.5
+
   /** Output modes of the node (see `EMirrorOutputMode`). */
   private const val MODE_SUMMARY = "SUMMARY"
   private const val MODE_NODES = "NODES"
@@ -181,6 +187,56 @@ object AiMirrorNodeParams {
         ?: forms.firstOrNull { it.name.equals(target, ignoreCase = true) }
         ?: forms.firstOrNull { it.name.length >= 4 && it.name.lowercase().contains(lower) }
         ?: forms.firstOrNull { it.name.length >= 4 && lower.contains(it.name.lowercase()) }
+        ?: bestByOverlap(forms, lower)
+  }
+
+  /**
+   * Last-resort match for a LOOSELY named form, e.g. the user (or the model) writes
+   * "Wirbeltierformular" for "Meldeformular für xbesonders geschützte Wirbeltiere gem. §7 Abs. 2
+   * BArtSchV" or "Streuobst-Formular" for "Streuobstbeförderung".
+   *
+   * Scores a candidate by whichever is higher: the share of the wanted WORDS that occur in the
+   * candidate's title, or the longest PREFIX of the wanted name (≥ [MIN_PREFIX]) that occurs in the
+   * title — the prefix catches German compounds, whose stem is what the user abbreviates. Only a
+   * single candidate above [MIN_MATCH_SCORE] is accepted, so an unclear name stays unresolved
+   * instead of binding a random form.
+   */
+  private fun bestByOverlap(
+      forms: List<MirrorFormAccess.MirrorForm>,
+      wanted: String,
+  ): MirrorFormAccess.MirrorForm? {
+    var best: MirrorFormAccess.MirrorForm? = null
+    var bestScore = 0.0
+    for (form in forms) {
+      val name = form.name.lowercase()
+      if (name.isBlank()) continue
+      val score = overlapScore(wanted, name)
+      if (score > bestScore) {
+        bestScore = score
+        best = form
+      }
+    }
+    return if (bestScore >= MIN_MATCH_SCORE) best else null
+  }
+
+  /**
+   * See [bestByOverlap]: word share vs. longest shared prefix, whichever is higher. Internal for
+   * the unit test that pins the "Wirbeltierformular" compound case.
+   */
+  internal fun overlapScore(wanted: String, name: String): Double {
+    val words = wanted.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 4 }
+    val hits = words.count { name.contains(it) }
+    val wordScore = if (words.isEmpty()) 0.0 else hits.toDouble() / words.size
+    var prefixLength = wanted.length
+    var prefixScore = 0.0
+    while (prefixLength >= MIN_PREFIX) {
+      if (name.contains(wanted.substring(0, prefixLength))) {
+        prefixScore = prefixLength.toDouble() / wanted.length
+        break
+      }
+      prefixLength -= 1
+    }
+    return maxOf(wordScore, prefixScore)
   }
 
   /** Resolves a workflow path by name (exact, then prefix, then contains — case-insensitive). */

@@ -223,10 +223,40 @@
       });
   }
 
+  /** Delay between a successful sync and the reload, so the sync result stays readable. */
+  const RELOAD_DELAY_MS = 1200;
+
+  /**
+   * Loads THIS designer tab again — the path FORMCYCLE's own tab reload uses
+   * (`Formcycle.DesignerTabbing.reloadIframe` navigates the same `data-target-url`) and the one the
+   * form assistant takes after a workflow inference.
+   *
+   * Required after "Create nodes now": the workflow designer keeps the node tree it loaded when the
+   * tab was opened, so freshly created nodes would only appear after a manual reload.
+   */
+  function reloadDesignerTab() {
+    window.setTimeout(() => {
+      try {
+        const frame = window.frameElement;
+        const target = frame ? String(frame.getAttribute("data-target-url") || "") : "";
+        if (frame && target.trim() !== "") {
+          const separator = target.indexOf("?") >= 0 ? "&" : "?";
+          frame.src = `${target}${separator}codbiReload=${Date.now()}`;
+          return;
+        }
+      } catch {
+        /* cross-origin frame: fall back to reloading this document */
+      }
+      window.location.reload();
+    }, RELOAD_DELAY_MS);
+  }
+
   /**
    * "Create nodes now": asks the backend to materialize the configured source path's lane into this
    * reflecting path. FORMCYCLE offers no workflow-save hook to plugins, so this explicit trigger is
    * the reliable counterpart of the automatic source-save push while editing a workflow.
+   *
+   * A successful run reloads the designer tab, so the created/updated nodes are visible immediately.
    */
   function runSync(root, button) {
     const formKey = String(root.getAttribute("data-form-value") || "");
@@ -249,6 +279,13 @@
         if (result) {
           const prefix = message(root, "msg-sync-result", "Sync result:");
           result.textContent = `${prefix} ${(data && data.note) || ""}`.trim();
+        }
+        // Only reload when the backend really wrote the lane (`PUSHED:<n>/<m> reflectors …`); a
+        // `SKIPPED:…` (paused, no reflector, empty source) or `PUSHED:0/…` must not throw the user
+        // out of the designer.
+        const pushed = /^PUSHED:(\d+)/.exec(String((data && data.note) || ""));
+        if (pushed && Number(pushed[1]) > 0) {
+          reloadDesignerTab();
         }
       })
       .catch((error) => {

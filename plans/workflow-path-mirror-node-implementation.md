@@ -580,17 +580,28 @@ open designer to reload).
 ### Manual fallback: "Create nodes now"
 
 The Mirror node's properties panel additionally keeps an explicit trigger (useful to force a sync
-immediately, and as a diagnostic because it reports created/deleted counts):
+immediately, and as a diagnostic because it reports how many reflectors were written):
 
 - [`MirrorNode.xhtml`](../src/main/resources/WEB-INF/ui/MirrorNode.xhtml) — button
   `data-codbi-mirror-sync` + result line.
 - [`workflow-mirror-node.js`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.js)
-  — `runSync()` calls `CodBi_Mirror&action=sync&form=<sourceFormKey>&path=<pathId>` and prints the
-  returned status note.
+  — `runSync()` calls `CodBi_Mirror&action=sync&form=<sourceFormKey>&path=<pathId>`, prints the
+  returned status note and then **reloads this designer tab** (`reloadDesignerTab()`, 1.2 s later, so
+  the note stays readable). The reload navigates the tab's own `<iframe>` to its `data-target-url` —
+  the path FORMCYCLE's `Formcycle.DesignerTabbing.reloadIframe` and the form assistant use — so the
+  freshly created/updated nodes show up without a manual F5. It is skipped for a `SKIPPED:…` note or
+  `PUSHED:0/…`, i.e. when nothing was written.
 - [`MirrorServletAction`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/mirror/MirrorServletAction.kt)
-  — `action=sync` → `MirrorPushService.syncSourcePath()` (live discovery + `rebuildLaneFromIds`).
+  — `action=sync` → `MirrorPushService.syncSourcePath()` (live discovery + `rebuildLaneFromIds`); the
+  note is `PUSHED:<n>/<m> reflectors (revision <r>)` on success and `SKIPPED:<reason>` otherwise.
 - i18n: `workflow.mirror.sync`, `workflow.mirror.sync.tooltip`, `workflow.mirror.sync.running`,
-  `workflow.mirror.sync.result` (en/de).
+  `workflow.mirror.sync.result` (en/de). The tooltip no longer asks the user to reload the designer.
+
+The "Optionen" fieldset is styled in
+[`workflow-mirror-node.css`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.css):
+the `p:selectOneMenu` (`codbi-mirror-node__selectmenu`) and the checkbox frames
+(`codbi-mirror-node__check` / `…__check-label`, label left of the box) use the dark-orange accent like
+the source picker.
 
 ### Incident (fixed): the reflected button stopped firing because the plugin deleted its OWN index
 

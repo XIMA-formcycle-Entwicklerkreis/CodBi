@@ -77,13 +77,6 @@
   word-break: break-word;
 }
 
-.codbi-mirror-node__hint {
-  display: block;
-  margin-top: 0.2em;
-  color: #6b7280;
-  font-size: 0.9em;
-}
-
 /* "Create nodes now" — explicit materialization trigger (no workflow-save hook in FORMCYCLE). */
 .codbi-mirror-node .codbi-mirror-node__sync {
   margin-top: 0.35em;
@@ -104,6 +97,68 @@
 .codbi-mirror-node .codbi-mirror-node__sync:disabled {
   cursor: progress;
   opacity: 0.7;
+}
+
+/* "Ausgabemodus": the PrimeFaces selectOneMenu styled like the picker selects (darkorange accent). */
+.codbi-mirror-node .codbi-mirror-node__selectmenu {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid darkorange !important;
+  border-left: 3px solid darkorange !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-label {
+  padding: 0 0.5em !important;
+  line-height: 2em !important;
+  background: #fff !important;
+  color: inherit !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-trigger {
+  width: 2em !important;
+  border-left: 1px solid darkorange !important;
+  background: #fff3e6 !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__selectmenu.ui-state-focus,
+.codbi-mirror-node .codbi-mirror-node__selectmenu:focus-within {
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2) !important;
+}
+
+/* Checkbox options: label to the LEFT of its box (inline), box with a darkorange frame. */
+.codbi-mirror-node .codbi-mirror-node__check-label {
+  display: inline-block !important;
+  margin: 0 0.6em 0 0 !important;
+  vertical-align: middle !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__check {
+  display: inline-block !important;
+  margin: 0 !important;
+  vertical-align: middle !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box {
+  border: 1px solid darkorange !important;
+  border-radius: 3px !important;
+  background: #fff !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active {
+  border-color: darkorange !important;
+  background: darkorange !important;
+}
+
+/* The check glyph is a sprite image, so it is inverted to stay visible on the darkorange box. */
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active .ui-chkbox-icon {
+  filter: brightness(0) invert(1);
+}
+
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-focus {
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25) !important;
 }
 
 .codbi-mirror-node__sync-result {

@@ -56,7 +56,9 @@ ROW GROUPING RULES (RELATED fields that belong on the SAME LINE — decide these
 - A STREET/ROAD name + HOUSE/BUILDING number.
 - A POSTAL CODE + LOCALITY/CITY (add COUNTRY/state when asked).
 - An E-MAIL ADDRESS + PHONE/TELEPHONE (contact details).
-- Any other fields the request presents as ONE unit (FROM+TO date pair, BEGIN+END pair, value+unit, quantity+size).
+- A BEGIN/END TIME pair — "Anfangs- und Endzeit", "Anfangszeit/Endzeit", "Start- und Endzeit", "Startzeit/Endzeit", "von … bis … Uhr", "Uhrzeit von/bis", "start and end time", "begin/end time", "time from/to" (ANY language, by MEANING) — shares ONE line, exactly like a begin/end DATE pair.
+- Any other fields the request presents as ONE unit (FROM+TO date pair, BEGIN+END date OR TIME pair, value+unit, quantity+size).
+- A FRAME PAIR IS ALWAYS ONE LINE: the two fields carrying `CodBi_TimeFrame_<N>_Begin`/`_End` (or `CodBi_DateFrame_<N>_Begin`/`_End`) MUST have the SAME `'rowid'` — two full-width rows for one range is a FAIL. They also stay DIRECT SIBLINGS in the same page/container (the frame's `MaxField` selector is resolved inside that shared container).
 THE GOLDEN RULE — GROUP RELATED FIELDS, NEVER MORE THAN FOUR PER LINE: a line carries AT LEAST TWO and AT MOST FOUR fields; when MORE than four belong together split them over several lines ("row-1", "row-2", ...). Group ONLY genuinely related fields — never merge unrelated fields into one line. A related group of odd size keeps its own members together and remaining related fields go on the NEXT line. Fields that stand alone (single comment/message, checkbox, submit button) get NO 'rowid' and span their own full-width line. HOW Formcycle renders a row: keep the fields of one group as DIRECT SIBLINGS inside the same parent (do NOT wrap them); give ALL fields of one group the SAME string 'rowid' value; use a DIFFERENT 'rowid' per line; omit 'rowid' for full-width fields. NEVER copy a 'rowid' from another field — a rowid shared with a field of ANOTHER container merges ALL those fields into one row. Size the fields sensibly to share the line.
 <!--/SECTION:field_creation-->
 

@@ -530,6 +530,29 @@ class PromptSectionGateTest {
     assertTrue(
         gated.contains("EVERY frame pair"),
         "the fallback must be limited to the all-pairs-used case")
+
+    // Regression: the two time fields were emitted as two full-width rows. The row-grouping block
+    // (kept with `field_creation`) must name a begin/end TIME pair explicitly and tie a frame pair
+    // to ONE line.
+    val structureDecision =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(
+                "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-form-structure-rules.decision.md")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() }
+            ?: error("no such resource: codbi-form-structure-rules.decision.md")
+    val gatedStructure =
+        PromptSectionGate.applySectionGates(structureDecision, setOf("field_creation"))
+    assertTrue(
+        gatedStructure.contains("A BEGIN/END TIME pair"),
+        "the begin/end TIME pair must be named in the row-grouping rules")
+    assertTrue(
+        gatedStructure.contains("A FRAME PAIR IS ALWAYS ONE LINE"),
+        "a frame pair must be bound to ONE line (same rowid)")
+    assertTrue(
+        gatedStructure.contains("'rowid'"), "the row grouping must still require a shared 'rowid'")
   }
 
   @Test

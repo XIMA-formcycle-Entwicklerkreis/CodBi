@@ -47,7 +47,9 @@ ROW GROUPING RULES (RELATED fields that belong on the SAME line) — group by ME
 - Street/road + house/building number.
 - Postal code + locality/city (+ country when asked — PLZ+Ort+Land = one line).
 - E-mail + phone/telephone (contact).
-- Any other fields the request presents as ONE unit (FROM+TO date, BEGIN+END, value+UNIT, quantity+SIZE).
+- A BEGIN/END TIME pair — "Anfangs- und Endzeit", "Anfangszeit/Endzeit", "Start- und Endzeit", "Startzeit/Endzeit", "von … bis … Uhr", "Uhrzeit von/bis", "start and end time", "begin/end time", "time from/to" (ANY language, by MEANING) — shares ONE line, exactly like a begin/end DATE pair.
+- Any other fields the request presents as ONE unit (FROM+TO date, BEGIN+END date OR TIME, value+UNIT, quantity+SIZE).
+- A FRAME PAIR IS ALWAYS ONE LINE: both fields of a `CodBi_TimeFrame_<N>` (or `CodBi_DateFrame_<N>`) pair get the SAME `'rowid'` — never two full-width rows — and stay DIRECT SIBLINGS in the same page/container (the `MaxField` selector is resolved inside that container).
 THE GOLDEN RULE — GROUP RELATED FIELDS, NEVER MORE THAN FOUR PER LINE:
 - HARD CAP OF FOUR: a line carries AT LEAST TWO and AT MOST FOUR fields. NEVER five+ on one line — split over SEVERAL lines ("row-1" first up-to-four, "row-2" next).
 - Group ONLY genuinely related fields — NEVER merge unrelated fields to save space.

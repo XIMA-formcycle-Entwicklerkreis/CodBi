@@ -56,32 +56,6 @@ class MirrorNodeProps : BaseActionProps() {
     }
 
   /**
-   * TEMPORARY Phase-0 spike flag. When `true`, [MirrorNodePlugin] injects a temporary
-   * [SpikeProbeNodePlugin] child into a downstream SEQUENCE lane of the current task and logs
-   * `[SPIKE]` markers. If a `[SPIKE][SpikeProbe] EXECUTED` marker appears later in the SAME
-   * submit's log, FORMCYCLE re-walks live children and same-trigger refresh is proven.
-   *
-   * This is a debug/dev-only flag for the spike; it is removed (along with the probe node) once the
-   * Go/No-Go decision is made.
-   */
-  var spikeProbe: Boolean = false
-    get() = field
-    set(value) {
-      field = value
-    }
-
-  /**
-   * TEMPORARY Phase-0 spike flag (RUN 2). When `true`, [MirrorNodePlugin] mutates the params of the
-   * existing downstream node IN PLACE (no new node, no reorder) and logs `[SPIKE]2` markers — the
-   * realistic Option B rewrite path. Removed once the Go/No-Go decision is made.
-   */
-  var spikeProbe2: Boolean = false
-    get() = field
-    set(value) {
-      field = value
-    }
-
-  /**
    * Master switch for **writing** the mirrored source path into this reflecting path.
    * - `true` (default): the source path's nodes are created/updated in this path — on submit
    *   (in-place rewrite), on a source save (`MirrorPush`) and by the background watcher

@@ -487,7 +487,7 @@ object MirrorFormAccess {
           val byName = findFormByName(userContext, storedName, storedId) ?: return null
           val byNameProject =
               apiCall("PROJEKT", "getInitializedById", userContext, byName.id) ?: return null
-          logger.info(
+          logger.debug(
               "[MirrorFormAccess] stored key '{}' resolves to '{}' but the cached title '{}' " +
                   "belongs to '{}' — re-bound to '{}'",
               storedKey,
@@ -508,7 +508,7 @@ object MirrorFormAccess {
       val byName = findFormByName(userContext, storedName, null) ?: return null
       val byNameProject =
           apiCall("PROJEKT", "getInitializedById", userContext, byName.id) ?: return null
-      logger.info(
+      logger.debug(
           "[MirrorFormAccess] re-bound source form '{}' (stale key '{}') to '{}'",
           storedName,
           formKey,

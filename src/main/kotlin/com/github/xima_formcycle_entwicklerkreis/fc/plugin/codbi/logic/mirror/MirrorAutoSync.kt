@@ -75,7 +75,7 @@ object MirrorAutoSync {
         executor = scheduler
         val initialDelay = minOf(INITIAL_DELAY_SECONDS, interval)
         scheduler.scheduleWithFixedDelay({ runOnce() }, initialDelay, interval, TimeUnit.SECONDS)
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] auto-sync watcher started (initial delay {} s, interval {} s)",
             initialDelay,
             interval)
@@ -92,7 +92,7 @@ object MirrorAutoSync {
       started = false
       runCatching { executor?.shutdownNow() }
       executor = null
-      logger.info("[CodBi][Mirror] auto-sync watcher stopped")
+      logger.debug("[CodBi][Mirror] auto-sync watcher stopped")
     }
   }
 
@@ -118,7 +118,7 @@ object MirrorAutoSync {
       }
       val note = MirrorPushService.syncOutdatedReflectors(userContext)
       if (note.startsWith("SYNCED")) {
-        logger.info("[CodBi][Mirror] auto-sync: {}", note)
+        logger.debug("[CodBi][Mirror] auto-sync: {}", note)
       } else {
         logger.debug("[CodBi][Mirror] auto-sync: {}", note)
       }

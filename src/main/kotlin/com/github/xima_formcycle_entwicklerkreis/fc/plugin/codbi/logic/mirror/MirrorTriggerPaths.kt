@@ -137,7 +137,7 @@ internal object MirrorTriggerPaths {
                 triggerParams = params,
                 paramsVersion = cols.getOrNull(5)?.toString()?.takeIf { it.isNotBlank() }))
       }
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] triggered paths: source='{}' element='{}' tokens={} tasks={} matches={}",
           sourceFormKey,
           elementRef,
@@ -150,13 +150,13 @@ internal object MirrorTriggerPaths {
         // (e.g. an id instead of a name) is visible in the log.
         for (row in rows) {
           val cols = row as? Array<*> ?: continue
-          logger.info(
+          logger.debug(
               "[CodBi][Mirror] triggered paths: no match — trigger {}:{} params={}",
               cols[2]?.toString().orEmpty(),
               cols[3]?.toString().orEmpty(),
               cols[4]?.toString().orEmpty().take(300))
         }
-        logger.info("[CodBi][Mirror] triggered paths: looked for tokens {}", tokens)
+        logger.debug("[CodBi][Mirror] triggered paths: looked for tokens {}", tokens)
       }
       out
     } catch (x: Exception) {
@@ -199,7 +199,7 @@ internal object MirrorTriggerPaths {
     val prefix = namePrefix?.trim().orEmpty()
     // Diagnostic: a trigger reference only fires when the name it names EXISTS in the reflecting
     // form. This shows, for every mirrored element name, whether it is present plain or namespaced.
-    logger.info(
+    logger.debug(
         "[CodBi][Mirror] trigger matching: tokens={} presentPlain={} presentNamespaced={} " +
             "({} names in the reflecting form)",
         tokens,
@@ -261,7 +261,7 @@ internal object MirrorTriggerPaths {
     // designer. Saving through the entity API bumps the lock version and drops the cache.
     WorkflowLaneMaterializer.refreshWorkflowModel(userContext, targetVersionId)
     val note = "created=$created updated=$updated removed=$removed"
-    logger.info(
+    logger.debug(
         "[CodBi][Mirror] [{}] triggered paths for '{}' -> '{}': {}",
         TRIGGER_SYNC_VERSION,
         sourceFormKey,
@@ -435,7 +435,7 @@ internal object MirrorTriggerPaths {
             .invoke(task, mainProcess)
         val savedTask = createEntity(taskApi, userContext, task)
         val taskId = reflectId(savedTask)
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] create-path 1/5: task id={} '{}' (source path {})",
             taskId,
             source.taskName,
@@ -454,7 +454,7 @@ internal object MirrorTriggerPaths {
                 params = null,
                 parent = null,
                 description = null)
-        logger.info("[CodBi][Mirror] create-path 2/5: root node id={}", reflectId(savedRoot))
+        logger.debug("[CodBi][Mirror] create-path 2/5: root node id={}", reflectId(savedRoot))
 
         // 3. Mirror node (its lane is filled in by MirrorAutoSync / the source-save push).
         val mirrorNode =
@@ -467,7 +467,7 @@ internal object MirrorTriggerPaths {
                 savedRoot,
                 sourceFormKey,
                 source)
-        logger.info("[CodBi][Mirror] create-path 3/5: Mirror node id={}", reflectId(mirrorNode))
+        logger.debug("[CodBi][Mirror] create-path 3/5: Mirror node id={}", reflectId(mirrorNode))
 
         // 3b. TEMPORARY endpoint AFTER the Mirror node: without a terminal node FORMCYCLE reports
         //     the new path as invalid. It is replaced by the reflected lane on the first sync — as
@@ -476,7 +476,7 @@ internal object MirrorTriggerPaths {
         val placeholder =
             createPlaceholderEndpoint(
                 userContext, nodeApi, nodeClass, taskClass, savedTask, savedRoot)
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] create-path 3b/5: temporary endpoint id={} ({})",
             reflectId(placeholder),
             PLACEHOLDER_ENDPOINT_TYPE)
@@ -503,7 +503,7 @@ internal object MirrorTriggerPaths {
         // TERMS
         // from the params — without that transfer the trigger is invisible to the event engine.
         ensureTriggerDataModel(userContext, reflectId(savedTrigger) ?: 0L)
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] create-path 4/5: trigger id={} '{}:{}'",
             reflectId(savedTrigger),
             source.triggerType,
@@ -513,14 +513,14 @@ internal object MirrorTriggerPaths {
         taskClass.getMethod("setTrigger", triggerClass).invoke(savedTask, savedTrigger)
         taskClass.getMethod("setRootNode", nodeClass).invoke(savedTask, savedRoot)
         updateEntity(taskApi, userContext, savedTask)
-        logger.info("[CodBi][Mirror] create-path 5/5: task {} linked to trigger + root", taskId)
+        logger.debug("[CodBi][Mirror] create-path 5/5: task {} linked to trigger + root", taskId)
 
         // CRITICAL: a task row with a NULL `proc_order_idx` makes `WorkflowProcess.tasks`
         // unloadable
         // ("null index column for collection"). Repaired LAST, in its own EntityContext.
         MirrorDataRepair.renumberProcessTasks(userContext, mainProcessId)
 
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] created reflecting path '{}' (task={}, root={}, trigger={}, mirror={}) " +
                 "for source path {} of '{}'",
             source.taskName,
@@ -608,7 +608,7 @@ internal object MirrorTriggerPaths {
         taskClass.getMethod("setRootNode", nodeClass).invoke(task, root)
         updateEntity(taskApi, userContext, task)
         repaired = true
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] ensureMirrorNode: relinked root node id={} on task {}",
             reflectId(root),
             taskId)
@@ -636,7 +636,7 @@ internal object MirrorTriggerPaths {
         taskClass.getMethod("setTrigger", triggerClass).invoke(task, savedTrigger)
         updateEntity(taskApi, userContext, task)
         repaired = true
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] ensureMirrorNode: recreated the missing trigger id={} on task {}",
             reflectId(savedTrigger),
             taskId)
@@ -660,7 +660,7 @@ internal object MirrorTriggerPaths {
             createMirrorNode(
                 userContext, nodeApi, nodeClass, taskClass, task, parent, sourceFormKey, source)
         repaired = true
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] ensureMirrorNode: recreated the Mirror node id={} on task {} " +
                 "(source path {})",
             reflectId(created),
@@ -678,7 +678,7 @@ internal object MirrorTriggerPaths {
         if (!hasTerminalEndpoint(laneChildren)) {
           val placeholder =
               createPlaceholderEndpoint(userContext, nodeApi, nodeClass, taskClass, task, parent)
-          logger.info(
+          logger.debug(
               "[CodBi][Mirror] ensureMirrorNode: created the temporary endpoint id={} on task {}",
               reflectId(placeholder),
               taskId)
@@ -900,7 +900,7 @@ internal object MirrorTriggerPaths {
         em.javaClass.getMethod("flush").invoke(em)
         tx.javaClass.getMethod("commit").invoke(tx)
         applied = true
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] trigger {} data model transferred: name='{}' terms={} persisted={}",
             triggerId,
             runCatching { triggerClass.getMethod("getName").invoke(trigger) as? String }
@@ -1011,7 +1011,7 @@ internal object MirrorTriggerPaths {
     }
     if (changed) updateEntity(triggerApi, userContext, trigger)
     if (current != expected) {
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] trigger '{}' params re-pointed: {} -> {}",
           runCatching { trigger.javaClass.getMethod("getName").invoke(trigger) as? String }
               .getOrNull(),
@@ -1078,7 +1078,7 @@ internal object MirrorTriggerPaths {
         .getMethod("setCustomParameters", String::class.java)
         .invoke(node, mirrorNodeParams(sourceFormKey, source))
     updateEntity(nodeApi, userContext, node)
-    logger.info("[CodBi][Mirror] updated Mirror node {} for source path {}", nodeId, source.taskId)
+    logger.debug("[CodBi][Mirror] updated Mirror node {} for source path {}", nodeId, source.taskId)
   }
 
   /**
@@ -1138,286 +1138,7 @@ internal object MirrorTriggerPaths {
   private fun isValidJsonObject(json: String): Boolean =
       runCatching { de.xima.cmn.reader.JsonReader.isValidJsonObject(json) }.getOrDefault(true)
 
-  /**
-   * `customParameters` of the copied trigger.
-   *
-   * `WorkflowTrigger.customParameters` is also `@NotNull`/`@JsonObject`, so an empty source payload
-   * becomes `{}` — otherwise the (otherwise valid) insert would be rejected.
-   */
-  /**
-   * Read-only diagnostic snapshot of the trigger reflection for one mirrored element.
-   *
-   * Returns a JSON document with the match tokens, the names that exist in the reflecting form, the
-   * source paths that reference the element (with their raw AND re-pointed params) and every path
-   * of the reflecting workflow version (with its trigger params). It answers "which trigger would
-   * fire on this button click" without needing to click anything.
-   */
-  fun diagnose(
-      userContext: Any?,
-      sourceFormKey: String?,
-      elementRef: String?,
-      elementKey: String?,
-      targetFormKey: String?,
-      namePrefix: String?,
-  ): String {
-    val body = JSONObject()
-    body["marker"] = TRIGGER_SYNC_VERSION
-    body["sourceForm"] = sourceFormKey.orEmpty()
-    body["targetForm"] = targetFormKey.orEmpty()
-    body["prefix"] = namePrefix.orEmpty()
-    if (userContext == null) {
-      body["error"] = "no userContext"
-      return body.toJSONString()
-    }
-    val tokens = elementTokens(userContext, sourceFormKey.orEmpty(), elementRef, elementKey)
-    val targetNames = reflectingFormNames(userContext, targetFormKey, namePrefix)
-    val prefix = namePrefix?.trim().orEmpty()
-    body["tokens"] = JSONArray().also { arr -> tokens.forEach { arr.add(it) } }
-    body["reflectingNames"] =
-        JSONArray().also { arr -> targetNames.sorted().forEach { arr.add(it) } }
-    body["presentPlain"] =
-        JSONArray().also { arr -> tokens.filter { it in targetNames }.forEach { arr.add(it) } }
-    body["presentNamespaced"] =
-        JSONArray().also { arr ->
-          tokens.filter { "$prefix$it" in targetNames }.forEach { arr.add(it) }
-        }
-    val sourceArray = JSONArray()
-    for (path in findTriggeredPaths(userContext, sourceFormKey, elementRef, elementKey)) {
-      val obj = JSONObject()
-      obj["taskId"] = path.taskId
-      obj["taskName"] = path.taskName
-      obj["triggerType"] = path.triggerType
-      obj["triggerName"] = path.triggerName
-      obj["params"] = path.triggerParams
-      obj["expectedParams"] = triggerParamsOf(path, tokens, namePrefix, targetNames)
-      obj["remapped"] = remapTriggerParams(path, tokens, namePrefix, targetNames)
-      sourceArray.add(obj)
-    }
-    body["sourcePaths"] = sourceArray
-    val targetArray = JSONArray()
-    val targetVersionId = WorkflowMirrorAccess.activeVersionId(userContext, targetFormKey)
-    body["targetVersion"] = targetVersionId
-    if (targetVersionId != null) {
-      for (path in pathsOfVersion(userContext, targetVersionId)) {
-        val obj = JSONObject()
-        obj["taskId"] = path.taskId
-        obj["taskName"] = path.taskName
-        obj["triggerType"] = path.triggerType
-        obj["triggerName"] = path.triggerName
-        obj["params"] = path.triggerParams
-        targetArray.add(obj)
-      }
-    }
-    body["targetPaths"] = targetArray
-    // Raw rows of both versions: a trigger only fires when the row FORMCYCLE's engine reads looks
-    // exactly like the one the designer writes (active flag, params VERSION, task linkage).
-    val triggerArray = triggerRows(userContext, targetVersionId)
-    body["targetTriggers"] = triggerArray
-    // Search terms per trigger — an EMPTY list means the event engine can never FIND that trigger,
-    // so the click is accepted while no workflow path runs.
-    val termArray = JSONArray()
-    for (index in 0 until triggerArray.size) {
-      val trigger = triggerArray.getJSONObject(index) ?: continue
-      val triggerId = trigger.getLongValue("triggerId")
-      if (triggerId <= 0L) continue
-      val entry = JSONObject()
-      entry["triggerId"] = triggerId
-      entry["terms"] =
-          JSONArray().also { arr ->
-            for ((key, value) in searchTermsOf(userContext, triggerId)) {
-              arr.add("$key=$value")
-            }
-          }
-      termArray.add(entry)
-    }
-    body["targetSearchTerms"] = termArray
-    body["targetTasks"] = taskRows(userContext, targetVersionId)
-    body["sourceTriggers"] =
-        triggerRows(userContext, WorkflowMirrorAccess.activeVersionId(userContext, sourceFormKey))
-    val json = body.toJSONString()
-    logger.info("[CodBi][Mirror] [{}] diagnose: {}", TRIGGER_SYNC_VERSION, json)
-    return json
-  }
-
-  /**
-   * Writes the missing `WorkflowTriggerSearchTerm` rows of every submit-button trigger of the
-   * ACTIVE workflow version of [targetFormKey] and reports the outcome — including the failure
-   * text, so a refused insert can be diagnosed without the server log.
-   *
-   * Used by `action=fixsearchterms&target=<formKey>`.
-   */
-  fun repairSearchTerms(userContext: Any?, targetFormKey: String?): String {
-    val body = JSONObject()
-    body["marker"] = TRIGGER_SYNC_VERSION
-    body["targetForm"] = targetFormKey.orEmpty()
-    if (userContext == null) {
-      body["error"] = "no userContext"
-      return body.toJSONString()
-    }
-    val versionId = WorkflowMirrorAccess.activeVersionId(userContext, targetFormKey)
-    body["targetVersion"] = versionId
-    if (versionId == null) {
-      body["error"] = "no active workflow version"
-      return body.toJSONString()
-    }
-    val errors = ArrayList<String>()
-    val triggers = triggerRows(userContext, versionId)
-    var checked = 0
-    var fixed = 0
-    for (index in 0 until triggers.size) {
-      val trigger = triggers.getJSONObject(index) ?: continue
-      val triggerId = trigger.getLongValue("triggerId")
-      if (triggerId <= 0L) continue
-      checked++
-      val type = trigger.getString("type").orEmpty()
-      val params = trigger.getString("params").orEmpty()
-      if (ensureTriggerDataModel(userContext, triggerId, errors)) fixed++
-    }
-    body["checked"] = checked
-    body["fixed"] = fixed
-    body["errors"] = JSONArray().also { arr -> errors.forEach { arr.add(it) } }
-    val json = body.toJSONString()
-    logger.info("[CodBi][Mirror] [{}] fixsearchterms: {}", TRIGGER_SYNC_VERSION, json)
-    return json
-  }
-
-  /**
-   * Every TRIGGER row of [versionId] with the fields the runtime engine evaluates.
-   *
-   * A reflect trigger that looks right in the designer but never fires is almost always a row-level
-   * difference: `flag_active = 0`, a NULL `custom_params_ver` (the props deserializer then reads
-   * the parameters as the WRONG version) or a trigger that is not linked to its task.
-   */
-  private fun triggerRows(userContext: Any?, versionId: Long?): JSONArray {
-    val out = JSONArray()
-    if (versionId == null) return out
-    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return out
-    return try {
-      val rows =
-          WorkflowMirrorAccess.query(
-              em,
-              "SELECT tr.id, t.id, t.name, tr.type, tr.name, tr.active, tr.customParameters, " +
-                  "tr.customParametersVersion " +
-                  "FROM de.xima.fc.entities.WorkflowTrigger tr JOIN tr.task t " +
-                  "JOIN t.process p JOIN p.version v WHERE v.id = :vid ORDER BY t.id",
-              mapOf("vid" to versionId))
-      for (row in rows) {
-        val cols = row as? Array<*> ?: continue
-        if (cols.size < 7) continue
-        val obj = JSONObject()
-        obj["triggerId"] = (cols[0] as? Number)?.toLong()
-        obj["taskId"] = (cols[1] as? Number)?.toLong()
-        obj["taskName"] = cols[2]?.toString()
-        obj["type"] = cols[3]?.toString()
-        obj["name"] = cols[4]?.toString()
-        obj["active"] = cols[5]
-        obj["params"] = cols[6]?.toString()
-        obj["paramsVersion"] = cols.getOrNull(7)?.toString()
-        out.add(obj)
-      }
-      out
-    } catch (x: Exception) {
-      logger.warn("[CodBi][Mirror] triggerRows failed: {}", describe(x))
-      out.add(JSONObject().also { it["error"] = describe(x) })
-      out
-    } finally {
-      WorkflowMirrorAccess.closeQuietly(em)
-    }
-  }
-
-  /**
-   * The `key/value` search terms of [triggerId] — the INDEX the event engine looks triggers up by
-   * (`buttonName` / `buttonQualifier`).
-   *
-   * The terms are read through the trigger ENTITY (in its own context): the `searchTerms` list is a
-   * lazy collection and the polymorphic `element` association cannot be queried reliably.
-   */
-  private fun searchTermsOf(userContext: Any?, triggerId: Long): List<Pair<String, String>> {
-    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return emptyList()
-    return try {
-      val triggerClass = Class.forName("de.xima.fc.entities.WorkflowTrigger")
-      val trigger =
-          em.javaClass
-              .getMethod("find", Class::class.java, Any::class.java)
-              .invoke(em, triggerClass, triggerId) ?: return emptyList()
-      readSearchTerms(trigger)
-    } catch (x: Exception) {
-      logger.warn("[CodBi][Mirror] searchTermsOf failed for trigger {}: {}", triggerId, describe(x))
-      emptyList()
-    } finally {
-      WorkflowMirrorAccess.closeQuietly(em)
-    }
-  }
-
-  /** Every TASK row of [versionId] (linkage: trigger + root node, workflow order index). */
-  private fun taskRows(userContext: Any?, versionId: Long?): JSONArray {
-    val out = JSONArray()
-    if (versionId == null) return out
-    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return out
-    return try {
-      val rows =
-          WorkflowMirrorAccess.query(
-              em,
-              "SELECT t.id, t.name, t.description, tr.id, rn.id " +
-                  "FROM de.xima.fc.entities.WorkflowTask t " +
-                  "LEFT JOIN t.trigger tr LEFT JOIN t.rootNode rn " +
-                  "JOIN t.process p JOIN p.version v WHERE v.id = :vid ORDER BY t.id",
-              mapOf("vid" to versionId))
-      for (row in rows) {
-        val cols = row as? Array<*> ?: continue
-        if (cols.size < 5) continue
-        val obj = JSONObject()
-        obj["taskId"] = (cols[0] as? Number)?.toLong()
-        obj["name"] = cols[1]?.toString()
-        obj["description"] = cols[2]?.toString()
-        obj["triggerId"] = (cols[3] as? Number)?.toLong()
-        obj["rootNodeId"] = (cols[4] as? Number)?.toLong()
-        out.add(obj)
-      }
-      out
-    } catch (x: Exception) {
-      logger.warn("[CodBi][Mirror] taskRows failed: {}", describe(x))
-      out.add(JSONObject().also { it["error"] = describe(x) })
-      out
-    } finally {
-      WorkflowMirrorAccess.closeQuietly(em)
-    }
-  }
-
-  /** All workflow paths of [versionId] with their trigger, unfiltered. */
-  private fun pathsOfVersion(userContext: Any?, versionId: Long): List<SourcePath> {
-    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return emptyList()
-    return try {
-      val rows =
-          WorkflowMirrorAccess.query(
-              em,
-              "SELECT t.id, t.name, tr.type, tr.name, tr.customParameters, " +
-                  "tr.customParametersVersion " +
-                  "FROM de.xima.fc.entities.WorkflowTask t JOIN t.trigger tr " +
-                  "JOIN t.process p JOIN p.version v WHERE v.id = :vid",
-              mapOf("vid" to versionId))
-      val out = ArrayList<SourcePath>()
-      for (row in rows) {
-        val cols = row as? Array<*> ?: continue
-        if (cols.size < 5) continue
-        out.add(
-            SourcePath(
-                taskId = (cols[0] as? Number)?.toLong() ?: continue,
-                taskName = cols[1]?.toString().orEmpty(),
-                triggerType = cols[2]?.toString().orEmpty(),
-                triggerName = cols[3]?.toString().orEmpty(),
-                triggerParams = cols[4]?.toString().orEmpty(),
-                paramsVersion = cols.getOrNull(5)?.toString()?.takeIf { it.isNotBlank() }))
-      }
-      out
-    } catch (x: Exception) {
-      logger.warn("[CodBi][Mirror] pathsOfVersion failed: {}", describe(x))
-      emptyList()
-    } finally {
-      WorkflowMirrorAccess.closeQuietly(em)
-    }
-  }
-
+  /** `customParameters` of the copied trigger, with the mirrored names re-pointed. */
   private fun triggerParamsOf(
       source: SourcePath,
       tokens: Set<String>,
@@ -1425,7 +1146,7 @@ internal object MirrorTriggerPaths {
       targetNames: Set<String>,
   ): String {
     val remapped = remapTriggerParams(source, tokens, namePrefix, targetNames).ifBlank { "{}" }
-    logger.info(
+    logger.debug(
         "[CodBi][Mirror] [{}] trigger '{}' ({}): source params={} -> reflected params={}",
         TRIGGER_SYNC_VERSION,
         source.triggerName,
@@ -1495,7 +1216,7 @@ internal object MirrorTriggerPaths {
     walk(root)
     val out = if (changed) root.toJSONString() else params
     if (changed) {
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] trigger '{}' element references re-pointed at the mirrored prefix '{}': " +
               "{} -> {}",
           source.triggerName,
@@ -1648,7 +1369,7 @@ internal object MirrorTriggerPaths {
             .getMethod("delete", userContextClass, transferable)
             .invoke(taskApi, userContext, task)
         MirrorDataRepair.renumberProcessTasks(userContext, processId)
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] removed reflecting path task={} (its trigger disappeared)", taskId)
         true
       } catch (x: Exception) {

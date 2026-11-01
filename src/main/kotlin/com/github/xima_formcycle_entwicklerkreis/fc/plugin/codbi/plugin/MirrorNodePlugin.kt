@@ -6,7 +6,6 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.Wo
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.WorkflowMirrorAccess
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.workflow.EMirrorOutputMode
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
-import com.google.gson.Gson
 import de.xima.fc.beans.interfaces.IGuiIcon
 import de.xima.fc.interfaces.workflow.execution.INormalCompletionResult
 import de.xima.fc.interfaces.workflow.mixin.IElementCategory
@@ -19,7 +18,6 @@ import de.xima.fc.workflow.mixin.APluginActionNodeHandler
 import de.xima.fc.workflow.taglib.model.ClientOpaqueColor
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.UUID
 import org.slf4j.LoggerFactory
 
 /**
@@ -80,31 +78,12 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
 
   override fun execute(params: INodeExecutionParams<MirrorNodeProps>): INormalCompletionResult {
     val props = params.data
-    logger.info(
-        "[CodBi][Mirror] execute node='{}' sourceForm='{}' pathId='{}' mode='{}' spikeProbe='{}' " +
-            "spikeProbe2='{}'",
+    logger.debug(
+        "[CodBi][Mirror] execute node='{}' sourceForm='{}' pathId='{}' mode='{}'",
         props.name,
         props.sourceForm,
         props.pathId,
-        props.outputMode,
-        props.spikeProbe,
-        props.spikeProbe2)
-
-    // TEMPORARY Phase-0 spike gate (RUN 1): when enabled, inject a SpikeProbe node into the current
-    // task's downstream lane and watch whether it is executed IN THE SAME submit. Delete after
-    // spike.
-    if (props.spikeProbe) {
-      runCatching { runSpikeProbe(params) }
-          .onFailure { e -> logger.warn("[SPIKE] runSpikeProbe failed: {}", e.message, e) }
-    }
-
-    // TEMPORARY Phase-0 spike gate (RUN 2): when enabled, mutate the existing downstream node's
-    // params IN PLACE (the realistic Option B rewrite path) and observe whether the change lands
-    // same-trigger. Delete after the spike.
-    if (props.spikeProbe2) {
-      runCatching { runSpikeProbe2(params) }
-          .onFailure { e -> logger.warn("[SPIKE]2 runSpikeProbe2 failed: {}", e.message, e) }
-    }
+        props.outputMode)
 
     if (props.sourceForm.isNullOrBlank()) {
       logger.warn("[CodBi][Mirror] node='{}' has no configured source form", props.name)
@@ -143,11 +122,11 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
     if (props.autoSync && !props.pauseSync) {
       val regNote = registerAsReflector(params, props, userContext)
       if (regNote != null) {
-        logger.info("[CodBi][Mirror] node='{}' reflector-registered: {}", props.name, regNote)
+        logger.debug("[CodBi][Mirror] node='{}' reflector-registered: {}", props.name, regNote)
       }
       val syncNote = resyncIfChanged(params, props, userContext)
       if (syncNote != null) {
-        logger.info("[CodBi][Mirror] node='{}' phase2-resync: {}", props.name, syncNote)
+        logger.debug("[CodBi][Mirror] node='{}' phase2-resync: {}", props.name, syncNote)
       }
     }
 
@@ -207,7 +186,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
       append(" nodes)")
     }
 
-    logger.info(
+    logger.debug(
         "[CodBi][Mirror] node='{}' resolved form='{}' path='{}' nodes={} trigger='{}' mode='{}'",
         props.name,
         snapshot.formName,
@@ -254,7 +233,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
     val pathId = props.pathId?.trim()?.toLongOrNull() ?: return null
     // Source-side brake: a pause marker on the SOURCE path stops every reflecting form at once.
     if (WorkflowMirrorAccess.isSourceSyncPaused(userContext, props.sourceForm, pathId)) {
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] phase2-resync: sync is PAUSED on the source path {}/{} — no rewrite",
           props.sourceForm,
           pathId)
@@ -279,7 +258,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
     if (ownProjectKey != null &&
         ownTaskId != null &&
         WorkflowMirrorAccess.isSourceSyncPaused(userContext, ownProjectKey, ownTaskId)) {
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] phase2-resync: sync of THIS path ({}/{}) is PAUSED — no rewrite",
           ownProjectKey,
           ownTaskId)
@@ -298,7 +277,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
       return "SKIPPED:source-unresolved"
     }
     if (WorkflowLaneMaterializer.laneRootCount(source) == 0) {
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] phase2-resync: source path {} of '{}' has no mirrorable action nodes " +
               "(only Mirror nodes / empty) — nothing to do",
           pathId,
@@ -350,7 +329,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
       if (pending != null &&
           pending.revision == sourceRevision &&
           pending.ageMillis() < REBUILD_PENDING_GRACE_MS) {
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] phase2-resync: rebuild already pending for revision {} ({} ms ago) — " +
                 "waiting for the recreated lane to become visible; not rebuilding again (lane={}, " +
                 "present children=[{}])",
@@ -367,7 +346,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
               childrenToReplace = targetChildren,
               targetWorkflowVersion = targetWorkflowVersion,
               syncEndpoint = props.syncEndpoint)
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] phase2-resync: REBUILDING lane={} drift='{}' replacing children=[{}] " +
               "with {} source node(s)",
           laneLabel,
@@ -388,7 +367,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
         MirrorMaterializedStore.clearRebuildPending(
             targetVersionId, props.sourceForm.orEmpty(), pathId)
       }
-      logger.info(
+      logger.debug(
           "[CodBi][Mirror] phase2-resync: REBUILD lane={} drift='{}' created={} deleted={} " +
               "warnings={} targetVersion={}",
           laneLabel,
@@ -436,7 +415,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
       MirrorMaterializedStore.storeMaterializedRevision(
           targetVersionId, props.sourceForm.orEmpty(), pathId, sourceRevision)
     }
-    logger.info(
+    logger.debug(
         "[CodBi][Mirror] phase2-resync: lane={} sourceRevision={} rewrittenNodes={} " +
             "warnings={} targetVersion={}",
         laneLabel,
@@ -585,387 +564,19 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
 
   // endregion Phase-2 lazy re-sync
 
-  // region TEMPORARY Phase-0 spike probe — DELETE after Go/No-Go
+  // region Reflection helpers
 
-  /**
-   * TEMPORARY Phase-0 spike. Injects a [SpikeProbeNodePlugin] child into the current task's
-   * downstream lane (a sibling SEQUENCE of this Mirror node, or — as a fallback — directly under
-   * this node's parent container) and logs `[SPIKE]` markers.
-   *
-   * If a `[SPIKE][SpikeProbe] EXECUTED` marker appears in the SAME submit's log *after* `[SPIKE]
-   * AFTER`, then FORMCYCLE re-walks the live `children` collection and executes freshly-persisted
-   * nodes in the current trigger — the decisive "Go" signal.
-   *
-   * The node is persisted through the same reflection pattern used by `AIWorkflowAssistant`
-   * (`APIProvider.WORKFLOW_NODE_API.create` + a `fixParentOrderIndex` native SQL fix for the
-   * Hibernate `@OrderColumn`), i.e. through an EntityContext that is separate from the workflow
-   * executor's session, so the result also probes the cross-EntityContext visibility question.
-   */
-  @Suppress("UNCHECKED_CAST")
-  private fun runSpikeProbe(params: INodeExecutionParams<MirrorNodeProps>) {
-    val node: Any = params.node
-    val task = params.workflowContext.task()
-    val nodeId = rLong(node, "getId")
-    val nodeName = rStr(node, "getName")
-    val nodeType = rStr(node, "getType")
-    val taskId = rLong(task, "getId")
-    val taskName = rStr(task, "getName")
-    logger.info(
-        "[SPIKE] BEFORE nodeId={} nodeName='{}' nodeType='{}' taskId={} taskName='{}' — will " +
-            "inject a SpikeProbe child into a downstream lane; watch for [SPIKE] AFTER below and " +
-            "any [SPIKE][SpikeProbe] EXECUTED in THIS submit",
-        nodeId,
-        nodeName,
-        nodeType,
-        taskId,
-        taskName)
-
-    // Resolve the container that holds the downstream lane.
-    val parent =
-        rInvoke(node, "getParent")
-            ?: run {
-              logger.warn(
-                  "[SPIKE] NO_PARENT node is a root-level node; cannot locate a downstream lane")
-              return
-            }
-    val parentId = rLong(parent, "getId")
-    val parentType = rStr(parent, "getType")
-    val children: List<*> =
-        rInvoke(parent, "getChildren") as? List<*>
-            ?: run {
-              logger.warn("[SPIKE] NO_CHILDREN parent id={} type='{}' ", parentId, parentType)
-              return
-            }
-    logger.info(
-        "[SPIKE] PARENT id={} type='{}' childCount={} (current mirror is childIndex={})",
-        parentId,
-        parentType,
-        children.size,
-        children.indexOfFirst { rLong(it, "getId") == nodeId })
-
-    // Prefer a sibling SEQUENCE (the materialized action lane); fall back to the parent container.
-    val lane: Any? =
-        children
-            .asSequence()
-            .mapNotNull { it as? Any }
-            .firstOrNull {
-              val id = rLong(it, "getId")
-              val type = rStr(it, "getType")
-              id != nodeId && type == "SEQUENCE"
-            }
-            ?: run {
-              logger.info(
-                  "[SPIKE] No sibling SEQUENCE lane found; falling back to the parent container")
-              parent
-            }
-
-    val laneId = rLong(lane, "getId")
-    val laneType = rStr(lane, "getType")
-    logger.info(
-        "[SPIKE] TARGET_LANE id={} type='{}' — injecting SpikeProbe child", laneId, laneType)
-
-    val probeName = "SPIKE-${UUID.randomUUID().toString().substring(0, 8)}"
-    val userContext = MirrorFormAccess.systemContext()
-
-    val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
-    val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
-    val ucClass = Class.forName("de.xima.fc.user.UserContext")
-    val transferableClass = Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
-    val createNode = workflowNodeApi.javaClass.getMethod("create", ucClass, transferableClass)
-
-    val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
-    val probe = workflowNodeClass.getDeclaredConstructor().newInstance()
-    workflowNodeClass.getMethod("setName", String::class.java).invoke(probe, probeName)
-    workflowNodeClass.getMethod("setType", String::class.java).invoke(probe, SPIKE_NODE_TYPE)
-    workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(probe, true)
-    workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(probe, UUID.randomUUID())
-    workflowNodeClass
-        .getMethod("setTask", Class.forName("de.xima.fc.entities.WorkflowTask"))
-        .invoke(probe, task)
-    workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(probe, lane)
-
-    val savedProbe = createNode.invoke(workflowNodeApi, userContext, probe)
-    val savedProbeId = rLong(savedProbe, "getId")
-    logger.info(
-        "[SPIKE] AFTER injected SpikeProbe id={} name='{}' into lane id={} — if " +
-            "'[SPIKE][SpikeProbe] EXECUTED name=SPIKE-$probeName' is logged in THIS submit then " +
-            "FORMCYCLE re-executed a freshly-persisted node in the same trigger",
-        savedProbeId,
-        probeName,
-        laneId)
-
-    // Fix the Hibernate @OrderColumn (parent_order_idx) so the new child is appended at the end of
-    // the lane (a NULL index column throws on the next load).
-    fixSpikeParentOrderIndex(savedProbe, lane, userContext)
-    logger.info("[SPIKE] DONE injected probe id={} parent={}", savedProbeId, laneId)
-  }
-
-  /**
-   * TEMPORARY Phase-0 spike RUN 2. Instead of inserting a NEW child (which Run 1 proved is NOT
-   * re-walked same-trigger), this mutates the EXISTING downstream node's params IN PLACE — the
-   * realistic Option B rewrite path (same node reference, same child count, no reorder).
-   *
-   * It locates the immediate next sibling of this Mirror node inside the same parent container (the
-   * `FC_CHANGE_STATE` child), reads its persisted `customParameters` JSON, injects a sentinel key,
-   * and persists the change through `APIProvider.WORKFLOW_NODE_API.update` (an EntityContext
-   * separate from the executor's session — probing cross-EntityContext visibility too).
-   *
-   * Decisive signal: if the node that executes immediately after this Mirror node honors the NEW
-   * sentinel param value in THIS submit, then mutating an existing node's params lands same-trigger
-   * → "Go" for Option B. If it keeps using the ON-START value, the executor cached the params at
-   * walk time → conditional No-Go for the in-place rewrite path too.
-   */
-  @Suppress("UNCHECKED_CAST")
-  private fun runSpikeProbe2(params: INodeExecutionParams<MirrorNodeProps>) {
-    val node: Any = params.node
-    val nodeId = rLong(node, "getId")
-    val nodeName = rStr(node, "getName")
-    val nodeType = rStr(node, "getType")
-
-    val parent =
-        rInvoke(node, "getParent")
-            ?: run {
-              logger.warn("[SPIKE]2 NO_PARENT node is a root-level node; cannot locate a sibling")
-              return
-            }
-    val parentId = rLong(parent, "getId")
-    val parentType = rStr(parent, "getType")
-    val children: List<*> =
-        rInvoke(parent, "getChildren") as? List<*>
-            ?: run {
-              logger.warn("[SPIKE]2 NO_CHILDREN parent id={} type='{}'", parentId, parentType)
-              return
-            }
-    val selfIndex = children.indexOfFirst { rLong(it, "getId") == nodeId }
-    logger.info(
-        "[SPIKE]2 BEFORE nodeId={} nodeName='{}' nodeType='{}' parent id={} type='{}' childCount={} " +
-            "selfIndex={} — locating next downstream sibling to mutate IN PLACE",
-        nodeId,
-        nodeName,
-        nodeType,
-        parentId,
-        parentType,
-        children.size,
-        selfIndex)
-
-    // Find the immediately-following sibling (the node that unfolds right after this Mirror node).
-    val downstream =
-        children
-            .asSequence()
-            .drop(selfIndex.coerceAtLeast(0) + 1)
-            .mapNotNull { it as? Any }
-            .firstOrNull()
-            ?: run {
-              logger.warn(
-                  "[SPIKE]2 NO_DOWNSTREAM no sibling after index {}; nothing to mutate", selfIndex)
-              return
-            }
-    val downstreamId = rLong(downstream, "getId")
-    val downstreamName = rStr(downstream, "getName")
-    val downstreamType = rStr(downstream, "getType")
-
-    val beforeRaw = rStr(downstream, "getCustomParameters") ?: "{}"
-    logger.info(
-        "[SPIKE]2 TARGET downstream id={} name='{}' type='{}' current customParameters={}",
-        downstreamId,
-        downstreamName,
-        downstreamType,
-        beforeRaw.take(500))
-
-    // Build the updated params JSON by carrying the existing map.
-    @Suppress("UNCHECKED_CAST")
-    val sentinelValue = "SPIKE2-${UUID.randomUUID().toString().substring(0, 8)}"
-    val merged = mutableMapOf<String, Any?>()
-    runCatching { Gson().fromJson(beforeRaw, Map::class.java) as? Map<*, *> }
-        .getOrNull()
-        ?.forEach { (k, v) -> if (k != null) merged[k.toString()] = v }
-
-    // Add a non-functional sentinel (cross-check) AND flip the FUNCTIONAL targetState to a
-    // different
-    // real state. The state transition is the decisive, observable GO/NO-GO signal:
-    //   - record lands in the alternative state   -> mutation consumed same-trigger -> GO
-    //   - record still lands in 'Gesendet'         -> executor used on-start params  -> NO-GO
-    merged["spike2Sentinel"] = sentinelValue
-    val task = params.workflowContext.task()
-    val flippedStateName: String? = flipTargetState(merged, task)
-
-    val userContext = MirrorFormAccess.systemContext()
-
-    val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
-    val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
-    val ucClass = Class.forName("de.xima.fc.user.UserContext")
-    val transferableClass = Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
-
-    val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
-    workflowNodeClass
-        .getMethod("setCustomParameters", String::class.java)
-        .invoke(downstream, Gson().toJson(merged))
-
-    val update = workflowNodeApi.javaClass.getMethod("update", ucClass, transferableClass)
-    runCatching { update.invoke(workflowNodeApi, userContext, downstream) }
-        .onFailure { e ->
-          logger.warn("[SPIKE]2 UPDATE_FAILED {}: {}", e.message, e)
-          return
-        }
-
-    logger.info(
-        "[SPIKE]2 DONE mutated downstream id={} -> spike2Sentinel='{}' persisted in-place " +
-            "(same node ref, no reorder). targetState flipped to state='{}'. If FC_CHANGE_STATE in " +
-            "THIS submit transitions the record to '{}' (NOT 'Gesendet') => in-place param mutation " +
-            "lands same-trigger => GO for Option B. If it still goes to 'Gesendet' => executor used " +
-            "on-start params => NO-GO for the in-place rewrite path",
-        downstreamId,
-        sentinelValue,
-        flippedStateName,
-        flippedStateName)
-  }
-
-  /**
-   * TEMPORARY RUN-2 helper. Flips the `targetState.uuid` inside [merged] (the node's params map) to
-   * a DIFFERENT real `WorkflowState` of the same workflow, so `FC_CHANGE_STATE` produces an
-   * observable, distinct transition. Returns the target state's name, or `null` if no alternative
-   * state could be resolved (in which case the params are left functionally unchanged).
-   */
-  private fun flipTargetState(merged: MutableMap<String, Any?>, task: Any): String? {
-    val targetState = merged["targetState"] as? Map<*, *> ?: return null
-    val currentUuid =
-        (targetState["uuid"] as? String)?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-            ?: (targetState["uuid"] as? UUID)
-    val userContext = MirrorFormAccess.systemContext()
-    val states = loadProbeWorkflowStates(task) ?: emptyList()
-    if (states.isEmpty()) {
-      logger.warn("[SPIKE]2 FLIP_NO_STATES cannot resolve alternative target state")
-      return null
-    }
-    val getUuid = runCatching { states[0].javaClass.getMethod("getUUIDObject") }.getOrNull()
-    val getName = runCatching { states[0].javaClass.getMethod("getName") }.getOrNull()
-    if (getUuid == null || getName == null) return null
-    val alternative =
-        states.firstOrNull { s ->
-          val u = runCatching { getUuid.invoke(s) as? UUID }.getOrNull()
-          u != null && u != currentUuid
-        }
-            ?: run {
-              logger.warn(
-                  "[SPIKE]2 FLIP_NO_ALTERNATIVE only one state present; cannot flip targetState")
-              return null
-            }
-    val newUuid = runCatching { getUuid.invoke(alternative) as? UUID }.getOrNull() ?: return null
-    val newName = runCatching { getName.invoke(alternative) as? String }.getOrNull()
-    val newTarget = LinkedHashMap<String, Any?>()
-    targetState.forEach { (k, v) -> newTarget[k.toString()] = v }
-    newTarget["uuid"] = newUuid.toString()
-    newTarget["entityClass"] = "de.xima.fc.entities.WorkflowState"
-    merged["targetState"] = newTarget
-    logger.info(
-        "[SPIKE]2 FLIP targetState {} -> state='{}' uuid={}",
-        currentUuid?.toString()?.take(8),
-        newName,
-        newUuid)
-    return newName
-  }
-
-  /**
-   * TEMPORARY RUN-2 helper. Loads all `WorkflowState`s of the current workflow version via the API.
-   */
-  private fun loadProbeWorkflowStates(task: Any): List<Any>? {
-    return try {
-      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
-      val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
-      val userContextClass = Class.forName("de.xima.fc.user.UserContext")
-      val workflowVersionClass = Class.forName("de.xima.fc.entities.WorkflowVersion")
-      @Suppress("UNCHECKED_CAST")
-      stateApi.javaClass
-          .getMethod("getAllByWorkflowVersion", userContextClass, workflowVersionClass)
-          .invoke(stateApi, MirrorFormAccess.systemContext(), probeWorkflowVersion(task))
-          as? List<Any> ?: emptyList()
-    } catch (e: Exception) {
-      logger.warn("[SPIKE]2 loadProbeWorkflowStates failed: {}", e.message)
-      null
-    }
-  }
-
-  /**
-   * TEMPORARY RUN-2 helper. Resolves the current workflow's `WorkflowVersion` from the task.
-   *
-   * `WorkflowTask` has no direct `getWorkflowVersion()`; it exposes the version through its
-   * process: `WorkflowTask.getProcess().getVersion()`. Reflecting that chain reliably returns the
-   * entity.
-   */
-  private fun probeWorkflowVersion(task: Any): Any? {
-    return try {
-      val process =
-          task.javaClass.getMethod("getProcess").invoke(task)
-              ?: run {
-                logger.warn("[SPIKE]2 probeWorkflowVersion: task.getProcess() is null")
-                return null
-              }
-      val version =
-          process.javaClass.getMethod("getVersion").invoke(process)
-              ?: run {
-                logger.warn("[SPIKE]2 probeWorkflowVersion: process.getVersion() is null")
-                return null
-              }
-      logger.debug("[SPIKE]2 probeWorkflowVersion resolved via task->process->version: {}", version)
-      version
-    } catch (e: Exception) {
-      logger.warn(
-          "[SPIKE]2 probeWorkflowVersion failed (task->getProcess->getVersion): {}", e.message)
-      null
-    }
-  }
-
-  /**
-   * Native-SQL fix for Hibernate's `@OrderColumn` (`parent_order_idx`), mirroring
-   * AIWorkflowAssistant.
-   */
-  private fun fixSpikeParentOrderIndex(actionNode: Any?, parentNode: Any?, userContext: Any?) {
-    if (actionNode == null || parentNode == null || userContext == null) {
-      logger.warn("[SPIKE] fixSpikeParentOrderIndex skipped (null arg)")
-      return
-    }
-    val nodeId = rLong(actionNode, "getId") ?: return
-    val parentId = rLong(parentNode, "getId") ?: return
-    try {
-      val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
-      val ucClass = Class.forName("de.xima.fc.user.UserContext")
-      val entityContext =
-          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
-      val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
-      val tx = em.javaClass.getMethod("getTransaction").invoke(em)
-      tx.javaClass.getMethod("begin").invoke(tx)
-      try {
-        val selectSql =
-            "SELECT COALESCE(MAX(parent_order_idx), -1) + 1 FROM workflow_node WHERE parent_id = $parentId"
-        val selectQ =
-            em.javaClass.getMethod("createNativeQuery", String::class.java).invoke(em, selectSql)
-        val nextIdx =
-            (selectQ.javaClass.getMethod("getSingleResult").invoke(selectQ) as? Number)?.toInt()
-                ?: 0
-        val updateSql = "UPDATE workflow_node SET parent_order_idx = $nextIdx WHERE id = $nodeId"
-        val updateQ =
-            em.javaClass.getMethod("createNativeQuery", String::class.java).invoke(em, updateSql)
-        updateQ.javaClass.getMethod("executeUpdate").invoke(updateQ)
-        tx.javaClass.getMethod("commit").invoke(tx)
-        logger.info("[SPIKE] Set parent_order_idx = {} for probe node id={}", nextIdx, nodeId)
-      } catch (e: Exception) {
-        runCatching { tx.javaClass.getMethod("rollback").invoke(tx) }
-        logger.warn("[SPIKE] Failed to fix parent_order_idx for probe node {}", nodeId, e)
-      } finally {
-        runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
-      }
-    } catch (e: Exception) {
-      logger.warn("[SPIKE] fixSpikeParentOrderIndex failed: {}", e.message)
-    }
-  }
-
+  /** Invokes a zero-argument getter by name; null when it is absent or throws. */
   private fun rInvoke(target: Any?, method: String): Any? =
       if (target == null) null
       else
           runCatching { target.javaClass.getMethod(method).invoke(target) }
               .onFailure { e ->
-                logger.warn(
-                    "[SPIKE] reflect {}.{}(): {}", target.javaClass.simpleName, method, e.message)
+                logger.debug(
+                    "[CodBi][Mirror] reflect {}.{}(): {}",
+                    target.javaClass.simpleName,
+                    method,
+                    e.message)
               }
               .getOrNull()
 
@@ -973,7 +584,7 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
 
   private fun rLong(target: Any?, method: String): Long? = rInvoke(target, method) as? Long
 
-  // endregion TEMPORARY Phase-0 spike probe
+  // endregion Reflection helpers
 
   fun buildPrototypeIcon(contextPath: String): IGuiIcon {
     val iconUrl = pluginResourceUrl(ICON_PATH, contextPath)
@@ -1007,9 +618,6 @@ class MirrorNodePlugin : APluginActionNodeHandler<MirrorNodeProps>() {
 
     /** CSS class of the node icon (a FontAwesome fallback is shown when the SVG cannot load). */
     const val PROTOTYPE_ICON_STYLE_CLASS = "fa fa-clone"
-
-    /** TEMPORARY: node type of the Phase-0 spike probe (must match [SpikeProbeNodePlugin]). */
-    const val SPIKE_NODE_TYPE = "SpikeProbe"
 
     /**
      * How long a recorded structural rebuild is trusted to still be "converging". After that the

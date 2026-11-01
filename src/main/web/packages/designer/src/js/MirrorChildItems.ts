@@ -728,7 +728,6 @@ export function syncMirrorChildren(
   if (!designer) {
     return Promise.resolve();
   }
-  lastDesigner = designer;
   const mirror = explicitMirror ?? designer.getSelectedMasterItem?.();
   const mirrorId = mirror?.getId?.();
   if (!mirrorId || !mirror) {
@@ -1239,74 +1238,3 @@ export async function refreshAllMirrors(designerLike: unknown): Promise<void> {
     }
   }
 }
-
-// #region Debug hook
-
-/** The designer captured by the most recent [syncMirrorChildren] call (for the debug hook). */
-let lastDesigner: IDesignerLike | null = null;
-
-/** Concise computed-style/geometry summary of an element, for the debug hook. */
-function describeElement(el: Element | null | undefined): Record<string, unknown> | null {
-  if (!el) {
-    return null;
-  }
-  const cs = getComputedStyle(el);
-  const rect = el.getBoundingClientRect();
-  return {
-    tag: el.tagName,
-    cls: (el as HTMLElement).className,
-    display: cs.display,
-    visibility: cs.visibility,
-    opacity: cs.opacity,
-    position: cs.position,
-    height: cs.height,
-    overflow: cs.overflow,
-    rectW: Math.round(rect.width),
-    rectH: Math.round(rect.height),
-  };
-}
-
-/**
- * TEMPORARY diagnostic hook. Run `__codbiMirrorDebug()` in the browser console after selecting a
- * source element. It reaches into the designer's (shadow-rooted/iframe) canvas via the designer API,
- * which `document.querySelector` cannot.
- */
-const mirrorDebugFn = () => {
-  const d = lastDesigner;
-  if (!d) {
-    return "no designer captured yet — select a source element for the Mirror first";
-  }
-  const mirror = d.getSelectedMasterItem?.();
-  const cell = mirror?.getItemContentCell?.();
-  const cellEl = cell?.[0] ?? null;
-  const containerEl = mirror?.getContainer?.()?.[0] ?? null;
-  const childTable = cellEl?.querySelector("table.xm-item-container") ?? null;
-  return {
-    mirrorId: mirror?.getId?.(),
-    cellExists: Boolean(cellEl),
-    cellInDocument: cellEl?.isConnected ?? false,
-    cellStyle: describeElement(cellEl),
-    childTableCount: cellEl?.querySelectorAll("table.xm-item-container").length ?? 0,
-    childStyle: describeElement(childTable),
-    childChildCount: childTable?.children.length ?? -1,
-    wrapper: describeElement(cellEl?.querySelector(".codbi-mirror")),
-    mirrorContainerStyle: describeElement(containerEl),
-    cellHtml: cellEl?.outerHTML?.slice(0, 3000) ?? "",
-    mirrorHtml: containerEl?.outerHTML?.slice(0, 3000) ?? "",
-  };
-};
-
-// The plugin runs in the designer frame; the DevTools console usually evaluates in the TOP frame.
-// Assign the hook to both so `__codbiMirrorDebug()` works wherever the user types it (when
-// same-origin; cross-origin access to `top` is ignored).
-(window as unknown as Record<string, unknown>).__codbiMirrorDebug = mirrorDebugFn;
-try {
-  const topWindow = window.top as unknown as Record<string, unknown> | null;
-  if (topWindow && topWindow !== (window as unknown as Record<string, unknown>)) {
-    topWindow.__codbiMirrorDebug = mirrorDebugFn;
-  }
-} catch {
-  /* cross-origin top — ignore */
-}
-
-// #endregion Debug hook

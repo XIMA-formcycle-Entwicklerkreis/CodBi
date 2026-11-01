@@ -658,6 +658,32 @@ copy). Two rules follow:
 
 Non-ASCII characters are written as `\uXXXX` escapes (the bundles are read as ISO-8859-1).
 
+### Cleanup: the investigation scaffolding is gone
+
+The reflected-trigger investigation left a lot of temporary code behind; it has been removed:
+
+- **Phase-0 spike node**: `SpikeProbeNodePlugin`/`SpikeProbeNodeProps`, the `spikeProbe`/`spikeProbe2`
+  props, both gates in `MirrorNodePlugin.execute()` and the `TEMPORARY SPIKE (debug)` fieldset in
+  [`MirrorNode.xhtml`](../src/main/resources/WEB-INF/ui/MirrorNode.xhtml) are deleted. The three
+  reflection helpers `rInvoke`/`rStr`/`rLong` lived inside that code region but are used by the real
+  lane code, so they were kept (now their own `region Reflection helpers`).
+- **Diagnostic servlet actions**: `action=triggerdiag`, `action=fixsearchterms` and
+  `action=saveworkflow` — and the helpers only they used (`diagnose`, `repairSearchTerms`,
+  `triggerRows`, `searchTermsOf`, `taskRows`, `pathsOfVersion`) plus
+  `WorkflowLaneMaterializer.stagedWorkflowSave` — are deleted. The feature actions
+  (`forms`, `elements`, `paths`, `pathtree`, `triggerpaths`, `applytriggerpaths`, `sync`, `render`,
+  `preview`, …) are untouched.
+- **Debug logging**: every `logger.info` of the Mirror feature (`[CodBi][Mirror]`,
+  `[MirrorServletAction]`, `[WorkflowLaneMaterializer]`) is demoted to `logger.debug`; warnings and
+  errors keep their level, so real failures are still reported. On the client the
+  `__codbiMirrorDebug()` console hook in
+  [`MirrorChildItems.ts`](../src/main/web/packages/designer/src/js/MirrorChildItems.ts) and the
+  `logDebug()` calls of [`workflow-mirror-node.js`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.js)
+  are gone.
+
+The narrative sections above are kept as the decision record of the spike (they describe a state of
+the code that no longer exists).
+
 ## Notes / limits
 
 - Workflow nodes have no appendable-container concept, so the node reflects path data; it does not

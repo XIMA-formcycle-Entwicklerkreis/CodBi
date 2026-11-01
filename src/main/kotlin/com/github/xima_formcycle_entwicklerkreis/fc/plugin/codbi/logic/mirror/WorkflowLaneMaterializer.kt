@@ -297,7 +297,7 @@ object WorkflowLaneMaterializer {
       // until someone saves the workflow in the designer.
       refreshWorkflowModel(userContext, versionId)
     }
-    logger.info(
+    logger.debug(
         "[WorkflowLaneMaterializer] rewriteInPlace: rewrittenNodes={} warnings={}",
         rewritten,
         warnings.size)
@@ -327,19 +327,19 @@ object WorkflowLaneMaterializer {
     // ONLY the lock version is bumped here — through the entity API, which is the one write that
     // really drops FORMCYCLE's cached workflow model (a raw SQL flag update does not).
     //
-    // `stagedWorkflowSave` is deliberately NOT called: `WorkflowVersionStager.forVersion(ctx, v,
-    // v)`
-    // expects a freshly STAGED copy as its "new" version and therefore re-inserts every child row.
-    // With `old == new` it aborts on `UC_WF_NSTERM_ELEMENT_KEY_IDX_INDEX_5` and
-    // `UC_WF_STATE_VERSION_ORDER_INDEX_9`, and the `clearTriggerSearchTerms` companion it needed
-    // DELETED the trigger search terms of the whole version — which is exactly what made reflected
-    // buttons stop firing. The triggers, nodes and search terms this plugin creates are persisted
-    // through the entity API already; the actual SAVE is performed by the designer afterwards: the
-    // client publishes the form and reloads the designer tab, the same sequence the AI assistant
-    // uses after a workflow inference.
+    // FORMCYCLE's `WorkflowVersionStager` is deliberately NOT used: `forVersion(ctx, v, v)` expects
+    // a
+    // freshly STAGED copy as its "new" version and therefore re-inserts every child row, so with
+    // `old == new` it aborts on `UC_WF_NSTERM_ELEMENT_KEY_IDX_INDEX_5` and
+    // `UC_WF_STATE_VERSION_ORDER_INDEX_9`. The triggers, nodes and search terms this plugin creates
+    // are persisted through the entity API already; the actual SAVE is performed by the designer
+    // afterwards — the client publishes the form and reloads the designer tab, the same sequence
+    // the
+    // AI assistant uses after a workflow inference.
     val wasInvalid = readWorkflowInvalid(userContext, workflowVersionId)
     val report = saveWorkflowVersionReport(userContext, workflowVersionId)
-    logger.info("[WorkflowLaneMaterializer] save WorkflowVersion {}: {}", workflowVersionId, report)
+    logger.debug(
+        "[WorkflowLaneMaterializer] save WorkflowVersion {}: {}", workflowVersionId, report)
     if (report.contains("\"saved\":true")) return
     // Fallback: the API refused (e.g. the version is not visible to this user) — at least toggle
     // the flag natively so an open designer re-analyses on its next save.
@@ -353,74 +353,6 @@ object WorkflowLaneMaterializer {
   }
 
   /**
-   * Performs FORMCYCLE's OWN workflow save: `WorkflowVersionStager.forVersion(ctx, v,
-   * v).perform(ctx)`.
-   *
-   * That stager is what the workflow designer's save runs (`WorkflowValidationBean` →
-   * `WorkflowVersionStager`): it re-persists the whole version through the DAOs
-   * (`WORKFLOWVERSION_DAO`, `WORKFLOWPROCESS_DAO`, `WORKFLOWTASK_DAO`, `WORKFLOWTRIGGER_DAO`,
-   * `WORKFLOWNODE_DAO`, `WORKFLOWTRIGGERSEARCHTERM_DAO`, `WORKFLOWNODESEARCHTERM_DAO`,
-   * `WORKFLOWSTATE_DAO`) and normalises every trigger via
-   * `WorkflowCustomParametersHelper.transferToDataModel`.
-   *
-   * Saving just the FORM (the designer's `publish()`) or bumping the version's lock version is NOT
-   * the same thing: the workflow model stays stale, so a reflected trigger created by this plugin
-   * is ignored until someone saves the WORKFLOW. This performs that save.
-   *
-   * @return a JSON report; `{"staged":true}` when the stager ran and its context was committed.
-   */
-  fun stagedWorkflowSave(userContext: Any?, workflowVersionId: Long): String {
-    val report = JsonObject()
-    report.addProperty("version", workflowVersionId)
-    if (userContext == null) {
-      report.addProperty("error", "no userContext")
-      return report.toString()
-    }
-    // NOTE: the trigger search terms are NOT cleared here any more. That wipe removed the engine's
-    // index for EVERY trigger of the version, so a failing save left the whole workflow dead.
-    var entityContext: Any? = null
-    try {
-      entityContext =
-          Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
-              .getMethod("newEntityContext", Class.forName("de.xima.fc.user.UserContext"))
-              .invoke(null, userContext)
-      val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
-      val versionClass = Class.forName("de.xima.fc.entities.WorkflowVersion")
-      val version =
-          em.javaClass
-              .getMethod("find", Class::class.java, Any::class.java)
-              .invoke(em, versionClass, workflowVersionId)
-              ?: throw IllegalStateException("workflow version $workflowVersionId not found")
-      val stagerClass = Class.forName("de.xima.fc.workflow.WorkflowVersionStager")
-      val entityContextClass = Class.forName("de.xima.fc.interfaces.IEntityContext")
-      val stager =
-          stagerClass
-              .getMethod("forVersion", entityContextClass, versionClass, versionClass)
-              .invoke(null, entityContext, version, version)
-              ?: throw IllegalStateException("WorkflowVersionStager.forVersion returned null")
-      stagerClass.getMethod("perform", entityContextClass).invoke(stager, entityContext)
-      report.addProperty("staged", true)
-      logger.info(
-          "[WorkflowLaneMaterializer] Performed FORMCYCLE's workflow save for WorkflowVersion {}",
-          workflowVersionId)
-    } catch (x: Exception) {
-      report.addProperty("staged", false)
-      val chain =
-          generateSequence(x as Throwable) { it.cause }
-              .take(12)
-              .joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message}" }
-      report.addProperty("error", chain)
-      logger.warn(
-          "[WorkflowLaneMaterializer] Workflow save (WorkflowVersionStager) failed for {}: {}",
-          workflowVersionId,
-          chain)
-    } finally {
-      runCatching { entityContext?.javaClass?.getMethod("close")?.invoke(entityContext) }
-    }
-    return report.toString()
-  }
-
-  /**
    * Persists [workflowVersionId] through `WORKFLOW_VERSION_API` — first with `workflowInvalid =
    * true` (that is the "save" that invalidates FORMCYCLE's cached workflow model), then with the
    * flag restored so the workflow stays ONLINE.
@@ -428,9 +360,6 @@ object WorkflowLaneMaterializer {
    * The report contains the **lock version** before and after, which is the only honest proof that
    * FORMCYCLE really dropped its cached workflow model (a raw SQL flag update does not bump it, and
    * a stale cache silently ignores a freshly created trigger).
-   *
-   * Also used by `action=saveworkflow&target=<formKey>` so the save can be verified without the
-   * server log.
    */
   fun saveWorkflowVersionReport(userContext: Any?, workflowVersionId: Long): String {
     val report = JsonObject()
@@ -696,7 +625,7 @@ object WorkflowLaneMaterializer {
     // 4. Move the kept (reflecting) endpoint back to the END of the lane.
     if (keptEndpoint != null) {
       runCatching { fixParentOrderIndex(keptEndpoint, rewrite.laneParent, userContext) }
-      logger.info(
+      logger.debug(
           "[WorkflowLaneMaterializer] rebuildLane: kept the reflecting endpoint '{}' ({}) as the " +
               "lane's last node",
           reflect(keptEndpoint, "getName"),
@@ -706,7 +635,7 @@ object WorkflowLaneMaterializer {
     if (created > 0 && targetVersionId != null) {
       refreshWorkflowModel(userContext, targetVersionId)
     }
-    logger.info(
+    logger.debug(
         "[WorkflowLaneMaterializer] rebuildLane: created={} deleted={} warnings={} targetVersion={}",
         created,
         deleted,
@@ -997,7 +926,7 @@ object WorkflowLaneMaterializer {
       if (created != null) {
         targetStatesByName[key] = created
         warnings.add("WorkflowState '$sourceName' was missing in the reflecting project — created")
-        logger.info(
+        logger.debug(
             "[WorkflowLaneMaterializer] created missing workflow state '{}' (uuid={}) in the reflecting workflow",
             sourceName,
             created)

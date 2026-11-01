@@ -193,26 +193,6 @@
 
             </p:fieldset>
 
-            <!-- TEMPORARY Phase-0 spike toggle. DELETE after the Go/No-Go. -->
-            <p:fieldset legend="TEMPORARY SPIKE (debug)" styleClass="fc-fieldset"
-                style="border-color:#ff8c00">
-                <p:outputLabel for="spikeProbe" styleClass="codbi-mirror-node__label"
-                    value="Run 1 - inject SpikeProbe child into downstream lane" />
-                <p:selectBooleanCheckbox id="spikeProbe" value="#{model.spikeProbe}">
-                    <p:ajax event="change" partialSubmit="true"
-                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
-                        update=":flowchartForm:flowchart" global="false" />
-                </p:selectBooleanCheckbox>
-                <br/>
-                <p:outputLabel for="spikeProbe2" styleClass="codbi-mirror-node__label"
-                    value="Run 2 - mutate downstream node params IN PLACE" />
-                <p:selectBooleanCheckbox id="spikeProbe2" value="#{model.spikeProbe2}">
-                    <p:ajax event="change" partialSubmit="true"
-                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
-                        update=":flowchartForm:flowchart" global="false" />
-                </p:selectBooleanCheckbox>
-            </p:fieldset>
-
         </div>
 
     </xi:namingContainer>

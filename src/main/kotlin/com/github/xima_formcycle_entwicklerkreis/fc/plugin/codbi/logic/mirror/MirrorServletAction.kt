@@ -51,7 +51,7 @@ class MirrorServletAction : IPluginServletAction {
     val action = params.requestParameters["action"]?.firstOrNull()?.trim()?.lowercase().orEmpty()
     val benutzer = backendUser(params)
     val userContext = MirrorFormAccess.userContextFor(benutzer)
-    logger.info(
+    logger.debug(
         "[MirrorServletAction] action='{}' benutzer={} userContext={} formParam='{}'",
         action.ifBlank { "forms" },
         benutzer?.javaClass?.name ?: "null",
@@ -61,17 +61,17 @@ class MirrorServletAction : IPluginServletAction {
       when (action) {
         "elements" -> {
           val json = elementsJson(userContext, params)
-          logger.info("[MirrorServletAction] action='elements' -> {} chars", json.length)
+          logger.debug("[MirrorServletAction] action='elements' -> {} chars", json.length)
           jsonResponse(json)
         }
         "paths" -> {
           val json = pathsJson(userContext, params)
-          logger.info("[MirrorServletAction] action='paths' -> {} chars", json.length)
+          logger.debug("[MirrorServletAction] action='paths' -> {} chars", json.length)
           jsonResponse(json)
         }
         "pathtree" -> {
           val json = pathTreeJson(userContext, params)
-          logger.info("[MirrorServletAction] action='pathtree' -> {} chars", json.length)
+          logger.debug("[MirrorServletAction] action='pathtree' -> {} chars", json.length)
           jsonResponse(json)
         }
         "triggerpaths" -> {
@@ -90,7 +90,7 @@ class MirrorServletAction : IPluginServletAction {
             obj["triggerName"] = path.triggerName
             array.add(obj)
           }
-          logger.info(
+          logger.debug(
               "[MirrorServletAction] action='triggerpaths' form='{}' element='{}' -> {}",
               formKey,
               element,
@@ -108,7 +108,7 @@ class MirrorServletAction : IPluginServletAction {
           val note =
               MirrorTriggerPaths.syncTriggeredPaths(
                   userContext, formKey, element, elementKey, target, prefix)
-          logger.info(
+          logger.debug(
               "[MirrorServletAction] action='applytriggerpaths' form='{}' -> '{}' target='{}': {}",
               formKey,
               element,
@@ -119,59 +119,13 @@ class MirrorServletAction : IPluginServletAction {
           body["note"] = note
           jsonResponse(body.toJSONString())
         }
-        "triggerdiag" -> {
-          // Read-only diagnostic (no writes): tokens, names present plain vs. namespaced in the
-          // reflecting form, the source paths with raw/re-pointed trigger params and every path of
-          // the reflecting workflow. Answers "which trigger fires on this button click?".
-          val formKey = params.requestParameters["form"]?.firstOrNull()?.trim().orEmpty()
-          val element = params.requestParameters["element"]?.firstOrNull()?.trim().orEmpty()
-          val elementKey = params.requestParameters["element_key"]?.firstOrNull()?.trim()
-          val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
-          val prefix = params.requestParameters["prefix"]?.firstOrNull()?.trim()
-          val json =
-              MirrorTriggerPaths.diagnose(userContext, formKey, element, elementKey, target, prefix)
-          logger.info("[MirrorServletAction] action='triggerdiag' -> {} chars", json.length)
-          jsonResponse(json)
-        }
-        "saveworkflow" -> {
-          // Saves the reflecting workflow version through the entity API (the same "save" a
-          // designer
-          // or the form assistant performs) and reports the LOCK VERSION before/after — the only
-          // honest proof that FORMCYCLE dropped its cached workflow model.
-          val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
-          val versionId = WorkflowMirrorAccess.activeVersionId(userContext, target)
-          val report =
-              if (versionId == null)
-                  "{\"target\":\"$target\",\"error\":\"no active workflow version\"}"
-              else {
-                // FORMCYCLE's own workflow save (stager) FIRST, then the API save that drops the
-                // cached model — the pair the workflow designer performs on "save".
-                val staged = WorkflowLaneMaterializer.stagedWorkflowSave(userContext, versionId)
-                val apiSave =
-                    WorkflowLaneMaterializer.saveWorkflowVersionReport(userContext, versionId)
-                "{\"staged\":$staged,\"apiSave\":$apiSave}"
-              }
-          logger.info(
-              "[MirrorServletAction] action='saveworkflow' target='{}' -> {}", target, report)
-          jsonResponse(report)
-        }
-        "fixsearchterms" -> {
-          // Makes every submit-button trigger of the reflecting workflow FINDABLE by the event
-          // engine (the search-term index it looks triggers up by) and reports what happened —
-          // including the failure text, which is otherwise only visible in the server log.
-          val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
-          val json = MirrorTriggerPaths.repairSearchTerms(userContext, target)
-          logger.info(
-              "[MirrorServletAction] action='fixsearchterms' target='{}' -> {}", target, json)
-          jsonResponse(json)
-        }
         "sync" -> {
           // Manual "materialize now" used by the Mirror node's properties panel. It is the only
           // trigger available in the WORKFLOW designer, where FORMCYCLE offers no save hook.
           val formKey = params.requestParameters["form"]?.firstOrNull()?.trim().orEmpty()
           val pathId = params.requestParameters["path"]?.firstOrNull()?.trim()?.toLongOrNull() ?: 0L
           val note = MirrorPushService.syncSourcePath(userContext, formKey, pathId)
-          logger.info(
+          logger.debug(
               "[MirrorServletAction] action='sync' form='{}' path={} -> {}", formKey, pathId, note)
           val body = JSONObject()
           body["status"] = "ok"
@@ -180,17 +134,17 @@ class MirrorServletAction : IPluginServletAction {
         }
         "fields" -> {
           val json = fieldsJson(userContext, params)
-          logger.info("[MirrorServletAction] action='fields' -> {} chars", json.length)
+          logger.debug("[MirrorServletAction] action='fields' -> {} chars", json.length)
           jsonResponse(json)
         }
         "tree" -> {
           val json = treeJson(userContext, params)
-          logger.info("[MirrorServletAction] action='tree' -> {} chars", json.length)
+          logger.debug("[MirrorServletAction] action='tree' -> {} chars", json.length)
           jsonResponse(json)
         }
         "version" -> {
           val json = versionJson(userContext, params)
-          logger.info("[MirrorServletAction] action='version' -> {}", json)
+          logger.debug("[MirrorServletAction] action='version' -> {}", json)
           jsonResponse(json)
         }
         "widgets" -> jsonResponse(widgetsJson(params))
@@ -206,7 +160,7 @@ class MirrorServletAction : IPluginServletAction {
                     formNameParam(params)))
         else -> {
           val json = formsJson(userContext, params)
-          logger.info("[MirrorServletAction] action='forms' -> {} chars", json.length)
+          logger.debug("[MirrorServletAction] action='forms' -> {} chars", json.length)
           jsonResponse(json)
         }
       }
@@ -237,7 +191,7 @@ class MirrorServletAction : IPluginServletAction {
     types.add("XMirror")
     val array = JSONArray()
     types.sorted().forEach { array.add(it) }
-    logger.info("[MirrorServletAction] action='widgets' -> {} type(s)", array.size)
+    logger.debug("[MirrorServletAction] action='widgets' -> {} type(s)", array.size)
     return array.toJSONString()
   }
 
@@ -334,7 +288,7 @@ class MirrorServletAction : IPluginServletAction {
           "<script>(function(){function r(){try{window.codbi&&window.codbi.checkAttributes&&window.codbi.checkAttributes();}catch(e){}}if(document.readyState!=='loading'){setTimeout(r,0);}else{document.addEventListener('DOMContentLoaded',function(){setTimeout(r,0);});}})();</script>")
       sb.append("</form></body></html>")
       val html = sb.toString()
-      logger.info("[MirrorServletAction] action='form' -> {} chars", html.length)
+      logger.debug("[MirrorServletAction] action='form' -> {} chars", html.length)
       html
     } catch (x: Exception) {
       logger.warn("[MirrorServletAction] action 'form' failed: {}", x.message)
@@ -377,7 +331,7 @@ class MirrorServletAction : IPluginServletAction {
       val css =
           (clazz.getMethod("buildCssIncludes").invoke(builder) as? List<*>)?.map { it.toString() }
               ?: emptyList()
-      logger.info("[MirrorServletAction] action='form' includes: {} js, {} css", js.size, css.size)
+      logger.debug("[MirrorServletAction] action='form' includes: {} js, {} css", js.size, css.size)
       css to js
     } catch (x: Exception) {
       logger.warn("[MirrorServletAction] platform includes unavailable: {}", x.message)
@@ -625,7 +579,7 @@ class MirrorServletAction : IPluginServletAction {
           ""
         }
     val css = themeCss + "\n" + userCss
-    logger.info(
+    logger.debug(
         "[MirrorServletAction] css: theme={} user={} total={}",
         themeCss.length,
         userCss.length,
@@ -657,7 +611,7 @@ class MirrorServletAction : IPluginServletAction {
                 }
                 .getOrNull()
         if (!text.isNullOrEmpty()) {
-          logger.info(
+          logger.debug(
               "[MirrorServletAction] theme CSS found: {} ({} chars)", candidate, text.length)
           return text
         }

@@ -311,7 +311,7 @@ object WorkflowMirrorAccess {
             id.toLong(), uuid, type, name, description, params, children)
       }
       val rootsBuilt = roots.mapNotNull { build(it) }
-      logger.info(
+      logger.debug(
           "[WorkflowMirrorAccess] sourceLane: project={} version={} path={} ('{}') roots={} nodes={}",
           projectId,
           versionId,
@@ -455,7 +455,7 @@ object WorkflowMirrorAccess {
             // this
             // source path is updated anymore.
             paused.add(target.formKey to target.pathId)
-            logger.info(
+            logger.debug(
                 "[WorkflowMirrorAccess] discover: sync is PAUSED for the source path {}/{} " +
                     "(pause node '{}')",
                 target.formKey,
@@ -506,7 +506,7 @@ object WorkflowMirrorAccess {
               // so
               // a pause marker freezes the path in BOTH directions.
               .filterNot { isTargetPaused(it, paused) }
-      logger.info(
+      logger.debug(
           "[WorkflowMirrorAccess] discover: sourceProject={} mirrorNodes={} reflectors={} pausedPaths={}",
           onlySourceProjectId?.toString() ?: "ALL",
           mirrorNodes.size,

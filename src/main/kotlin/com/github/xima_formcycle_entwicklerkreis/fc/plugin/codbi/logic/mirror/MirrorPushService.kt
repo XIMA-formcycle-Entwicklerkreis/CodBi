@@ -38,7 +38,8 @@ object MirrorPushService {
     if (sourceProjectId <= 0L) return "SKIPPED:no-project"
     val reflectors = collectReflectors(userContext, sourceProjectId)
     if (reflectors.isEmpty()) {
-      logger.info("[CodBi][Mirror] source-push: no Mirror node mirrors project {}", sourceProjectId)
+      logger.debug(
+          "[CodBi][Mirror] source-push: no Mirror node mirrors project {}", sourceProjectId)
       return "SKIPPED:no-reflectors"
     }
     val bySource =
@@ -55,7 +56,7 @@ object MirrorPushService {
       notes.add("${source.first}/${source.second} -> $note")
     }
     val summary = notes.joinToString(" | ")
-    logger.info("[CodBi][Mirror] source-push for project {}: {}", sourceProjectId, summary)
+    logger.debug("[CodBi][Mirror] source-push for project {}: {}", sourceProjectId, summary)
     return summary
   }
 
@@ -142,7 +143,7 @@ object MirrorPushService {
         }
         MirrorMaterializedStore.storeRebuildPending(
             row.descriptor.targetWorkflowVersionId, source.first, source.second, revision)
-        logger.info(
+        logger.debug(
             "[CodBi][Mirror] auto-sync: source {}/{} -> target version {} needs a rebuild " +
                 "(storedRevision={} sourceRevision={} laneNodes={} expected={})",
             source.first,
@@ -226,7 +227,7 @@ object MirrorPushService {
     // A pause marker on the SOURCE path must also silence stale registry rows.
     val active =
         merged.values.filterNot { (it.sourceFormKey to it.sourcePathId) in discovery.pausedSources }
-    logger.info(
+    logger.debug(
         "[CodBi][Mirror] source-push project {}: registry={} discovered={} active={} paused={}",
         sourceProjectId,
         merged.size - discovery.reflectors.size,

@@ -20,10 +20,6 @@
   let ajaxBound = false;
   let observerInstalled = false;
 
-  function logDebug(...args) {
-    console.info("[CodBi][MirrorNode]", ...args);
-  }
-
   /**
    * Reads a localized message from a `data-msg-*` attribute.
    *
@@ -156,8 +152,7 @@
     fetch(url, { credentials: "same-origin" })
       .then((response) => response.json())
       .then((data) => renderPreview(preview, root, data))
-      .catch((error) => {
-        logDebug("pathtree failed", error);
+      .catch(() => {
         renderPreview(preview, root, null);
       });
   }
@@ -195,8 +190,7 @@
         }
         loadPreview(root, formKey, pathSelect.value, preview);
       })
-      .catch((error) => {
-        logDebug("paths failed", error);
+      .catch(() => {
         pathSelect.textContent = "";
         addOption(pathSelect, "", message(root, "msg-no-paths", "No workflow paths."));
         renderPreview(preview, root, null);
@@ -223,8 +217,7 @@
         }
         loadPaths(root, formSelect, pathSelect, preview);
       })
-      .catch((error) => {
-        logDebug("forms failed", error);
+      .catch(() => {
         formSelect.textContent = "";
         addOption(formSelect, "", message(root, "msg-no-form", "No form selected."));
       });
@@ -253,14 +246,12 @@
     fetch(url, { credentials: "same-origin" })
       .then((response) => response.json())
       .then((data) => {
-        logDebug("sync", data);
         if (result) {
           const prefix = message(root, "msg-sync-result", "Sync result:");
           result.textContent = `${prefix} ${(data && data.note) || ""}`.trim();
         }
       })
       .catch((error) => {
-        logDebug("sync failed", error);
         if (result) {
           result.textContent = String((error && error.message) || error);
         }

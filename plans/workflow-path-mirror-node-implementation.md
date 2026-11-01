@@ -681,6 +681,26 @@ copy). Two rules follow:
 
 Non-ASCII characters are written as `\uXXXX` escapes (the bundles are read as ISO-8859-1).
 
+### Facelets are XML: two traps that only show up at render time
+
+[`MirrorNode.xhtml`](../src/main/resources/WEB-INF/ui/MirrorNode.xhtml) is parsed by the JSF SAX
+compiler, so ordinary XML rules apply and the Maven build does NOT catch violations:
+
+1. **A double hyphen may not appear inside an XML comment.** Writing the CSS variable name
+   `--codbi-logo-url` in a comment broke the whole node: `Error Traced[line: 142] Zeichenfolge "--" ist
+   in Kommentaren nicht zulässig` and the workflow tab fell over.
+2. **A bare `&` may not appear in an attribute value.** The Resource servlet URL needs
+   `?name=Resource&Path=…`; the facelet therefore builds the ampersand with
+   `String.fromCharCode(38)` (the same trick the script block already used) and installs the watermark
+   URL as the `--codbi-logo-url` custom property from that script, instead of inlining the URL into a
+   `style` attribute.
+
+[`scripts/validate-xhtml.ps1`](../scripts/validate-xhtml.ps1) parses every `WEB-INF/ui/*.xhtml` with
+`System.Xml.XmlDocument` and fails on exactly these two mistakes — run it after touching a facelet.
+
+After a plugin redeploy FORMCYCLE keeps its compiled-facelet cache; if a facelet change does not show
+up (or an old parse error persists), restart the app.
+
 ### Cleanup: the investigation scaffolding is gone
 
 The reflected-trigger investigation left a lot of temporary code behind; it has been removed:

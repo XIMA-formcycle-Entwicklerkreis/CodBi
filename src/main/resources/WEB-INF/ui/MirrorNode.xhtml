@@ -12,6 +12,17 @@
             (function () {
                 var amp = String.fromCharCode(38);
                 var prefix = "#{request.contextPath}/plugin?name=Resource" + amp + "Path=";
+                // CodBi logo used as the watermark of the options panel (see codbi-mirror-node.css).
+                // Set as a CSS custom property on :root; the ampersand is built with fromCharCode so
+                // this facelet stays well-formed XML.
+                try {
+                    document.documentElement.style.setProperty(
+                        "--codbi-logo-url",
+                        'url("' + prefix + "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg" + '")'
+                    );
+                } catch (e) {
+                    /* decorative only */
+                }
                 if (!document.querySelector("link[data-codbi-mirror-node-css]")) {
                     var css = document.createElement("link");
                     css.rel = "stylesheet";
@@ -137,15 +148,11 @@
 
             </p:fieldset>
 
-            <!--
-                The CodBi logo is used as a watermark behind the options. The URL is handed to the
-                stylesheet as the `--codbi-logo-url` variable, exactly like the Mirror widget's
-                designer editors do it.
-            -->
+            <!-- Options panel. The CodBi logo watermark is installed by the script above (CSS custom
+                 property read by codbi-mirror-node.css), exactly like the Mirror widget editors. -->
             <p:fieldset id="optionsSection"
                 legend="#{msg['workflow.mirror.section_options']}"
-                styleClass="fc-fieldset codbi-mirror-node__options"
-                style="--codbi-logo-url:url('#{request.contextPath}/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg');">
+                styleClass="fc-fieldset codbi-mirror-node__options">
 
                 <p:outputLabel for="outputMode"
                     styleClass="codbi-mirror-node__label"

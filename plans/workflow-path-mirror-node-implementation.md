@@ -597,11 +597,23 @@ immediately, and as a diagnostic because it reports how many reflectors were wri
 - i18n: `workflow.mirror.sync`, `workflow.mirror.sync.tooltip`, `workflow.mirror.sync.running`,
   `workflow.mirror.sync.result` (en/de). The tooltip no longer asks the user to reload the designer.
 
-The "Optionen" fieldset is styled in
-[`workflow-mirror-node.css`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.css):
-the `p:selectOneMenu` (`codbi-mirror-node__selectmenu`) and the checkbox frames
-(`codbi-mirror-node__check` / `…__check-label`, label left of the box) use the dark-orange accent like
-the source picker.
+The path is previewed as a small **flowchart** (trigger chip on top, then one rounded box per node,
+connected by darkorange arrows and indented by the node's tree depth, the endpoint tinted) — the shape
+of the workflow designer's canvas without needing its renderer. It is rendered client-side from
+`action=pathtree` (`{triggerType, triggerName, pathName, nodes:[{type, name, description, depth}]}`).
+
+The "Optionen" fieldset follows the CodBi form-designer editors
+([`frame.css`](../src/main/web/packages/designer/src/css/frame.css)) instead of the FORMCYCLE theme:
+
+- the CodBi logo is a watermark behind the controls (`--codbi-logo-url` is handed to the stylesheet from
+  the facelet, exactly like the Mirror widget's editors do it) — the fieldset content is forced
+  transparent so the watermark shows through;
+- `p:selectOneMenu` (`codbi-mirror-node__selectmenu`) is a flex row with a **transparent** background,
+  darkorange left edge and a trigger button that stretches to the full height of the field;
+- the checkboxes (`codbi-mirror-node__check` / `…__check-label`, label left of the box) keep a
+  **transparent** background in both states; the frame is a 2px darkorange border and the check mark is
+  drawn in CSS (`::after` tick) instead of filling the box, so the watermark stays visible;
+- the source picker selects use the same translucent field style (`rgba(255,255,255,.32)`).
 
 ### Incident (fixed): the reflected button stopped firing because the plugin deleted its OWN index
 

@@ -137,8 +137,15 @@
 
             </p:fieldset>
 
-            <p:fieldset legend="#{msg['workflow.mirror.section_options']}"
-                styleClass="fc-fieldset">
+            <!--
+                The CodBi logo is used as a watermark behind the options. The URL is handed to the
+                stylesheet as the `--codbi-logo-url` variable, exactly like the Mirror widget's
+                designer editors do it.
+            -->
+            <p:fieldset id="optionsSection"
+                legend="#{msg['workflow.mirror.section_options']}"
+                styleClass="fc-fieldset codbi-mirror-node__options"
+                style="--codbi-logo-url:url('#{request.contextPath}/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg');">
 
                 <p:outputLabel for="outputMode"
                     styleClass="codbi-mirror-node__label"

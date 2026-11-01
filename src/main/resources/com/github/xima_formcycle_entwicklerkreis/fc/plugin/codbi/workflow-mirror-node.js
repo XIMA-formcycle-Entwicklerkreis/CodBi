@@ -101,6 +101,11 @@
     updatePlaceholder(input ? input.value : code.getAttribute("data-node-name") || "");
   }
 
+  /**
+   * Renders the selected path as a small FLOWCHART: the trigger as a chip on top, then every node as a
+   * rounded box connected by a darkorange arrow and indented by its tree depth — the shape of the
+   * workflow designer's canvas, without needing the designer's own renderer.
+   */
   function renderPreview(preview, root, data) {
     preview.textContent = "";
     if (!data || data.error || !Array.isArray(data.nodes) || data.nodes.length === 0) {
@@ -110,18 +115,48 @@
       preview.appendChild(empty);
       return;
     }
+    const nodes = data.nodes;
     const title = document.createElement("div");
     title.className = "codbi-mirror-node__preview-title";
-    const trigger = data.triggerName
+
+    const triggerText = data.triggerName
       ? `${data.triggerType || ""}${data.triggerType ? ": " : ""}${data.triggerName}`
       : data.triggerType || "";
-    title.textContent = trigger ? `${trigger} \u2014 ${data.pathName || ""}` : data.pathName || "";
+    if (triggerText) {
+      const chip = document.createElement("span");
+      chip.className = "codbi-mirror-node__preview-trigger";
+      chip.textContent = triggerText;
+      chip.title = triggerText;
+      title.appendChild(chip);
+    }
+    const pathName = document.createElement("span");
+    pathName.className = "codbi-mirror-node__preview-path";
+    pathName.textContent = data.pathName || "";
+    title.appendChild(pathName);
+    const count = document.createElement("span");
+    count.className = "codbi-mirror-node__preview-count";
+    count.textContent = `${nodes.length} ${message(root, "msg-node-count", "nodes")}`;
+    title.appendChild(count);
     preview.appendChild(title);
 
-    for (const node of data.nodes) {
+    const flow = document.createElement("div");
+    flow.className = "codbi-mirror-node__flow";
+    nodes.forEach((node, index) => {
+      const indent = `${Math.max(0, Number(node.depth) || 0) * 1.1}em`;
+      if (index > 0) {
+        const arrow = document.createElement("div");
+        arrow.className = "codbi-mirror-node__flow-arrow";
+        arrow.style.setProperty("--codbi-flow-indent", indent);
+        arrow.textContent = "\u25BC";
+        flow.appendChild(arrow);
+      }
       const row = document.createElement("div");
-      row.className = "codbi-mirror-node__preview-node";
-      row.style.paddingLeft = `${Math.max(0, Number(node.depth) || 0) * 1.1}em`;
+      row.className = "codbi-mirror-node__flow-node";
+      if (index === nodes.length - 1) {
+        // The path's endpoint: tinted, so the end of the chain is visible at a glance.
+        row.classList.add("codbi-mirror-node__flow-node--terminal");
+      }
+      row.style.setProperty("--codbi-flow-indent", indent);
       const badge = document.createElement("span");
       badge.className = "codbi-mirror-node__badge";
       badge.textContent = node.type || "?";
@@ -133,8 +168,9 @@
       if (node.description) {
         row.title = node.description;
       }
-      preview.appendChild(row);
-    }
+      flow.appendChild(row);
+    });
+    preview.appendChild(flow);
   }
 
   function loadPreview(root, formKey, pathId, preview) {

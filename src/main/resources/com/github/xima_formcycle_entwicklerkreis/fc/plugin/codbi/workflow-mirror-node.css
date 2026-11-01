@@ -1,9 +1,51 @@
-/* CodBi workflow Mirror node — source form/path picker + preview (darkorange accent). */
+/*
+ * CodBi workflow Mirror node — source picker, path preview and options (darkorange accent).
+ *
+ * The look follows the CodBi form-designer editors (see the Mirror widget's `frame.css`): darkorange
+ * outlines, TRANSLUCENT fields so the panel watermark shows through, and a darkorange 2px checkbox
+ * frame whose check mark is drawn in CSS (no filled box).
+ */
+
 .codbi-mirror-node .codbi-mirror-node__label {
   display: block;
   margin: 0.65em 0 0.2em 0;
   font-weight: 600;
 }
+
+/* ── Options fieldset: CodBi logo watermark behind the controls ────────────────────────────── */
+
+.codbi-mirror-node .codbi-mirror-node__options {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The watermark sits between the fieldset background and its content, so the content must not paint
+   an opaque background over it (FORMCYCLE's fieldset content usually does). */
+.codbi-mirror-node .codbi-mirror-node__options > .ui-fieldset-content,
+.codbi-mirror-node .codbi-mirror-node__options > .ui-fieldset-content > div {
+  background: transparent !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__options > .ui-fieldset-content {
+  position: relative;
+  z-index: 1;
+}
+
+.codbi-mirror-node .codbi-mirror-node__options::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 62%;
+  height: 78%;
+  transform: translate(-50%, -50%);
+  background: var(--codbi-logo-url) center / contain no-repeat;
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Source picker ─────────────────────────────────────────────────────────────────────────── */
 
 .codbi-mirror-node__picker {
   display: flex;
@@ -18,18 +60,25 @@
   min-width: 0 !important;
   height: 2.05em !important;
   padding: 0 0.5em !important;
-  border: 1px solid darkorange !important;
+  border: 1px solid #cbd5e1 !important;
   border-left: 3px solid darkorange !important;
-  border-radius: 4px !important;
-  background: #fff !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.32) !important;
   color: inherit !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__select:hover {
+  border-color: darkorange !important;
+  background: rgba(255, 243, 230, 0.55) !important;
 }
 
 .codbi-mirror-node .codbi-mirror-node__select:focus {
   outline: none !important;
   border-color: darkorange !important;
-  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25) !important;
 }
+
+/* ── Path preview: a small flowchart of the selected path ─────────────────────────────────── */
 
 .codbi-mirror-node__preview {
   margin-top: 0.35em;
@@ -38,14 +87,38 @@
   border-left: 4px solid darkorange;
   border-radius: 6px;
   background: linear-gradient(135deg, #fffdf9 0%, #fff3e6 100%);
-  max-height: 16em;
+  max-height: 20em;
   overflow: auto;
 }
 
 .codbi-mirror-node__preview-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4em;
+  margin-bottom: 0.45em;
   font-weight: 700;
   color: #a85a00;
-  margin-bottom: 0.35em;
+}
+
+.codbi-mirror-node__preview-trigger {
+  padding: 0 0.35em;
+  border-radius: 3px;
+  background: darkorange;
+  color: #fff;
+  font-family: monospace;
+  font-size: 0.85em;
+}
+
+.codbi-mirror-node__preview-path {
+  font-weight: 700;
+}
+
+.codbi-mirror-node__preview-count {
+  margin-left: auto;
+  color: #9a7b55;
+  font-size: 0.85em;
+  font-weight: 600;
 }
 
 .codbi-mirror-node__preview-empty {
@@ -53,31 +126,62 @@
   font-style: italic;
 }
 
-.codbi-mirror-node__preview-node {
+.codbi-mirror-node__flow {
   display: flex;
-  align-items: baseline;
-  gap: 0.45em;
-  padding: 0.08em 0;
-  font-size: 0.92em;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
-.codbi-mirror-node__preview-node .codbi-mirror-node__badge {
+/* Connector between two nodes: a short darkorange stem, indented like the node it points at. */
+.codbi-mirror-node__flow-arrow {
+  margin-left: calc(var(--codbi-flow-indent, 0em) + 0.75em);
+  padding: 0.05em 0;
+  color: darkorange;
+  font-size: 0.75em;
+  line-height: 1;
+}
+
+/* One node of the chain: a rounded box, darkorange left edge, translucent so it reads like the
+   workflow designer's canvas. */
+.codbi-mirror-node__flow-node {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  max-width: 100%;
+  margin-left: var(--codbi-flow-indent, 0em);
+  padding: 0.28em 0.55em;
+  border: 1px solid rgba(255, 140, 0, 0.75);
+  border-left: 4px solid darkorange;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 1px 2px rgba(255, 140, 0, 0.16);
+}
+
+/* The terminal node (the path's endpoint) is tinted, so the end of the chain is obvious. */
+.codbi-mirror-node__flow-node--terminal {
+  background: rgba(255, 243, 230, 0.92);
+  border-left-color: #a85a00;
+}
+
+.codbi-mirror-node__flow-node .codbi-mirror-node__badge {
   flex: 0 0 auto;
   padding: 0 0.35em;
   border-radius: 3px;
   background: #ffe3bf;
   color: #8a4700;
   font-family: monospace;
-  font-size: 0.9em;
+  font-size: 0.85em;
 }
 
-.codbi-mirror-node__preview-node .codbi-mirror-node__node-name {
+.codbi-mirror-node__flow-node .codbi-mirror-node__node-name {
   flex: 1 1 auto;
   min-width: 0;
+  font-size: 0.92em;
   word-break: break-word;
 }
 
-/* "Create nodes now" — explicit materialization trigger (no workflow-save hook in FORMCYCLE). */
+/* ── "Create nodes now" ───────────────────────────────────────────────────────────────────── */
+
 .codbi-mirror-node .codbi-mirror-node__sync {
   margin-top: 0.35em;
   padding: 0.25em 0.75em;
@@ -99,36 +203,78 @@
   opacity: 0.7;
 }
 
-/* "Ausgabemodus": the PrimeFaces selectOneMenu styled like the picker selects (darkorange accent). */
+.codbi-mirror-node__sync-result {
+  margin-top: 0.3em;
+  color: #8a4700;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Options: "Ausgabemodus" selectOneMenu ────────────────────────────────────────────────── */
+
+/*
+ * Same look as the picker selects: darkorange left edge, translucent background. It is a flex box so
+ * the trigger button stretches to the FULL height of the select (it used to be shorter than the
+ * label), and neither the wrapper nor the label paints an opaque background.
+ */
 .codbi-mirror-node .codbi-mirror-node__selectmenu {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  border: 1px solid darkorange !important;
+  display: flex !important;
+  align-items: stretch !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 2.05em !important;
+  border: 1px solid #cbd5e1 !important;
   border-left: 3px solid darkorange !important;
-  border-radius: 4px !important;
-  background: #fff !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.32) !important;
 }
 
 .codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-label {
+  flex: 1 1 auto !important;
+  align-self: stretch !important;
+  height: auto !important;
   padding: 0 0.5em !important;
   line-height: 2em !important;
-  background: #fff !important;
+  border: 0 !important;
+  background: transparent !important;
   color: inherit !important;
+  cursor: pointer !important;
 }
 
 .codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-trigger {
+  flex: 0 0 auto !important;
+  align-self: stretch !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   width: 2em !important;
-  border-left: 1px solid darkorange !important;
-  background: #fff3e6 !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+  border: 0 !important;
+  border-left: 1px solid rgba(255, 140, 0, 0.55) !important;
+  border-radius: 0 6px 6px 0 !important;
+  background: transparent !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-trigger:hover {
+  background: rgba(255, 243, 230, 0.75) !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__selectmenu:hover {
+  border-color: darkorange !important;
 }
 
 .codbi-mirror-node .codbi-mirror-node__selectmenu.ui-state-focus,
 .codbi-mirror-node .codbi-mirror-node__selectmenu:focus-within {
-  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2) !important;
+  border-color: darkorange !important;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25) !important;
 }
 
-/* Checkbox options: label to the LEFT of its box (inline), box with a darkorange frame. */
+/* ── Options: checkboxes ──────────────────────────────────────────────────────────────────── */
+
+/* Label to the LEFT of its box (it used to render above it). */
 .codbi-mirror-node .codbi-mirror-node__check-label {
   display: inline-block !important;
   margin: 0 0.6em 0 0 !important;
@@ -141,33 +287,48 @@
   vertical-align: middle !important;
 }
 
+/*
+ * The box keeps a TRANSPARENT background in both states (so the watermark shows through) and only
+ * gets a darkorange frame; the check mark is drawn in CSS instead of filling the box.
+ */
 .codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box {
-  border: 1px solid darkorange !important;
-  border-radius: 3px !important;
-  background: #fff !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid darkorange !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  background-image: none !important;
 }
 
-.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active {
-  border-color: darkorange !important;
-  background: darkorange !important;
+/* PrimeFaces' own sprite glyph would paint a filled box — the CSS tick below replaces it. */
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box .ui-chkbox-icon {
+  display: none !important;
+  background-image: none !important;
 }
 
-/* The check glyph is a sprite image, so it is inverted to stay visible on the darkorange box. */
-.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active .ui-chkbox-icon {
-  filter: brightness(0) invert(1);
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: -2px;
+  width: 4px;
+  height: 9px;
+  border: solid darkorange;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box:hover {
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.22);
 }
 
 .codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-focus {
-  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25) !important;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.3) !important;
 }
 
-.codbi-mirror-node__sync-result {
-  margin-top: 0.3em;
-  color: #8a4700;
-  font-size: 0.9em;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
+/* ── Summary rows ─────────────────────────────────────────────────────────────────────────── */
 
 .codbi-mirror-node__summary {
   margin-top: 0.9em;
@@ -198,7 +359,7 @@
   padding: 0.1em 0.4em;
   border: 1px solid #ffd8a8;
   border-radius: 4px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.75);
   color: #3a2200;
   font-family: monospace;
   word-break: break-word;

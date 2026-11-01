@@ -405,9 +405,15 @@
   cursor: default;
 }
 
-/* ── Options: checkboxes ──────────────────────────────────────────────────────────────────── */
+/* ── Options: switches (CodBi toggle style) ──────────────────────────────────────────────── */
 
-/* Label to the LEFT of its box (it used to render above it). */
+/*
+ * The PrimeFaces `selectBooleanCheckbox` is KEPT (it carries the model binding and the change ajax)
+ * and re-skinned as the CodBi switch from the form-designer editors (`frame.css`, `.codbi-switch`):
+ * a 34x16 px pill, slate when off, darkorange when on, with a white thumb that slides.
+ */
+
+/* Caption to the LEFT of its switch. */
 .codbi-mirror-node .codbi-mirror-node__check-label {
   display: inline-block !important;
   margin: 0 0.6em 0 0 !important;
@@ -416,50 +422,62 @@
 
 .codbi-mirror-node .codbi-mirror-node__check {
   display: inline-block !important;
-  margin: 0 !important;
-  margin-right: 1em ;
+  margin: 0 1em 0 0 !important;
   vertical-align: middle !important;
 }
 
-/*
- * The box keeps a TRANSPARENT background in both states (so the watermark shows through) and only
- * gets a darkorange frame; the check mark is drawn in CSS instead of filling the box.
- */
-.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box {
-  position: relative !important;
-  box-sizing: border-box !important;
-  width: 16px !important;
-  height: 16px !important;
-  border: 2px solid darkorange !important;
-  border-radius: 4px !important;
-  background: transparent !important;
-  background-image: none !important;
-}
-
-/* PrimeFaces' own sprite glyph would paint a filled box — the CSS tick below replaces it. */
-.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box .ui-chkbox-icon {
+/* PrimeFaces' own sprite glyph is replaced by the thumb below. */
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-icon {
   display: none !important;
   background-image: none !important;
 }
 
-.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active::after {
+/* Off: the track. */
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box {
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: 34px !important;
+  height: 16px !important;
+  border: 1px solid #94a3b8 !important;
+  border-radius: 8px !important;
+  background: #cbd5e1 !important;
+  background-image: none !important;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease !important;
+}
+
+/* The thumb, drawn in CSS so the whole state lives on the track. */
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box::after {
   content: "";
   position: absolute;
+  top: 1px;
   left: 1px;
-  top: -2px;
-  width: 4px;
-  height: 9px;
-  border: solid darkorange;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+  transition: transform 0.18s ease;
+}
+
+/* On: darkorange track, thumb slid to the right. */
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active {
+  border-color: #c96a00 !important;
+  background: darkorange !important;
+}
+
+.codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-active::after {
+  transform: translateX(18px);
 }
 
 .codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box:hover {
-  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.22);
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.22);
 }
 
 .codbi-mirror-node .codbi-mirror-node__check .ui-chkbox-box.ui-state-focus {
-  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.3) !important;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.4) !important;
 }
 
 /* ── Summary rows ─────────────────────────────────────────────────────────────────────────── */

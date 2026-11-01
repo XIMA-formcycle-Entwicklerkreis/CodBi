@@ -583,7 +583,8 @@ The Mirror node's properties panel additionally keeps an explicit trigger (usefu
 immediately, and as a diagnostic because it reports how many reflectors were written):
 
 - [`MirrorNode.xhtml`](../src/main/resources/WEB-INF/ui/MirrorNode.xhtml) — button
-  `data-codbi-mirror-sync` + result line.
+  `data-codbi-mirror-sync` + result line, placed **below** the source summary at the bottom of the
+  "Quelle" fieldset (picker, path preview and summary stay together above it).
 - [`workflow-mirror-node.js`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.js)
   — `runSync()` calls `CodBi_Mirror&action=sync&form=<sourceFormKey>&path=<pathId>`, prints the
   returned status note and then **reloads this designer tab** (`reloadDesignerTab()`, 1.2 s later, so
@@ -619,9 +620,11 @@ The "Optionen" fieldset follows the CodBi form-designer editors
   transparent so the watermark shows through;
 - `p:selectOneMenu` (`codbi-mirror-node__selectmenu`) is a flex row with a **transparent** background,
   darkorange left edge and a trigger button that stretches to the full height of the field;
-- the checkboxes (`codbi-mirror-node__check` / `…__check-label`, label left of the box) keep a
-  **transparent** background in both states; the frame is a 2px darkorange border and the check mark is
-  drawn in CSS (`::after` tick) instead of filling the box, so the watermark stays visible;
+- the boolean options (`codbi-mirror-node__check` / `…__check-label`, caption left of the control) are
+  re-skinned as the CodBi **switches** from `frame.css`: a 34×16 px pill with a white thumb that slides,
+  slate when off and darkorange when on. The PrimeFaces `selectBooleanCheckbox` is kept underneath (only
+  the sprite glyph is hidden and the box is drawn as the track), so the model binding and the `p:ajax`
+  change listener keep working;
 - the source picker selects use the same translucent field style (`rgba(255,255,255,.32)`).
 
 ### Incident (fixed): the reflected button stopped firing because the plugin deleted its OWN index

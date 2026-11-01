@@ -103,17 +103,6 @@
                         data-codbi-mirror-preview="true"></div>
                 </div>
 
-                <!--
-                    Manual "materialize now" trigger. FORMCYCLE exposes no workflow-save hook to
-                    plugins, so this button is the reliable way to create/update this path's nodes
-                    from the source path while working in the WORKFLOW designer.
-                -->
-                <button type="button" class="codbi-mirror-node__sync"
-                    data-codbi-mirror-sync="true"
-                    title="#{msg['workflow.mirror.sync.tooltip']}">#{msg['workflow.mirror.sync']}</button>
-                <div class="codbi-mirror-node__sync-result"
-                    data-codbi-mirror-sync-result="true"></div>
-
                 <p:remoteCommand name="codbiMirrorStore"
                     process="@this mirrorSourceForm mirrorSourceFormName mirrorPathId mirrorPathName"
                     actionListener="#{elementPropertiesBean.storeCurrent}"
@@ -145,6 +134,18 @@
                             data-node-name="#{model.name}">[%$#{model.name}.RESULT.value%]</code>
                     </div>
                 </p:outputPanel>
+
+                <!--
+                    Manual "materialize now" trigger. FORMCYCLE exposes no workflow-save hook to
+                    plugins, so this button is the reliable way to create/update this path's nodes
+                    from the source path while working in the WORKFLOW designer. It sits BELOW the
+                    source summary, so the picker, the path preview and the summary stay together.
+                -->
+                <button type="button" class="codbi-mirror-node__sync"
+                    data-codbi-mirror-sync="true"
+                    title="#{msg['workflow.mirror.sync.tooltip']}">#{msg['workflow.mirror.sync']}</button>
+                <div class="codbi-mirror-node__sync-result"
+                    data-codbi-mirror-sync-result="true"></div>
 
             </p:fieldset>
 

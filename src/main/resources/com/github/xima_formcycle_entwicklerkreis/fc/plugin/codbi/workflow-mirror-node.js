@@ -24,8 +24,17 @@
     console.info("[CodBi][MirrorNode]", ...args);
   }
 
+  /**
+   * Reads a localized message from a `data-msg-*` attribute.
+   *
+   * An unresolved JSF message renders as `???key???` (FORMCYCLE's marker for a missing bundle
+   * entry), so such a value is treated as MISSING and the built-in fallback is used instead. Without
+   * this a translation that is missing from ONE language bundle leaked that marker into the UI.
+   */
   function message(root, name, fallback) {
-    return String(root.getAttribute(`data-${name}`) || fallback || "");
+    const raw = String(root.getAttribute(`data-${name}`) || "").trim();
+    const missing = raw === "" || (raw.startsWith("???") && raw.endsWith("???"));
+    return missing ? String(fallback || "") : raw;
   }
 
   function baseUrl(root) {

@@ -639,6 +639,25 @@ A `sessionStorage` guard (`codbi-mirror-reload`, 30 s, keyed by form + element) 
 reload → re-sync → reload cycle from looping; a re-sync that finds the path already correct reports
 `created=0 updated=0 removed=0` and therefore does not save at all.
 
+### Localization of the properties panel
+
+[`MirrorNode.xhtml`](../src/main/resources/WEB-INF/ui/MirrorNode.xhtml) resolves every label/tooltip
+through `#{msg['workflow.mirror.*']}`. The bundle that is actually consulted for the workflow designer
+is the plugin's own
+[`i18n_de.properties`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/i18n_de.properties)
+/ `i18n_en.properties` — NOT the copy in `WEB-INF/properties/`, which carried a superset.
+
+A missing key is rendered by JSF as `???key???` (which is what the panel showed for the sync button,
+`autoSync`, `syncEndpoint` and `pauseSync`: those ten keys existed only in the `WEB-INF/properties`
+copy). Two rules follow:
+
+1. every new `workflow.mirror.*` key must be added to the plugin bundle in **both** languages, and
+2. [`message()`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/workflow-mirror-node.js)
+   treats a `???…???` attribute value as MISSING and uses its built-in fallback, so an incomplete
+   translation can no longer leak that marker into the UI.
+
+Non-ASCII characters are written as `\uXXXX` escapes (the bundles are read as ISO-8859-1).
+
 ## Notes / limits
 
 - Workflow nodes have no appendable-container concept, so the node reflects path data; it does not

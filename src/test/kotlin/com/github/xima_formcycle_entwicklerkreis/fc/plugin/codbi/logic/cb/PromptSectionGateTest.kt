@@ -530,6 +530,15 @@ class PromptSectionGateTest {
     assertTrue(
         gated.contains("EVERY frame pair"),
         "the fallback must be limited to the all-pairs-used case")
+    // Regression: the two time fields were emitted as two full-width rows. The `date` block named
+    // "SIBLINGS in the SAME page/container" only — nothing about the row — so the model never
+    // emitted a shared 'rowid'. The line-vs-container distinction must survive gating.
+    assertTrue(
+        gated.contains("THE BEGIN/END PAIR IS ALWAYS ONE LINE"),
+        "a frame pair must be bound to ONE line in the date/Time.Frame block")
+    assertTrue(
+        gated.contains("fullwidth` is NOT the row switch"),
+        "the fullwidth/rowid confusion must be spelled out next to the frame rules")
 
     // Regression: the two time fields were emitted as two full-width rows. The row-grouping block
     // (kept with `field_creation`) must name a begin/end TIME pair explicitly and tie a frame pair
@@ -553,6 +562,27 @@ class PromptSectionGateTest {
         "a frame pair must be bound to ONE line (same rowid)")
     assertTrue(
         gatedStructure.contains("'rowid'"), "the row grouping must still require a shared 'rowid'")
+    assertTrue(
+        gatedStructure.contains("fullwidth` IS NOT THE ROW SWITCH"),
+        "the pass-1 structure core must deny that fullwidth groups a row")
+
+    // Regression: the emitted XTextField carried "fullwidth":"0" and NO 'rowid' because the
+    // pass-2 widget template (the LAST block of the prompt — highest recency) showed exactly that.
+    // The template itself must carry the row-grouping rule and a paired example.
+    val widgets =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(
+                "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-widgets.md")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("no such resource: formcycle-widgets.md")
+    assertTrue(
+        widgets.contains("ROW GROUPING — `fullwidth` IS NOT THE ROW SWITCH"),
+        "the XTextField template must state that fullwidth does not group a row")
+    assertTrue(
+        widgets.contains("\"rowid\":\"row-1\""),
+        "the XTextField template section must show a paired example with a shared 'rowid'")
   }
 
   @Test

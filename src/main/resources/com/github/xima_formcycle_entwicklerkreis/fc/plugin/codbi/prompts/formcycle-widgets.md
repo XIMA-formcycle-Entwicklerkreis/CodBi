@@ -42,10 +42,17 @@ Common Validation Rules (fc-plugin-common-validation-rules) custom datatypes —
 - "...DateFormatUKValidationPlugin" for UK date
 - "...FloatFormatValidationPlugin" for decimal with period
 
-Template:
+Template (a LONE field — no `rowid`, so it spans a full-width line of its own):
 ```json
 {"className":"XTextField","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","datatype":"","fullwidth":"0"}}
 ```
+
+ROW GROUPING — `fullwidth` IS NOT THE ROW SWITCH: Formcycle places two fields on ONE line ONLY when BOTH carry the SAME `'rowid'` string in their `properties`; a field WITHOUT a `'rowid'` spans a full-width line of its own, no matter what `fullwidth` says (`fullwidth` only sizes a field INSIDE its row). So whenever the request names fields that belong together — a BEGIN+END pair ("Anfangs- und Endzeit", "Start- und Endzeit", "von … bis … Uhr", "time from/to", a begin/end DATE range), first+last name, street+house number, postal code+city, e-mail+phone (ANY language, decided by MEANING) — emit the SAME `'rowid'` on BOTH fields of the pair, e.g.:
+```json
+{"className":"XTextField","properties":{"name":"tfVorname","id":"xi-tf-vorname","label":"Vorname","required":"0","readonly":"0","datatype":"","fullwidth":"0","rowid":"row-1"}},
+{"className":"XTextField","properties":{"name":"tfNachname","id":"xi-tf-nachname","label":"Nachname","required":"0","readonly":"0","datatype":"","fullwidth":"0","rowid":"row-1"}}
+```
+The same holds for a begin/end TIME or DATE range: the two fields carrying `CodBi_TimeFrame_<N>_Begin`/`_End` (or `CodBi_DateFrame_<N>_Begin`/`_End`) get ONE shared `'rowid'` on both. Two fields of one line stay DIRECT SIBLINGS in the same page/container and the NEXT line uses a DIFFERENT `'rowid'` — never two full-width rows for one pair, and never copy a `'rowid'` onto an unrelated field.
 
 DATE FIELDS — MANDATORY: Every field whose label refers to a date MUST have its datatype set. Use datatype="dateDE" for all German-language forms. Use datatype="date" only when an HTML5 native browser date picker is explicitly required. Applies to fields whose label contains: 'Datum', 'Geburtsdatum', 'Geburtstag', 'Eintrittstermin', 'Termin', 'Abgabedatum', 'Anfangsdatum', 'Enddatum', 'date', 'birthday', 'birth date', 'start date', 'end date', 'due date'.
 

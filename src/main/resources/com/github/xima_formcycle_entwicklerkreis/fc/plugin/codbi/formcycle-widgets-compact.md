@@ -13,6 +13,7 @@ CAPTCHA vs reCAPTCHA (LANGUAGE-AGNOSTIC — decide from the MEANING in ANY langu
 ## XTextField
 Single-line text input. Validation via the 'datatype' property (plain, date/dateDE, email, phone, url, time, number, money, plzDE, ipv4, regexp, ...).
 ADDRESS IS NEVER ONE FIELD — "Adresse"/"Anschrift"/"address" MUST become the FOUR parts in ONE address container: `tfStrasse` (label "Straße", CodBi_OpenPLZ_AC_SET_Street), `tfHausnummer` (label "Hausnummer", CodBi_OpenPLZ_AC_SET_BuildingNumber), `tfPLZ` (label "Postleitzahl", datatype "plzDE", CodBi_OpenPLZ_AC_SET_PLZ) and `tfOrt` (label "Ort", CodBi_OpenPLZ_AC_SET_Locality). NEVER a lone free-text XTextField named/labelled "Adresse". Street+house number share one `rowid`, PLZ+city the next.
+ROW GROUPING — `fullwidth` IS NOT THE ROW SWITCH: two fields share ONE line ONLY when BOTH carry the SAME `'rowid'` string in their `properties` (a field without `'rowid'` spans a full-width line of its own, whatever `fullwidth` says; `fullwidth` only sizes a field INSIDE its row). A BEGIN+END pair ("Anfangs- und Endzeit", "Start- und Endzeit", "von … bis … Uhr", "time from/to", a begin/end DATE range — ANY language, by MEANING), first+last name, street+house number, postal code+city, e-mail+phone: SAME `'rowid'` on BOTH fields, direct siblings in the same page/container, a different `'rowid'` for the next line. Two full-width rows for one pair is a FAIL, and a `'rowid'` is never copied onto an unrelated field.
 ## XTextArea
 Multi-line text input. Always set fullwidth="1".
 ## XUpload

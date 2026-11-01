@@ -522,6 +522,14 @@ class PromptSectionGateTest {
     assertTrue(
         gated.contains("SIBLINGS in the SAME page/container"),
         "the shared-container requirement must survive gating")
+    // Regression: the classes were applied AND the functionality on top of them. The pair is the
+    // wiring; the functionality is the fallback only — the mutual exclusion must survive gating.
+    assertTrue(
+        gated.contains("NEVER BOTH WIRINGS ON ONE PAIR"),
+        "the class-pair/functionality exclusivity rule must survive gating")
+    assertTrue(
+        gated.contains("EVERY frame pair"),
+        "the fallback must be limited to the all-pairs-used case")
   }
 
   @Test

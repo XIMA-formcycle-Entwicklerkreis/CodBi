@@ -131,7 +131,7 @@ This functionality needs a site key that can be obtained at https://developers.g
 Applicable for debugging; logs CodBi runtime data to the browser developer console.
 
 ### Time.Frame
-Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
+Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element. USE IT ONLY AS THE FALLBACK: the CSS-class pair CodBi_TimeFrame_<N>_Begin + CodBi_TimeFrame_<N>_End already applies it — apply the free class pair and NOTHING else; this functionality plus data-cb-maxfield only when every frame pair is taken (both together is a redundant FAIL).
 
 ## Element Placeholders
 

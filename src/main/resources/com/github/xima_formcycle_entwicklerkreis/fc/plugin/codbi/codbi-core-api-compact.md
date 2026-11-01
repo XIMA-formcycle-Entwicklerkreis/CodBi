@@ -309,7 +309,7 @@ when CodBi searches within the shared parent container.
   - SiteKey: The sitekey received from https://developers.google.com/recaptcha.
 - Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console.
   - Parameters: none.
-- Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
+- Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element. FALLBACK ONLY: the CSS-class pair CodBi_TimeFrame_<N>_Begin + CodBi_TimeFrame_<N>_End already applies this functionality — with a free pair, apply the pair and NOTHING else (no data-cb-func, no data-cb-maxfield); use this functionality only when EVERY frame pair is already taken.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
   - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
   - MsgMaxInvalid: Configures 'MsgMaxInvalid' for this functionality.

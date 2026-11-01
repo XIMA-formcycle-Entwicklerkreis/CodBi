@@ -435,8 +435,12 @@ Also add the element's name to the first page's "elements" array. The `data-cb-D
 ## Time.Frame
 
 Applicable ONLY on the BEGIN (minimum) XTextField of **type 'time'** when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
-**REQUIRED**: data-cb-maxfield = the END (maximum) time field's name. The begin field is the tagged element. Both fields are time inputs restricted to HH:MM (pattern `^(0[0-9]|1[0-9]|2[0-3]):(0[0-9]|[1-5][0-9])$`) so the BEGIN time may not be AFTER the END time.
-- `EqualityPermitted`: specifies whether the SAME start and end time is permitted. Default (unset) = equality permitted, so begin and end may be identical (a zero-length slot). Set it to false only when the user requires the end time to be STRICTLY after the start — e.g. `CodBi_TimeFrame_4_Begin`/`CodBi_TimeFrame_5_Begin` are exactly the standard classes that forbid equal start/end.
+
+**CLASS PAIR FIRST — THE TWO WIRINGS ARE MUTUALLY EXCLUSIVE (CRITICAL):** the standard CSS-class pair `CodBi_TimeFrame_<N>_Begin` + `CodBi_TimeFrame_<N>_End` (the class reference lists which N exist) ALREADY applies this very functionality (`HTML.Input.Cleave` + `Time.Frame` with `MaxField: ".CodBi_TimeFrame_<N>_End"`). So for a time range:
+- use a FREE class pair and then add NOTHING else — putting `data-cb-func="Time.Frame"` (or `data-cb-maxfield`) on top of the pair is a REDUNDANT double configuration and a FAIL;
+- this functionality + `data-cb-maxfield` is the FALLBACK ONLY, used exclusively when EVERY frame pair is already taken by the form (no free N left). Never both, in any case.
+**REQUIRED (fallback only)**: data-cb-maxfield = the END (maximum) time field's name. The begin field is the tagged element. Both fields are time inputs restricted to HH:MM (pattern `^(0[0-9]|1[0-9]|2[0-3]):(0[0-9]|[1-5][0-9])$`) so the BEGIN time may not be AFTER the END time.
+- `EqualityPermitted`: whether the SAME start and end time is permitted. It applies to the FALLBACK wiring only (the class pairs set it themselves); set it to `false` when the user requires the end time to be STRICTLY after the start.
 
 ## DQ.Table.View
 

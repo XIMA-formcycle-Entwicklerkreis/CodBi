@@ -17,6 +17,12 @@
   const PLUGIN_ACTION = "CodBi_Mirror";
 
   const initialized = new WeakSet();
+  /**
+   * Buttons already wired to [runSync]. JSF may re-render the node panel on every property change,
+   * which produces a NEW button element; the WeakSet keeps the binding idempotent per element
+   * without ever leaking, and without depending on the panel root surviving the re-render.
+   */
+  const boundSyncButtons = new WeakSet();
   let ajaxBound = false;
   let observerInstalled = false;
 
@@ -31,6 +37,19 @@
     const raw = String(root.getAttribute(`data-${name}`) || "").trim();
     const missing = raw === "" || (raw.startsWith("???") && raw.endsWith("???"));
     return missing ? String(fallback || "") : raw;
+  }
+
+  /**
+   * The Mirror node PANEL that owns [root].
+   *
+   * The picker (`[data-codbi-mirror-node]`) is ONE div inside the node's `.codbi-mirror-node`
+   * container, while the "Create nodes now" button and its result line are SIBLINGS of that picker
+   * (they sit below the source summary). Looking them up inside [root] therefore found NOTHING, so
+   * the button had no click handler and the result text was never written — the click did nothing at
+   * all. All element lookups must use this container, never [root].
+   */
+  function panelOf(root) {
+    return root.closest(".codbi-mirror-node") || root.parentElement || document;
   }
 
   function baseUrl(root) {
@@ -411,7 +430,7 @@
   function runSync(root, button) {
     const formKey = String(root.getAttribute("data-form-value") || "");
     const pathId = String(root.getAttribute("data-path-value") || "");
-    const result = root.querySelector(SYNC_RESULT_SELECTOR);
+    const result = panelOf(root).querySelector(SYNC_RESULT_SELECTOR);
     const label = button.textContent;
     if (!formKey || !pathId) {
       if (result) {
@@ -461,8 +480,10 @@
     // The path dropdown previews every entry it shows (hover), which a native select cannot do.
     upgradePathSelect(root, pathSelect, preview);
 
-    const syncButton = root.querySelector(SYNC_SELECTOR);
-    if (syncButton) {
+    // The button is a SIBLING of the picker, not a child — see [panelOf].
+    const syncButton = panelOf(root).querySelector(SYNC_SELECTOR);
+    if (syncButton && !boundSyncButtons.has(syncButton)) {
+      boundSyncButtons.add(syncButton);
       syncButton.addEventListener("click", () => runSync(root, syncButton));
     }
 

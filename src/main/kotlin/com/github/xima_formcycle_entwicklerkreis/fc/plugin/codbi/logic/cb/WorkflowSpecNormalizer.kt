@@ -31,6 +31,11 @@ internal object WorkflowSpecNormalizer {
   const val EXTENDED_ACCESSOR_NODE_TYPE = "CodbiExtendedAccessor"
 
   /**
+   * The workflow-node type the CodBi Mirror handler is REGISTERED under (see `MirrorNodePlugin`).
+   */
+  const val MIRROR_NODE_TYPE = "Mirror"
+
+  /**
    * The workflow-node type of the INSTALLED "create a record in another form" plugin
    * (`de.xima.advanced.plugin`), i.e. the value that must end up in `WorkflowNode.ITEM_TYPE`.
    */
@@ -93,6 +98,15 @@ internal object WorkflowSpecNormalizer {
       // Cross-form record creation: the OLD documented handler class has no registered handler in
       // formcycle, so every spelling of it (and its display labels) is rewritten to the installed
       // remote-form-record plugin.
+      // CodBi workflow Mirror node: the registered short name plus the spellings models produce
+      // (lower case, handler class, or a display label) — the node type is case-sensitive and an
+      // unknown spelling creates an unresolvable node.
+      type.equals(MIRROR_NODE_TYPE, ignoreCase = true) -> MIRROR_NODE_TYPE
+      type.equals("MirrorNode", ignoreCase = true) -> MIRROR_NODE_TYPE
+      type.endsWith(".MirrorNodePlugin") -> MIRROR_NODE_TYPE
+      type.equals("Mirror node", ignoreCase = true) -> MIRROR_NODE_TYPE
+      type.equals("Spiegel", ignoreCase = true) -> MIRROR_NODE_TYPE
+      type.equals("Spiegel-Knoten", ignoreCase = true) -> MIRROR_NODE_TYPE
       type == LEGACY_CREATE_RECORD_NODE_TYPE -> REMOTE_FORM_RECORD_NODE_TYPE
       type == REMOTE_FORM_RECORD_NODE_TYPE -> REMOTE_FORM_RECORD_NODE_TYPE
       type.endsWith(".CreateRecordNodePlugin") -> REMOTE_FORM_RECORD_NODE_TYPE

@@ -15,6 +15,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.AiMirrorNodeParams
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorFormAccess
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorPushService
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin
@@ -17700,6 +17701,7 @@ class AICodBiAssistant : IPluginServletAction {
       params: IPluginServletActionParams
   ): String {
     val userContext = getUserContext(params)
+
     val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
 
     val workflowVersionApiField = apiProviderClass.getField("WORKFLOW_VERSION_API")
@@ -23721,6 +23723,15 @@ class AICodBiAssistant : IPluginServletAction {
         }
         fun regiStr(key: String): String = gson.toJson(regiParams[key] as? String ?: "")
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"files":${regiObj("files")},"metadata":${regiObj("metadata")},"serviceConfig":${regiObj("serviceConfig")},"documentId":${regiStr("documentId")}}"""
+      }
+      AiMirrorNodeParams.NODE_TYPE,
+      "mirror",
+      "MirrorNode" -> {
+        // CodBi workflow Mirror node — a lane that REFLECTS one workflow path of another form and
+        // stays linked to it. The model only knows the source form (title or "project-<id>") and
+        // the source path NAME; AiMirrorNodeParams resolves both to the node's customParameters
+        // (sourceForm/sourceFormName/pathId/pathName/outputMode/autoSync/syncEndpoint/pauseSync).
+        AiMirrorNodeParams.build(userContext, spec.nodeParams, nodeName, nodeDescription)
       }
       WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
       WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS -> {

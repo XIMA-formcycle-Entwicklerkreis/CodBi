@@ -12,6 +12,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.AiMirrorNodeParams
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
@@ -3901,6 +3902,15 @@ class AIWorkflowAssistant : IPluginServletAction {
         } else {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
         }
+      }
+      AiMirrorNodeParams.NODE_TYPE,
+      "mirror",
+      "MirrorNode" -> {
+        // CodBi workflow Mirror node — a lane that REFLECTS one workflow path of another form and
+        // stays linked to it. The model only knows the source form (title or "project-<id>") and
+        // the source path NAME; AiMirrorNodeParams resolves both to the node's customParameters
+        // (sourceForm/sourceFormName/pathId/pathName/outputMode/autoSync/syncEndpoint/pauseSync).
+        AiMirrorNodeParams.build(userContext, spec.nodeParams, nodeName, nodeDescription)
       }
       WorkflowSpecNormalizer.EXTENDED_ACCESSOR_NODE_TYPE,
       WorkflowSpecNormalizer.EXTENDED_ACCESSOR_HANDLER_CLASS -> {

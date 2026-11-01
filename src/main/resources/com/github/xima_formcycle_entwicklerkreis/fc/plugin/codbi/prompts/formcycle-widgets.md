@@ -376,7 +376,8 @@ Plain (non-repeatable) container template:
 
 ## XMirror
 
-Mirror widget (CodBi plugin) — renders a form element that lives in ANOTHER form (including its children) inside THIS form and keeps it LINKED to the source: a later change in the source form is reflected here. Use it ONLY when the user explicitly chose to MIRROR the element (not to copy it). It is NOT a copy — never recreate the source element's fields yourself.
+Mirror widget (CodBi plugin) — renders a form element that lives in ANOTHER form (including its children) inside THIS form and keeps it LINKED to the source: a later change in the source form is reflected here. It is NOT a copy — never recreate the source element's fields yourself.
+- THE VERB DECIDES (language-agnostic, by MEANING): "verlinken", "verknüpfen", "anbinden", "koppeln", "verbinden", "spiegeln", "link", "connect", "attach", "mirror", "collega", "agganciare", "enlazar" applied to an element of another form ALREADY mean MIRROR → build the XMirror and do NOT ask Copy-vs-Mirror. Ask that question ONLY for a NEUTRAL wording ("übernimm das Feldset X aus Formular Y", "add the fieldset X from form Y", "nimm das Feldset X", "hole X rüber", "das Feld Z aus Formular Y").
 
 Template:
 ```json
@@ -387,8 +388,9 @@ Template:
 - `codbi_mirror_element` = the source element's technical "id" from "FORM ELEMENTS OF ANOTHER FORM".
 - `codbi_mirror_element_key` = the source element's technical "name" (e.g. "div6") from the same list; used to re-find the element if its internal id changes.
 - `codbi_mirror_form_name` / `codbi_mirror_element_name` = the cached display title/label (designer display only).
+- `codbi_mirror_create_triggered_paths` = `"1"` | `"0"` (default `"0"`) — "Ausgelöste Workflow-Pfade mit anlegen". Set it to `"1"` whenever the element comes WITH ITS WORKFLOW — judged by MEANING in any language: "inklusive Workflow", "samt Workflow/Prozess", "mit dem dahinterliegenden Workflow", "with its workflow", "including the workflow behind it", "and the workflow that belongs to it". With `"1"` the widget ALSO creates, in the reflecting form, every workflow path of the SOURCE form that the mirrored element (or a child) triggers — each with a Mirror node that keeps it in sync with the source path (and each is removed again when its trigger disappears). So do NOT build a separate workflow lane with a Mirror node for such a request and do NOT copy the source actions: the option does exactly that. Leave it `"0"` (or omit it) when the user only wants the element itself.
 - Place it like any other element: add its `name` to the parent page's/container's `elements` array and set `properties.parentid` to that parent's name.
-- The source form's elements are loaded only via `need_form_elements` in the clarification round (never invent an id/name). If the user has not yet chosen COPY vs. MIRROR, ask first — never assume either one.
+- The source form's elements are loaded only via `need_form_elements` in the clarification round (never invent an id/name). When the wording is NEUTRAL about copy-vs-mirror, ask first — never assume either one (but a "link/verlinken/mirror/spiegeln" wording is not neutral: see the verb rule above).
 - Do NOT duplicate the source element's child fields in the output: the widget renders the source element and its children at runtime.
 
 ## XSignature

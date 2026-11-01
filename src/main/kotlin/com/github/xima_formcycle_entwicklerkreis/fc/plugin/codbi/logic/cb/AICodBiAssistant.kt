@@ -2525,7 +2525,8 @@ class AICodBiAssistant : IPluginServletAction {
       clarification = ClarificationRequest(freshQuestions)
       break
     }
-    // Cross-form fallback — ONLY for an ELEMENT copy, never for a WORKFLOW request.
+    // Cross-form fallback — ONLY for an ELEMENT copy, never for a WORKFLOW request and never when
+    // the wording itself already says MIRROR (see [requestsMirrorExplicitly]).
     // A workflow that links/mirrors another form's path needs neither a COPY-vs-MIRROR decision nor
     // a forced form choice: the model receives the AVAILABLE FORMS list and resolves the source
     // form
@@ -2540,10 +2541,14 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info(
             "[AICodBiAssistant] Cross-form request: the form title was not matched server-side — " +
                 "leaving the choice to the assistant (the AVAILABLE FORMS list is in its prompt)")
-      } else if (!hasCopyMirrorChoice(clarificationHistory, prompt, clarificationContext)) {
+      } else if (!requestsMirrorExplicitly(prompt) &&
+          !hasCopyMirrorChoice(clarificationHistory, prompt, clarificationContext)) {
         clarification = ClarificationRequest(listOf(copyMirrorClarification()))
         logger.info(
             "[AICodBiAssistant] Cross-form request: asking COPY vs. MIRROR deterministically")
+      } else if (requestsMirrorExplicitly(prompt)) {
+        logger.info(
+            "[AICodBiAssistant] Cross-form request: the wording already means MIRROR — not asking COPY vs. MIRROR")
       }
     }
     // Deterministic ending-page fallback: the ending-page veto forced the clarify round, but a weak
@@ -28519,6 +28524,21 @@ When NO configured specialist sensibly matches the user's request:
     }
   }
 
+  /**
+   * Whether the request's own wording already means MIRROR — "verlinken", "verknüpfen", "anbinden",
+   * "koppeln", "verbinden", "spiegeln", "link", "connect", "attach", "mirror", "collega",
+   * "agganciare", "enlazar", … (by MEANING, any language).
+   *
+   * Such a request must never be answered with a COPY-vs-MIRROR question, so the deterministic
+   * cross-form fallback stays silent for it. This is only a guard for weak models — the assistant
+   * normally decides it itself from the prompt rules.
+   */
+  private fun requestsMirrorExplicitly(text: String?): Boolean {
+    val lower = text?.lowercase().orEmpty()
+    if (lower.isBlank()) return false
+    return MIRROR_VERBS.any { lower.contains(it) }
+  }
+
   /** True when the prompt or an answered clarification already contains a copy/mirror choice. */
   private fun hasCopyMirrorChoice(
       history: List<ClarificationTurn>,
@@ -28599,6 +28619,27 @@ When NO configured specialist sensibly matches the user's request:
       answerNeedles.any { q.contains(it) }
     }
   }
+
+  /** See [requestsMirrorExplicitly]. */
+  private val MIRROR_VERBS =
+      listOf(
+          "verlink",
+          "verknüpf",
+          "verknuepf",
+          "anbind",
+          "ankoppel",
+          "koppel",
+          "verbind",
+          "spiegel",
+          "link",
+          "connect",
+          "attach",
+          "mirror",
+          "collega",
+          "agganci",
+          "enlaz",
+          "specchia",
+          "riflett")
 
   /** The deterministic COPY-vs-MIRROR question used when the model did not ask it itself. */
   private fun copyMirrorClarification(): ClarificationQuestion =

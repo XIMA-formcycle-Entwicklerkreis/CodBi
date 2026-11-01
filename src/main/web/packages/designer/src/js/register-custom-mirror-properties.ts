@@ -13,7 +13,12 @@ import {
   type IMirrorElementSelectDescriptor,
 } from "./MirrorElementSelect.js";
 import { MirrorFormSelect, MirrorFormSelectType, type IMirrorFormSelectDescriptor } from "./MirrorFormSelect.js";
-import { MirrorCheckbox, MirrorCheckboxType, type IMirrorCheckboxDescriptor } from "./MirrorCheckbox.js";
+import {
+  MirrorCheckbox,
+  MirrorCheckboxType,
+  ensureMirrorToggleStyle,
+  type IMirrorCheckboxDescriptor,
+} from "./MirrorCheckbox.js";
 import { refreshAllMirrors } from "./MirrorChildItems.js";
 import { ensureCodbiBranding } from "./MirrorSelect.js";
 import { codbiDocsUrl } from "./CodbiDocs.js";
@@ -73,6 +78,23 @@ export function registerCustomMirrorProperties(): void {
       console.error("[CodBi] Failed to register the Mirror element editor", x);
     }
 
+    // The workflow opt-in belongs ABOVE the form selection: it decides whether a linked workflow
+    // path comes along with the mirrored element, which is what users look for first when they
+    // "link" a container including its workflow. Registered before the form property so the panel
+    // lists it first, and rendered as a toggle switch (see [ensureMirrorToggleStyle]).
+    try {
+      registerCustomEditor(MirrorCheckboxType, MirrorCheckbox);
+    } catch (x) {
+      console.error("[CodBi] Failed to register the Mirror checkbox editor", x);
+    }
+    ensureMirrorToggleStyle();
+    registerCustomProperty({
+      editor: MirrorCheckboxType,
+      cat: MIRROR_CATEGORY_ID,
+      property: String(Constants["mirror.property.create_triggered_paths"]),
+      label: i18n("designer.widget.mirror.createTriggeredPaths"),
+    } satisfies IMirrorCheckboxDescriptor);
+
     registerCustomProperty({
       editor: MirrorFormSelectType,
       cat: MIRROR_CATEGORY_ID,
@@ -86,20 +108,6 @@ export function registerCustomMirrorProperties(): void {
       property: elementProperty,
       label: i18n("designer.widget.mirror.element"),
     } satisfies IMirrorElementSelectDescriptor);
-
-    // Opt-in: also create the workflow paths that the mirrored element (or one of its children)
-    // triggers in the SOURCE form — each with a Mirror node that keeps it in sync. Default off.
-    try {
-      registerCustomEditor(MirrorCheckboxType, MirrorCheckbox);
-    } catch (x) {
-      console.error("[CodBi] Failed to register the Mirror checkbox editor", x);
-    }
-    registerCustomProperty({
-      editor: MirrorCheckboxType,
-      cat: MIRROR_CATEGORY_ID,
-      property: String(Constants["mirror.property.create_triggered_paths"]),
-      label: i18n("designer.widget.mirror.createTriggeredPaths"),
-    } satisfies IMirrorCheckboxDescriptor);
   } catch (x) {
     // Never let the Mirror registration abort the other CodBi designer registrations.
     console.error("[CodBi] Failed to register the Mirror widget's designer properties", x);

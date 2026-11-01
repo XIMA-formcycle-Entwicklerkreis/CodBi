@@ -52,6 +52,75 @@ function isChecked(value: unknown): boolean {
   return value === true || value === "1" || value === "true";
 }
 
+/** Id of the injected stylesheet that renders the Mirror options as switches. */
+const TOGGLE_STYLE_ID = "codbi-mirror-toggle-style";
+
+/**
+ * Renders the Mirror widget's boolean options as **toggle switches** instead of native
+ * checkboxes.
+ *
+ * The editor inserts a bare `<input type="checkbox" class="codbi-mirror-checkbox">` into the item
+ * property panel, so the switch look is pure CSS on that one class (a native checkbox cannot carry
+ * a `::after` knob and there is no stylesheet for the designer panel). The style block is injected
+ * once and keyed by [TOGGLE_STYLE_ID], so repeated registrations and re-renders do not stack it.
+ *
+ * CodBi orange (`#ff8c00`) matches the workflow Mirror node accent.
+ */
+export function ensureMirrorToggleStyle(): void {
+  try {
+    if (typeof document === "undefined" || document.getElementById(TOGGLE_STYLE_ID)) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = TOGGLE_STYLE_ID;
+    style.textContent = `
+.codbi-mirror-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 38px;
+  height: 20px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #cbd5e1;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+  vertical-align: middle;
+}
+.codbi-mirror-checkbox::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: left 0.15s ease-in-out;
+}
+.codbi-mirror-checkbox:checked {
+  background: #ff8c00;
+}
+.codbi-mirror-checkbox:checked::after {
+  left: 20px;
+}
+.codbi-mirror-checkbox:focus-visible {
+  outline: 2px solid #ff8c00;
+  outline-offset: 2px;
+}
+.codbi-mirror-checkbox:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+`;
+    document.head.appendChild(style);
+  } catch (x) {
+    console.error("[CodBi] Failed to install the Mirror toggle style", x);
+  }
+}
+
 /** Checkbox editor for the Mirror widget's boolean options. */
 export class MirrorCheckbox extends Editors.BaseEditor<typeof MirrorCheckboxType> {
   private readonly input: HTMLInputElement;
@@ -63,8 +132,12 @@ export class MirrorCheckbox extends Editors.BaseEditor<typeof MirrorCheckboxType
     this.input.type = "checkbox";
     this.input.className = "codbi-mirror-checkbox";
     this.input.title = String(config.label ?? "");
+    // A switch, not a checkbox: the role makes screen readers announce on/off.
+    this.input.setAttribute("role", "switch");
+    this.input.setAttribute("aria-label", String(config.label ?? ""));
     this.input.addEventListener("change", () => {
       this._value = this.input.checked ? "1" : "0";
+      this.input.setAttribute("aria-checked", this._value === "1" ? "true" : "false");
       Callbacks["set-property"].fire(this.config.property, this._value, this);
       // Re-run the Mirror sync so the option also takes effect for already materialized children
       // (the sync applies the triggered workflow paths server-side when it is enabled).
@@ -90,5 +163,6 @@ export class MirrorCheckbox extends Editors.BaseEditor<typeof MirrorCheckboxType
   setValue(value: unknown): void {
     this._value = isChecked(value) ? "1" : "0";
     this.input.checked = this._value === "1";
+    this.input.setAttribute("aria-checked", this._value === "1" ? "true" : "false");
   }
 }

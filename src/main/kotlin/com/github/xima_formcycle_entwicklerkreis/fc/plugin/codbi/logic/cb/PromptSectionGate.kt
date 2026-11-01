@@ -298,7 +298,24 @@ internal object PromptSectionGate {
                   "date range",
                   "daterange",
                   "time range",
-                  "timerange"),
+                  "timerange",
+                  // BEGIN/END pairs, in any language: "Anfangs- und Endzeit" is a TIME RANGE and
+                  // needs the same block as "Zeitraum" — without it the assistant emitted two
+                  // unconnected time fields plus only the Cleave formatting.
+                  "anfangs",
+                  "endzeit",
+                  "startzeit",
+                  "\\bbeginn\\b",
+                  "\\bende\\b",
+                  "uhrzeit",
+                  "start and end",
+                  "begin and end",
+                  "start time",
+                  "end time",
+                  // "a time from/to range", "time from 8 to 18" — the noun may precede the range.
+                  "time\\b.*\\bfrom\\b",
+                  "\\bfrom\\s*/\\s*to\\b",
+                  "\\bfrom\\b.*\\bto\\b.*\\b(uhr|time|zeit|clock)"),
           "appointment" to
               patterns(
                   "termin",

@@ -486,6 +486,45 @@ class PromptSectionGateTest {
   }
 
   @Test
+  fun `a BEGIN-END TIME request keeps the Time-frame wiring rules`() {
+    // Regression: "Füge Eingabefelder für eine Anfangs- und Endzeit ein." produced two time fields
+    // with only Holistic.Cleave.Time (formatting) and NO CodBi_TimeFrame_* class, because neither
+    // the AI's `sections` nor the detector fired `date` — so the Time.Frame block was gated out and
+    // the end time could lie before the begin time.
+    val prompts =
+        listOf(
+            "Füge Eingabefelder für eine Anfangs- und Endzeit ein.",
+            "Bitte eine Start- und Endzeit erfassen lassen.",
+            "Uhrzeit von 8 bis 18 Uhr als Bereich",
+            "add two fields for a start and end time",
+            "I need a time from/to range")
+    for (prompt in prompts) {
+      val detected = PromptSectionGate.detect(prompt)
+      assertTrue("date" in detected, "$prompt -> detected=$detected")
+    }
+
+    val keep = PromptSectionGate.resolveKeepTags(listOf("date"), null)
+    val general =
+        PromptSectionGate::class
+            .java
+            .classLoader
+            .getResourceAsStream(
+                "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general.decision.md")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("no such resource: codbi-general.decision.md")
+    val gated = PromptSectionGate.applySectionGates(general, keep)
+    assertTrue(
+        gated.contains("CodBi_TimeFrame_<N>_Begin"),
+        "the Time.Frame class pair must survive gating")
+    assertTrue(
+        gated.contains("Holistic.Cleave.Time") && gated.contains("ALONE is NOT a time range"),
+        "the Cleave-only trap must be spelled out in the kept block")
+    assertTrue(
+        gated.contains("SIBLINGS in the SAME page/container"),
+        "the shared-container requirement must survive gating")
+  }
+
+  @Test
   fun `the German einfuegen and platzieren verbs fire the build-scope detector`() {
     // Regression for the detector expansion: a request phrased purely as placement/insertion must
     // still be recognised as build-scope — otherwise the placement rules are dropped for a request

@@ -171,10 +171,6 @@
                 </p:selectOneMenu>
 
                 <br/>
-                <p:outputLabel for="autoSync"
-                    styleClass="codbi-mirror-node__label codbi-mirror-node__check-label"
-                    title="#{msg['workflow.mirror.autoSync.tooltip']}"
-                    value="#{msg['workflow.mirror.autoSync']}" />
                 <p:selectBooleanCheckbox id="autoSync" value="#{model.autoSync}"
                     styleClass="codbi-mirror-node__check"
                     title="#{msg['workflow.mirror.autoSync.tooltip']}">
@@ -182,12 +178,13 @@
                         listener="#{elementPropertiesBean.storeCurrent}" process="@this"
                         update=":flowchartForm:flowchart" global="false" />
                 </p:selectBooleanCheckbox>
+                <p:outputLabel for="autoSync"
+                    styleClass="codbi-mirror-node__label codbi-mirror-node__check-label"
+                    title="#{msg['workflow.mirror.autoSync.tooltip']}"
+                    value="#{msg['workflow.mirror.autoSync']}" />
+                
 
                 <br/>
-                <p:outputLabel for="syncEndpoint"
-                    styleClass="codbi-mirror-node__label codbi-mirror-node__check-label"
-                    title="#{msg['workflow.mirror.syncEndpoint.tooltip']}"
-                    value="#{msg['workflow.mirror.syncEndpoint']}" />
                 <p:selectBooleanCheckbox id="syncEndpoint" value="#{model.syncEndpoint}"
                     styleClass="codbi-mirror-node__check"
                     title="#{msg['workflow.mirror.syncEndpoint.tooltip']}">
@@ -195,12 +192,13 @@
                         listener="#{elementPropertiesBean.storeCurrent}" process="@this"
                         update=":flowchartForm:flowchart" global="false" />
                 </p:selectBooleanCheckbox>
+                <p:outputLabel for="syncEndpoint"
+                    styleClass="codbi-mirror-node__label codbi-mirror-node__check-label"
+                    title="#{msg['workflow.mirror.syncEndpoint.tooltip']}"
+                    value="#{msg['workflow.mirror.syncEndpoint']}" />
+                
 
                 <br/>
-                <p:outputLabel for="pauseSync"
-                    styleClass="codbi-mirror-node__label codbi-mirror-node__check-label"
-                    title="#{msg['workflow.mirror.pauseSync.tooltip']}"
-                    value="#{msg['workflow.mirror.pauseSync']}" />
                 <p:selectBooleanCheckbox id="pauseSync" value="#{model.pauseSync}"
                     styleClass="codbi-mirror-node__check"
                     title="#{msg['workflow.mirror.pauseSync.tooltip']}">
@@ -208,6 +206,11 @@
                         listener="#{elementPropertiesBean.storeCurrent}" process="@this"
                         update=":flowchartForm:flowchart" global="false" />
                 </p:selectBooleanCheckbox>
+                <p:outputLabel for="pauseSync"
+                    styleClass="codbi-mirror-node__label codbi-mirror-node__check-label"
+                    title="#{msg['workflow.mirror.pauseSync.tooltip']}"
+                    value="#{msg['workflow.mirror.pauseSync']}" />
+                
 
             </p:fieldset>
 

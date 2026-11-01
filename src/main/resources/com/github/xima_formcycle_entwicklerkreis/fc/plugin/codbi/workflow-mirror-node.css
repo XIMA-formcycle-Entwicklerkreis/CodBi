@@ -216,12 +216,15 @@
 /*
  * Deliberately IDENTICAL to the source picker's `.codbi-mirror-node__select` (same height, same
  * 1px + 3px darkorange frame, same translucent background, same hover/focus), so both selections of
- * this panel read as one control family. The trigger button stretches over the full height and has
- * no divider of its own.
+ * this panel read as one control family.
+ *
+ * The arrow is placed the way PrimeFaces itself does it: the label fills the box (with a right
+ * padding that reserves the arrow column) and the trigger is ABSOLUTELY positioned in that column,
+ * centred vertically. Making the trigger a normal flex item made it drop below the label as soon as
+ * the label was wider than the remaining space — the "arrow under the selection" symptom.
  */
 .codbi-mirror-node .codbi-mirror-node__selectmenu {
-  display: flex !important;
-  align-items: stretch !important;
+  position: relative !important;
   box-sizing: border-box !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -233,30 +236,45 @@
 }
 
 .codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-label {
-  flex: 1 1 auto !important;
-  align-self: stretch !important;
-  height: auto !important;
-  padding: 0 0.5em !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 100% !important;
+  /* Right padding reserves the arrow column, so the caption never runs underneath it. */
+  padding: 0 2.2em 0 0.5em !important;
   line-height: 2em !important;
   border: 0 !important;
-  border-radius: 6px 0 0 6px !important;
+  border-radius: 6px !important;
   background: transparent !important;
   color: inherit !important;
   cursor: pointer !important;
 }
 
 .codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-trigger {
-  flex: 0 0 auto !important;
-  align-self: stretch !important;
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: auto !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  width: 1.8em !important;
+  width: 1.9em !important;
   height: auto !important;
+  margin: 0 !important;
   box-sizing: border-box !important;
   border: 0 !important;
   border-radius: 0 6px 6px 0 !important;
   background: transparent !important;
+}
+
+/* The sprite arrow keeps PrimeFaces' own negative margins/absolute placement — reset both so it is
+   centred inside the trigger column instead of hanging below the field. */
+.codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-trigger .ui-icon {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  margin: 0 !important;
 }
 
 .codbi-mirror-node .codbi-mirror-node__selectmenu .ui-selectonemenu-trigger:hover {
@@ -399,6 +417,7 @@
 .codbi-mirror-node .codbi-mirror-node__check {
   display: inline-block !important;
   margin: 0 !important;
+  margin-right: 1em ;
   vertical-align: middle !important;
 }
 

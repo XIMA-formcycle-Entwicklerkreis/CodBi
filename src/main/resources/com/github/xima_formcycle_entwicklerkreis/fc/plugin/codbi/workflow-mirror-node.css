@@ -415,21 +415,18 @@
  * a 34x16 px pill, slate when off, darkorange when on, with a white thumb that slides.
  */
 
-/* Caption to the LEFT of its switch. */
+/* Caption to the LEFT of its switch. The vertical spacing is part of the (important) shorthand —
+   a separate `margin-top/bottom` longhand without !important would be overridden by it. */
 .codbi-mirror-node .codbi-mirror-node__check-label {
   display: inline-block !important;
-  margin: 0 0.6em 0 0 !important;
+  margin: 1em 0.6em 1em 0 !important;
   vertical-align: middle !important;
-  margin-top: 1em ;
-  margin-bottom: 1em ;
 }
 
 .codbi-mirror-node .codbi-mirror-node__check {
   display: inline-block !important;
-  margin: 0 1em 0 0 !important;
+  margin: 1em 1em 1em 0 !important;
   vertical-align: middle !important;
-  margin-top: 1em ;
-  margin-bottom: 1em ;
 }
 
 /* PrimeFaces' own sprite glyph is replaced by the thumb below. */

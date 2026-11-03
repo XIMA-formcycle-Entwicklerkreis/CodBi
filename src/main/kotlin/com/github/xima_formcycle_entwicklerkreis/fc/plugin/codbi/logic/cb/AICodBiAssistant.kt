@@ -2431,7 +2431,11 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationWorkflowMails,
                 availableDatasources,
                 clarificationXslTemplates,
-                chatAnswerResult?.topics ?: emptySet(),
+                // The AI's own classification also authorises the scenario blocks: `sections`
+                // carries the pass-1 capability tags (e.g. "datasource"), so an AI-recognised
+                // DQ.Table.View request keeps its clarify block even when no keyword matched.
+                (chatAnswerResult?.topics ?: emptySet()) +
+                    (chatAnswerResult?.sections ?: emptySet()),
                 countAssistUsage)
           } catch (e: Exception) {
             logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
@@ -8537,10 +8541,11 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private fun sanitizeAiFormItems(root: JsonObject) {
     val items = root.getAsJsonArray("items") ?: return
-    // 0) Canonicalize the language-switch and date-picker classNames so the unknown-class check
-    //    below does not drop the widget (the model emits "XLanguageSwitch" for Formcycle's historic
-    //    misspelling "XLanguageSwich", and "XDatePicker" for an XTextField with a date datatype —
-    //    there is no XDatePicker widget, so such an item would be dropped entirely).
+    // 0) Canonicalize the language-switch, date-picker and DQ.Table.View classNames so the
+    //    unknown-class check below does not drop the widget (the model emits "XLanguageSwitch" for
+    //    Formcycle's historic misspelling "XLanguageSwich", "XDatePicker" for an XTextField with a
+    //    date datatype, and "XTable" for the container that carries DQ.Table.View — none of those
+    //    classNames exists, so such an item would be dropped entirely).
     canonicalizeLangSwitchClassName(items)
     canonicalizeDatePickerClassName(items)
     // 1) Fold standalone button-like items into XButtonLists.
@@ -26137,11 +26142,11 @@ class AICodBiAssistant : IPluginServletAction {
       append(cleaned.joinToString("\n") { "- $it" })
       append("\n")
       append(
-          "RULE — for a datasource-bound XSelect, the `datasource` property MUST be one of the names ABOVE, copied VERBATIM (character-for-character, INCLUDING any leading number/prefix such as \"56_\").\n")
+          "RULE — whenever a parameter must name one of these datasources — an XSelect's `datasource` property (also on the DS widgets) AND `DQ.Table.View`'s `data-cb-dataquery` ATTRIBUTE — the value MUST be one of the names ABOVE, copied VERBATIM (character-for-character, INCLUDING any leading number/prefix such as \"56_\").\n")
       append(
-          "- CHOOSE BY MEANING (the datasource's subject/what it contains), NOT by string equality: the wording in the request (e.g. \"Staatsangehörigkeiten\") need not match the technical name (e.g. \"56_Staatsangehoerigkeiten\") — bind the listed name that FITS.\n")
+          "- CHOOSE BY MEANING (the datasource's subject/what it contains), NOT by string equality: the wording in the request (e.g. \"Staatsangehörigkeiten\", \"die Altstadtfest-Abfrage\") need not match the technical name (e.g. \"56_Staatsangehoerigkeiten\", \"INHALT.Antrag auf Zulassung … Altstadtfest 2027\") — bind the listed name that FITS. NEVER treat the user's wording as the technical name when that wording is not in this list.\n")
       append(
-          "- NEVER translate, re-spell, add/remove umlauts, shorten or drop the numeric prefix of a listed name; NEVER invent a name that is not listed.\n")
+          "- NEVER translate, re-spell, add/remove umlauts, shorten or drop the numeric prefix of a listed name; NEVER invent a name that is not listed, and NEVER keep an unlisted/misspelled wording the user used.\n")
       append(
           "- WIDGET BY INTENT (LANGUAGE-AGNOSTIC — decide from the MEANING in ANY language, NEVER a literal keyword; the parenthesised words are illustrative examples only). If the user wants to CHOOSE a value from a list (the selection/dropdown/combobox CONCEPT — e.g. German \"Auswahl\"/\"Dropdown\", English \"selection\"/\"dropdown\", or the equivalent in ANY language), use a plain \"XSelect\" with the datasource properties above — it STAYS an XSelect even when described as filterable/searchable/type-ahead. If the user wants to TYPE a value into a text field (the input-field/entry-field CONCEPT — e.g. German \"Eingabefeld\"/\"Eingabe\", English \"input field\", or the equivalent in ANY language) and it must be restricted to / autocompleted from the datasource, emit className \"XTextfieldAdvanced\" (Filterable text field, DS Widget Plugin) with the SAME verbatim `datasource` (it extends XTextField and adds the datasource property — NO `dstextidx`/`dsvalueidx`). NEVER turn a requested input field into a select/datalist, and NEVER turn a requested selection into a text field.\n")
       append(
@@ -27484,6 +27489,37 @@ When NO configured specialist sensibly matches the user's request:
     } catch (_: Exception) {
       null
     }
+  }
+
+  /**
+   * Wraps a PLAIN-PROSE clarification answer into ONE free-text question.
+   *
+   * The clarification round is taught (in `codbi-clarification.md`) to answer either
+   * `NO_CLARIFICATION` or the JSON envelope `{"status":"need_clarification","questions":[…]}`.
+   * Models nevertheless sometimes answer a genuine question as a bare sentence — observed in
+   * production with the DATAQUERY-TABLE block: "Welche Spalten der Datenquelle **…** sollen in der
+   * Tabelle angezeigt werden, und welche Überschrift (sollen) jede Spalte bekommen? …". Rejecting
+   * that shape treated the round as "no question": the popup was never shown, the build pass ran
+   * immediately and the container shipped without `data-cb-dataquery` / `data-cb-columns`.
+   *
+   * This is deliberately LANGUAGE-AGNOSTIC: every non-empty prose answer that is neither the
+   * sentinel nor a JSON shape IS the question the model wanted to ask — no question-word or keyword
+   * list decides that. Only the formatting is normalised (Unicode spaces such as U+202F/U+00A0 that
+   * models emit between words, collapsed whitespace, Markdown emphasis markers).
+   */
+  private fun clarificationFromProse(raw: String): ClarificationRequest? {
+    val text =
+        raw.replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .replace("**", "")
+            .trim()
+    if (text.isEmpty() || text.length > 600) return null
+    if (text.startsWith("{") || text.startsWith("[")) return null
+    if (text.equals("NO_CLARIFICATION", ignoreCase = true)) return null
+    return ClarificationRequest(
+        listOf(
+            ClarificationQuestion(
+                "q1", text, emptyList(), allowFreeText = true, multiSelect = false)))
   }
 
   /**
@@ -29003,7 +29039,11 @@ When NO configured specialist sensibly matches the user's request:
     if (wantsHistory) {
       return ClarificationCheck(needsHistory = true, historyFormKey = historyFormKey)
     }
-    return ClarificationCheck(questions = parseClarificationRequest(cleaned))
+    // Canonical JSON envelope first; a PLAIN-PROSE answer falls back to ONE free-text question (see
+    // [clarificationFromProse]). Without that fallback the round looked like "no question" and the
+    // build pass ran immediately with the missing parameters.
+    return ClarificationCheck(
+        questions = parseClarificationRequest(cleaned) ?: clarificationFromProse(cleaned))
   }
 
   // endregion Clarification

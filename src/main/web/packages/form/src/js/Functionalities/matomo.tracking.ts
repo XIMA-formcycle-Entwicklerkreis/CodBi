@@ -38,9 +38,9 @@ export class Matomo_Tracking {
    *  - SiteID: The ID of the Matomo-Project-Site that shall be used for tracking. */
   @DBC.ParamvalueProvider
   @ParameterTypes({
-    SiteID: { type: "integer" },
-    URL: { type: "string" },
-    ImageURL: { type: "string" },
+    SiteID: { type: "integer", default: "The ID of the Matomo-Project-Site that shall be used for tracking." },
+    URL: { type: "string", default: "The URL of the Matomo-Server that shall track the tagged form." },
+    ImageURL: { type: "string", default: "The URL of the Matomo image to use for tracking." },
   })
   public static functionality(
     @TYPE.PRE("string", "url")

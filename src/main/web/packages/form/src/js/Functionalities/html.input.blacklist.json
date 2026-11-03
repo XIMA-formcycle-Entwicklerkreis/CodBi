@@ -16,35 +16,23 @@
   "parameters": {
     "List": {
       "type": "string",
-      "description": "A string CSV of forbidden values.",
-      "descriptionDe": "Eine CSV-Zeichenfolge verbotener Werte.",
-      "descriptionIt": "Una stringa CSV di valori vietati."
+      "default": "A string CSV of forbidden values."
     },
     "Prefix": {
       "type": "string",
-      "description": "The string to show before listing all the values in List when displaying an error message.",
-      "descriptionDe": "Die Zeichenfolge, die vor der Auflistung aller Werte in List angezeigt wird, wenn eine Fehlermeldung angezeigt wird.",
-      "descriptionIt": "La stringa da mostrare prima di elencare tutti i valori in List quando viene visualizzato un messaggio di errore."
+      "default": "The string to show before listing all the values in List when displaying an error message."
     },
     "Postfix": {
       "type": "string",
-      "description": "The string to show after List when displaying an error message.",
-      "descriptionDe": "Die Zeichenfolge, die nach List angezeigt wird, wenn eine Fehlermeldung angezeigt wird.",
-      "descriptionIt": "La stringa da mostrare dopo List quando viene visualizzato un messaggio di errore."
+      "default": "The string to show after List when displaying an error message."
     },
     "Separator": {
       "type": "string",
-      "default": ",",
-      "description": "The string shown in between each element of the List when displaying an error message. Defaults to ', '.",
-      "descriptionDe": "Die Zeichenfolge, die zwischen jedem Element der List angezeigt wird, wenn eine Fehlermeldung angezeigt wird. Standard: ', '.",
-      "descriptionIt": "La stringa mostrata tra ogni elemento della List quando viene visualizzato un messaggio di errore. Predefinito: ', '."
+      "default": ","
     },
     "ShowBlacklist": {
       "type": "boolean",
-      "default": "false",
-      "description": "Whether to show the List in the error message or not (true/false). Defaults to false.",
-      "descriptionDe": "Ob die List in der Fehlermeldung angezeigt werden soll oder nicht (true/false). Standard: false.",
-      "descriptionIt": "Se mostrare la List nel messaggio di errore o no (true/false). Predefinito: false."
+      "default": "false"
     }
   }
 }

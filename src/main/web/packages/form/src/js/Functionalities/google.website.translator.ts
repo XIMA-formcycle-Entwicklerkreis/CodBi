@@ -201,7 +201,11 @@ export class Google_Website_Translator {
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
     AutoLoad: { type: "boolean", default: "false" },
-    Lang: { type: "string" },
+    Lang: {
+      type: "string",
+      default:
+        "The ISO-639 language code to use as the initial language of the dropdown (defaults to the browser's/preferred language or 'en').",
+    },
     Inline: { type: "boolean", default: "true" },
   })
   public static functionality(

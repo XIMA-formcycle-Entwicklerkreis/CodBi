@@ -12,15 +12,11 @@
   "parameters": {
     "Name": {
       "type": "string",
-      "description": "The name of the attribute to set.",
-      "descriptionDe": "Der Name des zu setzenden Attributs.",
-      "descriptionIt": "Il nome dell'attributo da impostare."
+      "default": "The name of the attribute to set."
     },
     "ToSet": {
       "type": "string",
-      "description": "The string to set the attribute to.",
-      "descriptionDe": "Die Zeichenfolge, auf die das Attribut gesetzt werden soll.",
-      "descriptionIt": "La stringa a cui impostare l'attributo."
+      "default": "The string to set the attribute to."
     }
   }
 }

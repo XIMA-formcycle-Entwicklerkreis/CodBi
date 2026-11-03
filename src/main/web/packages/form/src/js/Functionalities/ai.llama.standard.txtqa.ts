@@ -83,18 +83,59 @@ export class AI_LLAMA_STANDARD_TXTQA {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea", "XSpan"])
   @ParameterTypes({
-    AIHint: { type: "string" },
-    useinternet: { type: "boolean" },
-    debounce: { type: "integer" },
-    inferencedelay: { type: "integer" },
-    language: { type: "string" },
-    Location: { type: "boolean" },
-    ResponseLanguage: { type: "string" },
-    Specialist: { type: "string" },
-    QueueBadge: { type: "string" },
-    QueueText: { type: "string" },
-    FilterResults: { type: "boolean" },
-    QuestionRoot: { type: "string" },
+    AIHint: {
+      type: "string",
+      default:
+        "Text shown inside AI-populated fields until the user edits the value. Default: '✨ AI-Generated'. Set empty to disable.",
+    },
+    useinternet: { type: "boolean", default: "if set to true, enables brave search internet access. default: false." },
+    debounce: {
+      type: "integer",
+      default: "Debounce delay in milliseconds before sending the request after the last change event. Default: 500.",
+    },
+    inferencedelay: {
+      type: "integer",
+      default:
+        "Maximum seconds to wait for all source fields to be filled before starting inference anyway. Default: 5.",
+    },
+    language: {
+      type: "string",
+      default:
+        "Language for the AI response (e.g. 'German', 'English'). Appends 'Answer in {language}.' to each question.",
+    },
+    Location: {
+      type: "boolean",
+      default:
+        "if set to true, enables geolocation access. the user's coordinates are sent to the ai for location-aware answers. default: false.",
+    },
+    ResponseLanguage: {
+      type: "string",
+      default:
+        "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). Forces the AI to respond in this language, skipping auto-detection.",
+    },
+    Specialist: {
+      type: "string",
+      default:
+        "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+    },
+    QueueBadge: {
+      type: "string",
+      default: "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    },
+    QueueText: {
+      type: "string",
+      default:
+        "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    },
+    FilterResults: {
+      type: "boolean",
+      default: "if set to 'true', enables pii filtering on brave search queries for this instance.",
+    },
+    QuestionRoot: {
+      type: "string",
+      default:
+        "Optional CSS selector specifying an alternate root element from which to search for question and source elements.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "aihint, language, responselanguage, specialist, queuebadge, queuetext")

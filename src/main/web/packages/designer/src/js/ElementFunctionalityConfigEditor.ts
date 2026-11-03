@@ -28,6 +28,7 @@ import {
   setItemAttributeValueQuiet,
   setItemPropertyValueQuiet,
 } from "./CodbiElementMarkers.js";
+import { attachCsvValueTooltip, openCsvGridEditor } from "./CsvGridEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import {
   CB_FUNC_ATTRIBUTE,
@@ -85,6 +86,77 @@ const CODBI_ENABLE_CHECKBOX_SELECTOR = "#form-codbi-prop-enable-input";
  * editor (each element selection rebuilds it) never stacks a second listener on the same checkbox.
  */
 const codBiEnableCheckboxesWithListener = new WeakSet<HTMLInputElement>();
+
+/**
+ * The editors whose (heavy) listing render is queued in {@link scheduleElementConfigRender}.
+ *
+ * FORMCYCLE RE-INSTANTIATES this editor on EVERY element selection and then calls `setValue`. Building
+ * every functionality/standard-configuration row synchronously in that same task delayed the designer's
+ * own selection highlight by up to a second — the click felt slow although only the panel was being
+ * populated. The rows are therefore built in a LATER macrotask, so the highlight (and the rest of the
+ * designer chrome) paints first while the panel looks exactly the same (both listings start collapsed
+ * anyway). Nothing is dropped: the queued render is coalesced and always runs.
+ */
+const pendingConfigRenders = new Set<ElementFunctionalityConfigEditor>();
+/** Handle of the single timer that flushes {@link pendingConfigRenders}. */
+let configRenderTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Runs every queued editor render IMMEDIATELY (and cancels the pending timer).
+ *
+ * Exported so tests can populate the panel synchronously and so a caller that must have the panel ready
+ * in the SAME task (e.g. after an external registry update, see {@link refreshElementFunctionalityConfig})
+ * can force it. Safe to call when nothing is pending.
+ */
+export function flushElementConfigRenders(): void {
+  if (configRenderTimer !== null) {
+    clearTimeout(configRenderTimer);
+    configRenderTimer = null;
+  }
+  const editors = Array.from(pendingConfigRenders);
+  pendingConfigRenders.clear();
+  for (const editor of editors) {
+    try {
+      editor.renderNow();
+    } catch (x) {
+      console.error("[CodBi] Element: deferred config panel render failed", x);
+    }
+  }
+}
+
+/**
+ * Runs the deferred (CHUNKED) render of every queued editor. Used by the scheduler; the force-flush
+ * above is the synchronous variant (tests, external registry sync).
+ */
+function runDeferredRenders(): void {
+  const editors = Array.from(pendingConfigRenders);
+  pendingConfigRenders.clear();
+  for (const editor of editors) {
+    try {
+      editor.renderDeferred();
+    } catch (x) {
+      console.error("[CodBi] Element: deferred config panel render failed", x);
+    }
+  }
+}
+
+/**
+ * Queues one editor's render as a macrotask — coalesced, so a selection (constructor + `setValue` in the
+ * same task) renders the panel exactly ONCE. A MACROtask (not a microtask) is required: only it yields to
+ * the browser's rendering step, which is what lets the designer paint the selection highlight BEFORE the
+ * (potentially hundreds of) option rows are built. The render itself is then split across further
+ * macrotasks (see {@link ElementFunctionalityConfigEditor.renderDeferred}).
+ */
+function scheduleElementConfigRender(editor: ElementFunctionalityConfigEditor): void {
+  pendingConfigRenders.add(editor);
+  if (configRenderTimer !== null) {
+    return;
+  }
+  configRenderTimer = setTimeout(() => {
+    configRenderTimer = null;
+    runDeferredRenders();
+  }, 0);
+}
 
 /**
  * Computes which `data-cb-<param>` attributes should be removed from an element when the
@@ -157,6 +229,11 @@ export const ELEMENT_FUNCS_NAME_PROPERTY = String(Constants["designer.element.pr
  */
 export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof ElementFunctionalityConfigType> {
   private readonly root: HTMLDivElement;
+  /**
+   * Monotonic token that invalidates the not-yet-run continuations of a superseded CHUNKED render.
+   * Bumped by every {@link renderDeferred} start and by every forced {@link renderNow}.
+   */
+  private renderGeneration = 0;
   /** Currently applied functionality ids (lowercase). */
   private selected: string[] = [];
   /** The root of the parameter table (rebuilt whenever the selection changes). */
@@ -529,9 +606,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // #endregion 4. CodBi-disabled notice.
 
     this.root.append(stdSection, funcSection, paramSection, codBiDisabledHint);
-    this.renderStandardConfigList();
-    this.renderFunctionalityList();
-    this.renderParams();
+    // The (potentially hundreds of) listing rows are built OFF the selection critical path — see
+    // `scheduleElementConfigRender`. The collapsed lists look identical until the deferred pass runs.
+    this.scheduleRender();
     this.syncApplicableVisibility();
     this.syncInapplicableVisibility();
     this.syncStdApplicableVisibility();
@@ -555,9 +632,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // The standard-config listing depends on the currently selected element's widget class; without a
     // re-render here it stays locked to the state from construction time (when no element is selected
     // yet, so only fail-open configs like the "Print" ones appear applicable).
-    this.renderFunctionalityList();
-    this.renderStandardConfigList();
-    this.renderParams();
+    //
+    // Deferred (coalesced with the constructor's render): the selection highlight must paint first, so
+    // the heavy row building happens in a later macrotask. A single selection therefore renders ONCE.
+    this.scheduleRender();
     // Re-check the form-level "CodBi aktiviert" checkbox: the panel is hidden while CodBi is disabled.
     this.syncCodBiEnabledVisibility();
   }
@@ -565,6 +643,96 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
   /** See {@link Editors.BaseEditor }'s **getValue**. */
   public override getValue(): string {
     return this.selected.join(",");
+  }
+
+  /**
+   * Queues the heavy listing/parameter (re)render — see {@link scheduleElementConfigRender}. Coalesced,
+   * so a selection (constructor + `setValue`) renders the panel exactly once and never blocks the
+   * designer's selection highlight.
+   */
+  private scheduleRender(): void {
+    scheduleElementConfigRender(this);
+  }
+
+  /**
+   * Builds/refreshes all three listing areas NOW. Public because the deferred scheduler (and
+   * {@link flushElementConfigRenders}) must be able to run it; the interactive handlers keep calling the
+   * individual render methods directly so a user click still redraws immediately.
+   */
+  public renderNow(): void {
+    // Invalidate any not-yet-run continuation of a chunked render: this pass supersedes it.
+    this.renderGeneration++;
+    this.renderFunctionalityList();
+    this.renderStandardConfigList();
+    this.renderParams();
+  }
+
+  /**
+   * Deferred render entry point used by the scheduler: renders the three areas CHUNKED across
+   * macrotasks, so one selection never produces a single long task that stalls input or paint.
+   *
+   * The LAZINESS lives HERE — the `shouldBuild*` gates are applied only on this (selection) path, so a
+   * collapsed list is skipped while an interactive call ({@link renderNow}, the filter, the toggles, a
+   * checkbox change) still redraws its list immediately. The chunking matters once a list was expanded.
+   * A newer render (next selection / `setValue` / a forced {@link renderNow}) bumps
+   * {@link renderGeneration}, which silently cancels the not-yet-run chunks of the superseded pass.
+   */
+  public renderDeferred(): void {
+    const generation = ++this.renderGeneration;
+    const step = (work: () => void, next?: () => void): void => {
+      if (generation !== this.renderGeneration) {
+        return;
+      }
+      try {
+        work();
+      } catch (x) {
+        console.error("[CodBi] Element: deferred config panel render failed", x);
+      }
+      if (next) {
+        window.setTimeout(next, 0);
+      }
+    };
+    step(
+      () => {
+        if (this.shouldBuildFunctionalityRows()) {
+          this.renderFunctionalityList();
+        }
+      },
+      () =>
+        step(
+          () => {
+            if (this.shouldBuildStandardConfigRows()) {
+              this.renderStandardConfigList();
+            }
+          },
+          () => step(() => this.renderParams()),
+        ),
+    );
+  }
+
+  /**
+   * Whether the DEFERRED (selection) render must (re)build the functionality rows.
+   *
+   * BOTH functionality lists are COLLAPSED by default, and their filter / "only checked" controls live
+   * INSIDE the collapsed box — so nobody can see the rows until the user expands a list. Rebuilding the
+   * (potentially hundreds of) rows on every selection is exactly what made the click feel slow, so the
+   * deferred pass builds only the lists that are actually expanded; the others are materialized on first
+   * expand (see toggleApplicableList / toggleInapplicableList).
+   *
+   * NOTE: this gate is applied ONLY on the deferred path. It deliberately does NOT consider
+   * `root.isConnected` any more: the designer mounts the editor's root at an arbitrary point AFTER
+   * `setValue` (sometimes not at all before the panel is shown), and the former `!isConnected` fail-open
+   * therefore built every row of both collapsed lists on such a selection — the very stall this
+   * laziness exists to avoid. Interactive renders (filter, toggles, checkbox changes, an explicit
+   * {@link renderNow}) are never gated, so they behave exactly as before.
+   */
+  private shouldBuildFunctionalityRows(): boolean {
+    return this.showApplicable || this.showInapplicable;
+  }
+
+  /** Same gate for the standard-configuration rows (see {@link shouldBuildFunctionalityRows}). */
+  private shouldBuildStandardConfigRows(): boolean {
+    return this.showStdApplicable || this.showStdInapplicable;
   }
 
   /** The element the editor currently applies to (the selected master item), or `undefined`. */
@@ -879,6 +1047,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.syncApplicableVisibility();
     // Focus the listing's filter right after expanding it, so the user can type immediately.
     if (this.showApplicable) {
+      // The rows are built LAZILY (see shouldBuildFunctionalityRows) — materialize them on first expand.
+      this.renderFunctionalityList();
       this.funcFilter.focus();
     }
   }
@@ -974,6 +1144,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.syncInapplicableVisibility();
     // Focus the listing's filter right after expanding it, so the user can type immediately.
     if (this.showInapplicable) {
+      // The rows are built LAZILY (see shouldBuildFunctionalityRows) — materialize them on first expand.
+      this.renderFunctionalityList();
       this.allFuncFilter.focus();
     }
   }
@@ -1401,6 +1573,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.syncStdApplicableVisibility();
     // Focus the listing's filter right after expanding it, so the user can type immediately.
     if (this.showStdApplicable) {
+      // The rows are built LAZILY (see shouldBuildStandardConfigRows) — materialize them on first expand.
+      this.renderStandardConfigList();
       this.stdFilter.focus();
     }
   }
@@ -1418,6 +1592,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     this.syncStdInapplicableVisibility();
     // Focus the listing's filter right after expanding it, so the user can type immediately.
     if (this.showStdInapplicable) {
+      // The rows are built LAZILY (see shouldBuildStandardConfigRows) — materialize them on first expand.
+      this.renderStandardConfigList();
       this.stdAllFilter.focus();
     }
   }
@@ -1479,6 +1655,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     row.className = "codbi-func-config__param-row";
     // Layout is delegated to the `.codbi-func-config__param-row` CSS (an aligned grid with a fixed
     // label column) so every value field of every parameter group lines up on the same column.
+    /**
+     * Paints the row's label while its value control is hovered/active/focused.
+     *
+     * This used to be a `:has()` rule on the row. A `:has()` selector invalidates the ANCESTORS of every
+     * changed node, so it re-evaluated on every property-panel mutation (i.e. on every element
+     * selection). The row tracks the state itself instead — exact, and only while the table is shown.
+     */
+    const setActive = (active: boolean): void => {
+      row.classList.toggle("codbi-func-config__param-row--active", active);
+    };
 
     const label = document.createElement("label");
     label.className = "codbi-func-config__param-label";
@@ -1501,10 +1687,36 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
 
     const cell = document.createElement("span");
     cell.style.cssText = "display:flex;align-items:center;gap:4px;flex:1 1 auto;min-width:0;";
+    // The label highlight follows the VALUE CONTROL (hover/active/focus), exactly like the former
+    // `.codbi-func-config__param-row:has(.codbi-func-config__value:hover …)` rules did. The pointer
+    // state is remembered in a flag instead of re-querying `:hover`, so leaving the control with focus
+    // still inside the row keeps the highlight (the former `:focus` half of the rule).
+    let hovering = false;
+    cell.addEventListener("pointerenter", () => {
+      hovering = true;
+      setActive(true);
+    });
+    cell.addEventListener("pointerleave", () => {
+      hovering = false;
+      setActive(row.contains(row.ownerDocument?.activeElement ?? null));
+    });
+    row.addEventListener("focusin", () => setActive(true));
+    row.addEventListener("focusout", (event) => {
+      // Moving focus BETWEEN the row's own controls must not blink the highlight off.
+      const next = (event as FocusEvent).relatedTarget;
+      if (!(next instanceof Node) || !row.contains(next)) {
+        setActive(hovering);
+      }
+    });
 
     let textInput: HTMLInputElement | undefined;
     let checkbox: HTMLInputElement | undefined;
     let select: HTMLSelectElement | undefined;
+    let csvStack: HTMLSpanElement | undefined;
+    let csvButton: HTMLButtonElement | undefined;
+    let csvSummary: HTMLSpanElement | undefined;
+    // Mutable holder so the launcher's summary and the re-opened grid always see the latest value.
+    const csvState = { value: currentValue };
 
     // Writes a parameter (and re-asserts `data-cb-func`) directly onto the selected element. Uses the
     // FULL `data-cb-<key>` attribute name (see `attrName` above) so it matches the persisted attribute.
@@ -1521,6 +1733,15 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       if (select) {
         select.remove();
         select = undefined;
+      }
+      // A CSV parameter temporarily switches to a plain text input (e.g. an EP placeholder was
+      // composed). Hide the grid-editor launcher so only the text field remains visible; it returns
+      // once the field holds a real grid-editable value again (see revertToOriginal/revertIfEmpty).
+      if (csvStack) {
+        csvStack.remove();
+        csvStack = undefined;
+        csvButton = undefined;
+        csvSummary = undefined;
       }
       if (!textInput) {
         textInput = document.createElement("input");
@@ -1541,7 +1762,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
           if (event.altKey && event.key.toLowerCase() === "e") {
             event.preventDefault();
             event.stopPropagation();
-            this.openBuilder(textInput as HTMLInputElement, write);
+            this.openBuilder(textInput as HTMLInputElement, write, revertIfEmpty, revertToOriginal);
           }
           if (event.key === "Enter") {
             event.preventDefault();
@@ -1598,6 +1819,111 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
 
     const isBooleanParam = (): boolean => type === "boolean";
 
+    /** Whether this parameter is a `csv` (grid-edited) parameter. */
+    const isCsvParam = (): boolean => type === "csv";
+
+    /** Computes the short human-readable summary of a CSV value (element count). */
+    const csvSummaryLabel = (value: string): string => {
+      let itemSep = ",";
+      let fieldSep = ";";
+      if (spec?.itemSeparator) {
+        itemSep = spec.itemSeparator;
+      }
+      if (spec?.fieldSeparator) {
+        fieldSep = spec.fieldSeparator;
+      }
+      const itemCount = String(value ?? "")
+        .split(itemSep)
+        .filter((item) => item.trim().length > 0).length;
+      const subCount = spec?.columns?.length ?? 0;
+      const itemName = spec?.itemName ?? "element";
+      if (itemCount === 0) {
+        return `0 ${itemName}s`;
+      }
+      return subCount > 0 ? `${itemCount} ${itemName}s · ${subCount} fields` : `${itemCount} ${itemName}s`;
+    };
+
+    // The CSV launcher: a compact "⧉ Edit" button plus a summary line of the current element count.
+    // Clicking it opens the grid editor popup (see {@link openCsvGridEditor}). The EP button on the
+    // right keeps working so the value can also be hand-typed.
+    const showCsv = (value: string): void => {
+      if (textInput) {
+        textInput.remove();
+        textInput = undefined;
+      }
+      if (checkbox) {
+        checkbox.remove();
+        checkbox = undefined;
+      }
+      if (select) {
+        select.remove();
+        select = undefined;
+      }
+      // A single column-flex wrapper stacks the "⧉ Edit" button and its summary line BELOW the button
+      // (instead of side by side), so the button keeps a natural width and the text no longer forces
+      // the row to shrink it.
+      if (!csvStack) {
+        csvStack = document.createElement("span");
+        csvStack.style.cssText =
+          "flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:2px;";
+        cell.insertBefore(csvStack, epButton);
+      }
+      if (!csvButton) {
+        csvButton = document.createElement("button");
+        csvButton.type = "button";
+        csvButton.className = "codbi-func-config__value";
+        csvButton.textContent = "⧉ Edit";
+        csvButton.style.cssText =
+          "width:100%;box-sizing:border-box;background:transparent;color:#925400;" +
+          "border:1px solid darkorange;border-radius:999px;box-shadow:0 0 .25em #000;" +
+          "padding:4px 14px;font:inherit;font-weight:600;cursor:pointer;" +
+          "transition:background-color .15s ease,color .15s ease;";
+        // A soft fill on hover (inline handlers, so the host designer's button CSS cannot overrule it).
+        csvButton.addEventListener("mouseenter", () => {
+          csvButton.style.background = "rgba(255,140,0,.18)";
+          csvButton.style.color = "#7a4600";
+        });
+        csvButton.addEventListener("mouseleave", () => {
+          csvButton.style.background = "transparent";
+          csvButton.style.color = "#925400";
+        });
+        csvButton.addEventListener("click", () => {
+          try {
+            openCsvGridEditor({
+              document: window.document,
+              anchor: row,
+              value: csvState.value,
+              spec,
+              onApply: (next) => {
+                csvState.value = next;
+                write(next);
+                if (csvSummary) {
+                  csvSummary.textContent = csvSummaryLabel(next);
+                }
+              },
+            });
+          } catch (err) {
+            // The popup could not open — fall back to plain text editing.
+            console.error("[CodBi] Formelement: could not open the CSV editor", err);
+            showText(csvState.value);
+          }
+        });
+        csvStack.appendChild(csvButton);
+        // Hover shows a table-like tooltip of the current parameter value (re-rendered on every
+        // mouseenter from the live csvState). A simple static title stays as a native fallback.
+        csvButton.title = `Edit ${name}`;
+        attachCsvValueTooltip(csvButton, () => csvState.value, spec, csvSummaryLabel(csvState.value));
+      }
+      csvState.value = value;
+      if (!csvSummary) {
+        csvSummary = document.createElement("span");
+        csvSummary.className = "codbi-func-config__csv-summary";
+        csvSummary.style.cssText = "text-align:center;color:#6b7280;font-size:11px;line-height:1.2;";
+        csvStack.appendChild(csvSummary);
+      }
+      csvSummary.textContent = csvSummaryLabel(value);
+    };
+
     // Restores the ORIGINAL control for a parameter type that was temporarily switched to a text
     // input: a boolean back to its checkbox, an enum back to its select. Pure string parameters have
     // no other control to go back to and simply stay a text input.
@@ -1606,6 +1932,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         showCheckbox();
       } else if (type === "enum" && spec?.options && spec.options.length > 0) {
         showSelect(spec.options);
+      } else if (isCsvParam()) {
+        showCsv(currentValue);
       }
     };
 
@@ -1654,6 +1982,8 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       showCheckbox();
     } else if (type === "enum" && spec?.options && spec.options.length > 0) {
       showSelect(spec.options);
+    } else if (isCsvParam()) {
+      showCsv(currentValue);
     } else {
       showText(currentValue);
     }
@@ -1804,6 +2134,10 @@ export function refreshElementFunctionalityConfig(): void {
 
     // Re-render with the element's CURRENT selection: `setValue` re-reads the property and redraws.
     editor?.setValue?.(selectedProperty(ELEMENT_FUNCS_PROPERTY));
+    // The editor now DEFERS its (heavy) render off the selection critical path. This hook is the rare,
+    // non-hot path invoked after an EXTERNAL registry update that must be visible immediately, so flush
+    // the queue instead of waiting for the next macrotask.
+    flushElementConfigRenders();
   } catch (x) {
     console.warn("[CodBi] Element: could not refresh the config panel", x);
   }

@@ -14,21 +14,15 @@
   "parameters": {
     "Placeholder": {
       "type": "string",
-      "description": "Specifies the string that shall be replaced within the tagged element's Property. Standard-value is \"[[INJECTOR_REPLACEMENT]]\".",
-      "descriptionDe": "Gibt die Zeichenfolge an, die innerhalb der Property des markierten Elements ersetzt werden soll. Standardwert: \"[[INJECTOR_REPLACEMENT]]\".",
-      "descriptionIt": "Specifica la stringa che deve essere sostituita all'interno della Property dell'elemento marcato. Valore standard: \"[[INJECTOR_REPLACEMENT]]\"."
+      "default": "Specifies the string that shall be replaced within the tagged element's Property. Standard-value is \"[[INJECTOR_REPLACEMENT]]\"."
     },
     "Replacement": {
       "type": "string",
-      "description": "The string to replace all occurrences of the specified Placeholder with, or to append at the end of the string contained in the tagged element's Property.",
-      "descriptionDe": "Die Zeichenfolge, mit der alle Vorkommen des angegebenen Platzhalters ersetzt werden sollen, oder die am Ende der im Element-Property enthaltenen Zeichenfolge angehängt werden soll.",
-      "descriptionIt": "La stringa con cui sostituire tutte le occorrenze del segnaposto specificato, o da aggiungere alla fine della stringa contenuta nella Property dell'elemento marcato."
+      "default": "The string to replace all occurrences of the specified Placeholder with, or to append at the end of the string contained in the tagged element's Property."
     },
     "Property": {
       "type": "string",
-      "description": "Specifies which property of the tagged element shall receive the Replacement.",
-      "descriptionDe": "Gibt an, welche Eigenschaft des markierten Elements die Replacement erhalten soll.",
-      "descriptionIt": "Specifica quale proprietà dell'elemento marcato deve ricevere la Replacement."
+      "default": "Specifies which property of the tagged element shall receive the Replacement."
     }
   }
 }

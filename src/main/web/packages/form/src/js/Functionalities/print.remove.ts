@@ -39,9 +39,19 @@ export class Print_Remove {
    *                      If set **ParentalLevel** will be set to "1" if it has not been set, since the
    *                      CodBi does not allow to remove the {@link HTMLElement } **toProcess**. */
   @ParameterTypes({
-    ParentalLevel: { type: "integer" },
-    DocumentSelector: { type: "string" },
-    Invert: { type: "boolean" },
+    ParentalLevel: {
+      type: "integer",
+      default: "The number of elements to climb up the parentElement-Tree to get to the element to remove.",
+    },
+    DocumentSelector: {
+      type: "string",
+      default: "The CSS-Selector specifying the element to remove. This parameter takes precedence over ParentalLevel.",
+    },
+    Invert: {
+      type: "boolean",
+      default:
+        'specifies whether this functionality shall be inverted, e.g. the element will be removed in the form but shown when printed (defaults to not set). if set parentallevel will be set to "1" if it has not been set.',
+    },
   })
   public static functionality(
     @DEFINED.PRE("documentselector")

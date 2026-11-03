@@ -9,7 +9,9 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
+import { openCsvGridEditor } from "./CsvGridEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
+import type { IFunctionalityParameterSpec } from "./FunctionalityConfigEditor.js";
 import { notifyFormPreviewChanged, setSelectedItemAttributeValue } from "./CodbiElementMarkers.js";
 import { codbiManagerCacheSuffix } from "./CodbiManagerBundle.js";
 import { i18n } from "./i18n.js";
@@ -1740,6 +1742,8 @@ export function enableLocalDocInterface(): void {
           }
           /** Button class of the EP-builder launcher placed inside a variable's value cell. */
           const VAR_EPB_BUTTON_CLASS = "codbi-vars-epb-button";
+          /** Button class of the CSV-grid-editor launcher placed inside a variable's value cell. */
+          const VAR_CSV_BUTTON_CLASS = "codbi-vars-csv-button";
           /** Marks the type-aware value control inserted into a variable's value cell. */
           const VAR_CONTROL_ATTR = "data-codbi-vars-control";
 
@@ -1885,6 +1889,21 @@ export function enableLocalDocInterface(): void {
           interface IVariableParameterSpec {
             type?: string;
             options?: Array<string>;
+            /** For `type: "csv"`: the ordered subpart (column) definitions. */
+            columns?: Array<{
+              name?: string;
+              type?: string;
+              options?: Array<string>;
+              label?: string;
+              default?: string;
+              required?: boolean;
+            }>;
+            /** For `type: "csv"`: the singular name of one element/row. */
+            itemName?: string;
+            /** For `type: "csv"`: the separator between elements (rows). */
+            itemSeparator?: string;
+            /** For `type: "csv"`: the separator between subparts (columns) of one element. */
+            fieldSeparator?: string;
           }
 
           /**
@@ -1916,7 +1935,17 @@ export function enableLocalDocInterface(): void {
               const legacyType = /\{\s*([A-Za-z]+)\s*\}/
                 .exec(String(entry.Parameter?.[parameterKey] ?? ""))?.[1]
                 ?.toLowerCase();
-              return { type: meta?.type ?? legacyType ?? "string", options: meta?.options };
+              const spec: IVariableParameterSpec = {
+                type: meta?.type ?? legacyType ?? "string",
+                options: meta?.options,
+              };
+              if (spec.type === "csv") {
+                spec.columns = meta?.columns;
+                spec.itemName = meta?.itemName;
+                spec.itemSeparator = meta?.itemSeparator;
+                spec.fieldSeparator = meta?.fieldSeparator;
+              }
+              return spec;
             }
             return undefined;
           };
@@ -2090,8 +2119,10 @@ export function enableLocalDocInterface(): void {
 
               if (!wanted) {
                 existing?.remove();
+                valueCell.querySelector<HTMLElement>(`:scope > .${VAR_CSV_BUTTON_CLASS}`)?.remove();
                 syncVariableControl(row, valueCell, undefined);
                 valueCell.classList.remove("codbi-vars-has-builder");
+                valueCell.classList.remove("codbi-vars-has-csv");
                 valueCell.style.paddingRight = "";
                 if (editorControl instanceof HTMLElement) {
                   editorControl.style.paddingRight = "";
@@ -2101,6 +2132,72 @@ export function enableLocalDocInterface(): void {
               // Type-aware value control (boolean checkbox / number input / enum select) next to
               // the launcher; EP expressions keep the native text editor.
               syncVariableControl(row, valueCell, spec);
+              // A `csv` parameter opens the grid editor popup (openCsvGridEditor) from its own
+              // compact launcher at the LEFT of the EP builder — the native text editor stays usable.
+              const existingCsv = valueCell.querySelector<HTMLButtonElement>(`:scope > .${VAR_CSV_BUTTON_CLASS}`);
+              const isCsv = (spec?.type ?? "").toLowerCase() === "csv";
+              if (!isCsv) {
+                existingCsv?.remove();
+                valueCell.classList.remove("codbi-vars-has-csv");
+              } else if (!existingCsv) {
+                const csvButton = document.createElement("button");
+                csvButton.type = "button";
+                csvButton.className = `${VAR_CSV_BUTTON_CLASS} codbi-func-input`;
+                csvButton.textContent = "⧉";
+                csvButton.title = "CSV editor";
+                csvButton.setAttribute("aria-label", "CSV editor");
+                Object.assign(csvButton.style, {
+                  position: "absolute",
+                  top: "0",
+                  right: "34px",
+                  bottom: "0",
+                  height: "100%",
+                  minWidth: "26px",
+                  boxSizing: "border-box",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: "5",
+                  border: "1px solid darkorange",
+                  borderRadius: "999px",
+                  background: "transparent",
+                  boxShadow: "0 0 .25em #000",
+                  color: "#925400",
+                  font: "inherit",
+                  fontSize: "12px",
+                  lineHeight: "1",
+                  padding: "0 4px",
+                  cursor: "pointer",
+                });
+                // Never let the grid start editing/selecting when the launcher is pressed.
+                for (const type of ["mousedown", "mouseup", "dblclick"] as const) {
+                  csvButton.addEventListener(type, (event) => event.stopPropagation());
+                }
+                csvButton.addEventListener("click", (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  // Only one grid popup at a time (mirrors the EP-builder launcher).
+                  if (document.querySelector(".codbi-csvg-overlay")) {
+                    return;
+                  }
+                  openCsvGridEditor({
+                    document: window.document,
+                    anchor: csvButton,
+                    value: readVariableRow(row).value,
+                    spec: (spec ?? {}) as IFunctionalityParameterSpec,
+                    onApply: (value: string) => applyVariableValue(row, value),
+                  });
+                });
+                if (getComputedStyle(valueCell).position === "static") {
+                  valueCell.style.position = "relative";
+                }
+                valueCell.classList.add("codbi-vars-has-csv");
+                valueCell.style.paddingRight = "64px";
+                if (editorControl instanceof HTMLElement) {
+                  editorControl.style.paddingRight = "64px";
+                }
+                valueCell.appendChild(csvButton);
+              }
               if (existing) {
                 continue;
               }
@@ -2165,11 +2262,14 @@ export function enableLocalDocInterface(): void {
                 valueCell.style.position = "relative";
               }
               valueCell.classList.add("codbi-vars-has-builder");
-              valueCell.style.paddingRight = "36px";
+              // Leave room for BOTH launchers when this is a csv parameter (the CSV launcher sits
+              // directly to the LEFT of the EP builder).
+              const reservedRight = isCsv ? "64px" : "36px";
+              valueCell.style.paddingRight = reservedRight;
               // Keep the launcher visible while the cell is being edited and keep the typed text
               // clear of it.
               if (editorControl instanceof HTMLElement) {
-                editorControl.style.paddingRight = "36px";
+                editorControl.style.paddingRight = reservedRight;
               }
               valueCell.appendChild(button);
             }
@@ -2241,6 +2341,75 @@ export function enableLocalDocInterface(): void {
         });
       }
       // #endregion Extend the variables tab.
+      // #region Attributes-grid cell inputs
+      /**
+       * Inputs whose blur-to-dismiss listener is already attached. The grid creates a fresh `<input>`
+       * per edit, but a cell may be re-rendered with the SAME node, so the wiring stays idempotent.
+       */
+      const gridCellInputsWired = new WeakSet<HTMLInputElement>();
+
+      /**
+       * Reacts to an `<input>` the attributes grid just inserted into a cell: it reveals the CodBi
+       * interface for a `data-cb-func` row and hides it again when the input loses focus.
+       *
+       * This runs from the SINGLE panel-level observer (see the extended-tab monitor) instead of a
+       * `MutationObserver` per grid CELL. The former per-cell observer was created for every decorated
+       * row of every element selection and never disconnected, so observers piled up with each click and
+       * every selection paid for the previous ones.
+       *
+       * @param added A node the grid inserted (an `<input>`, or a subtree that contains inputs).
+       */
+      const onGridCellInputAdded = (added: Node): void => {
+        if (!(added instanceof HTMLElement)) {
+          return;
+        }
+        const inputs = added instanceof HTMLInputElement ? [added] : Array.from(added.querySelectorAll("input"));
+
+        for (const input of inputs) {
+          // Same scope as before: an input inside the VALUE cell (`.r2`) of a grid row.
+          const cell = getAncestor(input, 1);
+
+          if (!cell || !matchesGridCellClass(cell, "r2")) {
+            continue;
+          }
+          const row = getAncestor(input, 2);
+
+          if (!row || !row.classList.contains("slick-row")) {
+            continue;
+          }
+          // Only for a [data-cb-func]-attribute row the CodBi interface is revealed on focus.
+          if (getLowerText(queryGridCell(row, "r1")) === "data-cb-func" && input.classList.contains("editor-text")) {
+            if (!epManager.enabled) {
+              epManager.enabled = true;
+              lastPanelShownAt = Date.now();
+            }
+
+            if (cDetails.style.display !== "block") {
+              cDetails.style.display = "block";
+            }
+          }
+
+          if (gridCellInputsWired.has(input)) {
+            continue;
+          }
+
+          gridCellInputsWired.add(input);
+          // #region Disable CodBi-Interface when this newly created <input> looses focus
+          input.addEventListener("blur", () => {
+            if (!flagMouseOverCDetails) {
+              epManager.enabled = false;
+              cDetails.style.display = "none";
+            } else {
+              currentCDetailBlurAction = () => {
+                epManager.enabled = false;
+                cDetails.style.display = "none";
+              };
+            }
+          });
+          // #endregion Disable CodBi-Interface when this newly created <input> looses focus
+        }
+      };
+      // #endregion Attributes-grid cell inputs
       // #region Extend the extended tab.
       for (const tabEditor of document.querySelectorAll('a[href="#tabsRight:extendedTab"], a[href$=":extendedTab"]')) {
         tabEditor.addEventListener("click", (event) => {
@@ -2254,10 +2423,12 @@ export function enableLocalDocInterface(): void {
             for (const mutation of mutationsList) {
               if (mutation.type === "childList") {
                 for (const added of mutation.addedNodes) {
+                  // Cell editors (created lazily by the grid) are handled by the shared helper.
+                  onGridCellInputAdded(added);
                   // #region Handle CSS-Class inout
-                  const possibleTagify = DEFINED.tsCheck<HTMLElement>(added.parentElement);
+                  const possibleTagify = added.parentElement;
 
-                  if (possibleTagify.classList.contains("tagify__input")) {
+                  if (possibleTagify?.classList.contains("tagify__input")) {
                     let input: string | undefined;
                     // #region Hide Interface
                     possibleTagify.addEventListener("blur", (event) => {
@@ -2815,7 +2986,12 @@ export function enableLocalDocInterface(): void {
             subtree: true,
           });
 
-          const registeredCells = new Array<HTMLElement>();
+          /**
+           * Rows whose cells were already decorated. A `WeakSet` (instead of an ever-growing array with
+           * a linear `includes`) keeps the lookup O(1) and lets discarded rows be collected — the grid
+           * re-creates every row on each element selection.
+           */
+          const decoratedRows = new WeakSet<HTMLElement>();
 
           const observer = new MutationObserver((mutationsList, observer) => {
             // #region Process each element of class slick-row
@@ -2829,14 +3005,21 @@ export function enableLocalDocInterface(): void {
                   const rowCandidates: Array<HTMLElement> = [];
 
                   if (added.classList.contains("slick-row")) {
+                    // A row never contains another row — no need to scan its subtree.
                     rowCandidates.push(added);
+                  } else if (added.firstElementChild !== null) {
+                    rowCandidates.push(...Array.from(added.querySelectorAll<HTMLElement>(".slick-row")));
                   }
-
-                  rowCandidates.push(...Array.from(added.querySelectorAll<HTMLElement>(".slick-row")));
 
                   for (const rowElement of rowCandidates) {
                     // #region Register each cell of class .r2
-                    const cell = INSTANCE.tsCheck<HTMLElement>(queryGridCell(rowElement, "r2"), HTMLElement);
+                    // A row without a value cell (e.g. a lazily rendered placeholder) is skipped instead
+                    // of aborting the whole batch via `tsCheck`.
+                    const cell = queryGridCell(rowElement, "r2");
+
+                    if (!cell) {
+                      continue;
+                    }
                     // #region Register Keyblocker to block keystrokes for a certain amount of time after a CodBi-Option was selected
                     cell.addEventListener("keydown", (event) => {
                       if (event.key !== ",") {
@@ -2856,68 +3039,19 @@ export function enableLocalDocInterface(): void {
                     // #endregion Register Keyblocker to block keystrokes for a certain amount of time after a CodBi-Option was selected
                     // #region  Blends in the CodBi-Interface even when not clicked on another cell before.
                     //          A new <input> is then created when the current one looses focus without another cell
-                    //          having been clicked.
-                    const cellObserver = new MutationObserver((mutationsList, observer) => {
-                      for (const mutation of mutationsList) {
-                        if (mutation.type === "childList") {
-                          for (const added of mutation.addedNodes) {
-                            const addedElement = added instanceof HTMLElement ? added : null;
-                            const inputs = addedElement
-                              ? addedElement instanceof HTMLInputElement
-                                ? [addedElement]
-                                : Array.from(addedElement.querySelectorAll("input"))
-                              : [];
-
-                            for (const input of inputs) {
-                              const addedRow = getAncestor(input, 2);
-
-                              if (!addedRow) {
-                                continue;
-                              }
-                              // Only if the <input> is for a [data-cb-func]-attributefield...
-                              if (getLowerText(queryGridCell(addedRow, "r1")) === "data-cb-func") {
-                                if (input.classList.contains("editor-text")) {
-                                  if (!epManager.enabled) {
-                                    epManager.enabled = true;
-                                    lastPanelShownAt = Date.now();
-                                  }
-                                  if (cDetails.style.display !== "block") {
-                                    cDetails.style.display = "block";
-                                  }
-                                }
-                              }
-                              // #region Disable CodBi-Interface when this newly created <input> looses focus
-                              input.addEventListener("blur", (event) => {
-                                if (!flagMouseOverCDetails) {
-                                  epManager.enabled = false;
-                                  cDetails.style.display = "none";
-                                } else {
-                                  currentCDetailBlurAction = () => {
-                                    epManager.enabled = false;
-                                    cDetails.style.display = "none";
-                                  };
-                                }
-                              });
-                              // #endregion Disable CodBi-Interface when this newly created <input> looses focus
-                            }
-                          }
-                        }
-                      }
-                    });
-                    cellObserver.observe(cell, {
-                      childList: true,
-                    });
+                    //          having been clicked. Those inputs are handled by `onGridCellInputAdded` from
+                    //          the SINGLE panel-level observer — the former per-cell `MutationObserver`
+                    //          was created for every row of every selection and never disconnected.
                     // #endregion Blends in the CodBi-Interface even when not clicked on another cell before.
-                    if (registeredCells.includes(cell)) {
+                    if (decoratedRows.has(rowElement)) {
                       continue;
                     }
 
-                    registeredCells.push(cell);
+                    decoratedRows.add(rowElement);
                     // Check if the corresponding cell of class .r1 has "data-cb-func" (case insensitive)...
-                    if (
-                      getLowerText(queryGridCell(DEFINED.tsCheck<HTMLElement>(cell.parentElement), "r1")) ===
-                      "data-cb-func"
-                    ) {
+                    const headerRow = cell.parentElement;
+
+                    if (headerRow && getLowerText(queryGridCell(headerRow, "r1")) === "data-cb-func") {
                       const currentFunctionalityInput = cell.querySelector("input");
                       // If a new <input> was generated by clicking into a cell of class .r2
                       if (currentFunctionalityInput !== null) {

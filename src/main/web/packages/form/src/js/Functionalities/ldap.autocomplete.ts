@@ -57,10 +57,16 @@ export class LDAP_Autocomplete {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextField")
   @ParameterTypes({
-    Property: { type: "string" },
-    CSSProposals: { type: "string" },
-    URL: { type: "string" },
-    MsgNotInLDAP: { type: "string" },
+    Property: { type: "string", default: "The LDAP-Property that shall be autocompleted." },
+    CSSProposals: {
+      type: "string",
+      default: "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+    },
+    URL: { type: "string", default: "The URL of the Formcycle predefined LDAP-Query to use." },
+    MsgNotInLDAP: {
+      type: "string",
+      default: "The message to display when the entered value is not found in the LDAP.",
+    },
   })
   public static functionality(
     @DEFINED.PRE("property")

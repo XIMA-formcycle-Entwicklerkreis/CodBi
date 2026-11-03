@@ -1,6 +1,7 @@
 // #region Imports
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { IF } from "xdbc/src/DBC/IF";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
@@ -20,8 +21,10 @@ export class JSON_SET {
    * which is specified by "Path".
    *
    * Config Parameter:
-   *  - Path:     The dotted path {@link string } leading to the {@link object}, starting from the
-   *              {@link Element } "toProcess", which's "Property" gotta be set.   *
+   *  - Path:     The optional dotted path {@link string } leading to the {@link object}, starting from the
+   *              {@link Element } "toProcess", which's "Property" gotta be set. If omitted (empty), the
+   *              {@link Element } "toProcess" itself is the target — useful for setting direct element
+   *              properties such as "innerHTML".   *
    *  - Property: The name of the property to set.
    *  - ToSet:    The {@link object } to set the "Property" to.
    *
@@ -29,15 +32,18 @@ export class JSON_SET {
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
   @ParameterTypes({
-    Path: { type: "string" },
-    Property: { type: "string" },
-    ToSet: { type: "string" },
+    Path: {
+      type: "string",
+      default:
+        "The optional dotted path leading to the object, starting from the tagged element, which's Property is to be set. If left empty, the tagged element itself is the target (e.g. to set innerHTML).",
+    },
+    Property: { type: "string", default: "The name of the property to set." },
+    ToSet: { type: "string", default: "The object to set the Property to." },
   })
   public static functionality(
-    @DEFINED.PRE("path")
     @DEFINED.PRE("property")
     @DEFINED.PRE("toset")
-    @REGEX.PRE(REGEX.stdExp.keyPath, "path")
+    @IF.PRE(new DEFINED(), new REGEX(REGEX.stdExp.keyPath), "path")
     @TYPE.PRE("string", "property")
     @REGEX.PRE(REGEX.stdExp.property, "property")
     toLoad: { [key: string]: unknown },

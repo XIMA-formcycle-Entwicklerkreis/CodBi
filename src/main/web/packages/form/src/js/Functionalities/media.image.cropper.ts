@@ -50,13 +50,26 @@ export class Media_Image_Cropper {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
-    Container: { type: "string" },
-    Target: { type: "string" },
-    File: { type: "string" },
-    Updater: { type: "string" },
+    Container: { type: "string", default: "The CSS-Selector of the div that shall contain the Cropper-UI." },
+    Target: {
+      type: "string",
+      default: "The CSS-Selector of the image element that will contain the cropped image after clicking the Updater.",
+    },
+    File: { type: "string", default: "The CSS-Selector of the file input where to select the image to crop." },
+    Updater: {
+      type: "string",
+      default: "The CSS-Selector specifying the button that, on click, will cause an update of the Target.",
+    },
     AspectRatio: { type: "number", default: "1000px" },
-    OutputWidth: { type: "number" },
-    CSSCropperHandle: { type: "string" },
+    OutputWidth: {
+      type: "number",
+      default:
+        "The width in pixels for the canvas where the cropped area shall be reflected. If provided as a string the minimum value is 100. Defaults to 1000px.",
+    },
+    CSSCropperHandle: {
+      type: "string",
+      default: "The CSS that shall be applied on each cropper-handle (defaults to background-color: darkorange).",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "container :: target :: file :: updater :: imageurl :: csscropperhandle")

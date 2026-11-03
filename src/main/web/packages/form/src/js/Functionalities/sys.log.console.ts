@@ -23,7 +23,7 @@ export class Sys_Log_Console {
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
   @ParameterTypes({
-    DATA: { type: "string" },
+    DATA: { type: "string", default: "The data to log to the console." },
   })
   public static functionality(
     toLoad: { [key: string]: unknown },

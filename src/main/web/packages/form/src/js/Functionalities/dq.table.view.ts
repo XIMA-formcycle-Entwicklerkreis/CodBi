@@ -774,16 +774,61 @@ export class DQ_Table_View {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible"])
   @ParameterTypes({
-    Columns: { type: "string" },
-    DataQuery: { type: "string" },
-    CSS: { type: "string" },
-    FileName: { type: "string" },
-    SheetName: { type: "string" },
-    ExportButton: { type: "string" },
-    Centered: { type: "string" },
-    ExcludeColumns: { type: "string" },
-    UrlPartToReplace: { type: "string" },
-    UrlPartReplacement: { type: "string" },
+    Columns: {
+      type: "csv",
+      default:
+        "REQUIRED - A CSV defining the columns to show. Each column is 'label;datacolumn;jsonFlag' with an optional fourth entry ';width', e.g. 'Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30'.",
+      columns: [
+        { name: "label", label: "Label", required: true },
+        { name: "dataColumn", label: "Data column", required: true },
+        { type: "boolean", name: "isJson", label: "JSON", default: "false" },
+        { type: "integer", name: "width", label: "Width" },
+      ],
+      itemName: "column",
+    },
+    DataQuery: {
+      type: "string",
+      default: "REQUIRED - The name of the Datasource-Query on the Formcycle server whose result shall be displayed.",
+    },
+    CSS: {
+      type: "string",
+      default:
+        "Optional string of one or more (space separated) CSS classes to apply to both the tagged container and the injected table.",
+    },
+    FileName: {
+      type: "string",
+      default:
+        "The name of the exported Excel file without extension (the extension is always .xlsx). Defaults to 'Export'.",
+    },
+    SheetName: {
+      type: "string",
+      default: "The name of the worksheet within the exported Excel file. Defaults to 'sheet1'.",
+    },
+    ExportButton: {
+      type: "string",
+      default:
+        "Optional CSS selector of an existing button/anchor that triggers the export. When omitted, the Excel export is not available.",
+    },
+    Centered: {
+      type: "string",
+      default:
+        "Whether the content of the table cells is centered. Defaults to true; set to false/0/no to keep cells left-aligned.",
+    },
+    ExcludeColumns: {
+      type: "string",
+      default:
+        "Optional CSV of column names (matched against label or datacolumn) that shall be excluded from the Excel export (they remain visible in the table).",
+    },
+    UrlPartToReplace: {
+      type: "string",
+      default:
+        "Optional CSV of URL parts that shall be replaced in every URL rendered as text inside a cell (and in the Excel export). Only applied when UrlPartReplacement is set as well; both CSVs are combined by position (first entry with the first entry, second with the second, ...).",
+    },
+    UrlPartReplacement: {
+      type: "string",
+      default:
+        "Optional CSV of replacements for UrlPartToReplace, combined by position. An empty entry removes the corresponding part from the URL.",
+    },
   })
   public static functionality(
     @TYPE.PRE(

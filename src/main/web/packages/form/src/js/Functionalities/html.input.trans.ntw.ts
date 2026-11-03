@@ -55,9 +55,13 @@ export class HTML_Input_Trans_NTW extends HTML_Input_Transformer {
    * @param toProcess As provided bny the **CodBi**. */
   @SupportedFormelementtype(["XTextField", "XTextArea"])
   @ParameterTypes({
-    NumberWords: { type: "string" },
-    PreFix: { type: "string" },
-    PostFix: { type: "string" },
+    NumberWords: {
+      type: "string",
+      default:
+        "The array of strings representing the word for each digit from 0 to 9. The index of the string in the array corresponds to the digit it represents.",
+    },
+    PreFix: { type: "string", default: "The string that shall be prepended to the transformed result." },
+    PostFix: { type: "string", default: "The string that shall be appended to the transformed result." },
   })
   public static override functionality(
     @TYPE.PRE("string", "prefix, postfix")

@@ -54,11 +54,28 @@ export class OnChange_Conditional {
    *          couldn't be converted to a {@link Date } by {@link formatDate }. */
   @DBC.ParamvalueProvider
   @ParameterTypes({
-    Reference: { type: "string" },
-    Mode: { type: "enum", options: ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"] },
-    Target: { type: "string" },
-    DateFormat: { type: "string" },
-    Candidate: { type: "string" },
+    Reference: { type: "string", default: "The value the tagged input's value shall be compared with." },
+    Mode: {
+      type: "enum",
+      options: ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"],
+      default:
+        "Defines the mode of comparison to apply onto the tagged input's value and the reference value. Available modes are GTE (greater than or equal), GT (greater than), LTE (lower than or equal), LT (lower than), EQ (equal) & NEQ (not equal).",
+    },
+    Target: {
+      type: "string",
+      default:
+        "The element where to apply one of the specified functionalities depending on whether the given condition is fulfilled or not, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
+    },
+    DateFormat: {
+      type: "string",
+      default:
+        "An optional string specifying the format the candidate is of. If not undefined it triggers the transformation of the tagged field's value into a Date prior to comparing it with the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the Date constructor.",
+    },
+    Candidate: {
+      type: "string",
+      default:
+        "The element where to get the value to be compared, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "mode :: target :: dateformat :: candidate")

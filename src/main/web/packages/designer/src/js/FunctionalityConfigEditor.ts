@@ -18,6 +18,7 @@ import {
   normalizeSupportedFormelementtype,
   type TSupportedFormelementtypeSpec,
 } from "codbi-common";
+import { attachCsvValueTooltip, openCsvGridEditor } from "./CsvGridEditor.js";
 import { setItemAttributeValue } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { containedElementItem, syncSelectedFunctionalityChild } from "./FunctionalityChildItems.js";
@@ -117,11 +118,62 @@ export function parseCsv(value: string): string[] {
   );
 }
 
+/**
+ * Cache of the lowercase → ORIGINAL-key index of `CodbiPluginData.detFunctionalities` plus the sorted
+ * key listing. The registry is read on EVERY panel render (once per element selection) for every
+ * functionality row, so a linear scan per lookup turned a render into an O(n²) walk over hundreds of
+ * entries. The index is rebuilt only when the registry object or its KEY COUNT changes; the entry VALUE
+ * is always read from the live registry, so an entry replaced in place by the local API-doc manager is
+ * picked up without invalidating the index.
+ */
+let functionalityKeyIndexSource: object | undefined;
+let functionalityKeyIndexCount = -1;
+let functionalityKeyIndex: Map<string, string> | undefined;
+/** Cache of the sorted functionality ids (same invalidation rule as the key index). */
+let functionalityListSource: object | undefined;
+let functionalityListCount = -1;
+let functionalityListCache: string[] | undefined;
+
+/** @returns The lowercase → original-casing key index of `entries` (rebuilt only when it changed). */
+function functionalityKeyIndexFor(entries: Record<string, unknown>): Map<string, string> {
+  const keys = Object.keys(entries);
+
+  if (
+    functionalityKeyIndex === undefined ||
+    functionalityKeyIndexSource !== (entries as object) ||
+    functionalityKeyIndexCount !== keys.length
+  ) {
+    const index = new Map<string, string>();
+
+    for (const key of keys) {
+      index.set(key.toLowerCase(), key);
+    }
+
+    functionalityKeyIndex = index;
+    functionalityKeyIndexSource = entries as object;
+    functionalityKeyIndexCount = keys.length;
+  }
+
+  return functionalityKeyIndex;
+}
+
 /** All available CodBi functionality ids (from the designer's `detFunctionalities`), lowercased. */
 export function listFunctionalities(): string[] {
   try {
-    const entries = window.CodbiPluginData?.detFunctionalities ?? {};
-    return Object.keys(entries).sort((a, b) => a.localeCompare(b));
+    const entries = (window.CodbiPluginData?.detFunctionalities ?? {}) as Record<string, unknown>;
+    const keys = Object.keys(entries);
+
+    if (
+      functionalityListCache === undefined ||
+      functionalityListSource !== (entries as object) ||
+      functionalityListCount !== keys.length
+    ) {
+      functionalityListCache = keys.sort((a, b) => a.localeCompare(b));
+      functionalityListSource = entries as object;
+      functionalityListCount = keys.length;
+    }
+
+    return functionalityListCache;
   } catch {
     return [];
   }
@@ -130,17 +182,19 @@ export function listFunctionalities(): string[] {
 /**
  * Resolves the `detFunctionalities` entry for a functionality id **case-insensitively**. The
  * registry keys use the original casing (e.g. `Date.Min`), while the selection is stored lowercased.
+ *
+ * Uses the cached key index (see {@link functionalityKeyIndexFor}) so repeated lookups during a render
+ * stay O(1) instead of scanning the whole registry per row.
  */
 export function resolveFunctionalityEntry(
   id: string,
 ): { Parameter?: Record<string, string>; formElements?: string[] } | undefined {
   try {
-    const entries = window.CodbiPluginData?.detFunctionalities ?? {};
-    const wanted = id.toLowerCase();
-    for (const [candidate, entry] of Object.entries(entries)) {
-      if (candidate.toLowerCase() === wanted) {
-        return entry as { Parameter?: Record<string, string>; formElements?: string[] };
-      }
+    const entries = (window.CodbiPluginData?.detFunctionalities ?? {}) as Record<string, unknown>;
+    const key = functionalityKeyIndexFor(entries).get(id.toLowerCase());
+
+    if (key !== undefined) {
+      return entries[key] as { Parameter?: Record<string, string>; formElements?: string[] };
     }
   } catch {
     /* ignore */
@@ -188,10 +242,41 @@ export function functionalityParameters(id: string): Record<string, string> {
   return normalizeParameters(entry?.Parameter ?? entry?.parameters);
 }
 
+/** The editor type of ONE subpart (grid column) of a `csv` component parameter. */
+export type TCsvSubpartType = "string" | "integer" | "number" | "boolean" | "enum";
+
+/** The description of ONE subpart (grid column) of a `type: "csv"` parameter. */
+export interface ICsvSubpartSpec {
+  /** The subpart's readable **name** (fallback column header / field reference). */
+  name?: string;
+  /** The subpart's editor TYPE (one of the simple {@link TCsvSubpartType}s). */
+  type?: TCsvSubpartType;
+  /** For `type: "enum"`: the allowed, fixed set of values (in display order). */
+  options?: string[];
+  /** The human-readable **column name** (grid header). Falls back to {@link ICsvSubpartSpec.name }. */
+  label?: string;
+  /** The default value for this subpart (expressed as a string). */
+  default?: string;
+  /** Whether the subpart is mandatory. `false`/absent marks it as **optional**. */
+  required?: boolean;
+}
+
 /** The structured type spec of one functionality parameter (the `parameters` metadata channel). */
 export interface IFunctionalityParameterSpec {
-  type?: "string" | "integer" | "number" | "boolean" | "enum";
+  type?: "string" | "integer" | "number" | "boolean" | "enum" | "csv";
   options?: string[];
+  /**
+   * For `type: "csv"`: the ordered definition of the grid columns / subparts. Every element (row) of
+   * the CSV is serialized as the subpart values joined with {@link fieldSeparator }, and the elements
+   * are joined with {@link itemSeparator }.
+   */
+  columns?: ICsvSubpartSpec[];
+  /** For `type: "csv"`: the singular display name of ONE element/row (e.g. `"column"`). */
+  itemName?: string;
+  /** For `type: "csv"`: the separator between the elements (rows). Defaults to `,`. */
+  itemSeparator?: string;
+  /** For `type: "csv"`: the separator between the subparts (fields) of one element. Defaults to `;`. */
+  fieldSeparator?: string;
   default?: string;
   /**
    * A short human readable description of the parameter (the base/English locale). When present this
@@ -341,12 +426,9 @@ function functionalityRequirements(id: string): IFormElementRequirement[] {
     }
     // The designer's built-in functionality registry (`detFunctionalities`, merged from the `.json`
     // files by `CodbiFormDesignerResourcePlugin.getDetails()`); carries `supportedFormelementtypes`.
-    const detReqs = fromEntry(
-      findEntry(
-        (window.CodbiPluginData as unknown as { detFunctionalities?: { [key: string]: TPublished } } | undefined)
-          ?.detFunctionalities,
-      ),
-    );
+    // Resolved through the INDEXED lookup (same registry) — a linear `findEntry` scan per functionality
+    // was the other half of the O(n²) render cost.
+    const detReqs = fromEntry(resolveFunctionalityEntry(id) as unknown as TPublished | undefined);
 
     if (detReqs) {
       return detReqs;
@@ -825,6 +907,11 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     let textInput: HTMLInputElement | undefined;
     let checkbox: HTMLInputElement | undefined;
     let select: HTMLSelectElement | undefined;
+    let csvStack: HTMLSpanElement | undefined;
+    let csvButton: HTMLButtonElement | undefined;
+    let csvSummary: HTMLSpanElement | undefined;
+    // Mutable holder so the launcher's summary and the re-opened grid always see the latest value.
+    const csvState = { value: currentValue };
 
     // Writes a parameter (and the FUNC attribute) into the CONTAINED element's config attribute
     // table. The attributes live ONLY on the contained element (a real form control), never on the
@@ -846,6 +933,19 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
         checkbox.remove();
         checkbox = undefined;
       }
+      if (select) {
+        select.remove();
+        select = undefined;
+      }
+      // A CSV parameter temporarily switches to a plain text input (e.g. an EP placeholder was
+      // composed). Hide the grid-editor launcher so only the text field remains visible; it returns
+      // once the field holds a real grid-editable value again (see revertToOriginal/revertIfEmpty).
+      if (csvStack) {
+        csvStack.remove();
+        csvStack = undefined;
+        csvButton = undefined;
+        csvSummary = undefined;
+      }
       if (!textInput) {
         textInput = document.createElement("input");
         textInput.type = type === "integer" || type === "number" ? "number" : "text";
@@ -861,16 +961,15 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
         textInput.title = `${name} — ${i18n("designer.widget.functionality.altE")}`;
         textInput.addEventListener("change", () => {
           write(textInput?.value ?? "");
-          // Clearing the text restores the checkbox for boolean parameters.
-          if (isBooleanParam() && (textInput?.value ?? "").trim() === "") {
-            showCheckbox();
-          }
+          // If the text is emptied (e.g. all characters removed), revert to the ORIGINAL control —
+          // the checkbox for a boolean, the select for an enum, the CSV grid-editor for a csv param.
+          revertIfEmpty();
         });
         textInput.addEventListener("keydown", (event) => {
           if (event.altKey && event.key.toLowerCase() === "e") {
             event.preventDefault();
             event.stopPropagation();
-            this.openBuilder(textInput as HTMLInputElement, write);
+            this.openBuilder(textInput as HTMLInputElement, write, revertIfEmpty, revertToOriginal);
           }
           if (event.key === "Enter") {
             event.preventDefault();
@@ -925,6 +1024,133 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       select.value = currentValue;
     };
 
+    /** Whether this parameter is a `csv` (grid-edited) parameter. */
+    const isCsvParam = (): boolean => type === "csv";
+
+    // Restores the ORIGINAL control for a parameter type that was temporarily switched to a text
+    // input: a boolean back to its checkbox, an enum back to its select, a CSV back to the grid
+    // editor button. Pure string parameters have no other control and simply stay a text input.
+    const revertToOriginal = (): void => {
+      if (isBooleanParam()) {
+        showCheckbox();
+      } else if (type === "enum" && spec?.options && spec.options.length > 0) {
+        showSelect(spec.options);
+      } else if (isCsvParam()) {
+        showCsv(currentValue);
+      }
+    };
+
+    // When the (temporary) text input holds no value — the EP builder was applied without a result,
+    // or the user removed all characters — restore the ORIGINAL control for the parameter type.
+    const revertIfEmpty = (): void => {
+      if ((textInput?.value ?? "").trim() !== "") {
+        return;
+      }
+      revertToOriginal();
+    };
+
+    // The CSV launcher: a compact "⧉ Edit" button plus a summary line of the current element count.
+    // Clicking it opens the grid editor popup (see {@link openCsvGridEditor}). A small "⨯" clears the
+    // CSV entirely. The EP button on the right keeps working so the value can also be hand-typed.
+    const showCsv = (value: string): void => {
+      if (textInput) {
+        textInput.remove();
+        textInput = undefined;
+      }
+      if (checkbox) {
+        checkbox.remove();
+        checkbox = undefined;
+      }
+      if (select) {
+        select.remove();
+        select = undefined;
+      }
+      // A single column-flex wrapper stacks the "⧉ Edit" button and its summary line BELOW the button
+      // (instead of side by side), so the button keeps a natural width and the text no longer forces
+      // the row to shrink it.
+      if (!csvStack) {
+        csvStack = document.createElement("span");
+        csvStack.style.cssText =
+          "flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:2px;";
+        cell.insertBefore(csvStack, epButton);
+      }
+      if (!csvButton) {
+        csvButton = document.createElement("button");
+        csvButton.type = "button";
+        csvButton.className = "codbi-func-config__value";
+        csvButton.textContent = "⧉ Edit";
+        csvButton.style.cssText =
+          "width:100%;box-sizing:border-box;background:transparent;color:#925400;" +
+          "border:1px solid darkorange;border-radius:999px;box-shadow:0 0 .25em #000;" +
+          "padding:4px 14px;font:inherit;font-weight:600;cursor:pointer;" +
+          "transition:background-color .15s ease,color .15s ease;";
+        // A soft fill on hover (inline handlers, so the host designer's button CSS cannot overrule it).
+        csvButton.addEventListener("mouseenter", () => {
+          csvButton.style.background = "rgba(255,140,0,.18)";
+          csvButton.style.color = "#7a4600";
+        });
+        csvButton.addEventListener("mouseleave", () => {
+          csvButton.style.background = "transparent";
+          csvButton.style.color = "#925400";
+        });
+        csvButton.addEventListener("click", () => {
+          try {
+            openCsvGridEditor({
+              document: window.document,
+              anchor: this.root,
+              value: csvState.value,
+              spec,
+              onApply: (next) => {
+                csvState.value = next;
+                write(next);
+                if (csvSummary) {
+                  csvSummary.textContent = csvSummaryLabel(next);
+                }
+              },
+            });
+          } catch (err) {
+            // The popup could not open (e.g. no document) — fall back to plain text editing.
+            console.error("[CodBi] Functionality: could not open the CSV editor", err);
+            showText(csvState.value);
+          }
+        });
+        csvStack.appendChild(csvButton);
+        // Hover shows a table-like tooltip of the current parameter value (re-rendered on every
+        // mouseenter from the live csvState). A simple static title stays as a native fallback.
+        csvButton.title = `Edit ${name} (tabular CSV editor)`;
+        attachCsvValueTooltip(csvButton, () => csvState.value, spec, csvSummaryLabel(csvState.value));
+      }
+      csvState.value = value;
+      if (!csvSummary) {
+        csvSummary = document.createElement("span");
+        csvSummary.className = "codbi-func-config__csv-summary";
+        csvSummary.style.cssText = "text-align:center;color:#6b7280;font-size:11px;line-height:1.2;";
+        csvStack.appendChild(csvSummary);
+      }
+      csvSummary.textContent = csvSummaryLabel(value);
+    };
+
+    /** Computes the short human-readable summary of a CSV value (element + subpart count). */
+    const csvSummaryLabel = (value: string): string => {
+      let itemSep = ",";
+      let fieldSep = ";";
+      if (spec?.itemSeparator) {
+        itemSep = spec.itemSeparator;
+      }
+      if (spec?.fieldSeparator) {
+        fieldSep = spec.fieldSeparator;
+      }
+      const itemCount = String(value ?? "")
+        .split(itemSep)
+        .filter((item) => item.trim().length > 0).length;
+      const subCount = spec?.columns?.length ?? 0;
+      const itemName = spec?.itemName ?? "element";
+      if (itemCount === 0) {
+        return `0 ${itemName}s`;
+      }
+      return subCount > 0 ? `${itemCount} ${itemName}s · ${subCount} fields` : `${itemCount} ${itemName}s`;
+    };
+
     const isBooleanParam = (): boolean => type === "boolean";
 
     // The EP button opens the flat EP listing + the EP builder; on a boolean it first flips to text.
@@ -937,10 +1163,13 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     epButton.textContent = "ƒ";
     epButton.style.cssText = "min-width:24px;";
     epButton.addEventListener("click", () => {
-      // Triggering the builder on a checkbox converts it into a text input (per spec).
+      // Triggering the builder on a checkbox (or CSV grid editor) converts it into a text input (per
+      // spec), so the composed EP placeholder can be shown and edited as a string.
       showText(currentValue);
       if (textInput) {
-        this.openBuilder(textInput, write);
+        // on applied: revert if nothing was generated; on cancel (no EP picked): always restore the
+        // original boolean/enum/csv control instead of leaving a dead text input behind.
+        this.openBuilder(textInput, write, revertIfEmpty, revertToOriginal);
       }
     });
     // The EP button must already be a child of the cell before showText/showCheckbox insert the
@@ -958,6 +1187,8 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       showCheckbox();
     } else if (type === "enum" && spec?.options && spec.options.length > 0) {
       showSelect(spec.options);
+    } else if (isCsvParam()) {
+      showCsv(currentValue);
     } else {
       showText(currentValue);
     }
@@ -967,7 +1198,12 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
   }
 
   /** Opens the EP builder / flat listing for one parameter value input and applies the result. */
-  private openBuilder(input: HTMLInputElement, write: (value: string) => void): void {
+  private openBuilder(
+    input: HTMLInputElement,
+    write: (value: string) => void,
+    onApplied?: () => void,
+    onCancel?: () => void,
+  ): void {
     try {
       openEPBuilder({
         document: window.document,
@@ -985,6 +1221,13 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
         onApply: (value: string) => {
           input.value = value;
           write(value);
+          // on applied: revert if nothing was generated; on cancel (no EP picked): always restore the
+          // original boolean/enum/csv control instead of leaving a dead text input behind.
+          if (value.trim() !== "") {
+            onApplied?.();
+          } else {
+            onCancel?.();
+          }
         },
       });
     } catch (x) {

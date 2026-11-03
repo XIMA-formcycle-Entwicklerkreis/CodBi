@@ -149,30 +149,89 @@ export class HTML_Panel {
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
     Folded: { type: "boolean", default: "true" },
-    CSSHeaderHover: { type: "string" },
-    CSSHeaderActive: { type: "string" },
-    CSSHeaderFolded: { type: "string" },
-    CSSHeaderUnfolded: { type: "string" },
-    DCSSHeaderUnfolded: { type: "string" },
-    CSSAnimFadeINPanel: { type: "string" },
+    CSSHeaderHover: { type: "string", default: "The optional header's CSS:hover (defaults to { scale : 1.1 ;})." },
+    CSSHeaderActive: { type: "string", default: "The optional header's CSS:active (defaults to { scale : .9 ;})." },
+    CSSHeaderFolded: {
+      type: "string",
+      default:
+        "The optional CSS to be applied onto the header when the panel is FOLDED. Without it a panel that is (or starts) folded would lose the header look set via CSSHeaderUnfolded.",
+    },
+    CSSHeaderUnfolded: {
+      type: "string",
+      default: "The optional CSS to be applied onto the header when the panel is unfolded.",
+    },
+    DCSSHeaderUnfolded: {
+      type: "string",
+      default: "The optional Darkmode CSS to be applied onto the header when the panel is unfolded.",
+    },
+    CSSAnimFadeINPanel: {
+      type: "string",
+      default: "The optional animation to be applied onto the panel whenever the panel is unfolded.",
+    },
     CSSAnimFadeINPanelDuration: { type: "string", default: "0s" },
     CSSAnimFadeINPanelEasing: { type: "string", default: "ease-in-out" },
-    CSSAfterHeader: { type: "string" },
-    CSSBeforeHeader: { type: "string" },
-    CSSAfterHeaderContent: { type: "string" },
-    CSSBeforeHeaderContent: { type: "string" },
-    CSSAfterHeaderContentUnfolded: { type: "string" },
-    CSSBeforeHeaderContentUnfolded: { type: "string" },
-    CSSRequiredFieldsContent: { type: "string" },
-    CSSRequiredFields: { type: "string" },
-    AutoHeaderTitle: { type: "string" },
-    AutoHeaderTitleSupplementsSpacer: { type: "string" },
-    AutoHeaderLevel: { type: "number" },
+    CSSAfterHeader: {
+      type: "string",
+      default: "The CSS:after to be applied onto the header when the panel is folded.",
+    },
+    CSSBeforeHeader: {
+      type: "string",
+      default:
+        "The CSS:before to be applied onto the header when the panel is folded (will be overwritten when required fields are contained by the panel).",
+    },
+    CSSAfterHeaderContent: {
+      type: "string",
+      default: "The CSS:after content to be applied onto the header when the panel is folded.",
+    },
+    CSSBeforeHeaderContent: {
+      type: "string",
+      default:
+        "The CSS:before content to be applied onto the header when the panel is folded (will be overwritten when required fields are contained by the panel).",
+    },
+    CSSAfterHeaderContentUnfolded: {
+      type: "string",
+      default: "The CSS:after content to be applied onto the header when the panel is unfolded.",
+    },
+    CSSBeforeHeaderContentUnfolded: {
+      type: "string",
+      default:
+        "The CSS:after content to be applied onto the header when the panel is unfolded (will be overwritten when required fields are contained by the panel).",
+    },
+    CSSRequiredFieldsContent: {
+      type: "string",
+      default: "The CSS:before content to be applied onto the header if it contains a validation sensitive field.",
+    },
+    CSSRequiredFields: {
+      type: "string",
+      default: "The CSS:before to be applied onto the header if it contains a validation sensitive field.",
+    },
+    AutoHeaderTitle: { type: "string", default: "The string the automatically generated header shall display." },
+    AutoHeaderTitleSupplementsSpacer: {
+      type: "string",
+      default:
+        "The string separating the actual title from the strings that're supplemented (values of inputs tagged with the CSS-Class CodBi_HTML_Panel_AutoHeaderTitle_Supplement). Encode surrounding spaces as %20 or \\s.",
+    },
+    AutoHeaderLevel: {
+      type: "number",
+      default:
+        "Which level of enclosing heading the AutoHeaderTitle shall have, e.g. to get a h1 enclosure the value has to be 1.",
+    },
     ScrollBlock: { type: "string", default: "nearest" },
     GenerateHeader: { type: "boolean", default: "false" },
-    Scroll: { type: "boolean" },
-    ScrollToTop: { type: "boolean" },
-    Accordion: { type: "string" },
+    Scroll: {
+      type: "boolean",
+      default: "states whether the view shall be scrolled when the panel unfolds. default is false.",
+    },
+    ScrollToTop: {
+      type: "boolean",
+      default:
+        'states whether a round scroll-to-top button shall be displayed at the bottom-right of the unfolded panel. possible values: "true" (always visible), "auto" (visible only when the panel\'s content is taller than 1.5x the viewport height), or "false" (hidden). defaults to auto.',
+    },
+    Accordion: {
+      type: "string",
+      default:
+        "If set, this panel becomes part of an accordion. All panels sharing the same accordion name will be folded when one of them is unfolded.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "autoheadertitle :: autoheadertitlesupplementsspacer :: scrollblock")

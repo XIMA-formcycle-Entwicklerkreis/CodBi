@@ -167,6 +167,41 @@ export function standardConfigClassIsInactive(cssClass: string, extra: readonly 
 }
 
 /**
+ * Cache of the lowercase → ORIGINAL-key index of `detFunctionalities`.
+ *
+ * The standard-configuration tooltip resolves the summaries of every FUNC the class applies, for every
+ * class of every configuration, on EVERY panel render — a linear scan per FUNC made that O(n²). The
+ * index is rebuilt only when the registry object or its key count changes; the entry is read from the
+ * live registry, so in-place updates are still picked up.
+ */
+let summaryKeyIndexSource: object | undefined;
+let summaryKeyIndexCount = -1;
+let summaryKeyIndex: Map<string, string> | undefined;
+
+/** @returns The lowercase → original-casing key index of `data` (rebuilt only when it changed). */
+function summaryKeyIndexFor(data: Record<string, unknown>): Map<string, string> {
+  const keys = Object.keys(data);
+
+  if (
+    summaryKeyIndex === undefined ||
+    summaryKeyIndexSource !== (data as object) ||
+    summaryKeyIndexCount !== keys.length
+  ) {
+    const index = new Map<string, string>();
+
+    for (const key of keys) {
+      index.set(key.toLowerCase(), key);
+    }
+
+    summaryKeyIndex = index;
+    summaryKeyIndexSource = data as object;
+    summaryKeyIndexCount = keys.length;
+  }
+
+  return summaryKeyIndex;
+}
+
+/**
  * The short (one-sentence) description of a functionality for the current designer language, read
  * straight from `detFunctionalities` (no dependency on the functionality config editor).
  *
@@ -174,14 +209,17 @@ export function standardConfigClassIsInactive(cssClass: string, extra: readonly 
  */
 function functionalitySummaryOf(id: string): string {
   try {
-    const data = window.CodbiPluginData?.detFunctionalities ?? {};
+    const data = (window.CodbiPluginData?.detFunctionalities ?? {}) as Record<
+      string,
+      { Summary?: string | Record<string, string> } | undefined
+    >;
     const wanted = String(id ?? "")
       .trim()
       .toLowerCase();
-    for (const key of Object.keys(data)) {
-      if (key.toLowerCase() === wanted) {
-        return localizedFunctionalitySummary(data[key]?.Summary);
-      }
+    const key = summaryKeyIndexFor(data).get(wanted);
+
+    if (key !== undefined) {
+      return localizedFunctionalitySummary(data[key]?.Summary);
     }
   } catch {
     /* ignore */

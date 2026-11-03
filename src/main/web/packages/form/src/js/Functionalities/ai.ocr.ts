@@ -84,20 +84,69 @@ export class AI_OCR {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XUpload")
   @ParameterTypes({
-    Mode: { type: "enum", options: ["Print", "Verify", "Extract Fields"] },
-    Pattern: { type: "string" },
-    Separator: { type: "string" },
-    MaxPages: { type: "integer" },
-    FieldPattern_: { type: "string" },
-    RegExFlags: { type: "string" },
-    Preprocess: { type: "boolean" },
-    ProcessingImageText: { type: "string" },
-    InvalidImageText: { type: "string" },
-    WrongFileMessage: { type: "string" },
-    Maximum: { type: "string" },
-    Field: { type: "string" },
-    QueueBadge: { type: "string" },
-    QueueText: { type: "string" },
+    Mode: {
+      type: "enum",
+      options: ["Print", "Verify", "Extract Fields"],
+      default: "Either Print, Verify or Extract Fields.",
+    },
+    Pattern: {
+      type: "string",
+      default:
+        "The regular expression used to extract substrings from the scanned text or to verify that the scanned text matches the pattern.",
+    },
+    Separator: {
+      type: "string",
+      default:
+        "If Mode is Extract Fields, this defines the separator for the results of multiple files. Default is a comma.",
+    },
+    MaxPages: {
+      type: "integer",
+      default: "Maximum number of PDF pages to process (default: 5). Set to 0 for no limit. Only applies to PDFs.",
+    },
+    FieldPattern_: {
+      type: "string",
+      default:
+        "For each field that receives an extracted substring in Extract Fields mode, a Pattern_<field> parameter defines the regex to use.",
+    },
+    RegExFlags: {
+      type: "string",
+      default:
+        "Optional regex flags applied to all patterns (e.g. 'i' case-insensitive, 'm' multiline, 's' dotall). Multiple flags can be combined.",
+    },
+    Preprocess: {
+      type: "boolean",
+      default:
+        "whether to enable image preprocessing before ocr (grayscale, adaptive binarization, noise reduction). default: false.",
+    },
+    ProcessingImageText: {
+      type: "string",
+      default: "The text appended to the label of the input while the images are processed.",
+    },
+    InvalidImageText: {
+      type: "string",
+      default: "The text displayed if one or more images do not comply with the specified Pattern in Verify mode.",
+    },
+    WrongFileMessage: {
+      type: "string",
+      default: "The text displayed for the manual verification checkbox label in Verify mode.",
+    },
+    Maximum: {
+      type: "string",
+      default: "The number of files that may be uploaded. If exceeded, processing aborts and a warning is logged.",
+    },
+    Field: {
+      type: "string",
+      default: "The field name matched to data-cb-Field to receive extracted text in Extract Fields / Print mode.",
+    },
+    QueueBadge: {
+      type: "string",
+      default: "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    },
+    QueueText: {
+      type: "string",
+      default:
+        "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    },
   })
   public static functionality(
     @TYPE.PRE(

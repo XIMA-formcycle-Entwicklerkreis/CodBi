@@ -83,16 +83,50 @@ export class OpenPLZ_Autocomplete {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype({ XTextField: { datatype: ["text", "plzDE"] } })
   @ParameterTypes({
-    TargetData: { type: "enum", options: ["localities", "postalcodes", "streets"] },
-    Country: { type: "enum", options: ["de", "en", "at", "li", "ch"] },
-    CSSProposals: { type: "string" },
-    MsgNotKnown: { type: "string" },
-    Dependent: { type: "string" },
-    DependentPLZ: { type: "string" },
-    DependentLocality: { type: "string" },
-    FocusOnAutocomplete: { type: "string" },
-    AllowEmpty: { type: "boolean" },
-    AllowedValues: { type: "string" },
+    TargetData: {
+      type: "enum",
+      options: ["localities", "postalcodes", "streets"],
+      default: "What type of data shall be received by the target (Localities, PostalCode, or Streets).",
+    },
+    Country: {
+      type: "enum",
+      options: ["de", "en", "at", "li", "ch"],
+      default:
+        "The optional country to retrieve the data of (if not provided either the country specified in the CodBi's Configuration OpenPLZ_Country will be used or, if not specified, de).",
+    },
+    CSSProposals: {
+      type: "string",
+      default: "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+    },
+    MsgNotKnown: {
+      type: "string",
+      default: "The message to show when trying to set a value that can't be found in OpenPLZ.",
+    },
+    Dependent: {
+      type: "string",
+      default:
+        "The CSS-Selector of the field whose value restricts the search results. Prefer DependentPLZ / DependentLocality for streets.",
+    },
+    DependentPLZ: {
+      type: "string",
+      default:
+        "The CSS-Selector of the field that restricts the search of streets by its value resembling a postal-code, only if DependentLocality is undefined.",
+    },
+    DependentLocality: {
+      type: "string",
+      default:
+        "The CSS-Selector of the field that restricts the search of streets by its value resembling a locality (overwrites DependentPLZ).",
+    },
+    FocusOnAutocomplete: {
+      type: "string",
+      default: "The CSS-Selector of the field to focus when an autocomplete has occurred.",
+    },
+    AllowEmpty: { type: "boolean", default: "if set to true an empty input value won't trigger an error message." },
+    AllowedValues: {
+      type: "string",
+      default:
+        "A CSV of additional values that are also accepted without requiring an OpenPLZ match (bypasses the not known validation). Use semicolons to optionally restrict a value to a specific dependent locality and/or PLZ.",
+    },
   })
   public static functionality(
     @DEFINED.PRE("targetdata :: focusonautocomplete")

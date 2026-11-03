@@ -43,9 +43,20 @@ export class HTML_Text_Injector {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea"])
   @ParameterTypes({
-    Placeholder: { type: "string" },
-    Replacement: { type: "string" },
-    Property: { type: "string" },
+    Placeholder: {
+      type: "string",
+      default:
+        'Specifies the string that shall be replaced within the tagged element\'s Property. Standard-value is "[[INJECTOR_REPLACEMENT]]".',
+    },
+    Replacement: {
+      type: "string",
+      default:
+        "The string to replace all occurrences of the specified Placeholder with, or to append at the end of the string contained in the tagged element's Property.",
+    },
+    Property: {
+      type: "string",
+      default: "Specifies which property of the tagged element shall receive the Replacement.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "placeholder")

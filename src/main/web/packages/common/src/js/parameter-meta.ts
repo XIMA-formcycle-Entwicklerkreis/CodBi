@@ -11,7 +11,33 @@
  * The editor/type of a **CodBi Functionality** parameter. `string` is the free-text default used
  * whenever no type is declared; `number` and `integer` differ only in the editor's step.
  */
-export type TParameterType = "string" | "integer" | "number" | "boolean" | "enum";
+export type TParameterType = "string" | "integer" | "number" | "boolean" | "enum" | "csv";
+
+/**
+ * The type of ONE **subpart** (grid column) of a `csv` parameter. Mirrors {@link TParameterType }
+ * minus `csv` itself (subparts cannot be nested tables).
+ */
+export type TCsvSubpartType = "string" | "integer" | "number" | "boolean" | "enum";
+
+/**
+ * The description of ONE **subpart** (i.e. one grid column) of a `type: "csv"` parameter. Each
+ * column of the grid corresponds to one positional field of every CSV element (row). Optional
+ * subparts (those without a `required` flag, or with `required: false`) may be left empty.
+ */
+export interface ICsvSubpartSpec {
+  /** The subpart's **name** - used as the fallback column header and to reference the field. */
+  name?: string;
+  /** The subpart's editor TYPE (one of the simple {@link TCsvSubpartType }s). */
+  type?: TCsvSubpartType;
+  /** For `type: "enum"`: the allowed, fixed set of values (in display order). */
+  options?: ReadonlyArray<string>;
+  /** The human-readable **column name** (grid header). Falls back to {@link ICsvSubpartSpec.name }. */
+  label?: string;
+  /** The default value for this subpart (expressed as a string). */
+  default?: string;
+  /** Whether the subpart is mandatory. `false`/absent marks it as **optional**. */
+  required?: boolean;
+}
 
 /** The canonical description of ONE functionality parameter. */
 export interface IParameterSpec {
@@ -19,6 +45,18 @@ export interface IParameterSpec {
   type?: TParameterType;
   /** For `type: "enum"`: the allowed, fixed set of values (in display order). */
   options?: ReadonlyArray<string>;
+  /**
+   * For `type: "csv"`: the ordered definition of the grid **columns / subparts**. Every element
+   * (row) of the CSV is serialized as the subpart values joined with {@link IParameterSpec.fieldSeparator },
+   * and the elements are joined with {@link IParameterSpec.itemSeparator }.
+   */
+  columns?: ReadonlyArray<ICsvSubpartSpec>;
+  /** For `type: "csv"`: the singular display name of ONE element/row (e.g. `"column"`). */
+  itemName?: string;
+  /** For `type: "csv"`: the separator between the elements (rows). Defaults to `,`. */
+  itemSeparator?: string;
+  /** For `type: "csv"`: the separator between the subparts (fields) of one element. Defaults to `;`. */
+  fieldSeparator?: string;
   /** The default value (always expressed as a string, exactly as the runtime receives it). */
   default?: string;
   /** A short, human-readable description of the parameter. */
@@ -48,7 +86,47 @@ export interface IParameterMeta {
 const PARAM_SPEC_KEY = Symbol.for("codbi.functionality.parameterTypes");
 
 /** Every valid {@link TParameterType }, used to validate/normalize incoming specs. */
-const VALID_PARAMETER_TYPES: ReadonlyArray<TParameterType> = ["string", "integer", "number", "boolean", "enum"];
+const VALID_PARAMETER_TYPES: ReadonlyArray<TParameterType> = ["string", "integer", "number", "boolean", "enum", "csv"];
+
+/** Every valid {@link TCsvSubpartType }, used to validate/normalize csv subpart specs. */
+const VALID_CSV_SUBPART_TYPES: ReadonlyArray<TCsvSubpartType> = ["string", "integer", "number", "boolean", "enum"];
+
+/** Normalizes a single `csv` subpart spec into its canonical {@link ICsvSubpartSpec }. */
+function normalizeCsvSubpart(input: ICsvSubpartSpec | undefined): ICsvSubpartSpec {
+  if (input == null || typeof input !== "object") {
+    return {};
+  }
+  const sub: ICsvSubpartSpec = {};
+
+  if (input.name !== undefined) {
+    sub.name = String(input.name);
+  }
+  const type =
+    input.type != null && VALID_CSV_SUBPART_TYPES.includes(input.type as TCsvSubpartType)
+      ? (input.type as TCsvSubpartType)
+      : undefined;
+
+  if (type !== undefined) {
+    sub.type = type;
+    if (type === "enum") {
+      const options = Array.from(
+        new Set((input.options ?? []).map((option) => String(option).trim()).filter((option) => option.length > 0)),
+      );
+      sub.options = options;
+    }
+  }
+  if (input.label !== undefined) {
+    sub.label = String(input.label);
+  }
+  if (input.default !== undefined) {
+    sub.default = String(input.default);
+  }
+  if (input.required !== undefined) {
+    sub.required = Boolean(input.required);
+  }
+
+  return sub;
+}
 
 /**
  * Method decorator for a functionality's `functionality()` method. Declares the TYPE of each
@@ -103,6 +181,23 @@ export function normalizeParameterSpec(input: IParameterSpec | TParameterType | 
       new Set((input.options ?? []).map((option) => String(option).trim()).filter((option) => option.length > 0)),
     );
     spec.options = options;
+  }
+  if (type === "csv") {
+    const columns = Array.isArray(input.columns)
+      ? input.columns.map((column) => normalizeCsvSubpart(column)).filter((column) => Object.keys(column).length > 0)
+      : undefined;
+    if (columns && columns.length > 0) {
+      spec.columns = columns;
+    }
+    if (input.itemName !== undefined) {
+      spec.itemName = String(input.itemName);
+    }
+    if (input.itemSeparator !== undefined) {
+      spec.itemSeparator = String(input.itemSeparator);
+    }
+    if (input.fieldSeparator !== undefined) {
+      spec.fieldSeparator = String(input.fieldSeparator);
+    }
   }
   if (input.default !== undefined) {
     spec.default = String(input.default);

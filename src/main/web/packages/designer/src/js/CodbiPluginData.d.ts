@@ -101,15 +101,31 @@ interface Window {
         /** Stores the parameter that this **CodBi-Functionality** provides. */
         Parameter: { [key: string]: string };
         /**
-         * The per-parameter TYPE metadata (boolean/string/integer/number/enum), keyed by parameter name.
+         * The per-parameter TYPE metadata (boolean/string/integer/number/enum/csv), keyed by parameter name.
          * Published by the build-time generator (`@ParameterTypes`) or the local API-doc manager; the
-         * designer renders a type-appropriate editor from it (checkbox, number box, dropdown, text). */
+         * designer renders a type-appropriate editor from it (checkbox, number box, dropdown, text, or a
+         * CSV grid editor popup for `type: "csv"`). */
         parameters?: {
           [name: string]: {
-            type?: "string" | "integer" | "number" | "boolean" | "enum";
+            type?: "string" | "integer" | "number" | "boolean" | "enum" | "csv";
             options?: string[];
             default?: string;
             description?: string;
+            /** For `type: "csv"`: the ordered subpart (grid column) definitions. */
+            columns?: Array<{
+              name?: string;
+              type?: "string" | "integer" | "number" | "boolean" | "enum";
+              options?: string[];
+              label?: string;
+              default?: string;
+              required?: boolean;
+            }>;
+            /** For `type: "csv"`: the singular name of one element/row. */
+            itemName?: string;
+            /** For `type: "csv"`: the separator between elements (rows). */
+            itemSeparator?: string;
+            /** For `type: "csv"`: the separator between subparts (columns) of one element. */
+            fieldSeparator?: string;
           };
         };
         /**

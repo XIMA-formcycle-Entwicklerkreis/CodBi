@@ -37,8 +37,15 @@ export class SV {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
-    Destinations: { type: "string" },
-    Sources: { type: "string" },
+    Destinations: {
+      type: "string",
+      default: "The name(s) of the global variable(s) to set (a single string or an array of strings).",
+    },
+    Sources: {
+      type: "string",
+      default:
+        "The name(s) of the URL-parameter(s) to read (a single string or an array of strings). Must contain the same amount of entries as Destinations; the i-th destination is set to the value of the i-th source.",
+    },
   })
   public static functionality(
     @DEFINED.PRE("destinations")

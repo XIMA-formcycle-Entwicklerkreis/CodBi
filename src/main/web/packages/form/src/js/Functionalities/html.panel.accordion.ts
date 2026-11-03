@@ -31,7 +31,11 @@ export class HTML_Panel_Accordion {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
-    Accordion: { type: "string" },
+    Accordion: {
+      type: "string",
+      default:
+        "The name of the set all panels within the tagged element shall belong to. If no name is defined, nothing happens.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "accordion")

@@ -35,13 +35,20 @@ export class HTML_Input_REGEX {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextField")
   @ParameterTypes({
-    Expression: { type: "string" },
-    KeyExpression: { type: "string" },
+    Expression: {
+      type: "string",
+      default:
+        "The regular expression the value of the field has to comply to. Use '°' instead of '^' to mark the beginning of the input string or a negation.",
+    },
+    KeyExpression: { type: "string", default: "The regular expression the individual keystrokes have to comply to." },
     Flags: { type: "string", default: "g" },
     KeyFlags: { type: "string", default: "g" },
-    ErrorPrefix: { type: "string" },
-    ErrorPostfix: { type: "string" },
-    ExposeExpression: { type: "boolean" },
+    ErrorPrefix: { type: "string", default: "The first part of the error message displayed prior to the Expression." },
+    ErrorPostfix: { type: "string", default: "The final part of the error message displayed after the Expression." },
+    ExposeExpression: {
+      type: "boolean",
+      default: "will expose the expression within the error message if set to true (case insensitive).",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "expression :: flags :: keyexpression :: keyflags :: errorprefix :: errorpostfix")

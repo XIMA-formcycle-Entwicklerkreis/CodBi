@@ -39,10 +39,16 @@ export class Time_Frame {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype({ XTextField: { datatype: "time*" } })
   @ParameterTypes({
-    MaxField: { type: "string" },
-    MsgMinInvalid: { type: "string" },
-    MsgMaxInvalid: { type: "string" },
-    EqualityPermitted: { type: "boolean" },
+    MaxField: { type: "string", default: "CSS selector selecting the input element that takes the maximum time." },
+    MsgMinInvalid: {
+      type: "string",
+      default: "The error message shown when the minimum field's value is after the one in the maximum field.",
+    },
+    MsgMaxInvalid: {
+      type: "string",
+      default: "The error message shown when the maximum field's value is before the one in the minimum field.",
+    },
+    EqualityPermitted: { type: "boolean", default: "whether the same start and end time is permitted." },
   })
   public static functionality(
     @DEFINED.PRE("maxfield")

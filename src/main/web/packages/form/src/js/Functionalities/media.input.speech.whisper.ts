@@ -75,10 +75,19 @@ export class Media_Input_Speech_Whisper {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea"])
   @ParameterTypes({
-    VoiceHotkey: { type: "string" },
-    Language: { type: "string" },
-    Placeholder: { type: "string" },
-    ShowHint: { type: "boolean" },
+    VoiceHotkey: { type: "string", default: "Keyboard shortcut to toggle recording. Default: Alt+A." },
+    Language: {
+      type: "string",
+      default: "Two-letter language code for Whisper (e.g. de, en, fr). If omitted, Whisper auto-detects the language.",
+    },
+    Placeholder: {
+      type: "string",
+      default: "Custom placeholder text for the field. Only shown when ShowHint is true.",
+    },
+    ShowHint: {
+      type: "boolean",
+      default: "if set to true, shows the hotkey hint as placeholder text. default: false.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "voicehotkey, language, placeholder")

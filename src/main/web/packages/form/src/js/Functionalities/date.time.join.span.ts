@@ -63,10 +63,26 @@ export class Date_Time_Join_Span {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
-    Begin: { type: "string" },
-    BeginTime: { type: "string" },
-    End: { type: "string" },
-    EndTime: { type: "string" },
+    Begin: {
+      type: "string",
+      default:
+        "Optional CSS selector selecting the input that provides the begin date. Takes precedence over the CodBi_Date_Time_Join_Span_Begin CSS class.",
+    },
+    BeginTime: {
+      type: "string",
+      default:
+        "Optional CSS selector selecting the input that provides the begin time. Takes precedence over the CodBi_Date_Time_Join_Span_Begin_Time CSS class.",
+    },
+    End: {
+      type: "string",
+      default:
+        "Optional CSS selector selecting the input that provides the end date. Takes precedence over the CodBi_Date_Time_Join_Span_End CSS class.",
+    },
+    EndTime: {
+      type: "string",
+      default:
+        "Optional CSS selector selecting the input that provides the end time. Takes precedence over the CodBi_Date_Time_Join_Span_End_Time CSS class.",
+    },
     MsgInvalid: { type: "string", default: "The end datetime must be strictly after the begin datetime." },
   })
   public static functionality(

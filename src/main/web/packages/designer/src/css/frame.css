@@ -348,12 +348,22 @@
 
 /* ── CodBi watermark, centred on the widget settings panel ────────────────── */
 
-.xm-panel-box:has(.codbi-mirror-dd) {
+/*
+ * The settings panel is styled only while it HOSTS one of our dropdowns. The marker class
+ * `.codbi-mirror-dd-host` is stamped by `MirrorDropdown.markPanelHost()` whenever a dropdown is
+ * (re)attached, and dropped again from a panel whose dropdown was discarded — the designer re-creates
+ * the property editors on every element selection WITHOUT a destroy hook.
+ *
+ * A `:has()` selector is deliberately NOT used here: `:has()` invalidates the ANCESTORS of every
+ * changed node, so each property-row re-render (i.e. every element selection) re-evaluated these rules
+ * across the whole panel — measurable on large forms.
+ */
+.xm-panel-box.codbi-mirror-dd-host {
   position: relative;
 }
 
 /* Keep the real content above the watermark. */
-.xm-panel-box:has(.codbi-mirror-dd) > * {
+.xm-panel-box.codbi-mirror-dd-host > * {
   position: relative;
   z-index: 1;
 }
@@ -364,21 +374,22 @@
  * Giving every direct child of the settings panel (and every `.codbi-func-config` section below) its
  * own `z-index: 1` turns it into a stacking context. That confines the option list's `z-index: 2000`
  * to its row, so a later sibling — the CodBi config with its stacked double buttons — paints over
- * the list even though the list itself has the higher z-index. While a list is open, lift the row
- * (and any category wrapper) that CONTAINS it above those siblings. Only the open dropdown's row is
- * raised, so a closed dropdown never covers the row below it.
+ * the list even though the list itself has the higher z-index. While a list is open,
+ * `MirrorDropdown.markLiftedAncestors()` stamps `.codbi-mirror-lifted` on every ancestor between the
+ * open list and the panel box, so exactly the open dropdown's row (and the category wrappers around
+ * it) is raised and a closed dropdown never covers the row below it.
  */
-.xm-panel-box:has(.codbi-mirror-dd__list:not([hidden])) > *:has(.codbi-mirror-dd__list:not([hidden])),
-.codbi-func-config:has(.codbi-mirror-dd__list:not([hidden])) > *:has(.codbi-mirror-dd__list:not([hidden])) {
+.codbi-mirror-lifted {
+  position: relative;
   z-index: 2;
 }
 
 /* Let the watermark show through the property rows that hold our dropdowns. */
-.xm-panel-box:has(.codbi-mirror-dd) .xm-pe-row {
+.xm-panel-box.codbi-mirror-dd-host .xm-pe-row {
   background-color: transparent !important;
 }
 
-.xm-panel-box:has(.codbi-mirror-dd)::after {
+.xm-panel-box.codbi-mirror-dd-host::after {
   content: "";
   position: absolute;
   left: 50%;
@@ -1173,15 +1184,12 @@
   padding: 3px 6px;
 }
 
-/* The parameter label turns darkorange when its value field is hovered/active/focused (the label is
-   a sibling of the cell that holds the input, so the row's :has() bridges them). Covers text/number/
-   select inputs AND the boolean checkbox. */
-.codbi-func-config__param-row:has(.codbi-func-config__value:hover) .codbi-func-config__param-label,
-.codbi-func-config__param-row:has(.codbi-func-config__value:active) .codbi-func-config__param-label,
-.codbi-func-config__param-row:has(.codbi-func-config__value:focus) .codbi-func-config__param-label,
-.codbi-func-config__param-row:has(.codbi-func-config__bool:hover) .codbi-func-config__param-label,
-.codbi-func-config__param-row:has(.codbi-func-config__bool:active) .codbi-func-config__param-label,
-.codbi-func-config__param-row:has(.codbi-func-config__bool:focus) .codbi-func-config__param-label {
+/* The parameter label turns darkorange when its value field is hovered/active/focused. Covers
+   text/number/select inputs AND the boolean checkbox.
+   The state is tracked by JS (see `buildParamRow` in ElementFunctionalityConfigEditor) instead of with a
+   `:has()` selector: `:has()` invalidates the ANCESTORS of every changed node, so it re-evaluated on
+   every property-panel mutation (i.e. on every element selection). */
+.codbi-func-config__param-row--active .codbi-func-config__param-label {
   color: darkorange;
 }
 

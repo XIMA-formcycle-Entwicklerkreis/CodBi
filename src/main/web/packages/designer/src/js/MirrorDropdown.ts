@@ -8,6 +8,23 @@ const VIEWPORT_MARGIN = 8;
 const TREE_INDENT = 16;
 /** Delay before the preview closes after the pointer leaves the item/preview (ms). */
 const HIDE_DELAY = 260;
+
+/**
+ * Class stamped on the designer property panel (`.xm-panel-box`) that currently HOSTS one of our
+ * dropdowns. `frame.css` styles that panel only while this class is present (watermark, transparent
+ * property rows, the `z-index:1` stacking base of its direct children).
+ *
+ * The class replaces a `:has(.codbi-mirror-dd)` selector: `:has()` invalidates the ANCESTORS of every
+ * changed node, so each property-row re-render — i.e. every element selection — re-evaluated those
+ * rules across the whole panel (measurable on large forms).
+ */
+const PANEL_HOST_CLASS = "codbi-mirror-dd-host";
+
+/**
+ * Class stamped on every ancestor between an OPEN dropdown list and its panel box, so the list paints
+ * over the sibling property rows/sections (see the stacking note in `frame.css`).
+ */
+const LIFT_CLASS = "codbi-mirror-lifted";
 /** localStorage key remembering whether the Mirror preview should be shown large (maximized). */
 const PREVIEW_MAX_KEY = "codbi-mirror-preview-maximized";
 
@@ -72,6 +89,10 @@ export class MirrorDropdown {
   private lastAnchor: HTMLElement | undefined;
   /** Values of collapsed container options (tree mode). */
   private readonly collapsed = new Set<string>();
+  /** The property panel currently carrying {@link PANEL_HOST_CLASS} for this dropdown, if any. */
+  private panelHost: HTMLElement | undefined;
+  /** Ancestors currently carrying {@link LIFT_CLASS} while the option list is open. */
+  private liftedAncestors: HTMLElement[] = [];
 
   /**
    * @param onSelect Called when the user picks an option.
@@ -181,6 +202,7 @@ export class MirrorDropdown {
 
   /** Replaces the whole option list. */
   setOptions(options: readonly IMirrorOption[]): void {
+    this.markPanelHost();
     this.options = [...options];
     // Start with the tree fully folded (every container collapsed) so a large form hierarchy is
     // not overwhelming. The user can expand nodes as needed.
@@ -191,9 +213,70 @@ export class MirrorDropdown {
 
   /** Sets the current value (label shown on the button). */
   setValue(value: unknown): void {
+    // The designer inserts the editor and THEN assigns the value, so this is the reliable moment to
+    // mark the panel that hosts us (see markPanelHost).
+    this.markPanelHost();
     this.value = value == null ? "" : String(value);
     this.renderButton();
     this.markSelected();
+  }
+
+  /**
+   * Stamps {@link PANEL_HOST_CLASS} on the `.xm-panel-box` that currently hosts this dropdown and
+   * clears the marker from panels whose dropdown was DISCARDED.
+   *
+   * The designer re-creates the property editors on every element selection and offers no destroy
+   * hook, so a marker left behind would keep the CodBi watermark (and the transparent property rows) on
+   * the NEXT element's settings panel. The stale markers are therefore pruned here: the panel of every
+   * other dropdown whose root is no longer connected loses the class, and that discarded instance is
+   * dropped from {@link MirrorDropdown.instances} (which otherwise grew with every selection). Both
+   * dropdowns of the same Mirror (source form + source element) are connected, so a shared panel keeps
+   * its marker.
+   */
+  private markPanelHost(): void {
+    // Re-register: a dropdown may have been pruned above while its root was still detached (the
+    // designer mounts the editors one after the other), and the "only one open at a time" logic needs
+    // every live dropdown in the set.
+    MirrorDropdown.instances.add(this);
+    for (const other of Array.from(MirrorDropdown.instances)) {
+      if (other === this || other.root.isConnected) {
+        continue;
+      }
+      other.panelHost?.classList.remove(PANEL_HOST_CLASS);
+      other.panelHost = undefined;
+      MirrorDropdown.instances.delete(other);
+    }
+    const host = this.root.closest<HTMLElement>(".xm-panel-box");
+    if (host) {
+      host.classList.add(PANEL_HOST_CLASS);
+      this.panelHost = host;
+    }
+  }
+
+  /**
+   * Stamps {@link LIFT_CLASS} on every ancestor between this dropdown and its panel box while the option
+   * list is OPEN (and drops it again on close), so the list paints over the sibling property rows and
+   * category wrappers. This is the class-based replacement for the former
+   * `:has(.codbi-mirror-dd__list:not([hidden]))` selectors.
+   *
+   * @param open Whether the option list is currently open.
+   */
+  private markLiftedAncestors(open: boolean): void {
+    for (const ancestor of this.liftedAncestors) {
+      ancestor.classList.remove(LIFT_CLASS);
+    }
+    this.liftedAncestors = [];
+    if (!open) {
+      return;
+    }
+    for (
+      let node = this.root.parentElement;
+      node && !node.classList.contains("xm-panel-box");
+      node = node.parentElement
+    ) {
+      node.classList.add(LIFT_CLASS);
+      this.liftedAncestors.push(node);
+    }
   }
 
   /** @returns the current value ("" when nothing is selected). */
@@ -215,7 +298,10 @@ export class MirrorDropdown {
           other.close();
         }
       }
+      this.markPanelHost();
       this.isOpen = true;
+      // Lift the rows/sections that contain the (now open) list above their siblings.
+      this.markLiftedAncestors(true);
       this.list.hidden = false;
       this.button.setAttribute("aria-expanded", "true");
       if (this.filterInput) {
@@ -232,6 +318,8 @@ export class MirrorDropdown {
       return;
     }
     this.isOpen = false;
+    // A closed dropdown must never keep the row above its siblings.
+    this.markLiftedAncestors(false);
     this.list.hidden = true;
     this.cancelHide();
     this.hidePreview();

@@ -46,10 +46,10 @@ export class HTML_Select_Favorites {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XSelect")
   @ParameterTypes({
-    DividerTarget: { type: "string" },
-    InitialElement: { type: "string" },
-    Favorites: { type: "string" },
-    Divider: { type: "string" },
+    DividerTarget: { type: "string", default: "Specifies the option to select when the divider option is selected." },
+    InitialElement: { type: "string", default: "Specifies the option that shall be selected when the form is loaded." },
+    Favorites: { type: "string", default: "Specifies the options that shall be shown before all other ones." },
+    Divider: { type: "string", default: "Specifies the divider's text-content." },
   })
   public static functionality(
     @TYPE.PRE(

@@ -15,27 +15,19 @@
   "parameters": {
     "Preview": {
       "type": "boolean",
-      "description": "Whether the navigator permits switching to every page even if it wasn't visited before (TRUE) or not (FALSE). Defaults to FALSE.",
-      "descriptionDe": "Ob der Navigator das Wechseln zu jeder Seite erlaubt, auch wenn sie vorher nicht besucht wurde (WAHR) oder nicht (FALSCH). Standard: FALSCH.",
-      "descriptionIt": "Se il navigatore consente di passare a ogni pagina anche se non è stata visitata prima (TRUE) o no (FALSE). Predefinito: FALSE."
+      "default": "whether the navigator permits switching to every page even if it wasn't visited before (true) or not (false). defaults to false."
     },
     "CSSNavButtons": {
       "type": "string",
-      "description": "Additional CSS applied to the navigator's navigation buttons.",
-      "descriptionDe": "Zusätzliches CSS, das auf die Navigationsbuttons des Navigators angewendet wird.",
-      "descriptionIt": "CSS aggiuntivo applicato ai pulsanti di navigazione del navigatore."
+      "default": "Additional CSS applied to the navigator's navigation buttons."
     },
     "CSSHoverNavButtons": {
       "type": "string",
-      "description": "Additional CSS applied to the navigator's navigation buttons when hovering them.",
-      "descriptionDe": "Zusätzliches CSS, das auf die Navigationsbuttons des Navigators beim Überfahren angewendet wird.",
-      "descriptionIt": "CSS aggiuntivo applicato ai pulsanti di navigazione del navigatore al passaggio del mouse."
+      "default": "Additional CSS applied to the navigator's navigation buttons when hovering them."
     },
     "CSSBlockedNavButton": {
       "type": "string",
-      "description": "Additional CSS applied to the navigator's navigation buttons that are blocked for any reason.",
-      "descriptionDe": "Zusätzliches CSS, das auf die Navigationsbuttons des Navigators angewendet wird, die aus irgendeinem Grund blockiert sind.",
-      "descriptionIt": "CSS aggiuntivo applicato ai pulsanti di navigazione del navigatore che sono bloccati per qualsiasi motivo."
+      "default": "Additional CSS applied to the navigator's navigation buttons that are blocked for any reason."
     }
   }
 }

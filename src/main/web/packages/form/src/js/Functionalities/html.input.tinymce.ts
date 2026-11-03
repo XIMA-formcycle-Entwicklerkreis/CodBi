@@ -128,14 +128,43 @@ export class HTML_Input_TinyMCE {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextArea")
   @ParameterTypes({
-    Plugins: { type: "string" },
-    Toolbar: { type: "string" },
-    ResourceURL: { type: "string" },
-    UploadURL: { type: "string" },
-    UploadImageURL: { type: "string" },
-    UploadFieldName: { type: "string" },
-    StripPort: { type: "boolean" },
-    RenderToPdf: { type: "boolean" },
+    Plugins: {
+      type: "string",
+      default: "A CSV of TinyMCE plugin names to load (e.g. 'advlist, autolink, lists, link, image, table, code').",
+    },
+    Toolbar: {
+      type: "string",
+      default:
+        "The toolbar configuration string defining which buttons and groups to display (e.g. 'undo redo | blocks | bold italic forecolor | bullist numlist | table | code').",
+    },
+    ResourceURL: {
+      type: "string",
+      default:
+        "The base URL where the TinyMCE distribution is served (must contain tinymce.min.js, skins/, icons/, models/ and plugins/ subdirectories).",
+    },
+    UploadURL: {
+      type: "string",
+      default:
+        "The server endpoint URL for file uploads (e.g. TTBoard_UPLOAD?uid=). Used by the codbiuploadfile toolbar button.",
+    },
+    UploadImageURL: {
+      type: "string",
+      default: "The server endpoint URL for image uploads. Falls back to UploadURL if not set.",
+    },
+    UploadFieldName: {
+      type: "string",
+      default: "The name of the form field for the uploaded file (default: fileToUpload).",
+    },
+    StripPort: {
+      type: "boolean",
+      default:
+        "if set to 'true', the port number (e.g. :444) is removed from the url returned by the upload server before inserting it into the editor.",
+    },
+    RenderToPdf: {
+      type: "boolean",
+      default:
+        "if set to 'true', a print-listener is registered that replaces the document body with the plain-text content of this editor when the form is printed/exported to pdf.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "plugins :: toolbar :: resourceurl :: uploadurl :: uploadimageurl :: uploadfieldname")

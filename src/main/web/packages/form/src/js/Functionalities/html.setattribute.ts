@@ -26,8 +26,8 @@ export class HTML_SETAttribute {
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
   @ParameterTypes({
-    Name: { type: "string" },
-    ToSet: { type: "string" },
+    Name: { type: "string", default: "The name of the attribute to set." },
+    ToSet: { type: "string", default: "The string to set the attribute to." },
   })
   public static functionality(
     @REGEX.PRE(REGEX.stdExp.htmlAttributeName, "name")

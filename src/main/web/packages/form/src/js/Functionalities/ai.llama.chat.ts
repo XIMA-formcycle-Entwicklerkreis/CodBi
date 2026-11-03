@@ -135,27 +135,92 @@ export class AI_LLAMA_CHAT {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextArea")
   @ParameterTypes({
-    MaxPages: { type: "integer" },
-    Rotation: { type: "enum", options: ["90", "180", "270"] },
-    MaxPixelSize: { type: "integer" },
-    LLAMAbubble: { type: "string" },
-    UserBubble: { type: "string" },
-    WelcomeText: { type: "string" },
-    WaitingText: { type: "string" },
-    LowConfidenceText: { type: "string" },
-    RethinkButtonText: { type: "string" },
-    UncertainText: { type: "string" },
-    ShowUncertainTokens: { type: "string" },
-    VoiceHotkey: { type: "string" },
-    VoicePlaceholder: { type: "string" },
-    VoiceSendHotkey: { type: "string" },
-    Language: { type: "string" },
-    ResponseLanguage: { type: "string" },
-    Specialist: { type: "string" },
-    QueueBadge: { type: "string" },
-    QueueText: { type: "string" },
-    AlertOnFinishText: { type: "string" },
-    FilterResults: { type: "boolean" },
+    MaxPages: {
+      type: "integer",
+      default: "Maximum number of PDF pages to process (default: 5). Set to 0 for no limit.",
+    },
+    Rotation: {
+      type: "enum",
+      options: ["90", "180", "270"],
+      default: "Image rotation in degrees (90, 180 or 270). 0 or unset means the rotation is unknown.",
+    },
+    MaxPixelSize: {
+      type: "integer",
+      default:
+        "Maximum total pixel budget (width x height). Larger images are downscaled client-side preserving aspect ratio. Default: 3211264. Set to 0 to disable downscaling.",
+    },
+    LLAMAbubble: { type: "string", default: "Background color for the Llama (AI) chat bubbles (default: #e5e5ea)." },
+    UserBubble: { type: "string", default: "Background color for the user chat bubbles (default: #0b93f6)." },
+    WelcomeText: {
+      type: "string",
+      default:
+        "Text shown after the model name(s) in the ready message (default: 'Chat ready. Attach file(s) and type your question.').",
+    },
+    WaitingText: {
+      type: "string",
+      default: "Text shown while waiting for the AI server to become available (default: 'Waiting for AI server...').",
+    },
+    LowConfidenceText: {
+      type: "string",
+      default: "Warning text shown when the AI response has low confidence (default: 'Low Confidence').",
+    },
+    RethinkButtonText: {
+      type: "string",
+      default: "Button label offering to re-answer with the thinking model (default: 'Rethink').",
+    },
+    UncertainText: {
+      type: "string",
+      default: "Tooltip text shown when hovering over uncertain (low-confidence) tokens (default: 'Low confidence').",
+    },
+    ShowUncertainTokens: {
+      type: "string",
+      default:
+        "Whether to visually highlight uncertain tokens in AI responses. Set to 'false' to disable highlighting (default: 'true').",
+    },
+    VoiceHotkey: {
+      type: "string",
+      default:
+        "Keyboard shortcut to toggle voice input, e.g. 'Alt+A' (default: 'Alt+A'). Format: modifier(s) + key separated by '+'.",
+    },
+    VoicePlaceholder: {
+      type: "string",
+      default:
+        "Placeholder text shown in the chat input when voice input is available (default: 'Alt+A = mic on/off | Alt+Q = mic off + send').",
+    },
+    VoiceSendHotkey: {
+      type: "string",
+      default: "Keyboard shortcut to stop recording and send, e.g. 'Alt+Q' (default: 'Alt+Q').",
+    },
+    Language: {
+      type: "string",
+      default: "Language code for Whisper speech-to-text (e.g. 'de', 'en'). Empty or unset means auto-detect.",
+    },
+    ResponseLanguage: {
+      type: "string",
+      default: "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). When set, the AI is forced to respond in this language.",
+    },
+    Specialist: {
+      type: "string",
+      default:
+        "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+    },
+    QueueBadge: {
+      type: "string",
+      default: "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    },
+    QueueText: {
+      type: "string",
+      default:
+        "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    },
+    AlertOnFinishText: {
+      type: "string",
+      default: "Text shown in the alert when inference finishes (when the alert-on-finish option is enabled).",
+    },
+    FilterResults: {
+      type: "boolean",
+      default: "if set to 'true', enables pii filtering on brave search queries for this instance.",
+    },
   })
   public static functionality(
     @TYPE.PRE(

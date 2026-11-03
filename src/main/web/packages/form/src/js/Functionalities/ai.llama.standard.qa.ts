@@ -148,26 +148,100 @@ export class AI_LLAMA_STANDARD_QA {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XUpload")
   @ParameterTypes({
-    MaxPages: { type: "integer" },
-    Rotation: { type: "string" },
-    MaxPixelSize: { type: "integer" },
-    AIHint: { type: "string" },
-    InternetAccess: { type: "boolean" },
-    Thinking: { type: "boolean" },
-    MaxThinkingTokens: { type: "number" },
-    Mode: { type: "enum", options: ["analyse", "verify"] },
-    PositiveResponse: { type: "string" },
-    CaseInsensitive: { type: "boolean" },
-    VerifyErrorText: { type: "string" },
-    VerifyCheckboxLabel: { type: "string" },
-    Location: { type: "string" },
-    ResponseLanguage: { type: "string" },
-    Specialist: { type: "string" },
-    QueueBadge: { type: "string" },
-    QueueText: { type: "string" },
-    FilterResults: { type: "boolean" },
-    Question: { type: "string" },
-    QuestionRoot: { type: "string" },
+    MaxPages: {
+      type: "integer",
+      default:
+        "Optional number limiting how many pages from a PDF are processed and sent to the AI. 0 processes all pages. Default: 5.",
+    },
+    Rotation: {
+      type: "string",
+      default:
+        "Optional image rotation applied to all files: either '90', '180' or '270'. Useful for multi-file uploads or PDFs with multiple images.",
+    },
+    MaxPixelSize: {
+      type: "integer",
+      default:
+        "Maximum total pixel budget (width x height). Larger images are downscaled client-side preserving aspect ratio. Default: 3211264. Set to 0 to disable downscaling.",
+    },
+    AIHint: {
+      type: "string",
+      default:
+        "Text shown inside AI-populated fields until the user edits the value. Default: '✨ AI-Generated'. Set empty to disable.",
+    },
+    InternetAccess: {
+      type: "boolean",
+      default: "if set to true, enables brave search internet access for this instance. default: false.",
+    },
+    Thinking: {
+      type: "boolean",
+      default:
+        "if set to true, enables thinking mode using a dedicated thinking model for deeper reasoning. default: false.",
+    },
+    MaxThinkingTokens: {
+      type: "number",
+      default:
+        "Maximum token budget for thinking inference. In verify mode defaults to 512. Has no effect when Thinking is false.",
+    },
+    Mode: {
+      type: "enum",
+      options: ["analyse", "verify"],
+      default:
+        "Optional mode. Default/'analyse' answers the questions about the uploaded document and writes each answer into its tagged AI_LLAMA_STANDARD_QA_Question field; 'verify' accepts the file only when the AI answers the upload field's own data-cb-Question with the positive response.",
+    },
+    PositiveResponse: {
+      type: "string",
+      default:
+        "The expected positive answer from the AI in verify mode. Comparison is case-insensitive by default. Default: 'yes'.",
+    },
+    CaseInsensitive: {
+      type: "boolean",
+      default: "if true (default), the ai answer is lowercased before comparing with positiveresponse.",
+    },
+    VerifyErrorText: {
+      type: "string",
+      default:
+        "Error message shown when the file does not pass verification. Default: 'The file does not meet the verification criteria.'",
+    },
+    VerifyCheckboxLabel: {
+      type: "string",
+      default: "Label for the manual verification checkbox shown when verification fails.",
+    },
+    Location: {
+      type: "string",
+      default:
+        "If set to true, enables geolocation access so the user's coordinates are sent to the AI. Default: false.",
+    },
+    ResponseLanguage: {
+      type: "string",
+      default:
+        "Two-letter ISO 639-1 code (e.g. 'de', 'fr'). Forces the AI to respond in this language, skipping auto-detection.",
+    },
+    Specialist: {
+      type: "string",
+      default:
+        "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property. Routes requests to that specialist's server.",
+    },
+    QueueBadge: {
+      type: "string",
+      default: "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    },
+    QueueText: {
+      type: "string",
+      default:
+        "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    },
+    FilterResults: {
+      type: "boolean",
+      default: "if set to 'true', enables pii filtering on brave search queries for this instance.",
+    },
+    Question: {
+      type: "string",
+      default: "The question to ask the AI about the uploaded document. May reference fields/symbols.",
+    },
+    QuestionRoot: {
+      type: "string",
+      default: "Optional CSS selector specifying an alternate root element from which to search for question elements.",
+    },
   })
   public static functionality(
     @TYPE.PRE(

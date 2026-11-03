@@ -469,6 +469,32 @@ function normalizeExplicit(value) {
   if (value?.description) {
     spec.description = String(value.description);
   }
+  if (spec.type === "csv") {
+    // A `csv` parameter carries an ordered `columns` array (one entry per subpart) plus optional
+    // `itemName` and separator overrides. These are passed through, with each column normalized.
+    if (Array.isArray(value?.columns)) {
+      spec.columns = value.columns.map((column) => {
+        const out = { type: column?.type ?? "string" };
+        for (const key of ["name", "label", "default"]) {
+          if (column?.[key] !== undefined) {
+            out[key] = String(column[key]);
+          }
+        }
+        if (Array.isArray(column?.options)) {
+          out.options = column.options.map((option) => String(option));
+        }
+        if (column?.required !== undefined) {
+          out.required = Boolean(column.required);
+        }
+        return out;
+      });
+    }
+    for (const key of ["itemName", "itemSeparator", "fieldSeparator"]) {
+      if (value?.[key] !== undefined) {
+        spec[key] = String(value[key]);
+      }
+    }
+  }
   return spec;
 }
 
@@ -487,6 +513,41 @@ function specLiteral(spec) {
   }
   if (spec.description) {
     parts.push(`description: ${JSON.stringify(spec.description)}`);
+  }
+  if (spec.type === "csv" && Array.isArray(spec.columns)) {
+    // Emit `columns: [ … ]` as a formatted multi-line array so the decorator stays readable.
+    const lines = spec.columns.map((col) => {
+      const colParts = [];
+      if (col.type && col.type !== "string") {
+        colParts.push(`type: ${JSON.stringify(col.type)}`);
+      }
+      if (col.name !== undefined) {
+        colParts.push(`name: ${JSON.stringify(col.name)}`);
+      }
+      if (col.label !== undefined) {
+        colParts.push(`label: ${JSON.stringify(col.label)}`);
+      }
+      if (col.default !== undefined) {
+        colParts.push(`default: ${JSON.stringify(col.default)}`);
+      }
+      if (Array.isArray(col.options)) {
+        colParts.push(`options: ${JSON.stringify(col.options)}`);
+      }
+      if (col.required !== undefined) {
+        colParts.push(`required: ${JSON.stringify(col.required)}`);
+      }
+      return `      { ${colParts.join(", ")} }`;
+    });
+    parts.push(`columns: [\n${lines.join(",\n")}\n    ]`);
+  }
+  if (spec.itemName !== undefined) {
+    parts.push(`itemName: ${JSON.stringify(spec.itemName)}`);
+  }
+  if (spec.itemSeparator !== undefined) {
+    parts.push(`itemSeparator: ${JSON.stringify(spec.itemSeparator)}`);
+  }
+  if (spec.fieldSeparator !== undefined) {
+    parts.push(`fieldSeparator: ${JSON.stringify(spec.fieldSeparator)}`);
   }
   return `{ ${parts.join(", ")} }`;
 }

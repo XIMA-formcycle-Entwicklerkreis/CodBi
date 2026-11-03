@@ -15,27 +15,19 @@
   "parameters": {
     "SiteKey": {
       "type": "string",
-      "description": "The sitekey received from https://developers.google.com/recaptcha.",
-      "descriptionDe": "Der Site-Key, der von https://developers.google.com/recaptcha empfangen wurde.",
-      "descriptionIt": "La sitekey ricevuta da https://developers.google.com/recaptcha."
+      "default": "The sitekey received from https://developers.google.com/recaptcha."
     },
     "DataCallback": {
       "type": "string",
-      "description": "The optional global callback method for when the captcha provides a result.",
-      "descriptionDe": "Die optionale globale Callback-Methode, falls das Captcha ein Ergebnis liefert.",
-      "descriptionIt": "Il metodo callback globale opzionale per quando il captcha fornisce un risultato."
+      "default": "The optional global callback method for when the captcha provides a result."
     },
     "DataCallbackCode": {
       "type": "string",
-      "description": "Optional code to be executed when the captcha provides a result.",
-      "descriptionDe": "Optionaler Code, der ausgeführt werden soll, wenn das Captcha ein Ergebnis liefert.",
-      "descriptionIt": "Codice opzionale da eseguire quando il captcha fornisce un risultato."
+      "default": "Optional code to be executed when the captcha provides a result."
     },
     "Script": {
       "type": "string",
-      "description": "The Google ReCaptcha script's address.",
-      "descriptionDe": "Die Adresse des Google-ReCaptcha-Skripts.",
-      "descriptionIt": "L'indirizzo dello script Google ReCaptcha."
+      "default": "The Google ReCaptcha script's address."
     }
   }
 }

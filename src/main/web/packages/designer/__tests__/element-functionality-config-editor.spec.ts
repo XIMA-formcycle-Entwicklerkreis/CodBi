@@ -7,6 +7,7 @@ import type { TEditorCfg } from "@de-xima/fc-form-designer";
 import {
   ElementFunctionalityConfigEditor,
   ELEMENT_FUNCS_PROPERTY,
+  flushElementConfigRenders,
   paramsToRemoveForRemovedFunctionality,
   refreshElementFunctionalityConfig,
   registerElementFunctionalityProperties,
@@ -28,6 +29,9 @@ function buildEditor(className: string, properties: Record<string, unknown>): HT
 
   const config = { designer: {} } as unknown as TEditorCfg<IElementFunctionalityConfigDescriptor>;
   const editor = new ElementFunctionalityConfigEditor(config);
+  // The editor builds its (heavy) listings in a DEFERRED macrotask so the designer's selection
+  // highlight paints first; tests need the rows synchronously, so flush the queue here.
+  flushElementConfigRenders();
 
   return editor.getElement()[0] as HTMLElement;
 }
@@ -461,6 +465,8 @@ describe("ElementFunctionalityConfigEditor standard-configuration lists", () => 
     const config = { designer: {} } as unknown as TEditorCfg<IElementFunctionalityConfigDescriptor>;
     const editor = new ElementFunctionalityConfigEditor(config);
     const rootEl = editor.getElement()[0] as HTMLElement;
+    // The constructor renders deferred — flush so the initial applicability split is asserted here.
+    flushElementConfigRenders();
 
     expect(stdOptionIds(rootEl, ".codbi-func-config__options:not(.codbi-func-config__options--all)")).toEqual([
       "CodBi_Print",
@@ -475,6 +481,8 @@ describe("ElementFunctionalityConfigEditor standard-configuration lists", () => 
       }),
     };
     editor.setValue("");
+    // `setValue` also renders deferred now — flush so the recomputed split is asserted synchronously.
+    flushElementConfigRenders();
 
     // Now the XContainer-only config must appear in the APPLICABLE list.
     expect(stdOptionIds(rootEl, ".codbi-func-config__options:not(.codbi-func-config__options--all)")).toEqual([
@@ -1057,5 +1065,43 @@ describe("paramsToRemoveForRemovedFunctionality", () => {
   it("returns nothing for a functionality without parameters", () => {
     seedFunctionalities();
     expect(paramsToRemoveForRemovedFunctionality("No.Params", ["alpha.one"])).toEqual([]);
+  });
+});
+
+describe("ElementFunctionalityConfigEditor parameter row highlight", () => {
+  /** Builds an editor whose single applied functionality renders one parameter row. */
+  function buildRow(): HTMLElement {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: { "Date.Min": { Parameter: { Unit: "The unit" } } },
+    };
+    const rootEl = buildEditor("XTextField", { "codbi-prop-element-funcs": "Date.Min" });
+    const row = rootEl.querySelector<HTMLElement>(".codbi-func-config__param-row");
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  }
+
+  it("highlights the label while the value control is hovered and clears it on leave", () => {
+    const row = buildRow();
+    const cell = row.querySelector<HTMLElement>(".codbi-func-config__value")?.parentElement;
+    expect(cell).not.toBeUndefined();
+
+    // The former `:has()` rule is now tracked by the row itself (see `buildParamRow`).
+    cell!.dispatchEvent(new Event("pointerenter"));
+    expect(row.classList.contains("codbi-func-config__param-row--active")).toBe(true);
+
+    cell!.dispatchEvent(new Event("pointerleave"));
+    expect(row.classList.contains("codbi-func-config__param-row--active")).toBe(false);
+  });
+
+  it("keeps the highlight while one of the row's own controls holds focus", () => {
+    const row = buildRow();
+
+    row.dispatchEvent(new Event("focusin"));
+    expect(row.classList.contains("codbi-func-config__param-row--active")).toBe(true);
+
+    // Focus leaving the whole row drops the highlight again.
+    row.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+    expect(row.classList.contains("codbi-func-config__param-row--active")).toBe(false);
   });
 });

@@ -36,9 +36,12 @@ export class HTML_Input_Blacklist {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextField")
   @ParameterTypes({
-    List: { type: "string" },
-    Prefix: { type: "string" },
-    Postfix: { type: "string" },
+    List: { type: "string", default: "A string CSV of forbidden values." },
+    Prefix: {
+      type: "string",
+      default: "The string to show before listing all the values in List when displaying an error message.",
+    },
+    Postfix: { type: "string", default: "The string to show after List when displaying an error message." },
     Separator: { type: "string", default: "," },
     ShowBlacklist: { type: "boolean", default: "false" },
   })

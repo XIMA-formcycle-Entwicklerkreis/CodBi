@@ -44,10 +44,20 @@ export class Form_Navigator {
    * @param toProcess Provided by the CodBi. */
   @SupportedFormelementtype(["XContainer", "XContainerInvisible"])
   @ParameterTypes({
-    Preview: { type: "boolean" },
-    CSSNavButtons: { type: "string" },
-    CSSHoverNavButtons: { type: "string" },
-    CSSBlockedNavButton: { type: "string" },
+    Preview: {
+      type: "boolean",
+      default:
+        "whether the navigator permits switching to every page even if it wasn't visited before (true) or not (false). defaults to false.",
+    },
+    CSSNavButtons: { type: "string", default: "Additional CSS applied to the navigator's navigation buttons." },
+    CSSHoverNavButtons: {
+      type: "string",
+      default: "Additional CSS applied to the navigator's navigation buttons when hovering them.",
+    },
+    CSSBlockedNavButton: {
+      type: "string",
+      default: "Additional CSS applied to the navigator's navigation buttons that are blocked for any reason.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "cssnavbuttons :: csshovernavbuttons :: cssblockednavbuttons")

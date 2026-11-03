@@ -2,7 +2,9 @@
 import { $, Callbacks, getDesignerConfig, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 import { Constants } from "codbi-common";
 import { MARK_ELEMENTS_CHANGED_EVENT } from "./CodbiSwitchEditor.js";
+import type { IFunctionalityParameterSpec } from "./FunctionalityConfigEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
+import { attachCsvValueTooltip, openCsvGridEditor } from "./CsvGridEditor.js";
 import { mirrorElementOptions, mirrorFormOptions } from "./MirrorSelect.js";
 import {
   formatMessage,
@@ -141,6 +143,15 @@ const EYE_ICON_SVG =
 /** Root class of an injected badge; `--empty` marks a Mirror without a selected source element. */
 const BADGE_CLASS = "codbi-elem-badge";
 
+/**
+ * Class stamped onto the widget cell that hosts our badges/preview switch. It exists so the
+ * stylesheet can express "while the WIDGET is hovered" with a plain class selector
+ * (`.codbi-elem-anchor:hover > .codbi-elem-badge`) instead of the universal `*:hover > …` one: a
+ * universal hover selector forces the engine to re-consider every element of the canvas whenever a
+ * hover or selection style recalc runs, which is exactly what made a click on a large form feel slow.
+ */
+const BADGE_ANCHOR_CLASS = "codbi-elem-anchor";
+
 /** Absolute URL of the Mirror icon served by the plugin's `Resource` servlet. */
 const MIRROR_ICON_URL = (() => {
   const baseURL = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
@@ -181,12 +192,16 @@ const BADGE_CSS = `
    widget (or opening/focusing the badge) restores full opacity. The text EXPANSION, however, is
    badge-hover-only: hovering the widget alone must not widen the badge. Because the badge never
    captures the pointer (see the drop-target note after BADGE_CSS), the JS proximity tracker
-   installBadgeHoverTracking sets the --hover class instead of CSS :hover. */
-*:hover>.codbi-elem-badge{opacity:1}
+   installBadgeHoverTracking sets the --hover class instead of CSS :hover.
+   NOTE: the widget-hover rules use the .codbi-elem-anchor CLASS we stamp onto the badge host (see
+   ensureRelativeAnchor) instead of a universal star-hover child selector. A universal hover selector
+   makes the engine re-evaluate the whole canvas subtree on every hover/selection style recalc, which
+   was a measurable part of the "selecting a form element feels slow" lag on large forms. */
+.codbi-elem-anchor:hover>.codbi-elem-badge{opacity:1}
 .codbi-elem-badge--focus-active{opacity:1}
 /* "Detailed" mode: the badge is expanded only while its form element is hovered, never permanently. */
 .codbi-elem-marked:hover>.codbi-elem-badge--open{opacity:1}
-*:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty){border-color:#c96a00;background:#fff7ed}
+.codbi-elem-anchor:hover>.codbi-elem-badge:not(.codbi-elem-badge--empty){border-color:#c96a00;background:#fff7ed}
 .codbi-elem-badge--hover:not(.codbi-elem-badge--empty) .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
 .codbi-elem-marked:hover>.codbi-elem-badge--open .codbi-elem-badge__text{max-width:640px;opacity:1;padding:0 8px 0 0}
 /* The marked (highlight) overlay. The visible rounded tint is drawn by a ::after OVERLAY (on top of
@@ -205,23 +220,13 @@ const BADGE_CSS = `
    (z-index:6 INSIDE its own widget) is otherwise trapped below a neighbouring marked widget that
    comes later in the DOM - e.g. an expanded Mirror-widget badge would paint OVER the menu. Raising
    the widget that owns the active sub-badge puts its whole subtree, menu included, on top. The
-   :has() selector keeps this stateless and limited to the widget the pointer is actually using. */
-.codbi-elem-marked:has(.codbi-func-item:hover),
-.codbi-elem-marked:has(.codbi-css-item:hover),
-.codbi-elem-marked:has(.codbi-holistic-item:hover),
-.codbi-elem-marked:has(.codbi-func-item--open),
-.codbi-elem-marked:has(.codbi-css-item--open),
-.codbi-elem-marked:has(.codbi-holistic-item--open),
-.codbi-elem-marked:has(.codbi-func-item__params:hover),
-.codbi-elem-marked:has(.codbi-elem-badge--funcs:focus-within){z-index:9000}
-/* The SAME lift, driven by JS instead of the has() selector (see raiseMarkedWidget /
-   lowerMarkedWidget). The parameter table opens DOWNWARD and therefore overlaps the form elements
-   BELOW its own widget; those are marked widgets too and would otherwise paint OVER the table (each
-   marked widget is its own stacking context). The has() selector is not available in every browser
-   the designer runs in, and a form element may legitimately sit inside a container that forms its
-   own stacking context - so the owning widget is raised EXPLICITLY while its badge is hovered or
-   holds focus, above every other layer of the form. The two-class selector beats the base
-   z-index:2 rule regardless of the order. */
+   parameter table opens DOWNWARD and therefore also overlaps the form elements BELOW its own widget;
+   those are marked widgets too.
+   NOTE: the lift is driven purely by JS (raiseMarkedWidget / lowerMarkedWidget: focusin/focusout and
+   the badge's own mouseenter/mouseleave) instead of a has() selector. Every such selector invalidates
+   the ANCESTORS of every changed canvas node, so the selection highlight re-evaluated all of them on
+   each mutation — for a lift the JS tracker already provides in every state. The two-class selector
+   beats the base z-index:2 rule regardless of the order. */
 .codbi-elem-marked.codbi-elem-marked--raised{z-index:2147483000}
 .codbi-mirror-icon{background-image:url("${MIRROR_ICON_URL}");background-repeat:no-repeat;background-position:center;background-size:contain}
 .codbi-mirror-icon svg{display:none}
@@ -354,11 +359,16 @@ const BADGE_CSS = `
 .codbi-func-item__params--max .codbi-func-table{width:100%}
 .codbi-func-item__params--max .codbi-func-value{width:100%}
 .codbi-func-item__params--max .codbi-func-input{flex:1 1 auto;width:auto;min-width:0}
-.codbi-func-preview-switch{position:absolute;top:4px;right:4px;z-index:30;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:999px;box-shadow:0 1px 3px rgba(15,23,42,.28);padding:3px 7px;cursor:pointer;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .15s ease,visibility .15s ease;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;user-select:none}
+/* The switch sits ABOVE every badge layer (the functionality badge is z-index:50, the rendered-preview
+   badges are 55/60, see below): a long badge — its sub-badge list or a wide label — overlaps the
+   top-right corner, and while it is hovered its list captures the pointer, so a switch painting under
+   it could not be clicked to turn a running preview off again. 70 keeps the switch reachable in every
+   state, including an expanded/raised badge. */
+.codbi-func-preview-switch{position:absolute;top:4px;right:4px;z-index:70;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;background:rgba(255,255,255,.94);border:1px solid darkorange;border-radius:999px;box-shadow:0 1px 3px rgba(15,23,42,.28);padding:3px 7px;cursor:pointer;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .15s ease,visibility .15s ease;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;line-height:1;color:#374151;user-select:none}
 /* The preview switch is hidden by default so it does not clutter every form element. It appears only
    while its element (the anchor cell that directly owns it) is hovered, while it is switched ON, or
    when it holds keyboard focus — the latter two keep it clickable to turn a running preview off. */
-*:hover>.codbi-func-preview-switch,
+.codbi-elem-anchor:hover>.codbi-func-preview-switch,
 .codbi-func-preview-switch--on,
 .codbi-func-preview-switch:focus-visible{opacity:1;visibility:visible;pointer-events:auto}
 .codbi-func-preview-switch__icon{display:inline-flex;align-items:center;justify-content:center;color:currentColor}
@@ -373,7 +383,8 @@ const BADGE_CSS = `
    cell, so it needs its own hide-children + pointer rules. The CodBi marker badges are EXCLUDED from
    the hiding: a widget keeps its marker (and its functionality/parameter popup) while it is being
    previewed, otherwise activating a preview made the marker disappear. They are also lifted above the
-   preview iframe (z-index:8) — the functionality badge stays in front of the Mirror badge. */
+   preview iframe (z-index:8) — the functionality badge stays in front of the Mirror badge — while the
+   preview SWITCH keeps the highest layer (z-index:70), so a long badge can never cover it. */
 .codbi-elem-preview{outline:2px dashed rgba(255,140,0,.55);outline-offset:2px}
 .codbi-elem-preview.codbi-func-preview--rendered > *:not(.codbi-func-preview-frame):not(.codbi-func-preview-switch):not(.codbi-elem-badge){display:none !important}
 .codbi-elem-preview.codbi-func-preview--rendered > .codbi-elem-badge--funcs{z-index:60}
@@ -461,7 +472,23 @@ interface IAttributeEntry {
 }
 
 /** The type of a functionality parameter (mirrors `codbi-common`'s `TParameterType`). */
-type TParamType = "string" | "integer" | "number" | "boolean" | "enum";
+type TParamType = "string" | "integer" | "number" | "boolean" | "enum" | "csv";
+
+/** The designer-side view of ONE `csv` subpart (a column) of a `type: "csv"` parameter. */
+interface ICsvSubpart {
+  /** The subpart's field name. */
+  name?: string;
+  /** The subpart's type. Defaults to `string`. */
+  type?: string;
+  /** For `type: "enum"`: the allowed values. */
+  options?: string[];
+  /** The column header (falls back to `name`). */
+  label?: string;
+  /** The default value (as a string). */
+  default?: string;
+  /** Whether the subpart is mandatory. */
+  required?: boolean;
+}
 
 /** The designer-side view of ONE functionality parameter's type metadata. */
 interface IParamSpec {
@@ -477,6 +504,14 @@ interface IParamSpec {
   descriptionDe?: string;
   /** The parameter's description in Italian (`it`). */
   descriptionIt?: string;
+  /** For `type: "csv"`: the ordered subpart (column) definitions. */
+  columns?: ICsvSubpart[];
+  /** For `type: "csv"`: the singular name of one element/row. */
+  itemName?: string;
+  /** For `type: "csv"`: the separator between elements/rows (default `,`). */
+  itemSeparator?: string;
+  /** For `type: "csv"`: the separator between subparts (columns) of one element (default `;`). */
+  fieldSeparator?: string;
 }
 
 /** Structural view of one CodBi functionality definition (`window.CodbiPluginData.detFunctionalities`). */
@@ -504,6 +539,41 @@ const funcBadges = new Map<string, HTMLDivElement>();
 
 /** Widget cells whose badge-hover proximity listeners have already been installed. */
 const badgeHoverTracked = new WeakSet<HTMLElement>();
+
+/**
+ * Cached base value of "is this widget cell statically positioned?".
+ *
+ * `getComputedStyle` forces a style/layout read; doing it for every element on every refresh pass was
+ * one of the reasons a selection/re-render felt slow on large forms. The computed base position never
+ * changes for a given cell, so it is read ONCE and remembered; the check is then only re-applied when
+ * the (designer-stripped) INLINE position is empty again. Inline `position` itself stays the cheap guard.
+ */
+const anchorBasePositionStatic = new WeakMap<HTMLElement, boolean>();
+
+/**
+ * Makes sure the widget cell is a positioning context for its absolutely-positioned badges/previews,
+ * without disturbing an existing position and without repeating the forced computed-style read.
+ *
+ * @param anchor The widget cell that hosts a badge.
+ */
+function ensureRelativeAnchor(anchor: HTMLElement): void {
+  // Stamp the badge host so the stylesheet can use a plain class selector for the "widget is hovered"
+  // rules (see BADGE_ANCHOR_CLASS). Idempotent and independent of the inline position below.
+  if (!anchor.classList.contains(BADGE_ANCHOR_CLASS)) {
+    anchor.classList.add(BADGE_ANCHOR_CLASS);
+  }
+  if (anchor.style.position !== "") {
+    return; // Already anchored (ours or the designer's own inline position).
+  }
+  let baseStatic = anchorBasePositionStatic.get(anchor);
+  if (baseStatic === undefined) {
+    baseStatic = getComputedStyle(anchor).position === "static";
+    anchorBasePositionStatic.set(anchor, baseStatic);
+  }
+  if (baseStatic) {
+    anchor.style.position = "relative";
+  }
+}
 
 /** Mirror widget elements currently highlighted with the darkorange "marked" border. */
 const markedWidgets = new Set<HTMLElement>();
@@ -1536,11 +1606,13 @@ function holisticOwnControls(anchor: HTMLElement): HTMLElement[] {
  * each config's `targets` selector). Used to decide whether an element earns a GREEN holistic
  * sub-badge and which ones to render.
  */
-function holisticConfigsFor(anchor: HTMLElement | null): IActiveHolisticConfig[] {
+function holisticConfigsFor(
+  anchor: HTMLElement | null,
+  actives: IActiveHolisticConfig[] = activeHolisticConfigs(),
+): IActiveHolisticConfig[] {
   if (!anchor) {
     return [];
   }
-  const actives = activeHolisticConfigs();
   const matched: IActiveHolisticConfig[] = [];
   for (const config of actives) {
     let matchResult = false;
@@ -2090,9 +2162,7 @@ function ensureElementPreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement):
   if (widget.parentElement !== anchor) {
     anchor.appendChild(widget);
   }
-  if (getComputedStyle(anchor).position === "static") {
-    anchor.style.position = "relative";
-  }
+  ensureRelativeAnchor(anchor);
   applyElementPreview(item, anchor, on);
 }
 
@@ -3522,6 +3592,15 @@ function isOwnMutation(record: MutationRecord): boolean {
  * changes what a badge shows (properties, attributes, the item set) already reaches us through the
  * designer's own callbacks (`items-created`, `set-property`, …).
  */
+/**
+ * @returns `true` while CodBi has injected at least one widget into the canvas (badge, preview switch
+ * or pinned preview wrapper). Used by the canvas observer as a cheap short-circuit: with nothing
+ * injected, no mutation can have taken one of our widgets down.
+ */
+function hasTrackedWidgets(): boolean {
+  return badges.size > 0 || funcBadges.size > 0 || previewSwitches.size > 0 || pinnedPreviewWrappers.size > 0;
+}
+
 function lostOwnWidgets(): boolean {
   for (const widget of badges.values()) {
     if (!widget.isConnected) {
@@ -3571,6 +3650,14 @@ function observeRoot(root: TMarkerRoot): void {
   }
   const observer = new MutationObserver((records) => {
     if (refreshing) {
+      return;
+    }
+    // Nothing of ours is on the canvas (markers OFF and no preview switch/preview running): there is
+    // no widget that could have been lost, so skip the per-record filter entirely. This is the common
+    // case, and it keeps every designer mutation (the property grid rebuilds cell by cell on each
+    // element selection) from paying for `isOwnMutation` — which runs `matches`/`closest`/scoped
+    // queries per added and removed node.
+    if (!hasTrackedWidgets()) {
       return;
     }
     // Only a GENUINE designer re-render may schedule a refresh: neither the records a pass produced
@@ -3899,9 +3986,7 @@ function ensureBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   wireBadgeHoverEvents(badge);
   installBadgeHoverTracking(anchor);
   // Anchor the absolutely-positioned badge to the widget without disturbing an existing position.
-  if (getComputedStyle(anchor).position === "static") {
-    anchor.style.position = "relative";
-  }
+  ensureRelativeAnchor(anchor);
   // The "always show the reference" state is independent of the text content, so apply it before
   // the change-signature short-circuit below.
   badge.classList.toggle("codbi-elem-badge--open", showLabels);
@@ -4227,6 +4312,75 @@ function buildParamTable(
       control = select;
       // Enum parameters get the EP-builder button too. Applying an EP writes the attribute; the badge
       // then renders this row as a text input (the value is no longer one of the enum's literals).
+      openEpFor = (): void => {
+        openBuilderForValue(value, (applied) => {
+          setFuncAttribute(resolve(), attrName, applied);
+        });
+      };
+    } else if (type === "csv") {
+      // A `csv` parameter holds a table of elements (one per row) with typed subparts. A compact
+      // "⧉ Edit" button opens the grid editor popup (see openCsvGridEditor) because such a nested
+      // table does not fit inline in the badge row.
+      const csv = doc.createElement("button");
+      csv.type = "button";
+      csv.className = "codbi-func-input";
+      csv.style.cssText =
+        "flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:2px 12px;" +
+        "border:1px solid darkorange;border-radius:999px;background:transparent;color:#925400;" +
+        "font-size:11px;font-weight:600;cursor:pointer;box-shadow:0 0 .25em #000;" +
+        "transition:background-color .15s ease,color .15s ease;";
+      csv.textContent = "⧉ Edit";
+      // A soft fill on hover (inline handlers, so the host designer's button CSS cannot overrule it).
+      csv.addEventListener("mouseenter", () => {
+        csv.style.background = "rgba(255,140,0,.18)";
+        csv.style.color = "#7a4600";
+      });
+      csv.addEventListener("mouseleave", () => {
+        csv.style.background = "transparent";
+        csv.style.color = "#925400";
+      });
+      isolateControl(csv);
+      // Hover shows the current CSV value as a table — the SAME rich tooltip as the form element's
+      // CodBi config parameter editor (see `attachCsvValueTooltip`). The getter reads the LIVE
+      // attribute (not the row's snapshot) and the tooltip rebuilds itself on every mouseenter, so it
+      // also reflects a value applied through the grid editor. A static `title` stays as the native
+      // fallback.
+      const csvSummary = (): string => {
+        const itemSep = spec?.itemSeparator ?? ",";
+        const itemCount = String(attributeValue(attributeEntries(resolve()), attrName))
+          .split(itemSep)
+          .filter((item) => item.trim().length > 0).length;
+        const subCount = spec?.columns?.length ?? 0;
+        const itemName = spec?.itemName ?? "element";
+        if (itemCount === 0) {
+          return `0 ${itemName}s`;
+        }
+        return subCount > 0 ? `${itemCount} ${itemName}s · ${subCount} fields` : `${itemCount} ${itemName}s`;
+      };
+      csv.title = `Edit ${attrName} (tabular CSV editor)`;
+      attachCsvValueTooltip(
+        csv,
+        () => attributeValue(attributeEntries(resolve()), attrName),
+        spec as IFunctionalityParameterSpec | undefined,
+        csvSummary(),
+      );
+      csv.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const csvSpec = (spec ?? {}) as IFunctionalityParameterSpec;
+        openCsvGridEditor({
+          document: window.document,
+          anchor,
+          value,
+          spec: csvSpec,
+          onApply: (applied) => {
+            setFuncAttribute(resolve(), attrName, applied);
+          },
+        });
+      });
+      control = csv;
+      // CSV rows still expose the EP-builder button (a composed value is written as plain text and
+      // the row then re-renders as a text input).
       openEpFor = (): void => {
         openBuilderForValue(value, (applied) => {
           setFuncAttribute(resolve(), attrName, applied);
@@ -4940,9 +5094,7 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   wireBadgeHoverEvents(badge);
   installBadgeHoverTracking(anchor);
   // Anchor the absolutely-positioned badge to the widget without disturbing an existing position.
-  if (getComputedStyle(anchor).position === "static") {
-    anchor.style.position = "relative";
-  }
+  ensureRelativeAnchor(anchor);
   // Feed the form element's width to the stylesheet so the parameter table never grows wider than
   // the element the badge sits on (`--codbi-func-anchor-width`, see `BADGE_CSS`).
   const anchorWidth = anchor.clientWidth || anchor.offsetWidth || 0;
@@ -5062,6 +5214,10 @@ export function refreshPassCount(): number {
 function refreshBadges(): void {
   const enabled = isMarkEnabled();
   const elementPreview = previewElementsEnabled();
+  // The ACTIVE holistic configurations are resolved ONCE per pass instead of once per item: the
+  // per-item selector matching (`holisticOwnControls` runs a subtree query) is the expensive part of
+  // a pass and must never be recomputed from scratch for every element.
+  const holisticConfigs = enabled ? activeHolisticConfigs() : [];
   refreshPass++;
   refreshing = true;
   try {
@@ -5072,20 +5228,28 @@ function refreshBadges(): void {
     const livePreview = new Set<string>();
     for (const item of Object.values(items)) {
       const isMirror = isMirrorItem(item);
-      const anchor = anchorFor(item);
-      const cbFunc = isCbFuncItem(item);
-      const css = hasCssClasses(item);
-      // The per-element holistic resolution ALSO logs each anchor match/failure — see holisticConfigsFor.
-      const hol = holisticConfigsFor(anchor).length > 0;
-      // A "marked" element carries a `data-cb-func` functionality and/or a CodBi standard-config
-      // CSS class (orange/blue sub-badges) and/or is a target of an ACTIVE holistic configuration
-      // (green sub-badge) — any of these earns the CodBi badge on the element.
-      const isFunc = cbFunc || css || hol;
-      const itemId = item.getId?.() ?? "";
       // A persisted `data-cb-preview="1"` restores THIS element's preview on its own, even when the
       // form-level "Preview mode" is off: the attribute is the per-element source of truth (and the
       // only persistence for the switch), so a reload never requires re-activating the preview.
       const previewOn = elementPreviewOn(item);
+      // Cheap early bail-out FIRST: when neither marker mode nor preview mode needs this element and
+      // it is not a Mirror (whose placeholder stylesheet must load even with markers off), skip ALL of
+      // the expensive per-item work below (anchor resolution, CSS-class scan, holistic matching). This
+      // is the common case while the CodBi markers are OFF, and it keeps a canvas re-render (e.g. the
+      // selection highlight) from paying for every element.
+      if (!isMirror && !enabled && !elementPreview && !previewOn) {
+        continue;
+      }
+      const cbFunc = enabled && isCbFuncItem(item);
+      const css = enabled && hasCssClasses(item);
+      const anchor = anchorFor(item);
+      // The per-element holistic resolution runs only in marker mode (it paints the green sub-badge)
+      // and needs the anchor's rendered controls.
+      const hol = enabled && anchor ? holisticConfigsFor(anchor, holisticConfigs).length > 0 : false;
+      // A "marked" element carries a `data-cb-func` functionality and/or a CodBi standard-config
+      // CSS class (orange/blue sub-badges) and/or is a target of an ACTIVE holistic configuration
+      // (green sub-badge) — any of these earns the CodBi badge on the element.
+      const isFunc = cbFunc || css || hol;
       // In preview mode we ALSO need to reach plain elements (fields, fieldsets, containers, pages)
       // so they get their own preview switch — so don't bail out on non-widget items in that mode.
       if (!isMirror && !isFunc && !elementPreview && !previewOn) {
@@ -5189,6 +5353,26 @@ function refreshBadges(): void {
   }
 }
 
+/**
+ * Runs `callback` in the browser's idle time when the Idle API is available, so a (potentially long)
+ * refresh pass never competes with the designer's own rendering — notably the selection HIGHLIGHT,
+ * which used to appear only after the pass had finished. Falls back to a direct call where the API is
+ * absent (jsdom, older browsers), which keeps the previous behaviour.
+ */
+function runWhenIdle(callback: () => void): void {
+  const idle = (
+    window as unknown as {
+      requestIdleCallback?: (cb: () => void, options?: { timeout?: number }) => number;
+    }
+  ).requestIdleCallback;
+  if (typeof idle === "function") {
+    // `timeout` guarantees the pass still runs promptly when the browser never goes idle.
+    idle(callback, { timeout: 300 });
+    return;
+  }
+  callback();
+}
+
 /** Debounced refresh — coalesces bursts of canvas mutations into one pass. */
 function scheduleRefresh(): void {
   if (refreshHandle !== null) {
@@ -5196,7 +5380,7 @@ function scheduleRefresh(): void {
   }
   refreshHandle = window.setTimeout(() => {
     refreshHandle = null;
-    refreshBadges();
+    runWhenIdle(refreshBadges);
   }, 60);
 }
 

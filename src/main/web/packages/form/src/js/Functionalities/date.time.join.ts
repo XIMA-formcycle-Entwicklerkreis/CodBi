@@ -53,10 +53,22 @@ export class Date_Time_Join {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype({ XTextField: { datatype: "time" } })
   @ParameterTypes({
-    DateField: { type: "string" },
-    TimeField: { type: "string" },
+    DateField: {
+      type: "string",
+      default:
+        "Optional CSS selector selecting the input that provides the date. Takes precedence over the CodBi_Date_Time_Join_Date CSS class.",
+    },
+    TimeField: {
+      type: "string",
+      default:
+        "Optional CSS selector selecting the input that provides the time. Takes precedence over the CodBi_Date_Time_Join_Time CSS class.",
+    },
     ToMillis: { type: "boolean", default: "false" },
-    Divisor: { type: "number" },
+    Divisor: {
+      type: "number",
+      default:
+        "Optional number that the combined date's milliseconds are divided by (floored) before writing them into the tagged input. Takes precedence over ToMillis.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "datefield :: timefield")

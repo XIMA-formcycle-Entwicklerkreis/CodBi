@@ -6,28 +6,22 @@
     "it": "Memorizza un valore serializzato in JSON (da un altro elemento o oggetto) in un campo nascosto."
   },
   "Parameter": {
-    "Path": "The dotted path leading to the object, starting from the tagged element, which's Property is to be set.",
+    "Path": "The optional dotted path leading to the object, starting from the tagged element, which's Property is to be set. If left empty, the tagged element itself is the target (e.g. to set innerHTML).",
     "Property": "The name of the property to set.",
     "ToSet": "The object to set the Property to."
   },
   "parameters": {
     "Path": {
       "type": "string",
-      "description": "The dotted path leading to the object, starting from the tagged element, which's Property is to be set.",
-      "descriptionDe": "Der gepunktete Pfad, der zum Objekt führt, beginnend beim markierten Element, dessen Property gesetzt werden soll.",
-      "descriptionIt": "Il percorso punteggiato che porta all'oggetto, a partire dall'elemento marcato, la cui Property deve essere impostata."
+      "default": "The optional dotted path leading to the object, starting from the tagged element, which's Property is to be set. If left empty, the tagged element itself is the target (e.g. to set innerHTML)."
     },
     "Property": {
       "type": "string",
-      "description": "The name of the property to set.",
-      "descriptionDe": "Der Name der zu setzenden Eigenschaft.",
-      "descriptionIt": "Il nome della proprietà da impostare."
+      "default": "The name of the property to set."
     },
     "ToSet": {
       "type": "string",
-      "description": "The object to set the Property to.",
-      "descriptionDe": "Das Objekt, auf das die Property gesetzt werden soll.",
-      "descriptionIt": "L'oggetto a cui impostare la Property."
+      "default": "The object to set the Property to."
     }
   }
 }

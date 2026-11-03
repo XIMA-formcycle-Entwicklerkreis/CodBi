@@ -101,21 +101,64 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XTextField", "XTextArea"])
   @ParameterTypes({
-    Question: { type: "string" },
-    PositiveResponse: { type: "string" },
-    CaseInsensitive: { type: "boolean" },
-    VerifyErrorText: { type: "string" },
-    VerifyCheckboxLabel: { type: "string" },
-    InternetAccess: { type: "boolean" },
-    Thinking: { type: "boolean" },
-    MaxThinkingTokens: { type: "number" },
-    Language: { type: "string" },
-    ResponseLanguage: { type: "string" },
-    Specialist: { type: "string" },
-    QueueBadge: { type: "string" },
-    QueueText: { type: "string" },
-    FilterResults: { type: "boolean" },
-    QuestionRoot: { type: "string" },
+    Question: {
+      type: "string",
+      default:
+        "Verification question. Supports <[this]> and <[CSSClass]> placeholders. Overridden by the data-cb-Question attribute if present.",
+    },
+    PositiveResponse: {
+      type: "string",
+      default:
+        "The single word the AI must reply with to signal validity. Comparison is case-insensitive by default. Default: 'yes'.",
+    },
+    CaseInsensitive: {
+      type: "boolean",
+      default:
+        "if true (default), the ai answer is lowercased before comparison. set to 'false' for exact (case-sensitive) matching.",
+    },
+    VerifyErrorText: {
+      type: "string",
+      default:
+        "Fallback error message used only when the AI returns an empty answer. Default: 'The entered text does not meet the verification criteria.'",
+    },
+    VerifyCheckboxLabel: { type: "string", default: "Label for the manual override checkbox shown on failure." },
+    InternetAccess: { type: "boolean", default: "if 'true', enables brave search internet access. default: false." },
+    Thinking: { type: "boolean", default: "if 'true', enables thinking mode. default: false." },
+    MaxThinkingTokens: {
+      type: "number",
+      default: "Token budget for thinking. Defaults to 512 when Thinking is enabled.",
+    },
+    Language: {
+      type: "string",
+      default:
+        "Full language name (e.g. 'German', 'Deutsch') appended as 'Answer in {Language}.' to the reply instruction sent to the AI.",
+    },
+    ResponseLanguage: {
+      type: "string",
+      default: "Two-letter ISO 639-1 code (e.g. 'de', 'fr') to force the AI response language.",
+    },
+    Specialist: {
+      type: "string",
+      default: "Name of a specialist model registered via an AI_LLAMA_STD_SPECIALIST_XXX plugin property.",
+    },
+    QueueBadge: {
+      type: "string",
+      default: "If set to 'true', shows a badge with the current queue position while waiting for inference.",
+    },
+    QueueText: {
+      type: "string",
+      default:
+        "Text appended after the queue position number in the badge (e.g. 'in queue' shows '3 in queue'). Default: empty.",
+    },
+    FilterResults: {
+      type: "boolean",
+      default: "if set to 'true', enables pii filtering on brave search queries for this instance.",
+    },
+    QuestionRoot: {
+      type: "string",
+      default:
+        "Optional CSS selector specifying an alternate root element from which to search for elements referenced by <[CSSClass]> placeholders.",
+    },
   })
   public static functionality(
     @TYPE.PRE(

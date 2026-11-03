@@ -13,15 +13,11 @@
   "parameters": {
     "Extractor": {
       "type": "string",
-      "description": "The string representing the regular expression to extract the values to be replaced.",
-      "descriptionDe": "Die Zeichenfolge, die den regulären Ausdruck darstellt, um die zu ersetzenden Werte zu extrahieren.",
-      "descriptionIt": "La stringa che rappresenta l'espressione regolare per estrarre i valori da sostituire."
+      "default": "The string representing the regular expression to extract the values to be replaced."
     },
     "Replacements": {
       "type": "string",
-      "description": "The string representing the replacement value.",
-      "descriptionDe": "Die Zeichenfolge, die den Ersatzwert darstellt.",
-      "descriptionIt": "La stringa che rappresenta il valore di sostituzione."
+      "default": "The string representing the replacement value."
     }
   }
 }

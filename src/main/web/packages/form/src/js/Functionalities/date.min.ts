@@ -37,8 +37,16 @@ export class Date_Min {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype({ XTextField: { datatype: "date*" } })
   @ParameterTypes({
-    Minimum: { type: "integer" },
-    MsgHigher: { type: "string" },
+    Minimum: {
+      type: "integer",
+      default:
+        "The amount of years/months/weeks (per the Unit parameter) in the past that the entered date must be at least in order to be valid.",
+    },
+    MsgHigher: {
+      type: "string",
+      default:
+        "The error message shown when the entered date is not far enough in the past (or, with Reverse, too far). [%ERROR_DATE%] is replaced with the minimum valid date.",
+    },
     Delimiter: { type: "string", default: "." },
     Reverse: { type: "boolean", default: "false" },
     Unit: { type: "enum", options: ["d", "w", "m", "y"], default: "y" },

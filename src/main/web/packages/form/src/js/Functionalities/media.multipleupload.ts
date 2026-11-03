@@ -730,9 +730,15 @@ export class Media_MultipleUpload {
    *  - postfixTooMany: The message that is displayed after the **Maximum** if too many files were selected. */
   @SupportedFormelementtype("XUpload")
   @ParameterTypes({
-    Maximum: { type: "integer" },
-    PrefixTooMany: { type: "string" },
-    PostfixTooMany: { type: "string" },
+    Maximum: { type: "integer", default: "The number of files that may be uploaded." },
+    PrefixTooMany: {
+      type: "string",
+      default: "The message that is displayed before the Maximum if too many files were selected.",
+    },
+    PostfixTooMany: {
+      type: "string",
+      default: "The message that is displayed after the Maximum if too many files were selected.",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "prefixtoomany :: postfixtoomany")

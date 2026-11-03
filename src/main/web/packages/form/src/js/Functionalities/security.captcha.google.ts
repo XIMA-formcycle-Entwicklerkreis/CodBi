@@ -36,10 +36,13 @@ export class Security_Captcha_Google {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
-    SiteKey: { type: "string" },
-    DataCallback: { type: "string" },
-    DataCallbackCode: { type: "string" },
-    Script: { type: "string" },
+    SiteKey: { type: "string", default: "The sitekey received from https://developers.google.com/recaptcha." },
+    DataCallback: {
+      type: "string",
+      default: "The optional global callback method for when the captcha provides a result.",
+    },
+    DataCallbackCode: { type: "string", default: "Optional code to be executed when the captcha provides a result." },
+    Script: { type: "string", default: "The Google ReCaptcha script's address." },
   })
   public static functionality(
     @DEFINED.PRE("sitekey :: script")

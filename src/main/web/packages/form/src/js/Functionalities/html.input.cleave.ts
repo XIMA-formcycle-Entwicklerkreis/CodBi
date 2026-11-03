@@ -38,12 +38,12 @@ export class HTML_Input_Cleave {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XTextField")
   @ParameterTypes({
-    Config: { type: "string" },
-    Date: { type: "string" },
-    DateMin: { type: "string" },
-    DateMax: { type: "string" },
-    Delimiter: { type: "string" },
-    DatePattern: { type: "string" },
+    Config: { type: "string", default: "The Cleave options to set instead of the other shorthand parameters." },
+    Date: { type: "string", default: "Whether to enable Cleave's date masking." },
+    DateMin: { type: "string", default: "The minimum date allowed, in American format with dashes (YYYY-MM-DD)." },
+    DateMax: { type: "string", default: "The maximum date allowed, in American format with dashes (YYYY-MM-DD)." },
+    Delimiter: { type: "string", default: "The delimiter used in the formatted value (e.g. '.', '/', '-')." },
+    DatePattern: { type: "string", default: "The date pattern (e.g. 'd-m-Y') used by the date mask." },
   })
   public static functionality(
     toLoad: { [key: string]: unknown },

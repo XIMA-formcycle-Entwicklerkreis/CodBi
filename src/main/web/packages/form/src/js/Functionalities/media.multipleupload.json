@@ -14,21 +14,15 @@
   "parameters": {
     "Maximum": {
       "type": "integer",
-      "description": "The number of files that may be uploaded.",
-      "descriptionDe": "Die Anzahl der Dateien, die hochgeladen werden dürfen.",
-      "descriptionIt": "Il numero di file che possono essere caricati."
+      "default": "The number of files that may be uploaded."
     },
     "PrefixTooMany": {
       "type": "string",
-      "description": "The message that is displayed before the Maximum if too many files were selected.",
-      "descriptionDe": "Die Meldung, die vor dem Maximum angezeigt wird, wenn zu viele Dateien ausgewählt wurden.",
-      "descriptionIt": "Il messaggio mostrato prima di Maximum se sono stati selezionati troppi file."
+      "default": "The message that is displayed before the Maximum if too many files were selected."
     },
     "PostfixTooMany": {
       "type": "string",
-      "description": "The message that is displayed after the Maximum if too many files were selected.",
-      "descriptionDe": "Die Meldung, die nach dem Maximum angezeigt wird, wenn zu viele Dateien ausgewählt wurden.",
-      "descriptionIt": "Il messaggio mostrato dopo Maximum se sono stati selezionati troppi file."
+      "default": "The message that is displayed after the Maximum if too many files were selected."
     }
   }
 }

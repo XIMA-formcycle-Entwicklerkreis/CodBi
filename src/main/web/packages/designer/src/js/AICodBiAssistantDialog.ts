@@ -531,7 +531,63 @@ function installDialogTransparencySwitches(): void {
   const scan = (): void => {
     document.querySelectorAll<HTMLElement>(".p-dialog").forEach(ensureSwitch);
   };
+
+  /**
+   * Whether one mutation batch could have created a dialog (or changed a dialog's own subtree, e.g. the
+   * header that holds the close button). Only such a batch can make a switch appear.
+   */
+  const touchesDialog = (records: ReadonlyArray<MutationRecord>): boolean => {
+    for (const record of records) {
+      const target = record.target instanceof Element ? record.target : record.target.parentElement;
+      if (target?.closest(".p-dialog")) {
+        return true;
+      }
+      for (const node of [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)]) {
+        const element = node instanceof Element ? node : node.parentElement;
+        if (!element) {
+          continue;
+        }
+        if (element.classList.contains("p-dialog") || element.querySelector(".p-dialog") !== null) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  /**
+   * Coalesces {@link scan} to at most ONE pass per animation frame.
+   *
+   * This observer watches the WHOLE designer document. Element selection makes the property panel
+   * rebuild its grid cell by cell, so a single click produced dozens of mutation batches — and the
+   * former callback ran a document-wide `.p-dialog` query for every one of them. On top of the (much
+   * cheaper) check that the batch touched a dialog at all, the scan therefore never runs more than
+   * once per frame.
+   */
+  let scanScheduled = false;
+  const scheduleScan = (): void => {
+    if (scanScheduled) {
+      return;
+    }
+    scanScheduled = true;
+    const run = (): void => {
+      scanScheduled = false;
+      scan();
+    };
+    const raf = (window as unknown as { requestAnimationFrame?: (callback: () => void) => number })
+      .requestAnimationFrame;
+    if (typeof raf === "function") {
+      raf(run);
+    } else {
+      setTimeout(run, 0);
+    }
+  };
+
   scan();
-  const observer = new MutationObserver(scan);
+  const observer = new MutationObserver((records) => {
+    if (touchesDialog(records)) {
+      scheduleScan();
+    }
+  });
   observer.observe(document.body, { childList: true, subtree: true });
 }

@@ -31,7 +31,7 @@ export class Date_NoWeekends {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype({ XTextField: { datatype: "date*" } })
   @ParameterTypes({
-    MsgNoWeekends: { type: "string" },
+    MsgNoWeekends: { type: "string", default: "The optional error message shown when a weekend date is entered." },
   })
   public static functionality(
     @TYPE.PRE("string", "msgnoweekends :: delimiter")

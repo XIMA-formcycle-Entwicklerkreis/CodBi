@@ -34,8 +34,11 @@ export class HTML_Input_Trans_RegEx extends HTML_Input_Transformer {
    * @param toProcess As provided bny the **CodBi**. */
   @SupportedFormelementtype(["XTextField", "XTextArea"])
   @ParameterTypes({
-    Extractor: { type: "string" },
-    Replacements: { type: "string" },
+    Extractor: {
+      type: "string",
+      default: "The string representing the regular expression to extract the values to be replaced.",
+    },
+    Replacements: { type: "string", default: "The string representing the replacement value." },
   })
   public static override functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
     /** @funcElement XTextField */

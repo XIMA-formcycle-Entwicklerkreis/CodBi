@@ -38,12 +38,28 @@ export class HTML_Select_Injection {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype("XSelect")
   @ParameterTypes({
-    Titles: { type: "string" },
-    Values: { type: "string" },
-    ReClean: { type: "boolean" },
-    TitleProperty: { type: "string" },
-    ValueProperty: { type: "string" },
-    TextProperty: { type: "string" },
+    Titles: {
+      type: "string",
+      default: "The optional title-attributes that shall be set on the generated option elements.",
+    },
+    Values: { type: "string", default: "The innerHTMLs of the generated option elements shall have." },
+    ReClean: {
+      type: "boolean",
+      default: "an optional boolean specifying whether to clean the select element prior to populating it.",
+    },
+    TitleProperty: {
+      type: "string",
+      default: "The optional property to retrieve from the array passed to the Values to use it as the actual title.",
+    },
+    ValueProperty: {
+      type: "string",
+      default: "The optional property to retrieve from the array passed to the Values to use it as the actual value.",
+    },
+    TextProperty: {
+      type: "string",
+      default:
+        "The optional property to retrieve from the array passed to the Values to use it as the actual seen text in the selection (if not specified but ValueProperty is, the ValueProperty will be used for the text).",
+    },
   })
   public static functionality(
     @TYPE.PRE("string", "textproperty")

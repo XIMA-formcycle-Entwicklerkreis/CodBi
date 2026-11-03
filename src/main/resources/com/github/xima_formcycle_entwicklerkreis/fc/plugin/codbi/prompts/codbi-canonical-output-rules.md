@@ -35,23 +35,34 @@ Do NOT swap their roles, and do NOT use a field's NAME where the technical ID is
 WRONG (causes a repair pass): `"hiddenif":"cbShowPersonData", "hiddenifcomp":"9"`
 RIGHT (canonical):            `"hiddenif":"xi-cb-showpersondata", "hiddenifcomp":"1", "hiddenifvalue":"1"`
 
-### 2. CodBi functionality on an element — an attribute, NOT a CSS class
+### 2. CodBi functionality vs standard-configuration CSS class — know WHICH mechanism
 
-A CodBi functionality (e.g. `CodBi_NoFutureDate`, `CodBi_TimeFrame_*`, `CodBi_Holidays_*`,
-`CodBi_Accordion_*`, OpenPLZ) attaches to an element as a **functional attribute(s)** entry,
-NOT by putting the CodBi name into the element's CSS class list.
+CodBi has TWO distinct application mechanisms. Decide per element which one applies; never
+confuse them.
 
-- A CodBi functionality that governs an element must be expressed as an attribute in the
-  element's `properties.attributes` array using the CodBi wiring (`data-cb-func` /
-  `data-cb-*` parameter pairs). The attributes are flagged `"kind":"func"` / `"kind":"param"`
-  with `"codbi":true`.
-- NEVER append a CodBi functionality name (e.g. `CodBi_NoFutureDate`) to `properties.cssclasses`
-  or to the element's CSS class list — that is a CSS class, not a CodBi functionality, and it
-  does not activate the behaviour.
+**A. GENUINE CodBi FUNCTIONALITY (e.g. `Date.Min`, `Date.Frame`, `Time.Frame`, `Form.Navigator`,
+`HTML.Text.Injector`, `HTML.Text.Mapper`, `JSON.SET`, `Date.Time.Join`, `Sys.Log.Console`, …)** —
+attaches as **functional attribute(s)** in the element's `properties.attributes` array using the
+CodBi wiring (`data-cb-func` / `data-cb-*` parameter pairs, flagged `"kind":"func"` /
+`"kind":"param"` with `"codbi":true`). NEVER append a genuine functionality name to
+`properties.cssclasses` — a CSS class is not a functionality and does not activate its behaviour.
 
-WRONG (a CSS class that does nothing): element `attributes.cssclasses` contains `CodBi_NoFutureDate`
-RIGHT (an activated functionality):     the element carries the CodBi functional attribute(s) for
-                                        that functionality as specified in the CodBi reference.
+**B. STANDARD-CONFIGURATION CSS CLASS (e.g. `CodBi_NoFutureDate`, `CodBi_TimeFrame_<N>_Begin/_End`,
+`CodBi_DateFrame_<N>_Begin/_End`, `CodBi_Holidays_*`, `CodBi_Accordion_A..D`, `CodBi_HTML_Panel_*`,
+`CodBi_People_*`, `CodBi_OpenPLZ_*`, `CodBi_Fotocropper_*`, `CodBi_Print_Remove_*`) — a standard
+configuration** — is applied by putting its CSS class into `properties.cssclasses` (the class list
+is applied by the configuration's own script; a standard-config class is NOT a `data-cb-func`
+value and is NOT put into `attributes`). `CodBi_NoFutureDate` (birth-date / no-future-date fields)
+and the `CodBi_*Frame_*`/`CodBi_Accordion_*`/`CodBi_HTML_Panel_*`/`CodBi_People_*`/`CodBi_OpenPLZ_*`
+classes are ALL standard-configuration CSS classes → they belong in `properties.cssclasses`.
+
+WRONG (a standard-config class in `data-cb-func`): element has `data-cb-func="CodBi_NoFutureDate"`
+RIGHT (applied as a standard configuration):      element `properties.cssclasses` contains
+                                                 `CodBi_NoFutureDate`
+WRONG (a genuine functionality as a CSS class):   element `properties.cssclasses` contains
+                                                 `Date.Min`
+RIGHT (a genuine functionality as attribute):     the element carries the CodBi functional
+                                                 attribute(s) for that functionality.
 
 ### 3. General principle
 

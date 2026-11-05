@@ -98,7 +98,7 @@
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
 		<spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
 		<jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
-		<dependency-check-maven.version>10.0.4</dependency-check-maven.version>
+		<dependency-check-maven.version>12.2.2</dependency-check-maven.version>
 		<cyclonedx-maven-plugin.version>2.9.1</cyclonedx-maven-plugin.version>
 	</properties>
 

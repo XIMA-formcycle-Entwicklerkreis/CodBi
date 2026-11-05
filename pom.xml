@@ -79,7 +79,7 @@
 		<fc-deploy-plugin-maven-plugin.version>8.0.2</fc-deploy-plugin-maven-plugin.version>
 		<fc-server-maven-plugin.version>8.5.3</fc-server-maven-plugin.version>
 		<git-build-hook-maven-plugin.version>3.5.0</git-build-hook-maven-plugin.version>
-		<frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
+		<frontend-maven-plugin.version>2.0.1</frontend-maven-plugin.version>
 		<maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
 		<maven-clean-plugin.version>3.4.0</maven-clean-plugin.version>
 		<maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>

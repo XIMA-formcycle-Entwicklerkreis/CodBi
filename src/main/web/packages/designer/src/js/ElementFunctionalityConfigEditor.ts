@@ -327,7 +327,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
 
   constructor(config: TEditorCfg<IElementFunctionalityConfigDescriptor>) {
     super(config, "", "text");
-    this.selected = parseCsv(selectedProperty(ELEMENT_FUNCS_PROPERTY));
+    this.selected = this.currentSelectedFunctionalities(selectedProperty(ELEMENT_FUNCS_PROPERTY));
 
     this.root = document.createElement("div");
     this.root.className = "codbi-func-config codbi-func-config--element";
@@ -625,7 +625,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
 
   /** See {@link Editors.BaseEditor }'s **setValue**. Refreshes when FORMCYCLE (re)assigns the value. */
   public override setValue(data: unknown): void {
-    this.selected = parseCsv(
+    this.selected = this.currentSelectedFunctionalities(
       data != null && String(data) !== "" ? String(data) : selectedProperty(ELEMENT_FUNCS_PROPERTY),
     );
     // Re-render BOTH listings when Formcycle (re)assigns the value / a different element is selected.
@@ -743,6 +743,26 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * The functionalities to show as APPLIED on the selected element, in normalized (lowercase) form.
+   *
+   * Built from BOTH sources of truth, de-duplicated through {@link parseCsv}:
+   * 1. the Formcycle-derived `funcs` property value (usually the `data-cb-func` CSV);
+   * 2. the RAW `data-cb-func` attribute on the element itself.
+   *
+   * Formcycle's own attribute → `funcs` derivation can be unreliable when a functionality is written
+   * with an atypical casing (e.g. `DATE.MIN` instead of `Date.Min`): entries it cannot match
+   * case-sensitively may be dropped from the derived property while still living on the actual
+   * `data-cb-func` attribute. Merging the raw attribute (both through the case-insensitive
+   * {@link parseCsv}) guarantees a functionality is marked as selected no matter which casing it was
+   * written with; `parseCsv` lowercases and de-duplicates, so the casing variant is not duplicated.
+   */
+  private currentSelectedFunctionalities(propertyValue: string): string[] {
+    const fromProperty = parseCsv(propertyValue);
+    const raw = currentAttributeValueForItem(this.targetElement(), CB_FUNC_ATTRIBUTE);
+    return parseCsv([fromProperty.join(","), raw].filter((entry) => entry.length > 0).join(","));
   }
 
   /**

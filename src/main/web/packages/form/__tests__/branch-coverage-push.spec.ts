@@ -2454,6 +2454,38 @@ describe("HTML_Panel submit handler branches", () => {
     // Disconnected elements are purged, so preventSubmission=false
     expect(results[results.length - 1].preventSubmission).toBe(false);
   });
+
+  it("submit when validator is disabled (plain Absenden) skips reveal-and-gate", () => {
+    // A plain "Absenden" button (no "prüfen") makes FORMCYCLE disable the validator
+    // (xutil.submitNoCheck() -> xm_validator.disable() -> _active = false). In that case the
+    // html.panel submit handler must NOT be gated: folded panels stay folded, invalid fields are
+    // not scrolled/focused and the form is sent as-is — even when a required field inside the
+    // panel is empty. Only "Absenden + prüfen" (validator active) gates.
+    const fieldset = createPanelWithRequired({ withPage: true });
+    fieldset.scrollIntoView = jest.fn();
+
+    // Simulate a plain "Absenden" submit: FORMCYCLE sets xm_validator._active = false.
+    (globalThis as any).xm_validator._active = false;
+
+    HTML_Panel.functionality(
+      {
+        generateheader: "true",
+        autoheadercss: "",
+      },
+      fieldset,
+    );
+
+    const results = getXUtil().trigger("submit", [{}]);
+    // The handler returns undefined early (skip): it neither blocks submission, nor reveals/focuses
+    // the invalid field. (gotoPage is a shared module-level mock so the amount of accumulated calls
+    // is not asserted here; the early-return undefined result is the gating signal.)
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[results.length - 1]).toBeUndefined();
+    expect(fieldset.scrollIntoView).not.toHaveBeenCalled();
+
+    // Restore so this module-level state does not leak into other tests.
+    (globalThis as any).xm_validator._active = undefined;
+  });
 });
 
 describe("OnChange_Conditional formatDate branches", () => {

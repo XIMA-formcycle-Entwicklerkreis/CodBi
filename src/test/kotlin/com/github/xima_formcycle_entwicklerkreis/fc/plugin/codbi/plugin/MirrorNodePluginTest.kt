@@ -268,6 +268,38 @@ class MirrorNodePluginTest {
   }
 
   @Test
+  fun `content revision changes when the external access flag of a referenced status changes`() {
+    val node =
+        WorkflowLaneMaterializer.SourceNode(
+            id = 1L,
+            uuid = "node-uuid",
+            type = "FC_CHANGE_STATE",
+            name = "Status setzen",
+            description = "",
+            paramsJson = """{"targetState":{"uuid":"state-uuid"}}""",
+            children = emptyList())
+    val base =
+        WorkflowLaneMaterializer.SourceLane(
+            pathId = 42L,
+            pathName = "Pfad",
+            triggerType = "FC_CYC",
+            roots = listOf(node),
+            revision = 0,
+            sourceStatesByUuid = mapOf("state-uuid" to "Gesendet"),
+            sourceStatesExternalAccess = mapOf("state-uuid" to true))
+
+    assertEquals(
+        WorkflowLaneMaterializer.contentRevision(base),
+        WorkflowLaneMaterializer.contentRevision(base.copy()),
+        "an unchanged lane must keep its revision")
+    assertNotEquals(
+        WorkflowLaneMaterializer.contentRevision(base),
+        WorkflowLaneMaterializer.contentRevision(
+            base.copy(sourceStatesExternalAccess = mapOf("state-uuid" to false))),
+        "toggling external access on the referenced status must change the revision")
+  }
+
+  @Test
   fun `terminal endpoint of a lane is its last child when terminal`() {
     val mail = StubNode(2, "FC_EMAIL", "Mail")
     val state = StubNode(3, "FC_CHANGE_STATE", "Status")

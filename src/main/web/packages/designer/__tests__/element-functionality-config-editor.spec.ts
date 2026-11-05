@@ -132,6 +132,28 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
     expect(optionIds(rootEl, mainList)).toEqual(["Any.Thing", "Date.Min"]);
   });
 
+  it("marks a functionality written in UPPERCASE in data-cb-func as selected", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {
+        "Any.Thing": {},
+        "Date.Min": {},
+      },
+    };
+
+    // The functionality is written in UPPERCASE on the element's `data-cb-func` attribute, while the
+    // Formcycle-derived `funcs` property is empty (an atypical casing can be dropped from that
+    // derived property). The listing must STILL mark `Date.Min` as selected — no matter the casing.
+    const rootEl = buildEditor("XTextField", {
+      attributes: [{ text: "data-cb-func", value: "DATE.MIN" }],
+    });
+    const section = funcSection(rootEl);
+    const rows = Array.from(section.querySelectorAll<HTMLElement>(".codbi-func-config__option"));
+    const dateMinRow = rows.find((row) => row.querySelector("span")?.textContent === "Date.Min");
+    const dateMinCheckbox = dateMinRow?.querySelector<HTMLInputElement>("input[type=checkbox]");
+    expect(dateMinCheckbox?.checked).toBe(true);
+  });
+
   it("keeps the second list hidden until the toggle button is clicked", () => {
     TestState.language = "en";
     (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {

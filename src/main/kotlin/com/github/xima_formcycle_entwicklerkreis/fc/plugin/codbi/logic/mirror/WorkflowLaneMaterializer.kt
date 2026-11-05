@@ -73,6 +73,12 @@ object WorkflowLaneMaterializer {
       val revision: Int = 0,
       /** Source workflow version's states as `uuid -> name` (for param remap). */
       val sourceStatesByUuid: Map<String, String> = emptyMap(),
+      /**
+       * The source workflow version's states as `uuid -> externalAccessPermitted` ("Externer Aufruf
+       * erlaubt"). Copied onto the target when a missing state is created so a reflected endpoint's
+       * state keeps its externally-callable flag.
+       */
+      val sourceStatesExternalAccess: Map<String, Boolean> = emptyMap(),
   )
 
   /**
@@ -180,6 +186,12 @@ object WorkflowLaneMaterializer {
             // status rename (or a newly created status) re-materializes the lane.
             source.sourceStatesByUuid.toSortedMap().forEach { (uuid, name) ->
               append(uuid).append('\u0003').append(name).append('\u0004')
+            }
+            // The "Externer Aufruf erlaubt" flag is state-level, invisible in the node params. Fold
+            // it in so a flag change on a source status re-materializes the reflected endpoint's
+            // state (the flag is copied onto a freshly created target state).
+            source.sourceStatesExternalAccess.toSortedMap().forEach { (uuid, permitted) ->
+              append(uuid).append('\u0005').append(permitted).append('\u0006')
             }
           }
           .hashCode()
@@ -741,6 +753,7 @@ object WorkflowLaneMaterializer {
               userContext,
               targetWorkflowVersion,
               source.sourceStatesByUuid,
+              source.sourceStatesExternalAccess,
               nodeUuidMap,
               src.paramsJson)
       warnings.addAll(paramWarnings.prefixed())
@@ -843,6 +856,7 @@ object WorkflowLaneMaterializer {
       userContext: Any?,
       targetWorkflowVersion: Any?,
       sourceStatesByUuid: Map<String, String>,
+      sourceStatesExternalAccess: Map<String, Boolean>,
       nodeUuidMap: Map<String, String>,
       paramsJson: String,
   ): Pair<String, List<String>> {
@@ -858,7 +872,13 @@ object WorkflowLaneMaterializer {
     // and
     // created in the reflecting version when the source references a status the target lacks.
     ensureReferencedStatesExist(
-        userContext, targetWorkflowVersion, sourceStatesByUuid, targetStatesByName, root, warnings)
+        userContext,
+        targetWorkflowVersion,
+        sourceStatesByUuid,
+        sourceStatesExternalAccess,
+        targetStatesByName,
+        root,
+        warnings)
     remapJson(root, sourceStatesByUuid, targetStatesByName, nodeUuidMap, warnings)
     return gson.toJson(root) to warnings
   }
@@ -906,6 +926,7 @@ object WorkflowLaneMaterializer {
       userContext: Any?,
       targetWorkflowVersion: Any?,
       sourceStatesByUuid: Map<String, String>,
+      sourceStatesExternalAccess: Map<String, Boolean>,
       targetStatesByName: MutableMap<String, String>,
       root: JsonObject,
       warnings: MutableList<String>,
@@ -922,7 +943,10 @@ object WorkflowLaneMaterializer {
       }
       val key = sourceName.trim().lowercase()
       if (targetStatesByName.containsKey(key)) continue
-      val created = createWorkflowState(userContext, targetWorkflowVersion, sourceName)
+      val externalAccessPermitted = sourceStatesExternalAccess[sourceUuid]
+      val created =
+          createWorkflowState(
+              userContext, targetWorkflowVersion, sourceName, externalAccessPermitted)
       if (created != null) {
         targetStatesByName[key] = created
         warnings.add("WorkflowState '$sourceName' was missing in the reflecting project — created")
@@ -937,11 +961,16 @@ object WorkflowLaneMaterializer {
     }
   }
 
-  /** Creates a `WorkflowState` named [stateName] in [targetWorkflowVersion]; returns its UUID. */
+  /**
+   * Creates a `WorkflowState` named [stateName] in [targetWorkflowVersion]; returns its UUID. When
+   * [externalAccessPermitted] is non-null it is copied from the SOURCE state onto the freshly
+   * created one, so a reflected endpoint's status keeps its "Externer Aufruf erlaubt" flag.
+   */
   private fun createWorkflowState(
       userContext: Any?,
       targetWorkflowVersion: Any?,
       stateName: String,
+      externalAccessPermitted: Boolean? = null,
   ): String? {
     if (userContext == null || targetWorkflowVersion == null) return null
     return try {
@@ -957,6 +986,18 @@ object WorkflowLaneMaterializer {
       stateClass
           .getMethod("setVersion", Class.forName("de.xima.fc.entities.WorkflowVersion"))
           .invoke(state, targetWorkflowVersion)
+      // Reflect the source state's "Externer Aufruf erlaubt" flag so the endpoint stays callable
+      // from outside after reflection. The setter takes a primitive `boolean`, so resolve the
+      // single-parameter method by name (works for both primitive and boxed signatures).
+      if (externalAccessPermitted != null) {
+        runCatching {
+          stateClass.methods
+              .firstOrNull { m ->
+                m.name.equals("setExternalAccessPermitted", true) && m.parameterCount == 1
+              }
+              ?.invoke(state, externalAccessPermitted)
+        }
+      }
       // Append after the last existing state so the status list order stays stable.
       var maxOrder = -1
       for (existing in loadTargetStates(userContext, targetWorkflowVersion)) {
@@ -1177,6 +1218,7 @@ object WorkflowLaneMaterializer {
             userContext,
             targetWorkflowVersion,
             source.sourceStatesByUuid,
+            source.sourceStatesExternalAccess,
             sourceUuidToTargetUuid,
             src.paramsJson)
     warnings.addAll(paramWarnings.prefixed())

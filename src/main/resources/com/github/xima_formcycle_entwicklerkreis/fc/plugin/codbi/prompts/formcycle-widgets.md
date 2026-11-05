@@ -170,7 +170,7 @@ Template (initially UNCHECKED):
 
 ## XButtonList
 
-Button or button group. No label property. 'buttons' array contains button objects each with: 'name' (technical ID), 'value' (display text, may be HTML), 'action' object.
+Button or button group. No label property. 'buttons' array contains button objects each with: 'name' (technical ID), 'value' (display text, may be HTML), 'action' object. CRITICAL — the button's VISIBLE LABEL is the `value` property (Formcycle renders `buttons[].value` as the on-screen text); `title` is a separate OPTIONAL TOOLTIP and must NEVER be used as the button label. A button with the label in `title` and an empty `value` ("") renders an EMPTY button — put the label in `value` and leave `value` non-empty for every visible button.
 
 AVAILABLE BUTTON ACTIONS (action.page — verified against Formcycle 8.5):
 - "" (empty) = no action, or a custom action when action.customAction contains JS
@@ -189,6 +189,7 @@ RULES for choosing check:
 DESIGNER ACTION ID (action.optionId) — THE MACHINE VALUE THE DESIGNER STORES, NOT THE LABEL IT SHOWS. Derive it from page+check (verified against the designer's own code): page ""/"-1" → "no action"; "submit" → "submit + check"; "submitNoCheck" → "submit"; "submitSave" → "save + check"; "submitSaveNoCheck" → "save"; "submitPreview" → "submit no save"; "submitPreviewWindowed" → "submit no save popup"; ANY OTHER action value (incl. the logical "next"/"previous" before the server resolves it) → the value itself when check=false ("next") and "<value> + check" when check=true ("next + check"). NEVER put a human label into optionId — the designer renders the label from this value.
 
 MANDATORY RULE — XButtonList submit button: For any button that submits or sends the form (e.g. 'Absenden', 'Senden', 'Einreichen', 'Prüfen und Senden'), use EXACTLY this action: {"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}. The string 'submit' is a FORMCYCLE server-side command — it is NOT a page name and must NEVER be replaced with any page name.
+EXCEPTION — a NON-SUBMIT export button: the only XButtonList button that is NOT a submit is the DQ.Table.View Excel-export button. It MUST have its label in value = "Export Excel" (NEVER 'Senden'/'Absenden'; never in `title` with an empty value) and the no-action action {"page":"","check":false,"customAction":"","customClassNames":"","displayName":"","optionId":"no action","value":""} (optionId 'no action' = 'keine Aktion'). Do NOT apply the submit rule to it — with a submit action it would send the form instead of exporting (a FAIL). CRITICAL — NO WORKFLOW: DQ.Table.View exports the table to Excel entirely CLIENT-SIDE (SheetJS "xlsx" bundled into the form script), so this button is a pure click-handler and MUST NOT create any Formcycle workflow/task/node (no FC_EXPORT_*, no FC_RETURN_FILE, no export lane) and MUST NOT be treated as (or renamed to) a "Senden"/submit trigger.
 
 CRITICAL — A 'Zurück'/'Back' and 'Senden'/'Submit'/'Weiter' button set belongs in ONE XButtonList via its 'buttons' array (each button with a name, value and action including action.page). There is NO 'BUTTON' or 'XButton' widget class — never invent one and never create standalone button items; every back/submit button must be a member of an XButtonList's buttons array.
 
@@ -564,7 +565,9 @@ Use when the prompt mentions "XIMA Navigationsleiste", "XIMA navbar", "FORMCYCLE
 
 **AMBIGUOUS "navbar" — CodBi vs Formcycle:** "navbar" / "Navigationsleiste" / "navigation bar" / "Fortschrittsleiste" (ANY language) ALONE does not say WHICH element is meant — the dedicated Formcycle XNavigationBar widget OR CodBi's Form.Navigator functionality. They are NOT interchangeable; a request that names neither is CLARIFIED (which one) in the separate clarification round BEFORE building — never silently substitute one for the other.
 
-CRITICAL — Distinguish from CodBi Form.Navigator: Use XNavigationBar when the prompt mentions FORMCYCLE navbar/navigationsleiste. Use CodBi Form.Navigator (data-cb-func=form.navigator) when the prompt mentions "CodBi Navbar" or "CodBi Navigation".
+**NOT AMBIGUOUS — a navbar WITH "preview" / "Vorschau" is ALWAYS CodBi Form.Navigator:** the XNavigationBar widget has NO preview capability (no way to let the user jump to/click every page, including unvisited ones, without blocking). "Vorschau" / "preview" / "jump to any page" / "direkt zu jeder Seite springen" (decide by MEANING, ANY language) is a capability ONLY CodBi's Form.Navigator functionality has, via its `Preview=true` parameter. So such a request NEVER means the XNavigationBar — build `data-cb-func="Form.Navigator"` with `Preview=true` (add `data-cb-preview="true"` to the SAME element's `attributes` array — a preview navbar missing `data-cb-preview="true"` is a FAIL) and do NOT clarify which navbar. Only fall back to XNavigationBar when no preview is requested.
+
+CRITICAL — Distinguish from CodBi Form.Navigator: Use XNavigationBar when the prompt mentions FORMCYCLE navbar/navigationsleiste (and NO preview is requested). Use CodBi Form.Navigator (data-cb-func=form.navigator) when the prompt mentions "CodBi Navbar", "CodBi Navigation", OR requires a preview ("Vorschau") — the latter is ONLY possible with CodBi.
 
 ## XLanguageSwich
 

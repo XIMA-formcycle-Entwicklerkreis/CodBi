@@ -25,6 +25,17 @@ const PANEL_HOST_CLASS = "codbi-mirror-dd-host";
  * over the sibling property rows/sections (see the stacking note in `frame.css`).
  */
 const LIFT_CLASS = "codbi-mirror-lifted";
+/**
+ * Class stamped on the option list while it is OPEN and portaled to `document.body` (`position:
+ * fixed`). The list only carries the class while portaled, so `frame.css` can switch its layout from
+ * the inline (`left/right/top`) variant to the fixed viewport variant and give it the high z-index
+ * needed to paint above a LATER sibling settings panel (the CodBi config panel).
+ */
+const LIST_PORTAL_CLASS = "codbi-mirror-dd__list--portal";
+/** Vertical gap between the button and the open option list (px). */
+const LIST_GAP = 2;
+/** Safety margin kept between the open option list and the viewport edge (px). */
+const LIST_MARGIN = 8;
 /** localStorage key remembering whether the Mirror preview should be shown large (maximized). */
 const PREVIEW_MAX_KEY = "codbi-mirror-preview-maximized";
 
@@ -197,7 +208,10 @@ export class MirrorDropdown {
       this.cancelHide();
       this.hidePreview();
     });
-    window.addEventListener("resize", () => this.positionPreview());
+    window.addEventListener("resize", () => {
+      this.positionPreview();
+      this.positionPortalList();
+    });
   }
 
   /** Replaces the whole option list. */
@@ -303,6 +317,9 @@ export class MirrorDropdown {
       // Lift the rows/sections that contain the (now open) list above their siblings.
       this.markLiftedAncestors(true);
       this.list.hidden = false;
+      // Move the open list into a `document.body` portal so NO settings panel (not even the CodBi
+      // config panel in its own box) can confine its `z-index` or stack it below the panel's content.
+      this.portalList();
       this.button.setAttribute("aria-expanded", "true");
       if (this.filterInput) {
         this.query = "";
@@ -320,10 +337,68 @@ export class MirrorDropdown {
     this.isOpen = false;
     // A closed dropdown must never keep the row above its siblings.
     this.markLiftedAncestors(false);
+    this.restorePortalList();
     this.list.hidden = true;
     this.cancelHide();
     this.hidePreview();
     this.button.setAttribute("aria-expanded", "false");
+  }
+
+  /**
+   * Moves the (open) option list into a `document.body` PORTAL and positions it `fixed` under the
+   * button. Moving it out of the designer settings panel frees the list from the panel's stacking
+   * context: the CodBi functionality panel — which is rendered in its OWN `.xm-panel-box` (a separate
+   * formcycle category, later in the DOM) — can then never paint its "double buttons" over the list,
+   * no matter how many panels sit between the two.
+   *
+   * The list stays portaled (and keeps the `--portal` class) only while open; {@link #close} calls
+   * {@link #restorePortalList} to put it back under its row so a discarding re-render never leaves a
+   * stray list attached to `document.body`.
+   */
+  private portalList(): void {
+    document.body.appendChild(this.list);
+    this.list.classList.add(LIST_PORTAL_CLASS);
+    this.positionPortalList();
+  }
+
+  /** Returns the open, portaled list to its root (the reverse of {@link #portalList}). */
+  private restorePortalList(): void {
+    if (this.list.parentElement === this.root) {
+      return;
+    }
+    this.root.appendChild(this.list);
+    this.list.classList.remove(LIST_PORTAL_CLASS);
+    this.list.style.left = "";
+    this.list.style.right = "";
+    this.list.style.top = "";
+    this.list.style.width = "";
+    this.list.style.maxHeight = "";
+  }
+
+  /**
+   * Positions the portaled option list directly below the button, flush left with it, and clamps it
+   * to the viewport when the button sits low/bottom-anchored (a long list would otherwise escape the
+   * bottom edge). Uses the same viewport margin tolerated by the floating preview.
+   */
+  private positionPortalList(): void {
+    if (!this.isOpen || this.list.parentElement !== document.body) {
+      return;
+    }
+    const rect = this.button.getBoundingClientRect();
+    const width = this.root.offsetWidth || rect.width;
+    let left = rect.left;
+    left = Math.max(LIST_MARGIN, Math.min(left, window.innerWidth - width - LIST_MARGIN));
+    let top = rect.bottom + LIST_GAP;
+    const maxHeight = 320;
+    // If the list would run past the bottom edge, anchor it ABOVE the button instead.
+    if (top + maxHeight > window.innerHeight - LIST_MARGIN && rect.top - LIST_GAP > LIST_MARGIN) {
+      top = Math.max(LIST_MARGIN, rect.top - LIST_GAP - maxHeight);
+    }
+    this.list.style.left = `${left}px`;
+    this.list.style.right = "auto";
+    this.list.style.top = `${top}px`;
+    this.list.style.width = `${width}px`;
+    this.list.style.maxHeight = `${maxHeight}px`;
   }
 
   private renderButton(): void {

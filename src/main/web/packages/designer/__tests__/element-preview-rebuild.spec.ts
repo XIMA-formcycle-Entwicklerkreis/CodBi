@@ -10,7 +10,7 @@ import { previewClipIsLost, refreshCodbiElementMarkers } from "../src/js/CodbiEl
 import { resetTestState, TestState } from "./test-state.js";
 
 /**
- * Builds a designer item whose element preview is ON (`data-cb-preview="1"`).
+ * Builds a designer item whose element preview is ON (`data-cb-elem-preview="1"`).
  *
  * @param cell - The content cell of the element on the canvas.
  * @returns The fake item.
@@ -20,7 +20,7 @@ function previewItem(cell: HTMLElement): unknown {
     getId: () => "xi-prev",
     getPersist: () => ({
       properties: {
-        attributes: [{ text: "data-cb-preview", value: "1" }],
+        attributes: [{ text: "data-cb-elem-preview", value: "1" }],
       },
     }),
     getItemContentCell: () => [cell],

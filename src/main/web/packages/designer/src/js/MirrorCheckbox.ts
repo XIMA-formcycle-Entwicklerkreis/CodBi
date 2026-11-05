@@ -81,30 +81,32 @@ export function ensureMirrorToggleStyle(): void {
   width: 38px;
   height: 20px;
   margin: 0;
-  border: 0;
+  border: 1px solid #000;
   border-radius: 999px;
-  background: #cbd5e1;
+  background: #55555555;
   cursor: pointer;
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.25s ease-in-out, border-color 0.25s ease-in-out;
   vertical-align: middle;
 }
 .codbi-mirror-checkbox::after {
   content: "";
   position: absolute;
-  top: 2px;
+  top: 50%;
+  margin-top: -8px;
   left: 2px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #ffffff;
+  background: #000;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-  transition: left 0.15s ease-in-out;
+  transition: left 0.25s ease-in-out;
 }
 .codbi-mirror-checkbox:checked {
-  background: #ff8c00;
+  border-color: #ff8c00;
 }
 .codbi-mirror-checkbox:checked::after {
   left: 20px;
+  background: #ff8c00;
 }
 .codbi-mirror-checkbox:focus-visible {
   outline: 2px solid #ff8c00;

@@ -109,6 +109,25 @@
   display: none;
 }
 
+/*
+ * OPEN list, portaled to `document.body` by `MirrorDropdown.portalList()`.
+ *
+ * While OPEN the list is moved OUT of the settings panel into a body-level portal and laid out
+ * `position: fixed`, so NO `.xm-panel-box` stacking context (neither the one that hosts the Mirror
+ * dropdown nor the SEPARATE `.xm-panel-box` that renders the CodBi functionality panel with its
+ * "double buttons") can confine its z-index or paint over it. There is no anchor row to be "above" a
+ * sibling inside a clipped panel any more, so the high z-index alone is enough to guarantee the list
+ * is on top. The exact left/top/width are set inline by `positionPortalList()`.
+ */
+.codbi-mirror-dd__list--portal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: auto;
+  width: auto;
+  z-index: 100000;
+}
+
 /* Filter box (element dropdown): narrows the visible options while typing. */
 .codbi-mirror-dd__filter {
   flex: 0 0 auto;
@@ -379,7 +398,14 @@
  * open list and the panel box, so exactly the open dropdown's row (and the category wrappers around
  * it) is raised and a closed dropdown never covers the row below it.
  */
-.codbi-mirror-lifted {
+/*
+ * NOTE on specificity: the generic selector is NOT enough. `.codbi-mirror-lifted` is stamped on the
+ * direct children of `.xm-panel-box.codbi-mirror-dd-host > *` too, and that rule (2 classes) would
+ * otherwise keep them at `z-index: 1`. Using the scope-qualified selector (3 classes) lets the lift
+ * win, so the open dropdown's row and its category wrapper really paint above the CodBi config
+ * panel's double buttons, while a closed dropdown falls back to plain `z-index: 1`.
+ */
+.xm-panel-box.codbi-mirror-dd-host .codbi-mirror-lifted {
   position: relative;
   z-index: 2;
 }

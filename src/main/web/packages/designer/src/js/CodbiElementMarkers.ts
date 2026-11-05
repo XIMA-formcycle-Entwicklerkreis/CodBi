@@ -91,8 +91,12 @@ const PREVIEW_ELEMENTS_PROPERTY = String(Constants["designer.property.preview_el
  * Attribute written onto a form element (via `setItemAttributeValue`) holding the per-element
  * "preview this element" toggle (`"1"`/`"0"`). Only the designer preview reads it; the published form
  * and the CodBi runtime ignore it.
+ *
+ * NOTE — deliberately NOT named `data-cb-preview`: that name is the CodBi `Form.Navigator`
+ * functional **Preview** parameter. The per-element designer toggle must never collide with (or be
+ * mistaken for) a functionality parameter, so it uses its own dedicated attribute.
  */
-const ELEMENT_PREVIEW_ATTRIBUTE = "data-cb-preview";
+const ELEMENT_PREVIEW_ATTRIBUTE = "data-cb-elem-preview";
 
 /** CSS class toggled on a general element while its preview is on. */
 const ELEM_PREVIEW_CLASS = "codbi-elem-preview";
@@ -1879,7 +1883,7 @@ function dropPreviewSwitch(id: string): void {
 /**
  * Whether the form-level "Preview mode" is ON (the `designer.property.preview_elements` form
  * property). When ON, a preview switch is added to every element — see
- * {@link ensureElementPreviewSwitch}. Elements that carry a persisted `data-cb-preview="1"`
+ * {@link ensureElementPreviewSwitch}. Elements that carry a persisted `data-cb-elem-preview="1"`
  * additionally show their switch even when this form-level mode is OFF (see `refreshBadges`), so a
  * per-element preview survives a designer reload on its own.
  */
@@ -1907,7 +1911,7 @@ function previewElementsEnabled(): boolean {
 }
 
 /**
- * Reads an element's persisted `data-cb-preview` toggle from its attribute bag. This attribute is the
+ * Reads an element's persisted `data-cb-elem-preview` toggle from its attribute bag. This attribute is the
  * single source of truth for the per-element preview, so it also restores the toggle after a reload.
  * `"true"` is accepted alongside `"1"` (e.g. when the attribute was set by hand in the attributes
  * table); an absent attribute or `"0"` means off.
@@ -1965,7 +1969,7 @@ function refreshNestedPreviews(parent: IMarkerItemLike, parentAnchor: HTMLElemen
 /**
  * Signature of everything that influences an element's frontend preview: its identity PLUS every
  * `data-cb-*` attribute (the functionality list and its parameters) and its CSS classes (CodBi
- * standard configurations). The preview CONTROL attribute `data-cb-preview` is excluded — flipping
+ * standard configurations). The preview CONTROL attribute `data-cb-elem-preview` is excluded — flipping
  * the preview switch itself must not force an extra reload. When a `data-cb-*` attribute changes,
  * the signature changes and the running preview is re-applied, so parameter edits actually reach the
  * rendered widget.
@@ -2099,7 +2103,7 @@ function applyElementPreview(item: IMarkerItemLike, anchor: HTMLElement, on: boo
 
 /**
  * Creates/updates the per-element preview switch (idempotent). It is keyed by the element's item id
- * in the shared {@link previewSwitches} map and toggles the element's persisted `data-cb-preview`
+ * in the shared {@link previewSwitches} map and toggles the element's persisted `data-cb-elem-preview`
  * attribute (written onto the element itself via {@link setItemAttributeValue}). That attribute is
  * the **only** persistence for this setting: it is stored with the element by the designer, so on a
  * reload `refreshBadges` re-creates the switch and re-applies the preview from it.
@@ -2143,7 +2147,7 @@ function ensureElementPreviewSwitch(item: IMarkerItemLike, anchor: HTMLElement):
       const current = elementPreviewOn(live);
       // Write the toggle onto the element's own attribute bag; the designer re-renders and
       // refreshBadges re-applies the preview (and the `after-set-property` callback refreshes).
-      // `data-cb-preview` is the ONLY persistence for this setting — nothing else is written.
+      // `data-cb-elem-preview` is the ONLY persistence for this setting — nothing else is written.
       setItemAttributeValue(live, ELEMENT_PREVIEW_ATTRIBUTE, current ? "0" : "1");
       // Closing a page/container preview re-clips every preview nested inside it, so a child
       // preview that was applied while the parent preview hid it does not keep showing the whole
@@ -5228,7 +5232,7 @@ function refreshBadges(): void {
     const livePreview = new Set<string>();
     for (const item of Object.values(items)) {
       const isMirror = isMirrorItem(item);
-      // A persisted `data-cb-preview="1"` restores THIS element's preview on its own, even when the
+      // A persisted `data-cb-elem-preview="1"` restores THIS element's preview on its own, even when the
       // form-level "Preview mode" is off: the attribute is the per-element source of truth (and the
       // only persistence for the switch), so a reload never requires re-activating the preview.
       const previewOn = elementPreviewOn(item);
@@ -5290,7 +5294,7 @@ function refreshBadges(): void {
       }
       // Per-element preview: when the form-level "Preview mode" is ON, EVERY element (fields,
       // fieldsets, containers, pages) gets its own preview switch (see ensureElementPreviewSwitch),
-      // not just those carrying `data-cb-func`. An element whose persisted `data-cb-preview="1"`
+      // not just those carrying `data-cb-func`. An element whose persisted `data-cb-elem-preview="1"`
       // keeps its switch even when the form-level mode is OFF (that is what makes the setting
       // persistent). Widgets (Mirror) and the FORMCYCLE spacer (which has nothing to preview — it is
       // pure layout) are excluded here.
@@ -5489,7 +5493,7 @@ function onKeyDown(event: KeyboardEvent): void {
   }
   // NOTE: ALT+P is intentionally NOT handled here — it is reserved for the attribute-editor
   // shortcut that lists a functionality's parameters (see LocalDocInterface). A previous ALT+P
-  // binding here toggled the per-element preview (writing `data-cb-preview`) and stole that shortcut.
+  // binding here toggled the per-element preview (writing `data-cb-elem-preview`) and stole that shortcut.
 }
 
 /** Installs the designer hooks, the ALT+V shortcut and the canvas mutation observers. */

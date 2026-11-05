@@ -320,13 +320,15 @@ object WorkflowMirrorAccess {
           rootsBuilt.size,
           byId.size)
       val signature = "$versionId\u0001$pathId\u0001$pathName".hashCode()
+      val (statesByName, statesExternalAccess) = statesOfVersion(em, versionId)
       WorkflowLaneMaterializer.SourceLane(
           pathId = pathId,
           pathName = pathName,
           triggerType = triggerType,
           roots = rootsBuilt,
           revision = signature,
-          sourceStatesByUuid = statesOfVersionByUuid(em, versionId))
+          sourceStatesByUuid = statesByName,
+          sourceStatesExternalAccess = statesExternalAccess)
     } catch (x: Exception) {
       logger.warn(
           "[WorkflowMirrorAccess] sourceLane failed for '{}'/{}: {}", formKey, pathId, x.message)
@@ -336,24 +338,39 @@ object WorkflowMirrorAccess {
     }
   }
 
-  /** The `uuid -> name` map of every workflow state of [versionId] (read-only, for param remap). */
-  private fun statesOfVersionByUuid(em: Any?, versionId: Long): Map<String, String> {
-    if (em == null) return emptyMap()
+  /**
+   * Every workflow state of [versionId] in a single query:
+   * - `uuid -> name` (used to remap state UUID references by name into the reflecting project).
+   * - `uuid -> externalAccessPermitted` ("Externer Aufruf erlaubt"), carried so a reflected
+   *   endpoint's state keeps its externally-callable flag when the state is created in the
+   *   reflecting project.
+   */
+  private fun statesOfVersion(
+      em: Any?,
+      versionId: Long
+  ): Pair<Map<String, String>, Map<String, Boolean>> {
+    if (em == null) return emptyMap<String, String>() to emptyMap()
     val rows =
         query(
             em,
             "SELECT s FROM de.xima.fc.entities.WorkflowState s WHERE s.version.id = :vid",
             mapOf("vid" to versionId))
-    val out = LinkedHashMap<String, String>()
+    val byUuid = LinkedHashMap<String, String>()
+    val externalAccess = LinkedHashMap<String, Boolean>()
     val getUuid = rows.firstOrNull()?.javaClass?.getMethod("getUUIDObject")
     val getName = rows.firstOrNull()?.javaClass?.getMethod("getName")
-    if (getUuid == null || getName == null) return out
+    val getExternalAccess = rows.firstOrNull()?.javaClass?.getMethod("isExternalAccessPermitted")
+    if (getUuid == null || getName == null) return byUuid to externalAccess
     for (s in rows) {
-      val uuid = runCatching { getUuid.invoke(s)?.toString() }.getOrNull()
+      val uuid = runCatching { getUuid.invoke(s)?.toString() }.getOrNull() ?: continue
       val name = runCatching { getName.invoke(s) as? String }.getOrNull()
-      if (uuid != null && name != null) out[uuid] = name
+      if (name != null) byUuid[uuid] = name
+      if (getExternalAccess != null) {
+        val permitted = runCatching { getExternalAccess.invoke(s) as? Boolean }.getOrNull()
+        if (permitted != null) externalAccess[uuid] = permitted
+      }
     }
-    return out
+    return byUuid to externalAccess
   }
 
   /**

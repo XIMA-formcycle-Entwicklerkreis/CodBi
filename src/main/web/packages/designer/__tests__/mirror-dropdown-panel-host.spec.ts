@@ -111,3 +111,46 @@ describe("MirrorDropdown open-list lift", () => {
     expect(row.classList.contains(LIFT_CLASS)).toBe(false);
   });
 });
+
+describe("MirrorDropdown open-list portal", () => {
+  /** Class the dropdown stamps on the list while it is OPEN and portaled (must match `frame.css`). */
+  const LIST_PORTAL_CLASS = "codbi-mirror-dd__list--portal";
+
+  /** The open list element (the `.codbi-mirror-dd__list` child of the dropdown root/list). */
+  function listElement(dropdownRoot: HTMLElement): HTMLElement {
+    return dropdownRoot.querySelector<HTMLElement>(".codbi-mirror-dd__list") as HTMLElement;
+  }
+
+  it("portals the OPEN list to document.body so it escapes every settings-panel stacking context", () => {
+    const { dropdown, button } = mountDropdown();
+    const list = listElement(dropdown.root);
+    // Closed: the list lives inside the dropdown root (as the stylesheet lays it out inline).
+    expect(list.parentElement).toBe(dropdown.root);
+    expect(list.classList.contains(LIST_PORTAL_CLASS)).toBe(false);
+
+    button.click();
+
+    // Open: the list is moved to the body portal and marked for the `position: fixed` styling.
+    expect(list.parentElement).toBe(document.body);
+    expect(list.classList.contains(LIST_PORTAL_CLASS)).toBe(true);
+
+    button.click();
+
+    // Closed again: the list returns to its root and drops the portal styling.
+    expect(list.parentElement).toBe(dropdown.root);
+    expect(list.classList.contains(LIST_PORTAL_CLASS)).toBe(false);
+  });
+
+  it("restores the portaled list to its root when closed via the document click", () => {
+    const { dropdown, button } = mountDropdown();
+    const list = listElement(dropdown.root);
+
+    button.click();
+    expect(list.parentElement).toBe(document.body);
+
+    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(list.parentElement).toBe(dropdown.root);
+    expect(list.classList.contains(LIST_PORTAL_CLASS)).toBe(false);
+  });
+});

@@ -735,7 +735,7 @@ export class DQ_Table_View {
    * the tagged {@link HTMLElement } and enables exporting that table to an **Excel**-file (`.xlsx`) via a button.
    *
    * Config Parameter:
-   *  - ```Columns```:   **REQUIRED** - A **CSV** defining the columns to show. Every column is
+   *  - ```Columns```:   A **CSV** defining the columns to show. Every column is
    *                     `label;datacolumn;jsonFlag` with an optional fourth entry `;width`:
    *                     e.g. `Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30`.
    *                     `label` is the header shown in the table/Excel-file, `datacolumn` is the name of the column
@@ -743,17 +743,50 @@ export class DQ_Table_View {
    *                     **JSON** so its cells render a maximizable JSON-viewer (use `false` / `0` / `no` for plain
    *                     columns; for backwards compatibility a plain number in this position is treated as the
    *                     width) and `width` (optional) defines the column's width (characters in the Excel-file,
-   *                     pixels on-screen).
+   *                     pixels on-screen). When the user skips the column definition, `Columns` may be left **FULLY
+   *                     EMPTY** (``data-cb-columns=""``): the table then renders an EMPTY table (no columns, an empty
+   *                     header and a "no data" body) and the user adds the CSV-syntax later in this functionality's
+   *                     CSV editor.
    *  - ```DataQuery```: **REQUIRED** - The name of the {@link https://help.formcycle.de Datasource-Query} on the
    *                     Formcycle-server whose result shall be displayed (e.g. `INHALT.Eigentuemerdialog_Dezember_2025`).
    *                     The query is executed via `$.xutil.getDataQuery`.
    *  - ```CSS```:       An optional {@link string } of one or more (space separated) CSS-Classes to apply to **both**
    *                     the tagged container and the injected table.
-   *  - ```FileName```:  The name of the exported Excel-file **without** extension. The extension is always `.xlsx`.
-   *                     Defaults to `Export`.
-   *  - ```SheetName```: The name of the worksheet within the exported Excel-file. Defaults to `sheet1`.
-   *  - ```ExportButton```: An **optional** CSS-Selector of an existing `<button>`/`<a>` that shall trigger the
-   *                     export. When omitted (or no matching element is found) the table is rendered **without** any
+   *  - ```FileName```:  **REQUIRED whenever an Excel-export is requested** — MUST be set to a sensible value
+   *                     (never left at the bare `Export` default and never omitted). The name of the exported
+   *                     Excel-file **without** extension. The extension is always `.xlsx`. Derive a sensible value
+   *                     from the query name (strip the datasource prefix/extension), e.g. the query
+   *                     `INHALT.Altstadtfest_2027` → `Altstadtfest_2027`. Never set a boolean or an empty value.
+   *  - ```SheetName```: **REQUIRED whenever an Excel-export is requested** — MUST be set to a sensible value
+   *                     (never left at `sheet1` and never omitted). The name of the worksheet within the exported
+   *                     Excel-file. Derive a sensible value from the query name (the same readable core as the
+   *                     filename, max ~31 chars), e.g. `Altstadtfest_2027` — NOT the technical query name and never
+   *                     a boolean or empty.
+   *  - ```ExportButton```: The **CSS CLASS-Selector** (must start with `.`; **never** an `#id` and **never** a
+   *                     boolean `true`/`1`) of a **real** `<button>` that triggers the Excel-export and download.
+   *                     Only a class selector resolves to the actual `<button>` element — an `#id` selector resolves
+   *                     to the XButtonList wrapper (its container div), so no click-handler is attached and the
+   *                     export does nothing. **WHENEVER an Excel-export is requested the SAME container MUST carry
+   *                     ALL SIX attributes together** (data-cb-func, data-cb-dataquery, data-cb-columns,
+   *                     data-cb-filename, data-cb-sheetname, data-cb-exportbutton) — never only the first three.
+   *                     When an Excel-export is requested, a dedicated export button (`XButtonList` with a single
+   *                     **non-navigation** button with **no action** — the Formcycle "Aktion" must be "keine
+   *                     Aktion" (no action), so it is NOT a send button) must be generated with the LABEL
+   *                     **`value` EXACTLY `"Export Excel"`** (never "Senden"/"Absenden"/"Einreichen" — those are
+   *                     send-labels) and with the stable class
+   *                     `CodBi_Table_View_ExportButton` pushed into the button's **`cssclasses`** property (there
+   *                     is NO `classNames` property on an XButtonList button — never write `classNames:[...]`, it
+   *                     is ignored so the selector matches nothing and the export never triggers), placed as a
+   *                     **sibling** of the DQ.Table.View container (**never** inside its `elements` array — the
+   *                     table is rendered inside that container), and this selector must point at that class (e.g.
+   *                     `.CodBi_Table_View_ExportButton`). The XButtonList item must be a valid top-level item
+   *                     starting `{ "className": "XButtonList"` (a single open brace; a double-brace `{{` prefix
+   *                     corrupts the JSON and makes the item be dropped as an unknown/null className). Formcycle
+   *                     stores the action dropdown's machine value in
+   *                     `action.optionId`; for "keine Aktion" set `action` to exactly `{"page":"","check":false,...,
+   *                     "optionId":"no action"}` — a missing/wrong `optionId` renders the button as
+   *                     "absenden + prüfen" (submit + validate), which submits the form instead of exporting (a
+   *                     FAIL). When omitted (or no matching element is found) the table is rendered **without** any
    *                     export-button — the Excel-export is then simply not available.
    *  - ```Centered```:   Whether the content of the table-cells (```<td>```s) is centered. Defaults to ```true```;
    *                     set to ```false``` / ```0``` / ```no``` to keep the cells left-aligned.
@@ -777,7 +810,7 @@ export class DQ_Table_View {
     Columns: {
       type: "csv",
       default:
-        "REQUIRED - A CSV defining the columns to show. Each column is 'label;datacolumn;jsonFlag' with an optional fourth entry ';width', e.g. 'Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30'.",
+        "A CSV defining the columns to show. Each column is 'label;datacolumn;jsonFlag' with an optional fourth entry ';width', e.g. 'Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30'. When the user skips the column definition, this may be left FULLY EMPTY (data-cb-columns=\"\") - the table then renders EMPTY (no columns, an empty header and a 'no data' body) and the user adds the CSV later in this functionality's CSV editor.",
       columns: [
         { name: "label", label: "Label", required: true },
         { name: "dataColumn", label: "Data column", required: true },
@@ -798,16 +831,17 @@ export class DQ_Table_View {
     FileName: {
       type: "string",
       default:
-        "The name of the exported Excel file without extension (the extension is always .xlsx). Defaults to 'Export'.",
+        "REQUIRED whenever an Excel export is requested - MUST be set to a sensible value (never left at the bare 'Export' default and never omitted). The name of the exported Excel file without extension (the extension is always .xlsx). Derive the value from the query name (strip the datasource prefix/extension), e.g. the query 'INHALT.Altstadtfest_2027' -> 'Altstadtfest_2027'. Never set a boolean or an empty value.",
     },
     SheetName: {
       type: "string",
-      default: "The name of the worksheet within the exported Excel file. Defaults to 'sheet1'.",
+      default:
+        "REQUIRED whenever an Excel export is requested - MUST be set to a sensible value (never left at 'sheet1' and never omitted). The name of the worksheet within the exported Excel file. Derive the value from the query name (same readable core as the filename, max about 31 characters), e.g. 'Altstadtfest_2027'. Not the technical query name and never a boolean or empty.",
     },
     ExportButton: {
       type: "string",
       default:
-        "Optional CSS selector of an existing button/anchor that triggers the export. When omitted, the Excel export is not available.",
+        "A REQUIRED CSS CLASS selector (starts with '.', NEVER an '#id' or a boolean 'true'/'1') of a REAL button that triggers the export/download of the Excel file. Only a class selector resolves to the actual '<button>' element; an ID selector resolves to the XButtonList wrapper, so no click handler is attached and the export does nothing. WHENEVER an Excel export is requested the SAME container MUST carry ALL SIX attributes together (data-cb-func, data-cb-dataquery, data-cb-columns, data-cb-filename, data-cb-sheetname, data-cb-exportbutton) - never only the first three. When an Excel export is requested, a dedicated export button (an XButtonList with a single NON-navigation button with NO action - 'keine Aktion' (no action), not a send button) must be created with the stable class 'CodBi_Table_View_ExportButton' pushed into the button's `cssclasses` property (there is NO `classNames` property on an XButtonList button - NEVER write classNames:[...], it is ignored and the selector matches nothing, so the export never triggers), placed as a SIBLING of the DQ.Table.View container (NEVER inside its elements array - the table is rendered inside that container), and this parameter must be set to that generated button's class selector, e.g. '.CodBi_Table_View_ExportButton'. The XButtonList item must be emitted as a valid top-level item starting { className => 'XButtonList' } (a single open brace; a double-brace '{{' prefix corrupts the JSON and makes the item be dropped as an unknown/null className). The button's VISIBLE LABEL MUST be exactly 'Export Excel' and MUST live in the buttons[].value property (value = Excel') - Formcycle renders buttons[].value as the button's visible text; `title` is a separate optional TOOLTIP and is NEVER the button label (a button with the label in `title` and an empty value '' renders an EMPTY button), so value MUST NEVER be empty. Never use 'Senden'/'Absenden'/'Einreichen' as the label (those are send-labels); the export button is NOT a send button. NO WORKFLOW: the DQ.Table.View export runs ENTIRELY CLIENT-SIDE via the functionality - this export button is a pure click-handler and MUST NOT create any Formcycle workflow/task/node (no FC_EXPORT_*, no FC_RETURN_FILE, no export lane) and MUST NOT be treated as (or renamed to) a 'Senden'/submit trigger. Formcycle stores the action dropdown's machine value in action.optionId; for 'keine Aktion' set the button's action to action = { page => '', check => false, optionId => 'no action' } (the machine value for 'keine Aktion'; never a submit command). A missing or wrong optionId makes the designer render the button as 'absenden + prüfen' (submit + validate), which submits the form instead of exporting - a FAIL. This no-action export button is the ONLY NON-submit XButtonList button - do NOT apply the submit-button rule to it.",
     },
     Centered: {
       type: "string",
@@ -843,12 +877,6 @@ export class DQ_Table_View {
   ): void {
     // #region Normalize parameters.
     const columns: TableViewColumn[] = DQ_Table_View.parseColumns(toLoad.columns);
-
-    if (columns.length === 0) {
-      throw new Error(
-        `[DQ.Table.View] The parameter "Columns" (CSV of label;datacolumn;jsonFlag[;width]) is missing or invalid on ${toProcess.getAttribute("data-name") ?? toProcess.tagName}.`,
-      );
-    }
 
     const dataQuery: string =
       toLoad.dataquery && String(toLoad.dataquery).trim().length > 0 ? String(toLoad.dataquery).trim() : "";

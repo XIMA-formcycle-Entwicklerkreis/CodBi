@@ -33,6 +33,25 @@ export function decodeSeparatorWhitespaceEscapes(value: string): string {
  *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.net) */
+
+/**
+ * Whether the current submit was initiated by a button that submits WITHOUT a
+ * validation run (a plain "Absenden", i.e. not "Absenden + prüfen").
+ *
+ * FORMCYCLE distinguishes the two at the client: `xutil.submitNoCheck()` calls
+ * `xm_validator.disable()` (which sets `_active = false`), while an
+ * "Absenden + prüfen" submit leaves the validator active. `data-check-page` is
+ * NOT a valid signal for this — it only controls page-navigation gating in
+ * `navButtonClick` and does not change with the button's action. When the
+ * validator is disabled the user chose to submit the form as-is, so the
+ * HTML.Panel functionality must NOT reveal folded panels, scroll/focus invalid
+ * fields or block submission.
+ */
+function submitSkipsValidation(): boolean {
+  const validator = (window as unknown as { xm_validator?: { _active?: boolean } }).xm_validator;
+  return validator?._active === false;
+}
+
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Panel {
   static mapHeaderAfterElements: Map<HTMLElement, HTMLElement> = new Map<HTMLElement, HTMLElement>();
@@ -723,6 +742,14 @@ export class HTML_Panel {
       // #endregion Required fields handling (validation handling).
       // #region Prevent form submission as long as there're invalid fields.
       getXUtil().on("submit", (params) => {
+        // A "plain" submit button ("Absenden" WITHOUT "prüfen") must NOT be gated: FORMCYCLE
+        // disables the validator for such submissions (xutil.submitNoCheck() -> xm_validator.disable()
+        // -> _active = false), so leave folded panels folded, do not scroll/focus invalid fields and do
+        // not block submission — the form is sent as-is. Only "Absenden + prüfen" (validator stays
+        // active) runs the reveal-and-gate logic below.
+        if (submitSkipsValidation()) {
+          return;
+        }
         // A submission attempt is in progress. This gates the validator "begin" handling so that
         // panels are only unfolded for missing required fields on an actual submit — never when a
         // field merely loses focus (blur) while the user is still filling out the form.

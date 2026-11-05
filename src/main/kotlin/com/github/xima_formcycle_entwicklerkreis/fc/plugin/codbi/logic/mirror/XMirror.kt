@@ -428,6 +428,12 @@ class XMirror : IXItemWidget, IXItemAppendable {
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_ELEMENT_NAME, ""),
         // Opt-in: also create the workflow paths triggered by the mirrored element in this form.
         XItemPropertyDesc(Constants.MIRROR_PROPERTY_CREATE_TRIGGERED_PATHS, ""),
+        // "Breite" (width in relation to the row): the standard formcycle "flex" property (values
+        // 1, 2, 3, ...). Each element in a row carries a proportional flex; the designer derives
+        // the
+        // actual percentage width from the total flex of all elements in the same row. Adding this
+        // lets the Mirror be placed side-by-side with other elements in the same row.
+        XItemPropertyDesc(XPropertyEnum.flex),
         XItemPropertyDesc(XPropertyEnum.cssclasses),
         XItemPropertyDesc(XPropertyEnum.cssclasseswrapper),
         XItemPropertyDesc(XPropertyEnum.ishidden),

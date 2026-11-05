@@ -19294,6 +19294,11 @@ class AICodBiAssistant : IPluginServletAction {
       // submit button instead of appending a SECOND one — the request asked for a single button,
       // and
       // the workflow path (not client-side JS) performs the action, so any customAction is cleared.
+      // EXCLUSION — the DQ.Table.View "Export Excel" button is NEVER promoted here: it is a pure
+      // client-side click-handler with NO action (optionId "no action", label "Export Excel",
+      // list cssclasses "CodBi_Table_View_ExportButton"). Promoting it would rewrite its action to
+      // "submit" / relabel it "Senden", breaking the Excel export. A form whose ONLY button is such
+      // an export button must instead fall through to Pass 2 and get a REAL separate submit button.
       val soleButtons = mutableListOf<Pair<JsonObject, JsonObject?>>()
       for (el in items) {
         if (!el.isJsonObject) continue
@@ -19302,11 +19307,26 @@ class AICodBiAssistant : IPluginServletAction {
             continue
         val props =
             el.asJsonObject.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+        val listCssClasses =
+            props
+                .get("cssclasses")
+                ?.takeIf { it.isJsonArray }
+                ?.asJsonArray
+                ?.mapNotNull { it.takeIf { v -> v.isJsonPrimitive }?.asString }
+                .orEmpty()
+        val isExportList = listCssClasses.any { it == "CodBi_Table_View_ExportButton" }
         val buttons = props.get("buttons")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
         for (btn in buttons) {
           if (!btn.isJsonObject) continue
           val btnObj = btn.asJsonObject
-          soleButtons.add(btnObj to btnObj.get("action")?.takeIf { it.isJsonObject }?.asJsonObject)
+          val action = btnObj.get("action")?.takeIf { it.isJsonObject }?.asJsonObject
+          if (isExportList ||
+              (action != null &&
+                  action.get("optionId")?.takeIf { it.isJsonPrimitive }?.asString == "no action")) {
+            // DQ.Table.View export button — exclude it from the sole-button promotion.
+            continue
+          }
+          soleButtons.add(btnObj to action)
         }
       }
       if (soleButtons.size == 1) {

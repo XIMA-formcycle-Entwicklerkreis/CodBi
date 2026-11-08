@@ -91,7 +91,12 @@ class XMirror : IXItemWidget, IXItemAppendable {
               // markup): FORMCYCLE registers the subtree's submit buttons in the form request
               // session while it renders, and a submit is only accepted when the submitted key is
               // in that session map — see `MirrorFormAccess.namespaceElementNames`.
-              namePrefix)
+              namePrefix,
+              // Fallback for a button that was added to the SOURCE element after this form was last
+              // saved: it has no persisted mirror COPY yet, so nothing registered its key in the
+              // session and the platform rejected the click as "manipulated". Registers every
+              // submit button of the mirrored subtree on THIS widget's render context (idempotent).
+              renderCtx)
         }
     if (mirrored != null) {
       namespaceLinkedIds(mirrored, idPrefix)

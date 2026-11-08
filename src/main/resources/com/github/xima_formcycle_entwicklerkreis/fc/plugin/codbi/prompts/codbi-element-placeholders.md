@@ -117,6 +117,8 @@ EP names use dots and are case-sensitive: OpenPLZ.Localities (NOT "openplz.local
 
 TERMINOLOGY — “Bayernportal” IS BayVIS: the Bavarian authority/office portal (the “Bayernportal”) is the BayVIS authority directory. “Ämter/Behörden im Bayernportal” (“authorities/offices of the Bayernportal”, “alle Ämter der Stadt”) are the entries of `BayVIS.Behoerden` — to list them ALL in a select use `{ BayVIS.Behoerden > bezeichnung }` (or the standard configuration `CodBi_BayVIS_Auswahl_Behoerden`); never ask the user for the office list.
 
+CRITICAL — BAYVIS DATA IS NEVER A FORMCYCLE DATASOURCE: BayVIS (Bayernportal) data — authorities, contacts/Ansprechpartner, contact details, e-mail, phone, postal/building addresses — is produced AT RUNTIME by the EPs on this page. A request such as “die Kontaktdaten aus dem BayVIS von <Person>”, “alle im BayVIS registrierten Ämter”, “die Adresse der Behörde X” (ANY language) therefore needs NO `datasource`, NO `data-cb-dataquery` and NO clarification about a data source: never ask which Formcycle datasource to use, never treat “BayVIS” as a datasource name, and never pick one of the AVAILABLE FORMCYCLE DATASOURCES for it (that list explicitly excludes BayVIS). Wire the EP instead: a text block → XSpan + HTML.Text.Mapper with the details EP; a list of authorities → XSelect + HTML.Select.Injection with `{ BayVIS.Behoerden > bezeichnung }`.
+
 SYNTAX: `>` introduces the FIRST parameter of an EP; every further parameter is separated by `;` (NEVER by `>`). A nested `{ ... }` EP is resolved first and its result becomes that parameter.
 
 BayVIS has THREE kinds of EPs — never confuse them:

@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorFormAccess
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorTriggerPaths
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.WorkflowLaneMaterializer
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import de.xima.cmn.reader.JsonReader
 import de.xima.fc.interfaces.workflow.params.IGetElementPrototypesParams
 import de.xima.fc.interfaces.workflow.value.ValueBuilderOptions
@@ -339,6 +340,209 @@ class MirrorNodePluginTest {
     assertTrue(obj.getBooleanValue("autoSync"))
     assertTrue(obj.getBooleanValue("syncEndpoint"))
     assertFalse(obj.getBooleanValue("pauseSync"))
+  }
+
+  /**
+   * The OWNERSHIP proof used to decide whether a reflecting path already exists is the `Mirror`
+   * node inside it: its params name the source path. That is version independent — it keeps working
+   * when `WorkflowTask.description` (the older, marker-based proof) does not survive the entity
+   * create, which is what made the widget create a fresh set of paths on every re-selection ("3
+   * become 6").
+   */
+  @Test
+  fun `mirror node params name the source path they mirror`() {
+    val json =
+        MirrorTriggerPaths.mirrorNodeParams(
+            "project-1010",
+            MirrorTriggerPaths.SourcePath(
+                taskId = 2406L,
+                taskName = "Verarbeitungskette 2",
+                triggerType = "FC_FORM_SUBMIT_BUTTON",
+                triggerName = "btn2.btnWOW",
+                triggerParams = """{"button":"btn2"}"""))
+
+    assertEquals(
+        "project-1010#2406",
+        MirrorTriggerPaths.mirrorSourceKeyOf(json),
+        "the created Mirror node must identify exactly the source path it mirrors")
+  }
+
+  /** A node without a usable source reference must not claim any source path. */
+  @Test
+  fun `mirror node params without a source path claim nothing`() {
+    assertNull(MirrorTriggerPaths.mirrorSourceKeyOf("{}"))
+    assertNull(MirrorTriggerPaths.mirrorSourceKeyOf("""{"sourceForm":"project-1"}"""))
+    assertNull(MirrorTriggerPaths.mirrorSourceKeyOf("""{"pathId":"7"}"""))
+    assertNull(MirrorTriggerPaths.mirrorSourceKeyOf("not json"))
+  }
+
+  /** The description marker (legacy proof) is parsed back into the same source key. */
+  @Test
+  fun `ownership marker names its source path`() {
+    assertEquals(
+        "project-3406#3652",
+        MirrorTriggerPaths.sourceKeyOfMarker("[CodBi Mirror] source=project-3406#3652"))
+    assertNull(MirrorTriggerPaths.sourceKeyOfMarker("a path the user created"))
+    assertNull(MirrorTriggerPaths.sourceKeyOfMarker("[CodBi Mirror] temporary endpoint"))
+  }
+
+  /**
+   * A reflected workflow path is a COPY of the source path, but node parameters reference FORM
+   * ELEMENTS by technical id/name — e.g. `FC_IMPORT_FORM_VALUE_FROM_XML` keeps its “XML-Quelle” in
+   * `xmlSource.resource.identifier` and its target fields in `xpathMapping[].name`. Copied verbatim
+   * those keep naming an element that exists only in the SOURCE form, which is why the reflected
+   * node showed an EMPTY element picker. They must be re-pointed at the mirrored copies.
+   */
+  @Test
+  fun `parameter remap re-points form element references at the mirrored copies`() {
+    val sourceParams =
+        """{"xmlSource":{"resource":{"type":"UPLOAD","identifier":"upl1"}},""" +
+            """"xpathMapping":[{"name":"tfName","value":"/a/b"}]}"""
+    val elementRefs =
+        mapOf("upl1" to "mir1_upl1", "xi-upl-1" to "xi-upl-4", "tfName" to "mir1_tfName")
+
+    val (remapped, _) =
+        WorkflowLaneMaterializer.remapParams(
+            null, null, emptyMap(), emptyMap(), emptyMap(), sourceParams, elementRefs)
+
+    val obj = JSON.parseObject(remapped)
+    assertEquals(
+        "mir1_upl1",
+        obj.getJSONObject("xmlSource").getJSONObject("resource").getString("identifier"),
+        "the XML source must name the MIRRORED upload field")
+    assertEquals(
+        "mir1_tfName",
+        obj.getJSONArray("xpathMapping").getJSONObject(0).getString("name"),
+        "the xpath target field must name the MIRRORED field")
+  }
+
+  /** `[%field%]` placeholders inside a copied node's strings follow the mirrored name as well. */
+  @Test
+  fun `parameter remap rewrites field placeholders to the mirrored names`() {
+    val (remapped, _) =
+        WorkflowLaneMaterializer.remapParams(
+            null,
+            null,
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            """{"body":"<p>[%tfName%] / [%unknownField%]</p>"}""",
+            mapOf("tfName" to "mir1_tfName"))
+
+    assertTrue(remapped.contains("[%mir1_tfName%]"), remapped)
+    assertTrue(
+        remapped.contains("[%unknownField%]"), "an unreferenced placeholder must stay intact")
+  }
+
+  /** A field OUTSIDE the mirrored element has no copy and must keep its source reference. */
+  @Test
+  fun `parameter remap leaves references without a mirrored copy untouched`() {
+    val (remapped, _) =
+        WorkflowLaneMaterializer.remapParams(
+            null,
+            null,
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            """{"uploadField":"uplOutside"}""",
+            mapOf("upl1" to "mir1_upl1"))
+
+    assertTrue(remapped.contains("\"uplOutside\""), remapped)
+  }
+
+  /**
+   * A `FC_QUALIFIED_FORM_SUBMIT_BUTTON` may name its button list by the element's INTERNAL id
+   * (`xi-btn-5`) — which a multi-button `XButton` trigger does. The mirrored copy is always named
+   * `<mirrorName>_<TECHNICAL NAME>`, so prefixing the id produced a reference that exists nowhere:
+   * the reflected trigger showed no button selected and never fired.
+   */
+  @Test
+  fun `trigger remap translates an element id reference to the mirrored name`() {
+    val source =
+        MirrorTriggerPaths.SourcePath(
+            taskId = 7L,
+            taskName = "Zwei Buttons",
+            triggerType = "FC_QUALIFIED_FORM_SUBMIT_BUTTON",
+            triggerName = "xi-btn-5.btnA",
+            triggerParams = """{"button":{"name":"btnA","qualifier":"xi-btn-5"}}""")
+
+    val remapped =
+        MirrorTriggerPaths.remapTriggerParams(
+            source,
+            setOf("xi-div-6", "xi-btn-5", "btnA", "btnB"),
+            "mir3_",
+            emptySet(),
+            emptyMap(),
+            mapOf("xi-btn-5" to "btnList7"))
+
+    val button = JSON.parseObject(remapped).getJSONObject("button")
+    assertEquals("mir3_btnList7", button.getString("qualifier"), remapped)
+    assertEquals("mir3_btnA", button.getString("name"), remapped)
+  }
+
+  /** A reference whose mirrored COPY already exists is taken from the copy verbatim. */
+  @Test
+  fun `trigger remap prefers the mirrored copy of a reference`() {
+    val source =
+        MirrorTriggerPaths.SourcePath(
+            taskId = 7L,
+            taskName = "Zwei Buttons",
+            triggerType = "FC_QUALIFIED_FORM_SUBMIT_BUTTON",
+            triggerName = "btnList7.btnA",
+            triggerParams = """{"button":{"name":"btnA","qualifier":"btnList7"}}""")
+
+    val remapped =
+        MirrorTriggerPaths.remapTriggerParams(
+            source,
+            setOf("btnList7", "btnA"),
+            "mir3_",
+            setOf("mir3_btnList7", "mir3_btnA"),
+            mapOf("btnList7" to "mir3_btnList7", "btnA" to "mir3_btnA"))
+
+    val button = JSON.parseObject(remapped).getJSONObject("button")
+    assertEquals("mir3_btnList7", button.getString("qualifier"), remapped)
+    assertEquals("mir3_btnA", button.getString("name"), remapped)
+  }
+
+  /** An id without a known technical name is left alone instead of becoming a bogus name. */
+  @Test
+  fun `trigger remap keeps an unresolvable element id unchanged`() {
+    val source =
+        MirrorTriggerPaths.SourcePath(
+            taskId = 7L,
+            taskName = "Fremd",
+            triggerType = "FC_FORM_SUBMIT_BUTTON",
+            triggerName = "btnX",
+            triggerParams = """{"buttonName":"xi-unknown"}""")
+
+    val remapped =
+        MirrorTriggerPaths.remapTriggerParams(
+            source, setOf("xi-unknown"), "mir3_", emptySet(), emptyMap(), emptyMap())
+
+    assertEquals("""{"buttonName":"xi-unknown"}""", remapped)
+  }
+
+  /**
+   * The property the widget stores its created-path references under must have a REAL name. It used
+   * to be read through a constants key that did not exist in `constants.properties`, so the
+   * designer persisted the array under the literal key `undefined` — unreadable for the server-side
+   * sync that the source save runs.
+   */
+  @Test
+  fun `the triggered-path reference property is a real constant`() {
+    assertEquals("codbi_mirror_triggered_refs", Constants.MIRROR_PROPERTY_TRIGGERED_REFS)
+    assertEquals(
+        "codbi_mirror_create_triggered_paths", Constants.MIRROR_PROPERTY_CREATE_TRIGGERED_PATHS)
+    assertEquals("codbi_mirror_form", Constants.MIRROR_PROPERTY_FORM)
+  }
+
+  /**
+   * Creating the opt-in paths from a source save needs a source project — never loops on garbage.
+   */
+  @Test
+  fun `ensuring triggered paths needs a source project`() {
+    assertEquals(
+        "SKIPPED:invalid-source", MirrorTriggerPaths.ensureTriggeredPathsForSourceProject(null, 0L))
   }
 
   /**

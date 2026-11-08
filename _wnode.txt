@@ -1,0 +1,250 @@
+Compiled from "WorkflowNode.java"
+public class de.xima.fc.entities.WorkflowNode extends de.xima.fc.entities.AWorkflowElement<de.xima.fc.entities.WorkflowNode, de.xima.fc.entities.WorkflowNodeSearchTerm> implements de.xima.fc.interfaces.workflow.nodes.IWorkflowNodeTypeProviding, de.xima.fc.interfaces.workflow.INodeKeyProviding {
+  public static final java.lang.String ATTR_CHILDREN;
+    descriptor: Ljava/lang/String;
+
+  public static final java.lang.String ATTR_PARENT;
+    descriptor: Ljava/lang/String;
+
+  public static final java.lang.String COL_PARENT;
+    descriptor: Ljava/lang/String;
+
+  public static final java.lang.String COL_PARENT_ORDER_INDEX;
+    descriptor: Ljava/lang/String;
+
+  private java.util.List<de.xima.fc.entities.WorkflowNode> children;
+    descriptor: Ljava/util/List;
+
+  private de.xima.fc.entities.WorkflowNode parent;
+    descriptor: Lde/xima/fc/entities/WorkflowNode;
+
+  public de.xima.fc.entities.WorkflowNode();
+    descriptor: ()V
+    Code:
+       0: aload_0
+       1: invokespecial #1                  // Method de/xima/fc/entities/AWorkflowElement."<init>":()V
+       4: return
+
+  public void addChild(int, de.xima.fc.entities.WorkflowNode);
+    descriptor: (ILde/xima/fc/entities/WorkflowNode;)V
+    Code:
+       0: aload_0
+       1: getfield      #2                  // Field children:Ljava/util/List;
+       4: ifnonnull     18
+       7: aload_0
+       8: new           #3                  // class java/util/ArrayList
+      11: dup
+      12: invokespecial #4                  // Method java/util/ArrayList."<init>":()V
+      15: putfield      #2                  // Field children:Ljava/util/List;
+      18: aload_2
+      19: ifnull        71
+      22: iload_1
+      23: ifge          40
+      26: iload_1
+      27: aload_0
+      28: getfield      #2                  // Field children:Ljava/util/List;
+      31: invokeinterface #5,  1            // InterfaceMethod java/util/List.size:()I
+      36: iconst_1
+      37: iadd
+      38: iadd
+      39: istore_1
+      40: iload_1
+      41: iconst_0
+      42: aload_0
+      43: getfield      #2                  // Field children:Ljava/util/List;
+      46: invokeinterface #5,  1            // InterfaceMethod java/util/List.size:()I
+      51: invokestatic  #6                  // Method com/google/common/primitives/Ints.constrainToRange:(III)I
+      54: istore_1
+      55: aload_0
+      56: getfield      #2                  // Field children:Ljava/util/List;
+      59: iload_1
+      60: aload_2
+      61: invokeinterface #7,  3            // InterfaceMethod java/util/List.add:(ILjava/lang/Object;)V
+      66: aload_2
+      67: aload_0
+      68: invokevirtual #8                  // Method setParent:(Lde/xima/fc/entities/WorkflowNode;)V
+      71: return
+
+  public void addChild(de.xima.fc.entities.WorkflowNode);
+    descriptor: (Lde/xima/fc/entities/WorkflowNode;)V
+    Code:
+       0: aload_0
+       1: getfield      #2                  // Field children:Ljava/util/List;
+       4: ifnonnull     18
+       7: aload_0
+       8: new           #3                  // class java/util/ArrayList
+      11: dup
+      12: invokespecial #4                  // Method java/util/ArrayList."<init>":()V
+      15: putfield      #2                  // Field children:Ljava/util/List;
+      18: aload_1
+      19: ifnull        38
+      22: aload_0
+      23: getfield      #2                  // Field children:Ljava/util/List;
+      26: aload_1
+      27: invokeinterface #9,  2            // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+      32: pop
+      33: aload_1
+      34: aload_0
+      35: invokevirtual #8                  // Method setParent:(Lde/xima/fc/entities/WorkflowNode;)V
+      38: return
+
+  public java.util.List<de.xima.fc.entities.WorkflowNode> getChildren();
+    descriptor: ()Ljava/util/List;
+    Code:
+       0: aload_0
+       1: getfield      #2                  // Field children:Ljava/util/List;
+       4: ifnonnull     18
+       7: aload_0
+       8: new           #3                  // class java/util/ArrayList
+      11: dup
+      12: invokespecial #4                  // Method java/util/ArrayList."<init>":()V
+      15: putfield      #2                  // Field children:Ljava/util/List;
+      18: aload_0
+      19: getfield      #2                  // Field children:Ljava/util/List;
+      22: areturn
+
+  public java.lang.Long getId();
+    descriptor: ()Ljava/lang/Long;
+    Code:
+       0: aload_0
+       1: getfield      #10                 // Field id:Ljava/lang/Long;
+       4: areturn
+
+  public de.xima.fc.workflow.ElementKey getKey();
+    descriptor: ()Lde/xima/fc/workflow/ElementKey;
+    Code:
+       0: aload_0
+       1: invokevirtual #11                 // Method getUuid:()Ljava/util/UUID;
+       4: invokestatic  #12                 // Method de/xima/fc/workflow/ElementKey.nodeKey:(Ljava/util/UUID;)Lde/xima/fc/workflow/ElementKey;
+       7: astore_1
+       8: aload_0
+       9: getfield      #13                 // Field task:Lde/xima/fc/entities/WorkflowTask;
+      12: ifnull        26
+      15: aload_1
+      16: aload_0
+      17: getfield      #13                 // Field task:Lde/xima/fc/entities/WorkflowTask;
+      20: invokevirtual #14                 // Method de/xima/fc/entities/WorkflowTask.getUuid:()Ljava/util/UUID;
+      23: invokevirtual #15                 // Method de/xima/fc/workflow/ElementKey.setTaskUuid:(Ljava/util/UUID;)V
+      26: aload_1
+      27: areturn
+
+  public de.xima.fc.workflow.NodeKey getNodeKey();
+    descriptor: ()Lde/xima/fc/workflow/NodeKey;
+    Code:
+       0: aload_0
+       1: invokevirtual #11                 // Method getUuid:()Ljava/util/UUID;
+       4: invokestatic  #16                 // Method de/xima/fc/workflow/NodeKey.of:(Ljava/util/UUID;)Lde/xima/fc/workflow/NodeKey;
+       7: astore_1
+       8: aload_0
+       9: getfield      #13                 // Field task:Lde/xima/fc/entities/WorkflowTask;
+      12: ifnull        26
+      15: aload_1
+      16: aload_0
+      17: getfield      #13                 // Field task:Lde/xima/fc/entities/WorkflowTask;
+      20: invokevirtual #14                 // Method de/xima/fc/entities/WorkflowTask.getUuid:()Ljava/util/UUID;
+      23: invokevirtual #17                 // Method de/xima/fc/workflow/NodeKey.setTaskUuid:(Ljava/util/UUID;)V
+      26: aload_1
+      27: areturn
+
+  public de.xima.fc.entities.WorkflowNode getParent();
+    descriptor: ()Lde/xima/fc/entities/WorkflowNode;
+    Code:
+       0: aload_0
+       1: getfield      #18                 // Field parent:Lde/xima/fc/entities/WorkflowNode;
+       4: areturn
+
+  public java.util.List<de.xima.fc.entities.WorkflowNodeSearchTerm> getSearchTerms();
+    descriptor: ()Ljava/util/List;
+    Code:
+       0: aload_0
+       1: getfield      #19                 // Field searchTerms:Ljava/util/List;
+       4: ifnonnull     18
+       7: aload_0
+       8: new           #3                  // class java/util/ArrayList
+      11: dup
+      12: invokespecial #4                  // Method java/util/ArrayList."<init>":()V
+      15: putfield      #19                 // Field searchTerms:Ljava/util/List;
+      18: aload_0
+      19: getfield      #19                 // Field searchTerms:Ljava/util/List;
+      22: areturn
+
+  public void putSearchTerm(de.xima.fc.entities.WorkflowNodeSearchTerm);
+    descriptor: (Lde/xima/fc/entities/WorkflowNodeSearchTerm;)V
+    Code:
+       0: aload_1
+       1: aload_0
+       2: invokevirtual #20                 // Method de/xima/fc/entities/WorkflowNodeSearchTerm.setElement:(Lde/xima/fc/interfaces/workflow/IWorkflowElementEntity;)V
+       5: aload_0
+       6: invokevirtual #21                 // Method getSearchTerms:()Ljava/util/List;
+       9: aload_1
+      10: invokeinterface #9,  2            // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+      15: pop
+      16: return
+
+  public void setChildren(java.util.List<de.xima.fc.entities.WorkflowNode>);
+    descriptor: (Ljava/util/List;)V
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #2                  // Field children:Ljava/util/List;
+       5: return
+
+  public void setParent(de.xima.fc.entities.WorkflowNode);
+    descriptor: (Lde/xima/fc/entities/WorkflowNode;)V
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #18                 // Field parent:Lde/xima/fc/entities/WorkflowNode;
+       5: return
+
+  public java.lang.String toString();
+    descriptor: ()Ljava/lang/String;
+    Code:
+       0: new           #22                 // class org/apache/commons/lang3/builder/ToStringBuilder
+       3: dup
+       4: aload_0
+       5: getstatic     #23                 // Field org/apache/commons/lang3/builder/ToStringStyle.SHORT_PREFIX_STYLE:Lorg/apache/commons/lang3/builder/ToStringStyle;
+       8: invokespecial #24                 // Method org/apache/commons/lang3/builder/ToStringBuilder."<init>":(Ljava/lang/Object;Lorg/apache/commons/lang3/builder/ToStringStyle;)V
+      11: ldc           #25                 // String id
+      13: aload_0
+      14: getfield      #10                 // Field id:Ljava/lang/Long;
+      17: invokevirtual #26                 // Method org/apache/commons/lang3/builder/ToStringBuilder.append:(Ljava/lang/String;Ljava/lang/Object;)Lorg/apache/commons/lang3/builder/ToStringBuilder;
+      20: ldc           #27                 // String type
+      22: aload_0
+      23: getfield      #28                 // Field type:Ljava/lang/String;
+      26: invokevirtual #26                 // Method org/apache/commons/lang3/builder/ToStringBuilder.append:(Ljava/lang/String;Ljava/lang/Object;)Lorg/apache/commons/lang3/builder/ToStringBuilder;
+      29: ldc           #29                 // String name
+      31: aload_0
+      32: invokevirtual #30                 // Method getName:()Ljava/lang/String;
+      35: invokevirtual #26                 // Method org/apache/commons/lang3/builder/ToStringBuilder.append:(Ljava/lang/String;Ljava/lang/Object;)Lorg/apache/commons/lang3/builder/ToStringBuilder;
+      38: ldc           #31                 // String children
+      40: aload_0
+      41: getfield      #2                  // Field children:Ljava/util/List;
+      44: ifnull        59
+      47: aload_0
+      48: getfield      #2                  // Field children:Ljava/util/List;
+      51: invokeinterface #5,  1            // InterfaceMethod java/util/List.size:()I
+      56: goto          60
+      59: iconst_0
+      60: invokevirtual #32                 // Method org/apache/commons/lang3/builder/ToStringBuilder.append:(Ljava/lang/String;I)Lorg/apache/commons/lang3/builder/ToStringBuilder;
+      63: ldc           #33                 // String uuid
+      65: aload_0
+      66: invokevirtual #11                 // Method getUuid:()Ljava/util/UUID;
+      69: invokevirtual #26                 // Method org/apache/commons/lang3/builder/ToStringBuilder.append:(Ljava/lang/String;Ljava/lang/Object;)Lorg/apache/commons/lang3/builder/ToStringBuilder;
+      72: invokevirtual #34                 // Method org/apache/commons/lang3/builder/ToStringBuilder.build:()Ljava/lang/String;
+      75: areturn
+
+  public java.lang.Object getId();
+    descriptor: ()Ljava/lang/Object;
+    Code:
+       0: aload_0
+       1: invokevirtual #35                 // Method getId:()Ljava/lang/Long;
+       4: areturn
+
+  public java.io.Serializable getId();
+    descriptor: ()Ljava/io/Serializable;
+    Code:
+       0: aload_0
+       1: invokevirtual #35                 // Method getId:()Ljava/lang/Long;
+       4: areturn
+}

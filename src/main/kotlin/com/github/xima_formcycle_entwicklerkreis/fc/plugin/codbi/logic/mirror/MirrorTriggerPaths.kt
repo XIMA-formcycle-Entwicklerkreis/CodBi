@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
 import com.google.gson.JsonObject
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
@@ -31,12 +32,41 @@ internal object MirrorTriggerPaths {
   const val MARKER = "[CodBi Mirror]"
 
   /**
+   * Per-target-project locks that serialize [syncTriggeredPaths] for the SAME reflecting project.
+   *
+   * FORMCYCLE renders several `applytriggerpaths` requests effectively at the same time (the widget
+   * fires one per mirrored element on selection/re-sync). Each request opens its own transaction,
+   * so without a lock two near-simultaneous calls for the same project can BOTH read an empty
+   * `loadMarkedTasks` (neither sees the other's not-yet-committed tasks) and BOTH fall through to
+   * "create fresh" — the "6 instead of 3" duplication. Serializing the read+create per project
+   * makes the second call run AFTER the first has committed its paths, find them by marker, and
+   * reuse them instead of creating duplicates.
+   *
+   * Concurrent calls for DIFFERENT reflecting projects stay independent (different lock objects).
+   */
+  private val projectLocks = ConcurrentHashMap<Long, Any>()
+
+  /**
+   * Reflecting tasks this JVM created/adopted very recently, keyed by
+   * `<targetProjectId>|<sourceKey>`.
+   *
+   * [projectLocks] serializes the read+create per project, but the two `applytriggerpaths` requests
+   * of one selection can still overlap: the second one opens its `EntityContext` (and therefore its
+   * database read view) BEFORE the first one commits. Under a `REPEATABLE READ` database the second
+   * read then never sees the rows the first just created and would create a second set — the "6
+   * instead of 3" duplication. This cache is the in-JVM memory of what was just written, so the
+   * second request adopts that task instead of creating another one. Entries are validated against
+   * the task API before they are used, so a task deleted in the meantime is never resurrected.
+   */
+  private val recentlyOwned = ConcurrentHashMap<String, Long>()
+
+  /**
    * Build marker of the trigger-reflection logic.
    *
    * Printed in the diagnostic log lines so a pasted log can be attributed to the running build (the
    * "namespaced trigger never fires" investigation needed several rounds of exactly that).
    */
-  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#17"
+  internal const val TRIGGER_SYNC_VERSION = "trigger-sync#18"
 
   /**
    * Fallback for `WorkflowTrigger.customParametersVersion` when the source trigger does not carry
@@ -86,6 +116,54 @@ internal object MirrorTriggerPaths {
        * fires — even though the row, the params and the search terms are perfect.
        */
       val paramsVersion: String? = null,
+  )
+
+  /**
+   * One workflow path of the REFLECTING form that a Mirror widget created (the widget's internal
+   * reference to what it created).
+   *
+   * The widget persists a JSON array of these on itself (`codbi_mirror_triggered_refs`) and sends
+   * them back on every sync, so the server can recognize paths it created before — and reuse /
+   * reconcile them instead of creating a duplicate — even when the marker scan of the current
+   * version alone would miss them (e.g. right after the reflecting form was published into a new
+   * workflow version).
+   *
+   * @param taskId the id of the `WorkflowTask` the widget created in the reflecting form.
+   * @param source the SOURCE form key (`project-<id>`) the path reflects.
+   * @param sourceTask the id of the SOURCE `WorkflowTask` that path mirrors.
+   */
+  data class OwnedRef(
+      val taskId: Long,
+      val source: String,
+      val sourceTask: Long,
+  )
+
+  private fun ownedRefSourceKey(ref: OwnedRef): String = "${ref.source}#${ref.sourceTask}"
+
+  /** Parses the widget-stored owned-reference JSON array. */
+  private fun parseOwnedRefs(json: String?): List<OwnedRef> {
+    val raw = json?.trim().orEmpty()
+    if (raw.isEmpty() || raw == "[]" || raw == "null") return emptyList()
+    return runCatching {
+          JSON.parseArray(raw).mapNotNull { element ->
+            val obj = element as? JSONObject ?: return@mapNotNull null
+            val taskId = obj.getLong("taskId") ?: return@mapNotNull null
+            val source = obj.getString("source")?.trim().orEmpty()
+            val sourceTask = obj.getLong("sourceTask") ?: return@mapNotNull null
+            if (source.isEmpty()) return@mapNotNull null
+            OwnedRef(taskId, source, sourceTask)
+          }
+        }
+        .getOrElse {
+          logger.warn("[CodBi][Mirror] could not parse owned references: {}", raw.take(300))
+          emptyList()
+        }
+  }
+
+  /** The outcome of a triggered-paths sync: the note AND the authoritative owned references. */
+  data class SyncResult(
+      val note: String,
+      val owned: List<OwnedRef>,
   )
 
   /**
@@ -172,10 +250,20 @@ internal object MirrorTriggerPaths {
    * Creates/updates the reflecting paths for every triggered source path and removes marked paths
    * whose trigger is gone.
    *
+   * The Mirror widget stores an internal reference ([OwnedRef]) to every path it created and passes
+   * it back on each sync ([ownedRefsJson]). That reference is the primary existence check: before a
+   * path is created, the task this widget already created for the same source path is reused and
+   * reconciled (via [ensureMirrorNode]) — so re-selecting the widget, or re-saving/reloading after
+   * a `publish()` into a new workflow version, updates the existing path instead of creating a
+   * duplicate. Only when neither a recorded task nor a marked task exists is a fresh path created.
+   *
    * @param targetFormKey the reflecting form (`project-<id>`) whose active workflow version
    *   receives the paths.
    * @param namePrefix the namespace prefix of the mirrored child items (`<mirrorName>_`), used to
    *   re-point the copied trigger at the mirrored element instead of the source element.
+   * @param ownedRefsJson the widget-stored JSON array of the paths it owns (see [OwnedRef]).
+   * @return the sync [SyncResult] with the change note and the authoritative owned references,
+   *   which the caller persists back on the widget.
    */
   fun syncTriggeredPaths(
       userContext: Any?,
@@ -184,10 +272,11 @@ internal object MirrorTriggerPaths {
       elementKey: String?,
       targetFormKey: String?,
       namePrefix: String?,
-  ): String {
-    if (userContext == null) return "SKIPPED:no-userContext"
+      ownedRefsJson: String? = null,
+  ): SyncResult {
+    if (userContext == null) return SyncResult("SKIPPED:no-userContext", emptyList())
     if (sourceFormKey.isNullOrBlank() || targetFormKey.isNullOrBlank()) {
-      return "SKIPPED:invalid-form"
+      return SyncResult("SKIPPED:invalid-form", emptyList())
     }
     val tokens = elementTokens(userContext, sourceFormKey, elementRef, elementKey)
     // Names that actually exist in the REFLECTING form (item names/ids and XButtonList button
@@ -195,6 +284,15 @@ internal object MirrorTriggerPaths {
     // there — this is what keeps the reflected trigger in sync with the names the mirror copy AND
     // the live render register (both use `<mirrorName>_`).
     val targetNames = reflectingFormNames(userContext, targetFormKey, namePrefix)
+    // References a copied trigger may carry, resolved through the mirror COPIES themselves: an
+    // element NAME maps to the copy's namespaced name and an element ID to the copy's ID. Plus the
+    // source form's id -> name map, so an ID reference whose copy does not exist yet (a widget
+    // added
+    // to the source a moment ago) still becomes `<prefix><name>` instead of the useless
+    // `<prefix><id>`.
+    val mirroredRefs =
+        MirrorFormAccess.mirroredElementReferenceMap(userContext, sourceFormKey, targetFormKey)
+    val sourceNamesById = MirrorFormAccess.elementNamesById(userContext, sourceFormKey)
     val triggered = findTriggeredPaths(userContext, sourceFormKey, elementRef, elementKey)
     val prefix = namePrefix?.trim().orEmpty()
     // Diagnostic: a trigger reference only fires when the name it names EXISTS in the reflecting
@@ -208,66 +306,273 @@ internal object MirrorTriggerPaths {
         targetNames.size)
     val targetVersionId =
         WorkflowMirrorAccess.activeVersionId(userContext, targetFormKey)
-            ?: return "SKIPPED:no-target-version"
-    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return "SKIPPED:no-entity-manager"
-    val existing =
-        try {
-          loadMarkedTasks(em, targetVersionId)
-        } finally {
-          WorkflowMirrorAccess.closeQuietly(em)
+            ?: return SyncResult("SKIPPED:no-target-version", emptyList())
+    val targetProjectId = MirrorFormAccess.resolveProjectId(userContext, targetFormKey)
+    // Serialize this read+create+commit with any OTHER sync of the same reflecting project. See
+    // [projectLocks]: without it two concurrent `applytriggerpaths` would both read no existing
+    // path
+    // (neither sees the other's uncommitted tasks) and both create fresh ones.
+    val lock = projectLocks.computeIfAbsent(targetProjectId ?: 0L) { Any() }
+    return synchronized(lock) {
+      val em =
+          WorkflowMirrorAccess.entityManager(userContext)
+              ?: return SyncResult("SKIPPED:no-entity-manager", emptyList())
+      val existing =
+          try {
+            // Version-agnostic lookup: the reflecting form's workflow may have been published into
+            // a
+            // NEW version since the paths were created (the client saves the form after every
+            // sync),
+            // which leaves the tasks in an OLDER version. Querying by the ACTIVE version alone
+            // would
+            // then find nothing and this sync would recreate them as duplicates. Searching the
+            // whole
+            // PROJECT (every version) finds the paths this feature created no matter which version
+            // is
+            // active, so they are reused instead of recreated.
+            loadExistingPaths(em, targetProjectId)
+          } finally {
+            WorkflowMirrorAccess.closeQuietly(em)
+          }
+      val wanted = triggered.associateBy { sourceKeyOf(sourceFormKey, it.taskId) }
+      // The widget's own recorded tasks, keyed by their source (source form + source task).
+      val ownedBySourceKey =
+          parseOwnedRefs(ownedRefsJson)
+              .filter { it.source == sourceFormKey }
+              .associateBy { ownedRefSourceKey(it) }
+      var created = 0
+      var updated = 0
+      var removed = 0
+      // The authoritative owned references to hand back to the widget after the sync.
+      val resultOwned = LinkedHashMap<String, OwnedRef>()
+      // 1. Create/update the paths that are triggered right now.
+      for ((key, path) in wanted) {
+        val marker = markerOf(key)
+        val candidates = existing.taskIdsOf(key)
+        // 1a. Reuse the path this widget ALREADY created for this source path — in this preference
+        //     order:
+        //     (1) the task the widget itself reports (its own reference is authoritative),
+        //     (2) any path that structurally mirrors this source path (a `Mirror` node whose
+        //         `sourceForm`/`pathId` params point at it) — this is the description-independent
+        //         ownership proof, and it is what makes the sync idempotent on a FORMCYCLE build
+        // whose
+        //         `WorkflowTask.description` does not survive the create,
+        //     (3) a path created by a concurrent request of the SAME selection (see
+        //         [recentlyOwned]).
+        val reuse =
+            candidates.firstOrNull { it == ownedBySourceKey[key]?.taskId }
+                ?: candidates.firstOrNull { taskId ->
+                  existing.tasks[taskId]?.let {
+                    belongsToElement(it, tokens, prefix) || belongsToNamespace(it, prefix)
+                  } == true
+                }
+                ?: candidates.firstOrNull()
+                ?: cachedOwnedTaskId(userContext, targetProjectId, key)
+        if (reuse != null) {
+          val repaired =
+              ensureMirrorNode(
+                  userContext,
+                  reuse,
+                  sourceFormKey,
+                  path,
+                  tokens,
+                  namePrefix,
+                  targetNames,
+                  mirroredRefs,
+                  sourceNamesById)
+          if (repaired) updated++
+          resultOwned[key] = OwnedRef(reuse, sourceFormKey, path.taskId)
+          rememberOwned(targetProjectId, key, reuse)
+          logger.debug(
+              "[CodBi][Mirror] reusing reflecting path task={} for source path {} of '{}'",
+              reuse,
+              path.taskId,
+              sourceFormKey)
+          // Self-healing: earlier builds created one path per sync, so a form can hold SEVERAL
+          // reflecting paths for the same source path (3 → 6 → 9 …). Keep exactly one of them and
+          // delete the duplicates, so re-selecting the widget heals the form instead of growing it.
+          // Only paths that reference THIS element are collapsed: a path that another Mirror widget
+          // created for the same source path (a different mirrored element, or a different mirror
+          // name)
+          // must stay untouched.
+          for (duplicate in
+              candidates.filter { candidate ->
+                candidate != reuse &&
+                    (candidate == ownedBySourceKey[key]?.taskId ||
+                        existing.tasks[candidate]?.let {
+                          belongsToElement(it, tokens, prefix) || belongsToNamespace(it, prefix)
+                        } == true)
+              }) {
+            if (removePath(userContext, duplicate)) {
+              removed++
+              logger.debug(
+                  "[CodBi][Mirror] removed duplicate reflecting path task={} (source path {} of '{}')",
+                  duplicate,
+                  path.taskId,
+                  sourceFormKey)
+            }
+          }
+          continue
         }
-    val wanted = triggered.associateBy { "${sourceFormKey}#${it.taskId}" }
-    var created = 0
-    var updated = 0
-    var removed = 0
-    // 1. Create/update the paths that are triggered right now.
-    for ((key, path) in wanted) {
-      val marker = markerOf(key)
-      val current = existing.entries.firstOrNull { it.value.description.contains(marker) }
-      if (current != null) {
-        val repaired =
-            ensureMirrorNode(
+        // 1b. Not present → create a fresh reflecting path and record the new task.
+        val newTaskId =
+            createPath(
                 userContext,
-                current.value.taskId,
+                targetVersionId,
+                marker,
                 sourceFormKey,
                 path,
-                tokens,
                 namePrefix,
-                targetNames)
-        if (repaired) updated++
-        continue
+                tokens,
+                targetNames,
+                mirroredRefs,
+                sourceNamesById)
+        if (newTaskId != null) {
+          created++
+          resultOwned[key] = OwnedRef(newTaskId, sourceFormKey, path.taskId)
+          rememberOwned(targetProjectId, key, newTaskId)
+        }
       }
-      if (createPath(
-          userContext,
-          targetVersionId,
-          marker,
+      // 2. Remove the paths this feature owns whose trigger disappeared.
+      //
+      // The ownership scope matters: [existing] covers EVERY reflecting path of the target PROJECT,
+      // so
+      // a path that belongs to another Mirror widget (another source form, or another mirrored
+      // element
+      // of the same source form) must never be touched here. Only paths of THIS source form are
+      // considered, and of those only the ones that either reference THIS element's mirrored names
+      // (their trigger was re-pointed at `<prefix><elementToken>`) or whose source path no longer
+      // exists at all.
+      val liveSourceTasks: Set<Long> by lazy { sourceTaskIds(userContext, sourceFormKey) }
+      for ((key, taskIds) in existing.bySourceKey) {
+        if (key in wanted) continue
+        if (!key.startsWith("$sourceFormKey#")) continue
+        val sourceTaskId = key.substringAfterLast('#').toLongOrNull()
+        val sourceGone = sourceTaskId != null && sourceTaskId !in liveSourceTasks
+        for (taskId in taskIds) {
+          val task = existing.tasks[taskId]
+          // Attribution, in order of reliability:
+          // 1. the path's trigger references THIS widget's namespace (`<mirrorName>_…`) — the
+          // strongest
+          //    signal, because the reflected trigger re-points EVERY element reference at that
+          //    namespace, so it survives the element (e.g. the button) being DELETED in the source
+          // —
+          //    which is exactly the case the token match below cannot see, leaving a stale path
+          // behind
+          //    forever;
+          // 2. the path's trigger references one of the element's current mirrored names (legacy
+          //    copies whose trigger was never re-pointed).
+          val belongsHere =
+              task != null &&
+                  (belongsToNamespace(task, prefix) || belongsToElement(task, tokens, prefix))
+          if (!belongsHere && !sourceGone) {
+            logger.debug(
+                "[CodBi][Mirror] keeping reflecting path task={} ('{}'): its source path still exists " +
+                    "and it does not reference this element",
+                taskId,
+                key)
+            continue
+          }
+          if (removePath(userContext, taskId)) {
+            removed++
+            forgetOwned(targetProjectId, key)
+          }
+        }
+      }
+      // Save the version ONLY when this sync actually changed something. FORMCYCLE caches the
+      // workflow
+      // model per version (locked by the version's lock version), and a stale cache silently
+      // ignores a
+      // trigger this plugin created — so when a path was created/updated/removed the version is
+      // saved
+      // through the entity API to bump the lock version and drop the cache. When nothing changed
+      // there
+      // is nothing to teach FORMCYCLE, so the (expensive, lock-version-bumping) save is skipped.
+      val note = "created=$created updated=$updated removed=$removed"
+      if (created > 0 || updated > 0 || removed > 0) {
+        WorkflowLaneMaterializer.refreshWorkflowModel(userContext, targetVersionId)
+      }
+      logger.debug(
+          "[CodBi][Mirror] [{}] triggered paths for '{}' -> '{}': {} owned={}",
+          TRIGGER_SYNC_VERSION,
           sourceFormKey,
-          path,
-          namePrefix,
-          tokens,
-          targetNames)) {
-        created++
+          targetFormKey,
+          note,
+          resultOwned.values.map { it.taskId })
+      SyncResult(note, resultOwned.values.toList())
+    }
+  }
+
+  /**
+   * Ensures the opt-in triggered workflow paths exist in EVERY reflecting form that mirrors
+   * [sourceProjectId] — the server-side counterpart of the designer's `applytriggerpaths`.
+   *
+   * Without this, a workflow path that a user attaches to a button they just ADDED to the mirrored
+   * source container only reaches the reflecting form when that form is opened in the designer
+   * again, because that is the only place the sync used to run. The reflecting form does NOT have
+   * to be edited for the button itself — the live Mirror renders the source container and registers
+   * the namespaced button key — so creating the path is all that is missing, and the button a user
+   * clicks in the published reflecting form then runs the workflow.
+   *
+   * Reflecting forms are found through the `Mirror` nodes they already contain
+   * ([WorkflowMirrorAccess.discoverForSourceProject]; a reflecting form that has never created a
+   * path has no such node and is left to the designer). Their widget properties (mirrored element,
+   * name prefix, opt-in flag, owned references) are read from the SAVED form JSON via
+   * [MirrorFormAccess.mirrorWidgets].
+   *
+   * @return a human-readable summary for the caller's log.
+   */
+  fun ensureTriggeredPathsForSourceProject(userContext: Any?, sourceProjectId: Long): String {
+    if (userContext == null || sourceProjectId <= 0L) return "SKIPPED:invalid-source"
+    val sourceFormKey = MirrorFormAccess.formKey(sourceProjectId)
+    val targetProjectIds =
+        WorkflowMirrorAccess.discoverForSourceProject(userContext, sourceProjectId)
+            .reflectors
+            .mapNotNull { it.descriptor.reflectingProjectId }
+            .distinct()
+    if (targetProjectIds.isEmpty()) {
+      logger.debug(
+          "[CodBi][Mirror] triggered paths: no reflecting form mirrors '{}' yet — nothing to create",
+          sourceFormKey)
+      return "SKIPPED:no-reflecting-form"
+    }
+    val notes = ArrayList<String>()
+    for (targetProjectId in targetProjectIds) {
+      val targetFormKey = MirrorFormAccess.formKey(targetProjectId)
+      for (widget in MirrorFormAccess.mirrorWidgets(userContext, targetFormKey, sourceFormKey)) {
+        if (!widget.createTriggeredPaths) continue
+        val result =
+            try {
+              syncTriggeredPaths(
+                  userContext,
+                  sourceFormKey,
+                  widget.elementRef,
+                  widget.elementKey,
+                  targetFormKey,
+                  widget.namePrefix,
+                  widget.ownedRefsJson)
+            } catch (x: Exception) {
+              logger.warn(
+                  "[CodBi][Mirror] triggered paths '{}' -> '{}' (widget '{}') failed: {}",
+                  sourceFormKey,
+                  targetFormKey,
+                  widget.name,
+                  describe(x))
+              continue
+            }
+        notes.add("$targetFormKey/${widget.name}: ${result.note}")
       }
     }
-    // 2. Remove marked paths whose trigger disappeared.
-    for ((_, task) in existing) {
-      val isWanted = wanted.keys.any { key -> task.description.contains(markerOf(key)) }
-      if (isWanted) continue
-      if (removePath(userContext, task.taskId)) removed++
+    if (notes.isEmpty()) {
+      logger.debug(
+          "[CodBi][Mirror] triggered paths: no Mirror widget of '{}' has the opt-in enabled",
+          sourceFormKey)
+      return "SKIPPED:no-opt-in"
     }
-    // ALWAYS save the version, even when nothing changed: FORMCYCLE caches the workflow model per
-    // version (locked by the version's lock version), and a stale cache silently ignores a trigger
-    // this plugin created — that is why the path only ran after someone saved the workflow in the
-    // designer. Saving through the entity API bumps the lock version and drops the cache.
-    WorkflowLaneMaterializer.refreshWorkflowModel(userContext, targetVersionId)
-    val note = "created=$created updated=$updated removed=$removed"
+    val summary = notes.joinToString(" | ")
     logger.debug(
-        "[CodBi][Mirror] [{}] triggered paths for '{}' -> '{}': {}",
-        TRIGGER_SYNC_VERSION,
-        sourceFormKey,
-        targetFormKey,
-        note)
-    return note
+        "[CodBi][Mirror] triggered paths after the source save of '{}': {}", sourceFormKey, summary)
+    return summary
   }
 
   // region Detection helpers
@@ -355,30 +660,307 @@ internal object MirrorTriggerPaths {
       val taskId: Long,
       val name: String,
       val description: String,
+      /**
+       * `customParameters` of the path's trigger (may be blank). Used to attribute a path to the
+       * mirrored ELEMENT it was created for: the trigger was re-pointed at
+       * `<prefix><elementToken>`, so the namespaced names in its params identify the Mirror widget
+       * that owns the path.
+       */
+      val triggerParams: String = "",
   )
+
+  /**
+   * The reflecting paths that already exist for a project, recognized WITHOUT relying on
+   * `WorkflowTask.description`.
+   *
+   * The description marker ([MARKER]) was the only ownership proof in earlier builds, and it is not
+   * reliable across FORMCYCLE versions: when the description does not survive the entity create (or
+   * its column/encoding is not comparable), the marker scan finds nothing on every sync and the
+   * feature re-creates the very paths that already exist — "3 paths become 6, then 9, …", once per
+   * re-selection, on 8.5.5 while 8.5.3 looked fine.
+   *
+   * The authoritative, version-independent proof is the `Mirror` NODE the feature creates inside
+   * each path: its `customParameters` carry `sourceForm` + `pathId` (the source path it mirrors)
+   * and its task id is the reflecting path. Those params are exactly what the auto-sync relies on
+   * ([WorkflowMirrorAccess.discover]), so they demonstrably persist on every supported build. The
+   * description marker is still read as an ADDITIONAL signal (and is re-written when it is missing,
+   * see [ensureMirrorNode]), but it is no longer required.
+   */
+  private data class ExistingPaths(
+      /** `"<sourceFormKey>#<sourceTaskId>"` -> ascending task ids of the reflecting paths. */
+      val bySourceKey: Map<String, List<Long>>,
+      /** Every reflecting task recognized as owned, by task id. */
+      val tasks: Map<Long, MarkedTask>,
+  ) {
+    /** Task ids that reflect [sourceKey] (never `null`). */
+    fun taskIdsOf(sourceKey: String): List<Long> = bySourceKey[sourceKey].orEmpty()
+  }
+
+  /** Key that identifies one SOURCE path inside a reflecting project (mirrors [OwnedRef]). */
+  internal fun sourceKeyOf(sourceFormKey: String, sourceTaskId: Long): String =
+      "$sourceFormKey#$sourceTaskId"
 
   private fun markerOf(sourceKey: String): String = "$MARKER source=$sourceKey"
 
-  /** All tasks of [versionId] whose description carries [MARKER]. */
-  private fun loadMarkedTasks(em: Any?, versionId: Long): Map<Long, MarkedTask> {
-    val rows =
-        WorkflowMirrorAccess.query(
-            em,
-            "SELECT t.id, t.name, t.description FROM de.xima.fc.entities.WorkflowTask t " +
-                "JOIN t.process p JOIN p.version v WHERE v.id = :vid AND t.description LIKE :marker",
-            mapOf("vid" to versionId, "marker" to "$MARKER%"))
-    val out = LinkedHashMap<Long, MarkedTask>()
-    for (row in rows) {
-      val cols = row as? Array<*> ?: continue
-      val id = (cols[0] as? Number)?.toLong() ?: continue
-      out[id] = MarkedTask(id, cols[1]?.toString().orEmpty(), cols[2]?.toString().orEmpty())
-    }
-    return out
+  /** The `source=<formKey>#<taskId>` key stored in a task description, or `null`. */
+  internal fun sourceKeyOfMarker(description: String): String? {
+    val at = description.indexOf(MARKER)
+    if (at < 0) return null
+    val match =
+        Regex("source=(\\S+)").find(description.substring(at + MARKER.length)) ?: return null
+    return match.groupValues[1].takeIf { it.contains('#') }
   }
 
   /**
+   * The source key a persisted `Mirror` node mirrors, read from its `customParameters`, or `null`.
+   */
+  internal fun mirrorSourceKeyOf(paramsJson: String): String? {
+    if (paramsJson.isBlank()) return null
+    val obj = runCatching { JSON.parseObject(paramsJson) }.getOrNull() ?: return null
+    val source = obj.getString("sourceForm")?.trim().orEmpty()
+    val pathId = obj.getString("pathId")?.trim()?.toLongOrNull() ?: return null
+    if (source.isEmpty() || pathId <= 0L) return null
+    return sourceKeyOf(source, pathId)
+  }
+
+  /**
+   * All reflecting paths this feature owns in [projectId], across EVERY workflow version of the
+   * reflecting project.
+   *
+   * Searching by project (not by one specific active version) is what makes the reuse idempotent
+   * under version churn: the client publishes the reflecting form after almost every sync, and
+   * publishing can make a NEW workflow version active while the paths this widget created live in
+   * an older version. A per-active-version query would then return nothing and immediately recreate
+   * the very paths that still exist.
+   *
+   * The description marker is filtered in Kotlin (not with `LIKE`): `[` is a character-class
+   * introducer in some SQL dialects and a plain literal in others, so a marker `LIKE` pattern means
+   * different things on different servers — a silent source of exactly this "already exists but is
+   * not found" behavior.
+   */
+  private fun loadExistingPaths(em: Any?, projectId: Long?): ExistingPaths {
+    if (projectId == null) return ExistingPaths(emptyMap(), emptyMap())
+    // Every workflow version of the reflecting project.
+    //
+    // NOTE: the entity model differs between FORMCYCLE servers — `WorkflowVersion.project` /
+    // `WorkflowVersion.active` do NOT exist on 8.5.3 (Hibernate: "could not resolve property:
+    // project
+    // of: de.xima.fc.entities.WorkflowVersion"). The navigation that IS stable across versions is
+    // `Projekt.workflowVersions` (from the Projekt entity to its version collection), the same path
+    // AIWorkflowAssistant uses to reach form elements of a project. So the versions are enumerated
+    // FROM the Projekt row, never by filtering WorkflowVersion on a project/active attribute.
+    val versionIds =
+        WorkflowMirrorAccess.query(
+                em,
+                "SELECT wv.id FROM de.xima.fc.entities.Projekt p " +
+                    "JOIN p.workflowVersions wv WHERE p.id = :pid",
+                mapOf("pid" to projectId))
+            .mapNotNull { (it as? Number)?.toLong() }
+            .distinct()
+    // Fallback: if the whole-project enumeration returned nothing (e.g. the `workflowVersions`
+    // collection is not present in this FORMCYCLE build), at least scope to the ACTIVE version —
+    // read
+    // via `Projekt.activeWorkflowVersion`, the query the active-version resolver already uses
+    // successfully — so previously created paths are still found and reused instead of recreated.
+    val scoped =
+        if (versionIds.isEmpty()) {
+          WorkflowMirrorAccess.query(
+                  em,
+                  "SELECT p.activeWorkflowVersion.id FROM de.xima.fc.entities.Projekt p " +
+                      "WHERE p.id = :pid",
+                  mapOf("pid" to projectId))
+              .mapNotNull { (it as? Number)?.toLong() }
+              .distinct()
+              .ifEmpty { versionIds }
+        } else {
+          versionIds
+        }
+    val tasks = LinkedHashMap<Long, MarkedTask>()
+    val bySourceKey = LinkedHashMap<String, MutableList<Long>>()
+    fun attribute(key: String, taskId: Long) {
+      val ids = bySourceKey.getOrPut(key) { ArrayList() }
+      if (taskId !in ids) ids.add(taskId)
+    }
+    for (vid in scoped) {
+      // 1. Every task of the version (+ its trigger params, used to attribute a path to an
+      // element).
+      val taskRows =
+          WorkflowMirrorAccess.query(
+              em,
+              "SELECT t.id, t.name, t.description, tr.customParameters " +
+                  "FROM de.xima.fc.entities.WorkflowTask t LEFT JOIN t.trigger tr " +
+                  "JOIN t.process p JOIN p.version v WHERE v.id = :vid",
+              mapOf("vid" to vid))
+      for (row in taskRows) {
+        val cols = row as? Array<*> ?: continue
+        val id = (cols[0] as? Number)?.toLong() ?: continue
+        val description = cols[2]?.toString().orEmpty()
+        tasks.putIfAbsent(
+            id,
+            MarkedTask(
+                taskId = id,
+                name = cols[1]?.toString().orEmpty(),
+                description = description,
+                triggerParams = cols.getOrNull(3)?.toString().orEmpty()))
+        // Legacy signal: the marker in the description names the source path.
+        sourceKeyOfMarker(description)?.let { attribute(it, id) }
+      }
+      // 2. Every `Mirror` node of the version: the path it lives in mirrors the source path named
+      // by
+      //    its params. This is the structural ownership proof (independent of any description).
+      val nodeRows =
+          WorkflowMirrorAccess.query(
+              em,
+              "SELECT n.type, n.customParameters, t.id FROM de.xima.fc.entities.WorkflowNode n " +
+                  "JOIN n.task t JOIN t.process p JOIN p.version v " +
+                  "WHERE v.id = :vid AND n.type = :type",
+              mapOf("vid" to vid, "type" to MIRROR_NODE_TYPE))
+      for (row in nodeRows) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 3) continue
+        if (cols[0]?.toString() != MIRROR_NODE_TYPE) continue
+        val taskId = (cols[2] as? Number)?.toLong() ?: continue
+        val key = mirrorSourceKeyOf(cols[1]?.toString().orEmpty()) ?: continue
+        attribute(key, taskId)
+      }
+    }
+    // Only the tasks that could be attributed to a source path are OURS — every other task of those
+    // versions belongs to the user and must stay invisible to this feature.
+    val owned = LinkedHashMap<Long, MarkedTask>()
+    val stable = LinkedHashMap<String, List<Long>>()
+    for ((key, ids) in bySourceKey) {
+      val sorted = ids.sorted()
+      stable[key] = sorted
+      for (id in sorted) tasks[id]?.let { owned[id] = it }
+    }
+    logger.debug(
+        "[CodBi][Mirror] existing reflecting paths of project {}: {} path(s) for {} source path(s) " +
+            "across {} version(s) ({})",
+        projectId,
+        owned.size,
+        stable.size,
+        scoped.size,
+        stable.keys.joinToString(", "))
+    return ExistingPaths(stable, owned)
+  }
+
+  /**
+   * Whether [task] is a reflecting path of the mirrored element identified by [tokens]/[prefix]:
+   * its trigger names the mirrored copies (`<prefix><sourceName>`), which is what
+   * [remapTriggerParams] wrote when the path was created.
+   */
+  private fun belongsToElement(task: MarkedTask, tokens: Set<String>, prefix: String): Boolean {
+    if (tokens.isEmpty()) return false
+    val params = task.triggerParams
+    if (params.isBlank()) return false
+    // The namespaced form is what [remapTriggerParams] writes; the PLAIN form is checked as well,
+    // because the remap keeps a reference plain when the reflecting form only has the plain name
+    // (and
+    // a path created before the child items were materialized carries plain references only).
+    val wanted = if (prefix.isEmpty()) tokens else tokens.flatMap { listOf("$prefix$it", it) }
+    return referencesAnyToken(params, wanted.toSet())
+  }
+
+  /**
+   * Whether the reflecting path was created by the Mirror widget whose namespace is [prefix].
+   *
+   * [remapTriggerParams] re-points EVERY mirrored element reference of the copied trigger at
+   * `<prefix><name>` — a button key, an item id, a nested `button.name`/`button.qualifier`. So the
+   * mere PRESENCE of a quoted value starting with the prefix proves the path belongs to that
+   * widget, and it keeps proving it after the referenced element (e.g. a button) was DELETED in the
+   * source form. That is what [belongsToElement] cannot do: it matches the element's CURRENT names,
+   * so a path whose button disappeared would look like "someone else's" and was never removed.
+   *
+   * Two Mirror widgets of the same form cannot share a name (technical names are unique per form),
+   * so the prefix also separates two widgets that mirror different elements of the same source
+   * form.
+   */
+  private fun belongsToNamespace(task: MarkedTask, prefix: String): Boolean {
+    if (prefix.isEmpty()) return false
+    val params = task.triggerParams
+    if (params.isBlank()) return false
+    return params.contains("\"$prefix")
+  }
+
+  /** Ids of the SOURCE form's workflow paths in its ACTIVE version (empty when unreadable). */
+  private fun sourceTaskIds(userContext: Any?, sourceFormKey: String): Set<Long> {
+    val versionId =
+        WorkflowMirrorAccess.activeVersionId(userContext, sourceFormKey) ?: return emptySet()
+    val em = WorkflowMirrorAccess.entityManager(userContext) ?: return emptySet()
+    return try {
+      WorkflowMirrorAccess.query(
+              em,
+              "SELECT t.id FROM de.xima.fc.entities.WorkflowTask t " +
+                  "JOIN t.process p JOIN p.version v WHERE v.id = :vid",
+              mapOf("vid" to versionId))
+          .mapNotNull { (it as? Number)?.toLong() }
+          .toSet()
+    } catch (x: Exception) {
+      logger.warn(
+          "[CodBi][Mirror] could not list the source paths of '{}': {}", sourceFormKey, x.message)
+      emptySet()
+    } finally {
+      WorkflowMirrorAccess.closeQuietly(em)
+    }
+  }
+
+  // region Recently created tasks (cross-request duplicate guard)
+
+  private fun ownedCacheKey(targetProjectId: Long?, sourceKey: String): String =
+      "${targetProjectId ?: 0}#$sourceKey"
+
+  /** Remembers that [taskId] reflects [sourceKey] in [targetProjectId]. */
+  private fun rememberOwned(targetProjectId: Long?, sourceKey: String, taskId: Long) {
+    if (targetProjectId == null || taskId <= 0L) return
+    // Bounded: the cache only has to survive the sibling request of the same selection.
+    if (recentlyOwned.size > 512) recentlyOwned.clear()
+    recentlyOwned[ownedCacheKey(targetProjectId, sourceKey)] = taskId
+  }
+
+  private fun forgetOwned(targetProjectId: Long?, sourceKey: String) {
+    if (targetProjectId == null) return
+    recentlyOwned.remove(ownedCacheKey(targetProjectId, sourceKey))
+  }
+
+  /**
+   * The task a sibling request of the SAME selection created for [sourceKey], when it is still
+   * there.
+   *
+   * This closes the last duplication window: two `applytriggerpaths` requests can overlap, and the
+   * second one may have opened its database read view before the first committed. The cache reports
+   * that task; [taskExists] validates it, so a deleted task is never reused.
+   */
+  private fun cachedOwnedTaskId(
+      userContext: Any,
+      targetProjectId: Long?,
+      sourceKey: String
+  ): Long? {
+    if (targetProjectId == null) return null
+    val cached = recentlyOwned[ownedCacheKey(targetProjectId, sourceKey)] ?: return null
+    if (taskExists(userContext, cached)) return cached
+    forgetOwned(targetProjectId, sourceKey)
+    return null
+  }
+
+  /** Whether the `WorkflowTask` [taskId] still exists (via the task API). */
+  private fun taskExists(userContext: Any, taskId: Long): Boolean =
+      runCatching {
+            val api = Class.forName("de.xima.fc.api.APIProvider")
+            val taskApi = api.getField("WORKFLOW_TASK_API").get(null)
+            taskApi.javaClass
+                .getMethod(
+                    "getById",
+                    Class.forName("de.xima.fc.user.UserContext"),
+                    java.lang.Long::class.javaObjectType)
+                .invoke(taskApi, userContext, taskId) != null
+          }
+          .getOrDefault(false)
+
+  // endregion Recently created tasks (cross-request duplicate guard)
+
+  /**
    * Creates a new workflow path (task + root SEQUENCE + `Mirror` node + trigger) in the reflecting
-   * version. Returns `true` when the whole path was created.
+   * version. Returns the id of the created task, or `null` when the path could not be created.
    *
    * The order is the same one FORMCYCLE's own designer uses when it saves a path, and it matters:
    * 1. the task — its `trigger`/`rootNode` FKs are non-nullable, so the task must exist first,
@@ -402,7 +984,9 @@ internal object MirrorTriggerPaths {
       namePrefix: String?,
       tokens: Set<String>,
       targetNames: Set<String>,
-  ): Boolean =
+      mirroredRefs: Map<String, String> = emptyMap(),
+      sourceNamesById: Map<String, String> = emptyMap(),
+  ): Long? =
       try {
         val api = Class.forName("de.xima.fc.api.APIProvider")
         val userContextClass = Class.forName("de.xima.fc.user.UserContext")
@@ -494,7 +1078,8 @@ internal object MirrorTriggerPaths {
         triggerClass
             .getMethod("setCustomParametersVersion", String::class.java)
             .invoke(trigger, source.paramsVersion ?: FORMCYCLE_PROPS_VERSION)
-        val reflectedParams = triggerParamsOf(source, tokens, namePrefix, targetNames)
+        val reflectedParams =
+            triggerParamsOf(source, tokens, namePrefix, targetNames, mirroredRefs, sourceNamesById)
         triggerClass
             .getMethod("setCustomParameters", String::class.java)
             .invoke(trigger, reflectedParams)
@@ -530,7 +1115,7 @@ internal object MirrorTriggerPaths {
             reflectId(mirrorNode),
             source.taskId,
             sourceFormKey)
-        true
+        taskId
       } catch (x: Exception) {
         logger.warn(
             "[CodBi][Mirror] could not create the reflecting path for source path {} of '{}': {}",
@@ -538,7 +1123,7 @@ internal object MirrorTriggerPaths {
             sourceFormKey,
             describe(x))
         logger.warn("[CodBi][Mirror] create-path failure details", x)
-        false
+        null
       }
 
   /**
@@ -558,6 +1143,8 @@ internal object MirrorTriggerPaths {
       tokens: Set<String>,
       namePrefix: String?,
       targetNames: Set<String>,
+      mirroredRefs: Map<String, String> = emptyMap(),
+      sourceNamesById: Map<String, String> = emptyMap(),
   ): Boolean {
     return try {
       val api = Class.forName("de.xima.fc.api.APIProvider")
@@ -577,6 +1164,35 @@ internal object MirrorTriggerPaths {
         return false
       }
       var repaired = false
+      // Heal the ownership marker. The path is recognized STRUCTURALLY (the `Mirror` node inside it
+      // names the source path), so a task whose description lost the marker — or never carried it
+      // because the FORMCYCLE build does not persist it — is adopted here and stamped again. This
+      // is
+      // not counted as a "repair": the path itself is fine, so no designer reload is needed.
+      val expectedMarker = markerOf(sourceKeyOf(sourceFormKey, source.taskId))
+      val currentDescription =
+          runCatching { task.javaClass.getMethod("getDescription").invoke(task) as? String }
+              .getOrNull()
+              .orEmpty()
+      if (!currentDescription.contains(expectedMarker)) {
+        runCatching {
+              task.javaClass
+                  .getMethod("setDescription", String::class.java)
+                  .invoke(task, expectedMarker)
+              updateEntity(taskApi, userContext, task)
+              logger.debug(
+                  "[CodBi][Mirror] ensureMirrorNode: re-stamped the ownership marker on task {} " +
+                      "(was '{}')",
+                  taskId,
+                  currentDescription.take(120))
+            }
+            .onFailure {
+              logger.debug(
+                  "[CodBi][Mirror] ensureMirrorNode: could not re-stamp task {}: {}",
+                  taskId,
+                  it.message)
+            }
+      }
       // An aborted run may have persisted the task without ever linking its root node — relink it,
       // otherwise the Mirror node would have nothing to hang on.
       var root: Any? =
@@ -618,7 +1234,8 @@ internal object MirrorTriggerPaths {
       //    A trigger that references a name the reflecting form does not have never fires: the
       // click
       //    then falls through to the default "submitted successfully" page.
-      val expectedTriggerParams = triggerParamsOf(source, tokens, namePrefix, targetNames)
+      val expectedTriggerParams =
+          triggerParamsOf(source, tokens, namePrefix, targetNames, mirroredRefs, sourceNamesById)
       val existingTrigger =
           runCatching { task.javaClass.getMethod("getTrigger").invoke(task) }.getOrNull()
       if (existingTrigger == null) {
@@ -1144,8 +1761,12 @@ internal object MirrorTriggerPaths {
       tokens: Set<String>,
       namePrefix: String?,
       targetNames: Set<String>,
+      mirroredRefs: Map<String, String> = emptyMap(),
+      sourceNamesById: Map<String, String> = emptyMap(),
   ): String {
-    val remapped = remapTriggerParams(source, tokens, namePrefix, targetNames).ifBlank { "{}" }
+    val remapped =
+        remapTriggerParams(source, tokens, namePrefix, targetNames, mirroredRefs, sourceNamesById)
+            .ifBlank { "{}" }
     logger.debug(
         "[CodBi][Mirror] [{}] trigger '{}' ({}): source params={} -> reflected params={}",
         TRIGGER_SYNC_VERSION,
@@ -1161,12 +1782,24 @@ internal object MirrorTriggerPaths {
    * mirrored elements becomes `<mirrorName>_<sourceName>` (the namespace of the Mirror widget's
    * generated child items). Only exact token matches are rewritten, so trigger types, state UUIDs
    * and other string values stay untouched.
+   *
+   * @param mirroredRefs source NAME -> the copy's namespaced name and source ID -> the copy's ID
+   *   (see [MirrorFormAccess.mirroredElementReferenceMap]). Used FIRST, so a reference resolves to
+   *   exactly what the reflecting form really holds.
+   * @param sourceNamesById source element ID -> technical name (see
+   *   [MirrorFormAccess.elementNamesById]). A trigger that names a button LIST by its internal ID —
+   *   which is what a multi-button `XButton` trigger carries — must become `<prefix><listName>`,
+   *   not `<prefix><listId>`: the copy is always named after the element's NAME, so prefixing the
+   *   ID produced a reference that exists nowhere (the trigger then showed no button selected and
+   *   never fired).
    */
   internal fun remapTriggerParams(
       source: SourcePath,
       tokens: Set<String>,
       namePrefix: String?,
       targetNames: Set<String> = emptySet(),
+      mirroredRefs: Map<String, String> = emptyMap(),
+      sourceNamesById: Map<String, String> = emptyMap(),
   ): String {
     val params = source.triggerParams
     if (params.isBlank()) return params
@@ -1202,7 +1835,8 @@ internal object MirrorTriggerPaths {
             // so
             // model, markup and trigger all agree. `mirroredNameOf()` keeps the plain name when the
             // reflecting form only has that one (older copies), which makes this self-healing.
-            val mapped = mirroredNameOf(value, tokens, prefix, targetNames)
+            val mapped =
+                mirroredNameOf(value, tokens, prefix, targetNames, mirroredRefs, sourceNamesById)
             if (mapped == null) {
               value
             } else {
@@ -1239,16 +1873,39 @@ internal object MirrorTriggerPaths {
       tokens: Set<String>,
       prefix: String,
       targetNames: Set<String>,
+      mirroredRefs: Map<String, String> = emptyMap(),
+      sourceNamesById: Map<String, String> = emptyMap(),
   ): String? {
     if (name.startsWith(prefix)) return null
 
     fun mapped(segment: String): String? {
       if (segment !in tokens) return null
-      val namespaced = "$prefix$segment"
+      // 1. The reflecting form already HOLDS a copy for this reference: use it verbatim (its
+      //    namespaced name, or its id when the reference was an id). This is the exact value the
+      //    copy has, so nothing can drift.
+      mirroredRefs[segment]?.let {
+        return it.takeIf { value -> value != segment }
+      }
+      // 2. An ID reference must be translated through the element's NAME: the copies are named
+      //    `<prefix><sourceName>`, never `<prefix><sourceId>`.
+      val base =
+          sourceNamesById[segment]
+              ?: run {
+                if (segment.startsWith("xi-")) {
+                  logger.warn(
+                      "[CodBi][Mirror] trigger reference '{}' is a form-element id without a " +
+                          "technical name in the source form — it cannot be re-pointed at the " +
+                          "mirrored copy (is that element inside the mirrored element?)",
+                      segment)
+                  return null
+                }
+                segment
+              }
+      val namespaced = "$prefix$base"
       return when {
         targetNames.isEmpty() -> namespaced
         namespaced in targetNames -> namespaced
-        segment in targetNames -> null
+        base in targetNames -> null
         else -> namespaced
       }
     }

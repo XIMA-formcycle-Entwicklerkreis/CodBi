@@ -27,6 +27,9 @@ internal object CodbiCapabilities {
   @Volatile private var detailsIndexBuiltAt: Long = 0L
   private const val CACHE_TTL_MS = 5 * 60 * 1000L
 
+  /** Sentence boundary for the pass-1 purpose condensation (see [condenseEntryPurposes]). */
+  private val ENTRY_SENTENCE_SPLIT = Regex("(?<=[.!?])\\s+")
+
   /**
    * Placeholder inside the bundled condensed elements reference ([codbi-core-elements-compact.md])
    * that is replaced at build time with the conditional Matomo-statistics rule: the
@@ -286,24 +289,46 @@ internal object CodbiCapabilities {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // PASS-1 NAME-ONLY VARIANTS
+  // PASS-1 VARIANTS
   //
   // Pass-1 ONLY decides what to change and which details to request (see the "NO DIRECT WIDGET
-  // CREATION" rule) — the exact JSON specs arrive in pass-2. The same pass-1 prompt ALSO carries
-  // the decision cores, which already state the decision-critical rules. So pass-1 does not need
-  // the per-entry prose of the catalogs; it needs the element NAMES (to build a
-  // `need_codbi_details`
-  // request). The variants below keep every heading AND the section PREAMBLE verbatim (the preamble
-  // carries the decision-critical GENERAL RULES — e.g. the widget catalog's "LABELS — never use
-  // generic placeholders such as 'Label'" rule — which must NEVER be dropped) and DROP each entry's
-  // body prose entirely. This is the "NAME-ONLY" step of Lever 2.4: the previous leverage already
-  // truncated every entry to its first sentence; names alone are enough to *request* details, so
-  // the first sentence — which the decision cores already make redundant for choosing — is removed
-  // too. The FULL catalogs remain in use everywhere else (pass-2 details, other paths).
+  // CREATION" rule) — the exact JSON specs arrive in pass-2 after `need_codbi_details`.
+  //
+  // For the ELEMENT catalog pass-1 needs more than the name: a NAME ALONE IS NOT DECIDABLE. A model
+  // that only sees `### HTML.Input.Blacklist` cannot know whether it maps to "these dates must not
+  // be
+  // enterable" and therefore falls back to whichever mechanism the decision cores teach (observed:
+  // ai.llama.standard.txtverify carrying the user's prompt as its data-cb-Question). So the pass-1
+  // element catalog keeps, per entry, exactly the PURPOSE (`USE WHEN …`, plus the leading "what it
+  // does" sentence) and drops everything else — parameters, attribute names and JSON skeletons stay
+  // in pass-2. Every entry MUST therefore carry a `USE WHEN …` line in
+  // `codbi-core-elements-compact.md`; an entry without one is a catalog defect (guarded by
+  // CodbiCapabilitiesPass1CatalogTest).
+  //
+  // The WIDGET catalog stays name-only: a widget is chosen by the decision cores (and requested in
+  // the same pass anyway), so its prose is dead weight.
+  //
+  // Both variants keep every heading AND the section PREAMBLE verbatim (the preamble carries the
+  // decision-critical GENERAL RULES — e.g. the widget catalog's "LABELS — never use generic
+  // placeholders such as 'Label'" rule — which must NEVER be dropped).
   // ---------------------------------------------------------------------------------------------
 
-  /** NAME-ONLY [buildSection] for pass-1 (every heading + preamble, NO per-entry prose). */
-  fun buildSectionCondensed(): String = condenseEntryNames(buildSection())
+  /**
+   * PASS-1 [buildSection]: every heading + preamble verbatim, plus each entry's ONE purpose line
+   * ("what it does" + `USE WHEN …`) — no parameters, no attributes, no build syntax.
+   */
+  fun buildSectionCondensed(): String = condenseEntryPurposes(buildSection())
+
+  /**
+   * Pass-1 / blind-pass element catalog, GATED BY THE FORM ASSISTANT DIALOG'S CODBI SWITCH.
+   *
+   * The catalog is a pure CodBi reference ("what each functionality is and when to apply it"), so
+   * it may only be transmitted when the user turned the CodBi switch ON in the form assistant
+   * dialog. With the switch OFF the assistant builds a plain Formcycle form: it must neither pay
+   * those tokens nor be nudged towards CodBi features — the same gate that already suppresses the
+   * CodBi decision core and the `need_codbi_details` flow.
+   */
+  fun pass1ElementCatalog(useCodbi: Boolean): String = if (useCodbi) buildSectionCondensed() else ""
 
   /** NAME-ONLY [buildWidgetsSection] for pass-1 (every heading + preamble, NO per-widget prose). */
   fun buildWidgetsSectionCondensed(): String =
@@ -372,11 +397,12 @@ internal object CodbiCapabilities {
    * section PREAMBLE verbatim, and DROPS each entry's body prose ENTIRELY (not even its first
    * sentence).
    *
-   * Pass-1 uses this for its catalogs (Lever 2.4): names alone let the model build a
-   * `need_codbi_details` request, and the decision cores carried in the same prompt already state
-   * how to choose the right element. The preamble is kept on purpose — it holds the
-   * decision-critical GENERAL RULES (e.g. the widget catalog's "LABELS — never use generic
-   * placeholders such as 'Label'" rule) that must never be dropped.
+   * Used for the pass-1 WIDGET catalog only: a widget is chosen by the decision cores (and its
+   * template is requested in the same pass), so its prose is dead weight there. The ELEMENT catalog
+   * must NOT use this — an element is only decidable with its purpose (see
+   * [condenseEntryPurposes]). The preamble is kept on purpose — it holds the decision-critical
+   * GENERAL RULES (e.g. the widget catalog's "LABELS — never use generic placeholders such as
+   * 'Label'" rule) that must never be dropped.
    */
   private fun condenseEntryNames(text: String): String {
     var inEntry = false
@@ -399,6 +425,58 @@ internal object CodbiCapabilities {
         else -> ""
       }
     }
+  }
+
+  /**
+   * PASS-1 variant of [buildSection]: keeps every heading and the section preamble verbatim and
+   * reduces each entry body to its PURPOSE — the leading "what it does" sentence plus the `USE WHEN
+   * …` sentence whenever the entry carries one. Parameters, attribute names and build syntax are
+   * deliberately NOT part of the pass-1 decision (they arrive in pass-2 via `need_codbi_details`),
+   * but the purpose must be present for EVERY entry: a bare name leaves the model unable to tell
+   * two similar functionalities apart and it then picks whichever mechanism the decision cores
+   * happen to teach.
+   */
+  private fun condenseEntryPurposes(
+      text: String,
+      maxWhatChars: Int = 260,
+      maxWhenChars: Int = 240
+  ): String {
+    var inEntry = false
+    return text.lines().joinToString("\n") { line ->
+      val t = line.trim()
+      when {
+        t.isEmpty() -> line
+        t.startsWith("#") -> {
+          inEntry = t.startsWith("##")
+          line
+        }
+        // Keep the preamble (before the first entry heading) verbatim — it carries the
+        // decision-critical general rules and the pass-1 details-request contract.
+        !inEntry -> line
+        else -> purposeOf(t, maxWhatChars, maxWhenChars)
+      }
+    }
+  }
+
+  /** One purpose line for a catalog entry body line (see [condenseEntryPurposes]). */
+  private fun purposeOf(body: String, maxWhatChars: Int, maxWhenChars: Int): String {
+    val sentences = body.split(ENTRY_SENTENCE_SPLIT).map { it.trim() }.filter { it.isNotEmpty() }
+    if (sentences.isEmpty()) return ""
+    if (sentences.first().startsWith("USE WHEN", ignoreCase = true)) {
+      return capAt(sentences.first(), maxWhenChars)
+    }
+    val what = capAt(sentences.first(), maxWhatChars)
+    val useWhen =
+        sentences.drop(1).firstOrNull { it.startsWith("USE WHEN", ignoreCase = true) }
+            ?: return what
+    return "$what ${capAt(useWhen, maxWhenChars)}"
+  }
+
+  /** Word-boundary cap with an ellipsis, so a condensed line never ends mid-word. */
+  private fun capAt(sentence: String, max: Int): String {
+    if (sentence.length <= max) return sentence
+    val cut = sentence.lastIndexOf(' ', max).takeIf { it > 0 } ?: max
+    return sentence.substring(0, cut).trimEnd() + " …"
   }
 
   /**

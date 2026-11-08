@@ -87,6 +87,44 @@ class ClarificationProseFallbackTest {
   }
 
   @Test
+  fun `the clarification prompt forbids answering with an acknowledgement`() {
+    val prompt =
+        ClarificationProseFallbackTest::class
+            .java
+            .classLoader
+            .getResourceAsStream(
+                "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() } ?: error("clarification prompt missing")
+    assertTrue(
+        prompt.contains("AN ACKNOWLEDGEMENT IS NOT A QUESTION"),
+        "the clarify prompt must forbid acknowledgement answers")
+    assertTrue(
+        prompt.contains("answer EXACTLY the sentinel NO_CLARIFICATION"),
+        "the clarify prompt must point at the sentinel when nothing is to ask")
+  }
+
+  @Test
+  fun `a bare acknowledgement is not a question`() {
+    // Reported: the build request "Erstelle ein Text welches die Kontaktdaten aus dem BayVIS von
+    // Salvatore Callari enthält." made the model answer "Ok, mache ich." and the popup showed that
+    // promise as the question. An acknowledgement carries no ask, so the round must yield NO
+    // question (the build then runs immediately).
+    assertNull(prose("Ok, mache ich."), "a promise ending like a statement is not a question")
+    assertNull(prose("Mache ich."), "a promise ending like a statement is not a question")
+    assertNull(prose("Alles klar"), "a two-word confirmation is not a question")
+    assertNull(prose("Ok"))
+    assertNull(prose("Got it!"), "an exclamation is not a question")
+    assertNull(prose("Sure, I will do that."), "a status sentence is not a question")
+  }
+
+  @Test
+  fun `a short question with a question mark is still a question`() {
+    assertEquals(1, questionTexts(prose("Welche Spalten?")).size)
+    assertEquals(1, questionTexts(prose("¿Qué columnas?")).size)
+  }
+
+  @Test
   fun `json shapes and overlong answers are rejected`() {
     // The canonical envelope stays with the JSON parser, not with this fallback.
     assertNull(prose("""{"status":"need_clarification","questions":["x?"]}"""))

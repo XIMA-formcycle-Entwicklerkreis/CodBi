@@ -119,6 +119,12 @@ class AIFormAssistant : IPluginServletAction {
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?.let { AI.matomoApiKey = it }
+    // LDAP request url(s) of this installation — the CodBi LDAP functionalities fall back to them
+    // when their own URL parameter is empty, so the assistant must know whether they exist (see
+    // AICodBiAssistant.buildLdapConfigBlock).
+    AI.ldapUrl = configData.properties.getProperty("LDAP_URL")?.trim()?.takeIf { it.isNotBlank() }
+    AI.ldapUrlBackend =
+        configData.properties.getProperty("LDAP_URL_BACKEND")?.trim()?.takeIf { it.isNotBlank() }
   }
 
   /** Resolves the login name of the authenticated user, or `null` when it cannot be determined. */
@@ -167,7 +173,11 @@ class AIFormAssistant : IPluginServletAction {
 
     val instance = Standard.instance ?: return jsonResponse("""{"error":"AI service not ready"}""")
 
-    val systemPrompt = buildMainSystemPrompt()
+    // The CodBi switch of the form assistant dialog. With the switch OFF no CodBi functionality
+    // catalog / CodBi reference may be transmitted in ANY pass of this run.
+    val useCodbi = params.requestParameters["useCodbi"]?.firstOrNull()?.toBoolean() ?: true
+
+    val systemPrompt = buildMainSystemPrompt(useCodbi)
     val userContent =
         "Instruction: $prompt\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
             "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt."
@@ -223,7 +233,7 @@ class AIFormAssistant : IPluginServletAction {
         // Blind rethink pass: AI previously concluded nothing applies — ask it to reconsider.
         // Use the full compact API reference (including parameter names) so the AI can
         // generate correct data-cb-* parameter attributes instead of inventing names.
-        val rethinkSystemPrompt = loadCodbiRethinkPrompt()
+        val rethinkSystemPrompt = loadCodbiRethinkPrompt(useCodbi)
         logger.info(
             "[AIFormAssistant] Blind rethink pass — sending {} item(s) with compact CodBi reference (system-only)",
             allItems.size())
@@ -365,7 +375,7 @@ class AIFormAssistant : IPluginServletAction {
         // into the build pass when the request names a reCAPTCHA (see ReCaptchaDetector).
         val widgetsForDetailsFinal =
             ReCaptchaDetector.ensureReCaptchaDetails(widgetsForDetails, prompt)
-        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgetsForDetailsFinal)
+        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgetsForDetailsFinal, useCodbi)
         val pass2UserContent =
             "Original user request: ${gson.toJson(prompt)}\n\n" +
                 "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
@@ -1811,12 +1821,12 @@ class AIFormAssistant : IPluginServletAction {
           itemProps.addProperty("parentid", parentId)
         }
       }
-      // Deterministic safety net for the German OpenPLZ.Autocomplete address group (see
-      // ensureOpenPlzAddressFields): apply the CodBi_OpenPLZ_AC_SET_* classes to any existing
-      // address-part field and create missing street / house-number fields for a complete address
-      // group, so "PLZ/Ort/Straße/Hausnummer mit deutscher Autovervollständigung" works even when
-      // the AI only created PLZ + Ort.
-      ensureOpenPlzAddressFields(resultItems, baseObj)
+      // NOTE: there is deliberately NO deterministic OpenPLZ.AC.SET net here. Whether a request is
+      // about an address/locality at all is the AI's decision (the prompts mandate the
+      // CodBi_OpenPLZ_AC_SET_* classes in an address group and the creation of missing street /
+      // house-number fields); guessing it from field names or labels cannot work across the
+      // languages and phrasings users write in, and it once stamped a locality class onto a plain
+      // capitalisation field.
     }
     // Convert any AI-generated data-cb-* direct property keys to the proper attributes array
     // format. FORMCYCLE reads custom HTML attributes from properties["attributes"] as
@@ -2001,179 +2011,6 @@ class AIFormAssistant : IPluginServletAction {
   }
 
   /**
-   * Deterministic safety net for the German OpenPLZ.Autocomplete address group (OpenPLZ.AC.SET
-   * standard). Two jobs:
-   * 1. Ensures the matching `CodBi_OpenPLZ_AC_SET_*` CSS class is present on every XTextField that
-   *    represents an address part (street, building number, postal code, locality). The AI is
-   *    instructed to apply these classes but may omit them; existing classes are preserved.
-   * 2. When a complete address group (a postal-code field AND a locality field tagged with the
-   *    OpenPLZ classes inside the same container) has no street field and no house-number field
-   *    (and no combined address field), creates `tfStrasse` + `tfHausnummer` with the matching
-   *    OpenPLZ classes. Created fields reuse the XTextField base template (so they render) and are
-   *    placed in the same container, closing the gap where a prompt asks for
-   *    "PLZ/Ort/Straße/Hausnummer" German autocomplete but the generated fieldset only contains PLZ
-   *    and Ort.
-   *
-   * @param resultItems The form's `items` array (mutated in place).
-   * @param baseObj The form's `base` template object (used to fill required XTextField properties).
-   */
-  private fun ensureOpenPlzAddressFields(resultItems: JsonArray, baseObj: JsonObject?) {
-    // Pass 1 — apply OpenPLZ.AC.SET classes to existing address-part fields.
-    for (el in resultItems) {
-      if (!el.isJsonObject) continue
-      val item = el.asJsonObject
-      if (item.get("className")?.asString != "XTextField") continue
-      val props = item.getAsJsonObject("properties") ?: continue
-      val name = props.get("name")?.asString ?: continue
-      // Split camelCase names into words (e.g. "tfAntragstellerPLZ" -> [tf, antragsteller, plz]) so
-      // unrelated names (e.g. "tfReport") never match by accident.
-      val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }
-      // A postal-code field is identified LANGUAGE-INDEPENDENTLY by its datatype: "plzDE" can only
-      // mean a (German) postal code no matter what happened to the field's name or label.
-      val datatype = props.get("datatype")?.asString ?: ""
-      val label = (props.get("label")?.asString ?: "").lowercase()
-      val cls =
-          when {
-            datatype.equals("plzDE", true) -> "CodBi_OpenPLZ_AC_SET_PLZ"
-            words.any { it in setOf("street", "strasse", "straße") } ||
-                setOf("street", "strasse", "straße", "adresse", "address").any {
-                  label.contains(it)
-                } -> "CodBi_OpenPLZ_AC_SET_Street"
-            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ||
-                setOf("hausnummer", "hausnr", "building", "building number", "house").any {
-                  label.contains(it)
-                } -> "CodBi_OpenPLZ_AC_SET_BuildingNumber"
-            words.any {
-              it in setOf("postal", "postalcode", "postleitzahl", "plz", "zip", "zipcode")
-            } ||
-                setOf("postleitzahl", "plz", "postal", "postal code", "zip", "zipcode").any {
-                  label.contains(it)
-                } -> "CodBi_OpenPLZ_AC_SET_PLZ"
-            words.any { it in setOf("locality", "city", "ort", "wohnort") } ||
-                setOf("city", "ort", "wohnort", "locality", "town").any { label.contains(it) } ->
-                "CodBi_OpenPLZ_AC_SET_Locality"
-            else -> null
-          }
-      if (cls == null) continue
-      val cssClasses =
-          if (props.has("cssclasses") && props.get("cssclasses").isJsonArray)
-              props.getAsJsonArray("cssclasses")
-          else JsonArray().also { props.add("cssclasses", it) }
-      if (cssClasses.none { it.isJsonPrimitive && it.asString == cls }) {
-        cssClasses.add(cls)
-        logger.info(
-            "[AIFormAssistant] Applied OpenPLZ.AC.SET CSS class '{}' to address field '{}'",
-            cls,
-            name)
-      }
-      if (cls == "CodBi_OpenPLZ_AC_SET_PLZ" && props.get("datatype")?.asString.isNullOrBlank()) {
-        props.addProperty("datatype", "plzDE")
-      }
-    }
-    // Pass 2 — create missing street / house-number fields for complete address groups.
-    val baseTextProps = baseObj?.getAsJsonObject("XTextField")?.getAsJsonObject("properties")
-    if (baseTextProps == null) return
-    val childrenByParent = mutableMapOf<String, MutableSet<String>>()
-    val openplzByParent = mutableMapOf<String, MutableSet<String>>()
-    for (el in resultItems) {
-      if (!el.isJsonObject) continue
-      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      val parentId = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
-      val name = props.get("name")?.asString ?: continue
-      childrenByParent.getOrPut(parentId) { mutableSetOf() }.add(name)
-      props
-          .get("cssclasses")
-          ?.takeIf { it.isJsonArray }
-          ?.asJsonArray
-          ?.forEach { c ->
-            if (c.isJsonPrimitive && c.asString.startsWith("CodBi_OpenPLZ_AC_SET_")) {
-              openplzByParent.getOrPut(parentId) { mutableSetOf() }.add(c.asString)
-            }
-          }
-    }
-    for ((parentId, classes) in openplzByParent) {
-      val hasPlz = classes.contains("CodBi_OpenPLZ_AC_SET_PLZ")
-      val hasLocality = classes.contains("CodBi_OpenPLZ_AC_SET_Locality")
-      if (!hasPlz || !hasLocality) continue
-      val children = childrenByParent[parentId] ?: continue
-      val hasStreet = children.any { it.contains(Regex("(?i)street|strasse|straße")) }
-      val hasBuilding =
-          children.any { it.contains(Regex("(?i)hausnummer|hausnr|buildingnumber|building")) }
-      val hasAddress = children.any { it.contains(Regex("(?i)adresse|address")) }
-      if (hasStreet && hasBuilding) continue
-      if (hasAddress) continue
-      val containerEl =
-          resultItems.firstOrNull {
-            it.isJsonObject &&
-                it.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString == parentId
-          } ?: continue
-      val containerProps = containerEl.asJsonObject.getAsJsonObject("properties") ?: continue
-      var elements = containerProps.getAsJsonArray("elements")
-      if (elements == null) {
-        val newArr = JsonArray()
-        containerProps.add("elements", newArr)
-        elements = newArr
-      }
-      if (!hasStreet) {
-        createAddressField(
-            resultItems,
-            elements,
-            baseTextProps,
-            parentId,
-            "tfStrasse",
-            "Straße",
-            "CodBi_OpenPLZ_AC_SET_Street")
-      }
-      if (!hasBuilding) {
-        createAddressField(
-            resultItems,
-            elements,
-            baseTextProps,
-            parentId,
-            "tfHausnummer",
-            "Hausnummer",
-            "CodBi_OpenPLZ_AC_SET_BuildingNumber")
-      }
-    }
-  }
-
-  /**
-   * Creates a new XTextField item reusing the XTextField base template and appends it to
-   * [elements]. Returns the created item, or `null` when the name is already referenced.
-   */
-  private fun createAddressField(
-      resultItems: JsonArray,
-      elements: JsonArray,
-      baseTextProps: JsonObject,
-      parentId: String,
-      name: String,
-      label: String,
-      cls: String,
-  ): JsonObject? {
-    if (elements.any { it.isJsonPrimitive && it.asString == name }) return null
-    val props = JsonObject()
-    for (entry in baseTextProps.entrySet()) props.add(entry.key, entry.value.deepCopy())
-    props.addProperty("name", name)
-    props.addProperty("id", "xi-${name.lowercase()}")
-    props.addProperty("label", label)
-    props.addProperty("parentid", parentId)
-    val cssClasses = JsonArray()
-    cssClasses.add(cls)
-    props.add("cssclasses", cssClasses)
-    val item = JsonObject()
-    item.addProperty("className", "XTextField")
-    item.add("properties", props)
-    resultItems.add(item)
-    elements.add(name)
-    logger.info(
-        "[AIFormAssistant] Created missing address field '{}' ({} class) in container '{}'",
-        name,
-        cls,
-        parentId)
-    return item
-  }
-
-  /**
    * Merges the AI result's top-level `variables` array into [result] by **name**. Global variables
    * are form-level entries of the form's `variables` array (each `{ "name": "...", "aliasname":
    * "...", "serveronly": false, "value": "..." }`). Entries that already exist in [result] are
@@ -2327,7 +2164,7 @@ class AIFormAssistant : IPluginServletAction {
    * Builds the main system prompt by loading categorized sections from the database. Falls back to
    * the bundled `.md` prompt if the DB is unavailable.
    */
-  private fun buildMainSystemPrompt(): String {
+  private fun buildMainSystemPrompt(useCodbi: Boolean = true): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadFallbackPrompt("codbi.fallback_form_system")
     try {
@@ -2341,6 +2178,12 @@ class AIFormAssistant : IPluginServletAction {
       // elements/widgets it needs, and the server returns only those in pass-2. Sending the full
       // detailed sections here would roughly double the token usage per request without changing
       // the outcome (the AI requests details regardless).
+      // The CodBi functionality catalog AND the CodBi general rules are CodBi-only references: they
+      // travel ONLY when the form assistant dialog's CodBi switch is ON (same gate as the new
+      // assistant — see [CodbiCapabilities.pass1ElementCatalog]). The Formcycle widget reference
+      // stays either way: it is Formcycle knowledge, not CodBi.
+      val codbiGeneralPart = if (useCodbi) categories["codbi.general"] ?: "" else ""
+      val codbiElementsPart = CodbiCapabilities.pass1ElementCatalog(useCodbi)
       val system =
           PromptLoader.resolvePlaceholders(
               taskInstruction +
@@ -2351,9 +2194,9 @@ class AIFormAssistant : IPluginServletAction {
                   "\n" +
                   "{{FORMCYCLE_WIDGETS_SECTION}}" +
                   "\n" +
-                  (categories["codbi.general"] ?: "") +
+                  codbiGeneralPart +
                   "\n" +
-                  "{{CODBI_ELEMENTS_SECTION}}")
+                  codbiElementsPart)
       // Support diagnosis: make the composition of the delivered pass-1 prompt visible in the log,
       // so a report about a missing/ignored rule can be answered from the log alone (e.g. whether
       // the designed-text/illustration rules actually reached the model).
@@ -2373,8 +2216,14 @@ class AIFormAssistant : IPluginServletAction {
     }
   }
 
-  /** Loads the CodBi rethink (blind pass) prompt from the database. */
-  private fun loadCodbiRethinkPrompt(): String {
+  /**
+   * Loads the CodBi rethink (blind pass) prompt from the database.
+   *
+   * [useCodbi] mirrors the form assistant dialog's CodBi switch: with the switch OFF neither the
+   * CodBi general rules nor the `{{CODBI_FULL_SECTION}}` reference is appended — the pass then only
+   * carries the task instruction and the Formcycle widget reference.
+   */
+  private fun loadCodbiRethinkPrompt(useCodbi: Boolean = true): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadFallbackPrompt("codbi.fallback_rethink")
     try {
@@ -2384,10 +2233,12 @@ class AIFormAssistant : IPluginServletAction {
       // The detailed standards/functionalities are included in the DB-driven
       // {{CODBI_FULL_SECTION}},
       // so only the general rules, the widgets reference, and the full section are sent here.
+      val codbiGeneralPart = if (useCodbi) categories["codbi.general"] ?: "" else ""
+      val codbiFullReferencePart = if (useCodbi) "{{CODBI_FULL_SECTION}}" else ""
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
               "\n\n" +
-              (categories["codbi.general"] ?: "") +
+              codbiGeneralPart +
               "\n" +
               // The full widget reference carries the `<!--SECTION:…-->` markers of the gated XSpan
               // sub-blocks, and this rethink pass is NOT section-gated (no pass-1 keep set exists
@@ -2398,7 +2249,7 @@ class AIFormAssistant : IPluginServletAction {
                   FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: ""),
                   PromptSectionGate.KNOWN_TAGS) +
               "\n" +
-              "{{CODBI_FULL_SECTION}}")
+              codbiFullReferencePart)
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load rethink prompt", e)
       return loadFallbackPrompt("codbi.fallback_rethink")
@@ -2418,7 +2269,8 @@ class AIFormAssistant : IPluginServletAction {
    */
   private fun loadCodbiApplyPrompt(
       requestedIds: List<String> = emptyList(),
-      widgetIds: List<String> = emptyList()
+      widgetIds: List<String> = emptyList(),
+      useCodbi: Boolean = true
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadFallbackPrompt("codbi.fallback_apply")
@@ -2427,7 +2279,7 @@ class AIFormAssistant : IPluginServletAction {
       // Only the cross-cutting general rules form the base — the detailed standard/functionality/
       // EP sections are redundant with the targeted details below (or the full reference in the
       // blind case) and would roughly double the token usage when duplicated here.
-      val base = CodBiElementAccess.scrub(categories["codbi.general"] ?: "")
+      val base = if (useCodbi) CodBiElementAccess.scrub(categories["codbi.general"] ?: "") else ""
       // Cross-cutting form rules MUST be carried into the pass-2 rerun as well: this apply prompt
       // is
       // what REPLACES the full system prompt on pass-2/3/4, and the model actually BUILDS the form
@@ -2436,21 +2288,29 @@ class AIFormAssistant : IPluginServletAction {
       val fc = PromptLoader.loadCategory(em, "formcycle")
       val formStructureRules = categories["codbi.form_structure_rules"] ?: ""
       val formcycleGeneral = fc["formcycle.general"] ?: ""
+      // With the CodBi switch OFF no CodBi reference of any kind is appended — only the Formcycle
+      // widget templates below survive, so the AI can rebuild what it created without ever
+      // receiving
+      // CodBi functionality infos.
       val codbiPart =
-          when {
-            requestedIds.isNotEmpty() -> {
-              val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
-              // Fall back to the full reference when none of the requested IDs could be resolved.
-              if (details.isBlank()) PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-              else details
-            }
-            // The AI asked ONLY for widget templates (elements list empty): give it the condensed
-            // element list (names + purposes) plus the widget templates — NOT the full API
-            // reference.
-            widgetIds.isNotEmpty() -> PromptLoader.resolvePlaceholders("{{CODBI_ELEMENTS_SECTION}}")
-            // Pure blind reconsideration: provide the complete reference.
-            else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-          }
+          if (!useCodbi) {
+            ""
+          } else
+              when {
+                requestedIds.isNotEmpty() -> {
+                  val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
+                  // Fall back to the full reference when no requested ID could be resolved.
+                  if (details.isBlank()) PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
+                  else details
+                }
+                // The AI asked ONLY for widget templates (elements list empty): give it the
+                // condensed element list (names + purposes) plus the widget templates — NOT the
+                // full
+                // API reference.
+                widgetIds.isNotEmpty() -> CodbiCapabilities.pass1ElementCatalog(useCodbi)
+                // Pure blind reconsideration: provide the complete reference.
+                else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
+              }
       val widgetPart = buildWidgetDetailsSection(em, widgetIds)
       return formStructureRules +
           "\n\n" +

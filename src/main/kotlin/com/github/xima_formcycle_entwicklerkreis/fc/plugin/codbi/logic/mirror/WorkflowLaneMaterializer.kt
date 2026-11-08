@@ -6,6 +6,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
@@ -69,6 +70,12 @@ object WorkflowLaneMaterializer {
       val pathName: String,
       val triggerType: String,
       val roots: List<SourceNode>,
+      /**
+       * Technical key (`project-<id>`) of the SOURCE form the path lives in. Used to re-point
+       * copied node parameters at the mirrored COPIES of the form elements they reference — see
+       * [MirrorFormAccess.mirroredElementReferenceMap]. Blank when unknown (no remap then).
+       */
+      val sourceFormKey: String = "",
       /** Cheap content hash (set by [WorkflowMirrorAccess.sourceLane]). */
       val revision: Int = 0,
       /** Source workflow version's states as `uuid -> name` (for param remap). */
@@ -158,14 +165,30 @@ object WorkflowLaneMaterializer {
       }
 
   /**
+   * Version of the materialized PARAMETERS themselves — bump it whenever the remap of
+   * `customParameters` learns a reference it did not handle before, so every reflecting lane is
+   * re-materialized ONCE and an already-created path acquires the fix.
+   *
+   * `2` = form-ELEMENT references (upload fields, xpath targets, `[%field%]` placeholders) are
+   * re-pointed at the mirrored copies (see [remapElementReferences]). Lanes materialized before
+   * that kept naming SOURCE elements, which does not exist in the reflecting form.
+   */
+  internal const val PARAM_REMAP_SCHEMA = 2
+
+  /**
    * Content-based revision of [source]'s node tree (depth-first: type, name, params of every node).
    *
    * Unlike [SourceLane.revision] (which only signs the version/path identity), this reflects actual
    * node content — so a param-only edit within the SAME source version still changes the revision
    * and triggers a re-materialization. Phase 2 stores this value as the "materialized revision".
+   *
+   * [PARAM_REMAP_SCHEMA] is folded in so a change of the REMAP rules itself invalidates every
+   * stored revision (one rebuild per lane), which is how existing reflected paths receive the
+   * corrected parameters after an update.
    */
   fun contentRevision(source: SourceLane): Int =
       buildString {
+            append('\u0007').append(PARAM_REMAP_SCHEMA).append('\u0007')
             fun walk(nodes: List<SourceNode>) {
               for (n in nodes) {
                 append(n.type).append('\u0001')
@@ -261,6 +284,11 @@ object WorkflowLaneMaterializer {
     val nodeUuidMap = HashMap<String, String>()
     collectNodeUuidMap(sourceRoots, targetChildren, nodeUuidMap)
 
+    // Form-element references (upload fields, xpath target fields, `[%field%]` placeholders) must
+    // name
+    // the MIRRORED copies — the copied node was authored against the SOURCE form's elements.
+    val elementRefs = elementRefMap(userContext, rewrite.source, rewrite.targetWorkflowVersion)
+
     // With `syncEndpoint = false` the reflecting lane keeps its OWN endpoint: the source's terminal
     // node is not rewritten into it (the index alignment of the remaining nodes is unaffected).
     // When
@@ -293,6 +321,7 @@ object WorkflowLaneMaterializer {
               srcRoot,
               target,
               nodeUuidMap,
+              elementRefs,
               warnings)
       idx++
     }
@@ -614,6 +643,10 @@ object WorkflowLaneMaterializer {
     // 2. Pre-assign target UUIDs for the whole source tree so node references remap correctly.
     val sourceUuidToTargetUuid = HashMap<String, String>()
     assignTargetUuids(sourceRootsToCreate, sourceUuidToTargetUuid)
+    // Form-element references (upload fields, xpath target fields, `[%field%]` placeholders) must
+    // name
+    // the MIRRORED copies — the recreated nodes were authored against the SOURCE form's elements.
+    val elementRefs = elementRefMap(userContext, rewrite.source, rewrite.targetWorkflowVersion)
 
     // 3. Recreate the lane.
     var created = 0
@@ -627,6 +660,7 @@ object WorkflowLaneMaterializer {
             task,
             src,
             sourceUuidToTargetUuid,
+            elementRefs,
             warnings)
         created++
       } catch (x: Exception) {
@@ -743,6 +777,7 @@ object WorkflowLaneMaterializer {
       src: SourceNode,
       target: Any,
       nodeUuidMap: Map<String, String>,
+      elementRefs: Map<String, String>,
       warnings: MutableList<String>,
   ): Int {
     var rewritten = 0
@@ -755,7 +790,8 @@ object WorkflowLaneMaterializer {
               source.sourceStatesByUuid,
               source.sourceStatesExternalAccess,
               nodeUuidMap,
-              src.paramsJson)
+              src.paramsJson,
+              elementRefs)
       warnings.addAll(paramWarnings.prefixed())
       val setType = nodeClass.getMethod("setType", String::class.java)
       val setName = nodeClass.getMethod("setName", String::class.java)
@@ -793,7 +829,14 @@ object WorkflowLaneMaterializer {
       if (tChild != null) {
         rewritten +=
             rewriteNodeTree(
-                userContext, targetWorkflowVersion, source, child, tChild, nodeUuidMap, warnings)
+                userContext,
+                targetWorkflowVersion,
+                source,
+                child,
+                tChild,
+                nodeUuidMap,
+                elementRefs,
+                warnings)
       } else {
         warnings.add(
             "No reflecting child at index $childIdx for source child '${child.name}' (${child.type})")
@@ -849,6 +892,15 @@ object WorkflowLaneMaterializer {
    *
    * References that cannot be resolved on either side pass through unchanged with a warning (the
    * plan's explicit no-op fallback). All other JSON is carried through unchanged.
+   * 3. **Form ELEMENT references** ([elementRefs], see
+   *    [MirrorFormAccess.mirroredElementReferenceMap]) are re-pointed at the mirrored copies: a
+   *    parameter that names a source element by its technical id/name (e.g.
+   *    `FC_IMPORT_FORM_VALUE_FROM_XML`'s “XML-Quelle”
+   *    `{"resource":{"type":"UPLOAD","identifier":"<upload field>"}}`, its `xpathMapping` target
+   *    fields, `FC_RETURN_FILE`/`FC_EMAIL.attachments`) — and `[%field%]` placeholders inside any
+   *    string — become the copy's id / namespaced name. Without this the copied node keeps pointing
+   *    at a field that only exists in the SOURCE form: the properties dialog shows an EMPTY element
+   *    picker and the node does nothing at execution time.
    *
    * @return `(newJson, warnings)`.
    */
@@ -859,6 +911,7 @@ object WorkflowLaneMaterializer {
       sourceStatesExternalAccess: Map<String, Boolean>,
       nodeUuidMap: Map<String, String>,
       paramsJson: String,
+      elementRefs: Map<String, String> = emptyMap(),
   ): Pair<String, List<String>> {
     if (paramsJson.isBlank()) return paramsJson to emptyList()
     val root =
@@ -880,8 +933,60 @@ object WorkflowLaneMaterializer {
         root,
         warnings)
     remapJson(root, sourceStatesByUuid, targetStatesByName, nodeUuidMap, warnings)
+    remapElementReferences(root, elementRefs)
     return gson.toJson(root) to warnings
   }
+
+  /**
+   * Builds the source -> reflecting FORM ELEMENT reference map for a lane.
+   *
+   * Empty when the source form key is unknown (a lane loaded without one) or when the reflecting
+   * form holds no mirrored copies — the remap is then a no-op, exactly like before.
+   */
+  private fun elementRefMap(
+      userContext: Any?,
+      source: SourceLane,
+      targetWorkflowVersion: Any?,
+  ): Map<String, String> {
+    val sourceFormKey = source.sourceFormKey
+    if (sourceFormKey.isBlank()) return emptyMap()
+    val targetProjectId =
+        reflectId(reflect(targetWorkflowVersion, "getProject")) ?: return emptyMap()
+    val targetFormKey = MirrorFormAccess.formKey(targetProjectId)
+    val cacheKey = "$sourceFormKey|$targetFormKey"
+    // Short-lived cache: a reflecting Mirror node rewrites its lane on EVERY execution, and loading
+    // both form JSONs per node would be a needless DB round-trip each time. The copies only change
+    // when the Mirror widget is re-materialized in the designer, so a stale entry can only affect a
+    // lane rebuilt within the TTL — the next rebuild refreshes it.
+    val cached = elementRefsCache[cacheKey]
+    if (cached != null && System.currentTimeMillis() - cached.builtAtMillis < ELEMENT_REFS_TTL_MS) {
+      return cached.refs
+    }
+    val refs =
+        runCatching {
+              MirrorFormAccess.mirroredElementReferenceMap(
+                  userContext, sourceFormKey, targetFormKey)
+            }
+            .getOrElse { x: Throwable ->
+              logger.warn(
+                  "[WorkflowLaneMaterializer] element-reference map '{}' -> '{}' failed: {}",
+                  sourceFormKey,
+                  targetFormKey,
+                  x.message)
+              emptyMap()
+            }
+    if (elementRefsCache.size > 256) elementRefsCache.clear()
+    elementRefsCache[cacheKey] = CachedElementRefs(refs, System.currentTimeMillis())
+    return refs
+  }
+
+  /** Cached source -> reflecting form-element reference map with its build timestamp. */
+  private data class CachedElementRefs(val refs: Map<String, String>, val builtAtMillis: Long)
+
+  /** How long an element-reference map is reused before both form JSONs are read again. */
+  private const val ELEMENT_REFS_TTL_MS = 30_000L
+
+  private val elementRefsCache = ConcurrentHashMap<String, CachedElementRefs>()
 
   /**
    * Maps every workflow-state NAME of the target version to its UUID (keys are lower-cased and
@@ -1114,6 +1219,77 @@ object WorkflowLaneMaterializer {
     }
   }
 
+  /** A `[%fieldName%]` placeholder inside a string parameter (mail body, text, subject, …). */
+  private val ELEMENT_PLACEHOLDER = Regex("\\[%([^%\\[\\]]{1,200})%\\]")
+
+  /**
+   * Re-points FORM ELEMENT references of the copied node parameters at the mirrored COPIES.
+   *
+   * Two shapes are handled, both entirely inside `customParameters`:
+   * - a string value that IS an element reference (technical id or name) — e.g.
+   *   `FC_IMPORT_FORM_VALUE_FROM_XML`'s `xmlSource.resource.identifier` (“XML-Quelle”),
+   *   `xpathMapping[].name`, `FC_RETURN_FILE.uploadField`, `FC_EMAIL.attachments[]`,
+   *   `FC_MULTIPLE_CONDITION.fieldTechnicalId` — becomes the copy's id/namespaced name;
+   * - `[%fieldName%]` placeholders inside any string become `[%<mirrorName>_fieldName%]`.
+   *
+   * [elementRefs] only contains elements that REALLY have a mirrored copy (see
+   * [MirrorFormAccess.mirroredElementReferenceMap]), so a parameter naming a field outside the
+   * mirrored element is left untouched.
+   */
+  private fun remapElementReferences(el: JsonElement, elementRefs: Map<String, String>) {
+    if (elementRefs.isEmpty()) return
+    when (el) {
+      is JsonObject -> {
+        for (key in el.keySet().toList()) {
+          val value = el.get(key)
+          when {
+            value is JsonPrimitive && value.isString -> {
+              val mapped = mapElementReference(value.asString, elementRefs)
+              if (mapped != null) el.add(key, JsonPrimitive(mapped))
+            }
+            value is JsonObject || value is JsonArray -> remapElementReferences(value, elementRefs)
+            else -> {}
+          }
+        }
+      }
+      is JsonArray -> {
+        var index = 0
+        for (item in el) {
+          when {
+            item is JsonPrimitive && item.isString -> {
+              val mapped = mapElementReference(item.asString, elementRefs)
+              if (mapped != null) el.set(index, JsonPrimitive(mapped))
+            }
+            item is JsonObject || item is JsonArray -> remapElementReferences(item, elementRefs)
+            else -> {}
+          }
+          index++
+        }
+      }
+      else -> {}
+    }
+  }
+
+  /**
+   * The reflected form of one parameter string: a whole-value element reference is replaced by its
+   * copy, and `[%field%]` placeholders are rewritten in place.
+   *
+   * @return the new value, or `null` when nothing matched (so the caller can leave it untouched).
+   */
+  private fun mapElementReference(value: String, elementRefs: Map<String, String>): String? {
+    val direct = elementRefs[value]
+    if (direct != null) return direct.takeIf { it != value }
+    if (!value.contains("[%")) return null
+    val replaced =
+        ELEMENT_PLACEHOLDER.replace(value) { match ->
+          // The placeholder DELIMITERS are part of the parameter, so they must be kept — only the
+          // name inside changes (`[%tfName%]` -> `[%mir1_tfName%]`).
+          val mapped = elementRefs[match.groupValues[1]]
+          if (mapped == null) match.value else "[%$mapped%]"
+        }
+    return replaced.takeIf { it != value }
+  }
+
   /**
    * Rewrites a single `{uuid, entityClass: WorkflowNode}` reference's uuid to the corresponding
    * reflecting node's uuid (source node uuid -> target node uuid), when it is known for this lane.
@@ -1210,6 +1386,7 @@ object WorkflowLaneMaterializer {
       task: Any?,
       src: SourceNode,
       sourceUuidToTargetUuid: Map<String, String>,
+      elementRefs: Map<String, String>,
       warnings: MutableList<String>,
   ) {
     val targetUuid = sourceUuidToTargetUuid[src.uuid] ?: UUID.randomUUID().toString()
@@ -1220,7 +1397,8 @@ object WorkflowLaneMaterializer {
             source.sourceStatesByUuid,
             source.sourceStatesExternalAccess,
             sourceUuidToTargetUuid,
-            src.paramsJson)
+            src.paramsJson,
+            elementRefs)
     warnings.addAll(paramWarnings.prefixed())
 
     val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
@@ -1268,6 +1446,7 @@ object WorkflowLaneMaterializer {
           task,
           child,
           sourceUuidToTargetUuid,
+          elementRefs,
           warnings)
     }
   }

@@ -114,6 +114,7 @@ when CodBi searches within the shared parent container.
   - MsgHigher: The error message to show if the "minimum" is not enough years in the past or the corresponding.
   - Reverse: Reverse the logic of this functionality in order to permit Date s up to a certain one (defaults to: FALSE).
   - Unit: A string -character specifying what unit Minimum is of.
+  - RELATIVE ONLY — ONE BOUND ONLY — NOT FOR A CLEAVE DATE FIELD: `Minimum` is an INTEGER amount of `Unit` (d/w/m/y) measured from TODAY, so an absolute date in `data-cb-minimum` (e.g. "01.12.2025") normalizes to 0 and restricts nothing; and one element can carry Date.Min only ONCE, so two bounds are impossible with it. When the date field is created with `HTML.Input.Cleave` (auto-formatted input), the allowed RANGE is wired with Cleave's OWN `data-cb-datemin` / `data-cb-datemax` (YYYY-MM-DD) — never with Date.Min.
 - Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply to a BIRTH-DATE field (Geburtsdatum, Geburtstag, birth date, birthday) — people can be born on any weekday, so a 'keine Wochenenden'/'no weekends' constraint on a birth date must be IGNORED (apply nothing, ask nothing). Only meaningful for future-dated/booking-type dates (course date, appointment, delivery).
   - MsgNoWeekends: The optional string to be shown when a weekend is entered.
 - Date.Time.Join.Span: Connects four HTMLInputElement s (a begin date-, a begin time-, an end date- and an end time-field) to.
@@ -153,17 +154,18 @@ when CodBi searches within the shared parent container.
   - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Replacements: An Array < string > of two elements each that are separated by a "|".
 - HTML.Input.Blacklist: The Functionality defines a blacklist of values that may not be the value of an HTMLInputElement.
+  - MESSAGE WIRING: there is NO free-text message parameter — the field error is composed as Prefix + List + Postfix, and the List appears ONLY when ShowBlacklist=true (values joined by Separator, default ", "). When the user dictates a message that contains a placeholder for the forbidden values (e.g. "Die folgenden Tage sind nicht verfügbar XXX." / "The following days are not available: XXX"), set ShowBlacklist=true, Prefix to the text BEFORE the placeholder ("Die folgenden Tage sind nicht verfügbar ") and Postfix to the text AFTER it (".") — the placeholder position IS the list. Never keep the placeholder (XXX, ..., $LIST) as literal text and never invent a Message attribute (the functionality has no such parameter); omit Prefix/Postfix only when the user wants no surrounding text.
   - List: Contains a string - CSV of forbidden values.
   - Postfix: The string to show after List when displaying an errormessage.
   - Prefix: The string to show before listing all the values in "List" when displaying an errormessage.
   - Separator: The string to be shown in between each element of the List when displaying an errormessage.
   - ShowBlacklist: Whether to show the List in the errormessage or not (true/false).
-- HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
+- HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js. On a DATE field it is ALSO the piece that restricts WHICH dates may be entered — use `DateMin`/`DateMax` for an allowed date range instead of `Date.Min` (there is no `Date.Max`).
   - Config: The CleaveOptions to set instead of the other shorthand parameter.
-  - Date: The CleaveOptions.date .
-  - DateMax: The CleaveOptions.dateMax .
-  - DateMin: The CleaveOptions.dateMin .
-  - DatePattern: The CleaveOptions.datePattern .
+  - Date: The CleaveOptions.date ("true" enables the date mask — required for a Cleave DATE field).
+  - DateMax: The CleaveOptions.dateMax — the latest enterable date, AMERICAN form with dashes (YYYY-MM-DD; "01.12.2025" → "2025-12-01").
+  - DateMin: The CleaveOptions.dateMin — the earliest enterable date, AMERICAN form with dashes (YYYY-MM-DD; "01.12.2025" → "2025-12-01"). A German/European date in DateMin/DateMax is ignored by Cleave, so nothing is restricted.
+  - DatePattern: The CleaveOptions.datePattern (the DISPLAY pattern, e.g. "d-m-Y"; the bounds stay American).
   - Delimiter: The CleaveOptions.delimiter .
 - HTML.Input.NoAutocomplete: This functionality deactivates the autocomplete for the provided HTMLInputElement .
   - Parameters: none.
@@ -186,77 +188,79 @@ when CodBi searches within the shared parent container.
   - UploadURL: Configures 'UploadURL' for this functionality.
 - HTML.Input.Trans.Capital: Gets the transformer that converts the input to capitalized words.
   - Parameters: none.
-- HTML.Input.Trans.NTW: Turns a number into its word representation, separating each digit with a dash.
-  - NumberWords: The Array of string s representing the word for each digit from 0 to 9.
+- HTML.Input.Trans.NTW: Turns a number into its word representation, separating each digit with a dash ("123" → "Eins-Zwei-Drei"). This is THE digit-to-word functionality — NOT Cleave: `HTML.Input.Cleave` has no NumberWords parameter and must never be used to write digits as words.
+  - NumberWords: The LANGUAGE-SPECIFIC words, one per digit from 0 to 9 IN ORDER (index = digit). This is a plain comma-separated list in the attribute (the framework turns a comma value into the array), e.g. `data-cb-NumberWords="Cero,Uno,Dos,Tres,Cuatro,Cinco,Seis,Siete,Ocho,Nueve"` for Spanish. ALWAYS pass the words of the LANGUAGE the request asks for — German ("Null,Eins,Zwei,Drei,Vier,Fünf,Sechs,Sieben,Acht,Neun") is only the default of the standard class, never assume it.
   - PostFix: The string that shall be appended to the result.
   - PreFix: The string that shall be prepended to the result.
 - HTML.Input.Trans.RegEx: Get the actual transformer that does a String.replace with the toLoad.extractor and.
   - Extractor: The string representing the regular expression to extract the values to be replaced.
   - Replacements: The string representing the replacement value.
-- HTML.Panel.Accordion: Applicable on a container (XContainer/XFieldSet) that wraps multiple collapsible panels. Joins all child panels with the .CodBi.--HTML_Panel class into an accordion group where only one panel can be open at a time. Set the data-cb-Accordion parameter to a unique group name.
-  - Accordion: Configures 'Accordion' for this functionality.
-- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. PREFERRED: 'Standard-Panel' / 'aufklappbares/collapsible panel' on a FIELDSET = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property (never data-cb-func=html.panel on a fieldset). On an XCONTAINER (div — no legend) use data-cb-func=html.panel and you MUST also set data-cb-generateheader='true' and a NON-EMPTY data-cb-autoheadertitle: the autoheadertitle is the ONLY source of the container panel's header text — use the title from the prompt, or if the prompt names no title, INVENT a short, meaningful title from the container's purpose/content in the form's language. When the prompt does not describe the header's look, ALSO generate restrained header CSS via the data-cb-* CSS parameters (every value is a RAW CSS declaration list WITHOUT braces, e.g. background:#eef2f7; padding:10px 14px; border-radius:6px;): data-cb-cssheaderfolded (base look while FOLDED — set it to the SAME CSS as data-cb-cssheaderunfolded so a folded panel looks identical), data-cb-cssheaderunfolded (base look while unfolded), data-cb-cssheaderhover, data-cb-cssheaderactive, and a fold indicator via data-cb-cssafterheadercontent (folded) plus data-cb-cssafterheadercontentunfolded (unfolded) — e.g. a downward arrow when folded and an upward arrow when unfolded. Follow the prompt exactly when it does describe the look. MANDATORY — NEVER SKIP A CONTAINER PANEL'S HEADER STYLING (even when the request does not mention styling): creating/converting an XContainer into a collapsible panel (data-cb-func=html.panel) REQUIRES (a) HTML.Panel in the need_codbi_details request, (b) data-cb-generateheader='true' + a non-empty data-cb-autoheadertitle, (c) the header CSS set ON THE PANEL ITSELF via the html.panel parameters (data-cb-cssheaderfolded = data-cb-cssheaderunfolded, plus data-cb-cssheaderhover, data-cb-cssheaderactive, data-cb-cssafterheadercontent[unfolded]) unless the prompt specifies a different look, and (d) HTML.Panel listed in the _codbiApplicability applied array. NEVER return codbiVerdict='none' with empty considered/applied for such a request. The same applies when the form ALREADY has container panels without header styling — set the header CSS parameters and report HTML.Panel as considered/applied.
-  - Accordion: Configures 'Accordion' for this functionality.
-  - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
+- HTML.Panel.Accordion: Applicable on the WRAPPER container (XContainer/XContainerInvisible/XFieldSet) that holds multiple collapsible panels — the wrapper itself is NOT a panel. Joins ALL panels inside it (`.CodBi.--HTML_Panel`, i.e. every member converted by HTML.Panel or a CodBi_HTML_Panel_* class) into ONE accordion group where only one can be open at a time.
+  - Accordion: the SET NAME — MANDATORY, `data-cb-Accordion="<unique set name>"`; with no name NOTHING happens (there is no `data-cb-accordion="true"`). EVERY member panel must carry the SAME `data-cb-Accordion="<set name>"` itself: that repeated name is what makes the group mutually exclusive (unfolding one folds the others of the same name and nesting level); a member without it is not part of the group. Every member inside must be a panel itself; tagging only one member leaves the others static.
+- HTML.Panel: Turns a container (XContainer / XContainerInvisible / XFieldSet) into a collapsible panel with a clickable header - generated from AutoHeaderTitle, or an existing child tagged CodBi_HTML_Panel_Header. PREFERRED: the UI.Panels classes CodBi_HTML_Panel_Standard/_Flat/_Minimal/_Index - on an XFieldSet (its legend is the title) as well as on a container that carries its own NON-EMPTY data-cb-autoheadertitle. Use data-cb-func=html.panel only when no class fits or a custom look is required; on a container it then also needs data-cb-generateheader="true" plus a non-empty data-cb-autoheadertitle (a div has no legend - use the prompt's title, or invent a short one in the form's language). EVERY CSS parameter is a RAW declaration list - no braces, no selector:
+  - Accordion: The accordion GROUP NAME — every panel sharing it folds the others (see HTML.Panel.Accordion); set the SAME value on EVERY member panel.
+  - AutoHeaderLevel: The heading level wrapping the generated header text (1-6; e.g. 2 renders an <h2>).
   - AutoHeaderTitle: The string the automatically generated header shall display.
-  - AutoHeaderTitleSupplementsSpacer: Configures 'AutoHeaderTitleSupplementsSpacer' for this functionality.
+  - AutoHeaderTitleSupplementsSpacer: The separator between the AutoHeaderTitle and the VALUES of fields tagged CodBi_HTML_Panel_AutoHeaderTitle_Supplement (default " / "; encode surrounding spaces as %20, e.g. %20-%20).
   - CSSAfterHeader: The CSS:after to be applied onto the header when the panel is folded.
   - CSSAfterHeaderContent: The CSS:after content to be applied onto the header when the panel is folded.
   - CSSAfterHeaderContentUnfolded: The CSS:after content to be applied onto the header when the panel is unfolded.
-  - CSSAnimFadeINPanel: The optional animation to be applied onto the panel whenever the panel.
-  - CSSAnimFadeINPanelDuration: The optional animation's duration that is applied onto the panel whenever.
-  - CSSAnimFadeINPanelEasing: The optional animation's easing function that is applied onto the panel.
+  - CSSAnimFadeINPanel: The @keyframes body of the unfold animation (e.g. "0% { opacity:0; } 100% { opacity:1; }").
+  - CSSAnimFadeINPanelDuration: The unfold animation's duration (default 0s, e.g. "0.3s").
+  - CSSAnimFadeINPanelEasing: The unfold animation's easing function (default ease-in-out).
   - CSSBeforeHeader: The CSS:before to be applied onto the header when the panel is folded.
   - CSSBeforeHeaderContent: The CSS:before content to be applied onto the header when the panel is folded.
   - CSSBeforeHeaderContentUnfolded: The CSS:after content to be applied onto the header when the panel is unfolded.
   - CSSHeaderActive: The optional header's CSS:active (defaults to { scale : .9 ;}).
-  - CSSHeaderFolded: The optional CSS to be applied onto the header when the panel is FOLDED â€”.
+  - CSSHeaderFolded: The CSS applied to the header while the panel is FOLDED — set it to the SAME value as CSSHeaderUnfolded so a folded panel keeps that look.
   - CSSHeaderHover: The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
   - CSSHeaderUnfolded: The optional CSS to be applied onto the header when the panel is unfolded.
-  - CSSRequiredFields: The CSS:before to applied onto the header if it contains a validation.
-  - CSSRequiredFieldsContent: The CSS:before content to applied onto the header if it contains a validation.
+  - CSSRequiredFields: The CSS:before applied to the header while the panel contains an invalidatable (required/validated) field.
+  - CSSRequiredFieldsContent: The CSS:before CONTENT shown in that case (e.g. "*").
   - DCSSHeaderUnfolded: The optional Darkmode CSS to be applied onto the header when the panel is unfolded.
-  - Folded: States whether this panel is folded (TRUE) or unfolded (everything else) when.
-  - GenerateHeader: States whether a header shall be automatically generated.
-  - Scroll: Configures 'Scroll' for this functionality.
-  - ScrollBlock: Defines the logical position to scroll to when the panel.
-  - ScrollToTop: Configures 'ScrollToTop' for this functionality.
-- HTML.Select.Favorites: Rearranges the HTMLOptionElement within the HTMLSelectElement "toProcess" in order to place the.
-  - Divider: Specifies the divider's text-content.
-  - DividerTarget: Specifies the HTMLOptionElement to select when the.
-  - Favorites: Specifies the HTMLOptionElements that shall be shown before all other ones.
-  - InitialElement: Specifies the HTMLOptionElement that shall be selected when the form is loaded.
-- HTML.Select.Injection: This functionality populates a HTMLSelectElement by generating HTMLOptionElement for each.
-  - ReClean: An optional boolean specifying whether to clean the HTMLSelectElement prior to.
-  - TextProperty: Configures 'TextProperty' for this functionality.
-  - TitleProperty: The optional property to retrieve from the Array passed to the Values to use it as.
-  - Titles: The optional "title"-attributes that shall be set on the HTMLOptionElement s.
-  - ValueProperty: The optional property to retrieve from the Array passed to the Values to use it as.
-  - Values: The HTMLElement.innerHTML s the generated HTMLOptionElement shall have.
-- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it.
-  - Name: The name of the attribute to set.
-  - ToSet: The string to set the attribute to.
+  - Folded: Whether the panel starts FOLDED (default TRUE); "false" = open at the start. Exactly ONE accordion member should start open.
+  - GenerateHeader: Whether the header element is GENERATED (default FALSE). Set it together with a non-empty AutoHeaderTitle when the tagged element holds no CodBi_HTML_Panel_Header child (a container has no legend, so a container panel needs both). If a title IS set but the flag is missing, the header is generated anyway (defensive fallback) - but always emit both so the element documents its own contract.
+  - Scroll: Whether the view shall be scrolled when the panel unfolds (default false).
+  - ScrollBlock: Where the view scrolls to on unfold: start, center, end or nearest (default nearest).
+  - ScrollToTop: Round scroll-to-top button of the unfolded panel: true (always), auto (only when the content is taller than 1.5x the viewport — the default) or false (hidden).
+- HTML.Select.Favorites: Keeps ALL of the select's options and only MOVES the favourite ones - plus a divider option the functionality INSERTs itself - above the rest; the non-favourite options keep their original relative order below the divider. It never adds, removes or filters options: emit the COMPLETE option list the request describes (e.g. all 16 Bundeslaender) and never a reduced list of only the favourites.
+  - Favorites: The TEXTS (option labels, comma-separated, in the wanted order) of the EXISTING options that shall move to the top - e.g. `Bayern,Hessen`. They are MOVED, not re-created; every other option stays in the select.
+  - Divider: The divider's text-content (e.g. "---"). The functionality CREATES the divider option (value "Divider") itself, so NEVER add a divider option to the select's `options`.
+  - DividerTarget: The VALUE of the option to select when the divider is picked - "wenn der Trenner ausgewählt wird, soll X ausgewählt sein" => DividerTarget = X. Without it, picking the divider restores the previous selection.
+  - InitialElement: The VALUE of the option selected when the form loads - "X soll anfangs ausgewählt sein" => InitialElement = X. Omit it to keep the select's own default; never force it to the first option.
+- HTML.Select.Injection: Populates the tagged XSelect with one option per entry of the ELEMENT PLACEHOLDER (EP) given in Values - the EP is a VALUE, NEVER the functionality (data-cb-func always stays "HTML.Select.Injection"), and the Formcycle `options` array stays EMPTY []. The parameter is Values (data-cb-Values): data-cb-replacements, data-cb-property and data-cb-Data are NOT read by this functionality (they belong to HTML.Text.Mapper / Sys.Log.Console), so an EP placed there yields an EMPTY select.
+  - Values: REQUIRED - the entries, i.e. an EP returning the list: `{ OpenPLZ.Localities > de ; ^An }`, `{ BayVIS.Behoerden > bezeichnung }` (all BayVIS authorities), `{ OpenPLZ > ch ; Cantons }`.
+  - ReClean: "TRUE" to clear the existing options of the select before populating - use it for a lookup-fed list.
+  - ValueProperty: For EPs returning OBJECTS: the property used as the option VALUE (e.g. "name").
+  - TextProperty: For EPs returning OBJECTS: the property used as the visible option TEXT (falls back to ValueProperty). Set it together with ValueProperty, otherwise the FIRST string property is used - OpenPLZ.Localities would then show the postalCode instead of the city name.
+  - Titles: Optional <option> title attributes.
+  - TitleProperty: For EPs returning OBJECTS: the property used as those title attributes.
+- HTML.SETAttribute: Sets ONE HTML attribute (including style) on the tagged element at runtime. A request that literally asks for an ATTRIBUTE (title, placeholder, readonly, disabled, style) is wired with this functionality - also on a field created in the SAME request. It is NOT the Formcycle Help/hint (that is the element property helptext) and NOT the required flag (required="1").
+  - Name: REQUIRED - the attribute name to set, e.g. "title" (`data-cb-name`).
+  - ToSet: REQUIRED - the value for that attribute, e.g. "JOJO" (`data-cb-toset`).
+  - Example - a new date input whose title attribute is JOJO: data-cb-func="HTML.SETAttribute", data-cb-name="title", data-cb-toset="JOJO".
 - HTML.Text.Injector: Applicable on XTextField/XTextArea or XSpan to inject a dynamic text value into the element's value. CRITICAL WIRING — data-cb-replacement only reaches the field value when BOTH are set: (1) data-cb-property MUST be set to 'value' on XTextField/XTextArea and 'innerHTML' on XSpan, AND (2) the data-cb-placeholder (default '[[INJECTOR_REPLACEMENT]]') MUST be placed inside the OWN value property of the field (XTextField/XTextArea) or its rtevalue property (XSpan) — e.g. 'value':'[[INJECTOR_REPLACEMENT]]' — otherwise data-cb-replacement never reaches the value. data-cb-func stays 'HTML.Text.Injector' (the FUNCTIONALITY name, never an EP name). To show SEVERAL related BayVIS values together in one place (e.g. a header with an employee's name + phone + e-mail), NEVER create one Injector element per value - use ONE HTML.Text.Mapper whose data-cb-replacements fetches the needed detail object once and whose single template holds all [(property)] placeholders (ONE resolution instead of N).
-  - Placeholder: Specifies the string that shall be replaced within the.
-  - Property: Specifies which property of the Element "toProcess" shall receive the "Replacement".
-  - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the.
+  - Placeholder: The string inside the element Property that is replaced (default "[[INJECTOR_REPLACEMENT]]").
+  - Property: The RUNTIME property that receives the value: "value" for XTextField/XTextArea, "innerHTML" for an XSpan.
+  - Replacement: ONE plain string written in place of every Placeholder occurrence (or appended when the Property holds no Placeholder) - never an object; for several record properties use HTML.Text.Mapper.
 - HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template. Placeholder syntax is a PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). data-cb-replacements is the object (or array of objects) whose property values fill the [(property)] placeholders and may be an EP placeholder resolving to an object (e.g. "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). CRITICAL — when data-cb-replacements is fed by an EP that returns an OBJECT, use [(property)] placeholders naming the ACTUAL properties of that EP's result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP string. The text template with the [(property)] placeholders lives in the field's OWN content property (value/rtevalue via data-cb-property); there is NO data-cb-Template attribute. SEVERAL BAYVIS VALUES SHOWN TOGETHER - to display a person's contact block in ONE place (e.g. a header with employee Salvatore Callari's name + e-mail + phone) do NOT create one element per value; fetch his ONE detail object with data-cb-replacements = { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } } (NO Data.Join) and map every requested value to a [(property)] placeholder naming the person object's REAL properties (vorname, nachname, email, zimmer, apEmail, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl). A person's phone is NOT a single property - it is split into the apTelefon* parts (there is no phone/telefon property), so compose the phone from them. NEVER read a person's phone from BayVIS.Behoerden.Details - the authority object has NO phone and NO postal address (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, ...); postal addresses live on BayVIS.Behoerden.Details.Gebaeude. Data.Join is needed only when the values genuinely come from DIFFERENT detail objects (e.g. a building address + a person). A single Mapper element resolves ONCE; N Injector elements each resolve their own EP (N requests). data-cb-property is REQUIRED and names the RUNTIME property receiving the mapped text: 'innerHTML' on an XSpan (template stored in the XSpan's Formcycle rtevalue) and 'value' on an XTextArea/XTextField (template stored in the field's Formcycle value) - never 'rtevalue' (Formcycle JSON storage key only, not a runtime DOM property). BayVIS.Behoerden.* may ONLY be used when the request NAMES a Behörde/authority - NEVER invent an authority name: 'BayVIS' is the system/data source, not an authority, so { BayVIS.Behoerden.ID > Bayvis } cannot resolve. A person-only request (an employee's name, no Behörde named) uses BayVIS.Ansprechpartner.Details alone. NEVER fill a BayVIS-derived contact field with invented literal text (e.g. 'Bayvis Straße 1', 'kontakt@bayvis.de', '+49 30 12345678') - the person's real e-mail/phone/name are mapped from { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <name> } } } via [(email)]/[(apEmail)], the apTelefon* parts and [(vorname)] [(nachname)] placeholders; hard-coding made-up contact values is a FAIL. A person's FULL record - name AND all contact data (email/apEmail, phone parts apTelefon*) - is BayVIS.Ansprechpartner.Details; BayVIS.Behoerden.Details carries NONE of a person's data and is only for an authority the request names.
   - CSS: The CSS-Rules to apply onto the tagged element when replacement has been completed.
   - Property: The property of the tagged element that holds the text template with the [(property)] placeholders. REQUIRED - data-cb-property names the RUNTIME property of the tagged element into which the mapped text is written and where the template is read from: 'innerHTML' on an XSpan (its template text is stored in the XSpan's Formcycle rtevalue property) and 'value' on an XTextArea/XTextField (template stored in the field's Formcycle value property). WITHOUT data-cb-property the mapper does not know which property to set on the target element. Never 'rtevalue' as the value - rtevalue is only the Formcycle JSON storage key of an XSpan's content, not a runtime DOM property. There is NO data-cb-Template attribute.
   - Replacements: The object (or array of objects) whose property VALUES fill the [(property)] placeholders. May be a literal object OR an EP placeholder that resolves to an object (e.g. "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). When fed by an EP returning an OBJECT, the placeholders MUST be [(property)] naming the ACTUAL properties of that EP's result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP string. USE MAPPER (NOT Injector) for OBJECT data such as BayVIS Details results (which return a JSON object like {vorname, nachname, ...}) — Injector injects only ONE plain string. A single Ansprechpartner whose ID is in a GLOBAL VARIABLE is fetched as { BayVIS.Ansprechpartner.Details > { V > <NAME> } } with NO { I > 0 ; ... } — the I/index EP is ONLY for ARRAYS (e.g. the array returned by BayVIS.Ansprechpartner.ID). SEVERAL BAYVIS VALUES SHOWN TOGETHER - when the requested contact block belongs to ONE person (e.g. a header with employee Salvatore Callari's name + e-mail + phone) use this data-cb-replacements = { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } } (NO Data.Join) and map every value to a [(property)] placeholder naming the person object's REAL properties; the phone is NOT a single property but the four apTelefon* parts (apTelefonLandvorwahl / apTelefonOrtsvorwahl / apTelefonAnlage / apTelefonDurchwahl) - there is no phone/telefon property, and BayVIS.Behoerden.Details has NO phone/postal address. Only combine genuinely different detail objects (e.g. a building address + a person) with Data.Join. Do NOT create one HTML.Text.Injector element per value (each resolves its own EP separately). data-cb-property must ALSO be set on the tagged element - it names the RUNTIME property receiving the mapped text ('innerHTML' on an XSpan, 'value' on an XTextArea/XTextField; never 'rtevalue'). Only use BayVIS.Behoerden.* when the prompt names a real Behörde/authority - never invent one ('BayVIS' is the system, not an authority); a person-only request (employee name, no Behörde) uses BayVIS.Ansprechpartner.Details alone. NEVER write invented literal contact data (e.g. 'Bayvis Straße 1', 'kontakt@bayvis.de', '+49 30 12345678') - map the person's real e-mail/phone/name with [(property)] placeholders from that single Details EP instead.
-- JSON.SET: Applicable on a hidden field to store a JSON-serialized value derived from another element.
-  - Path: The dotted path string leading to the object, starting from the.
-  - Property: The name of the property to set.
-  - ToSet: The object to set the "Property" to.
-- LDAP.Autocomplete.Set: Applicable on form fields that should be auto-filled from a selected LDAP directory match.
-  - CSSProposals: Configures 'CSSProposals' for this functionality.
-  - Property: Configures 'Property' for this functionality.
-  - URL: Configures 'URL' for this functionality.
-- LDAP.Autocomplete: Applicable on a text input that should autocomplete entries from an LDAP directory search.
-  - CSSProposals: The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
-  - MsgNotInLDAP: The message to display when the entered value is not found in the LDAP.
-  - Property: The LDAP-Property that shall be autocompleted.
-  - URL: The URL of the Formcycle predefined LDAP-Query to use.
+- JSON.SET: Sets ONE property of the element it is applied to — or of a nested object reached by Path from that element — to ToSet. This is how ANY dotted element property is written at runtime (style.scale, style.display, style.color, innerHTML, value); a hidden field may likewise receive a hard-coded JSON value.
+  - Path: the OPTIONAL dotted path FROM the tagged element TO the object whose property is set (e.g. "style" for a CSS property, "dataset" for data-* attributes); empty/omitted = the element itself. It holds the LEADING parts of the requested dotted path — NEVER the property name itself and NEVER a CSV list of field names.
+  - Property: the name of the property to SET on that target — the LAST segment of the requested dotted path, WITHOUT any dot ("scale" for "style.scale", "display" for "style.display").
+  - ToSet: the value to assign, as a string ("2", "none", "block"); a JSON object literal is prefixed with "^" so its commas are not read as a CSV separator.
+  - WORKED EXAMPLE — "Füge ein Eingabefeld hinzu und setzen dessen style.scale Eigenschaft auf 2.": the NEW input field carries data-cb-func="JSON.SET" + data-cb-path="style" + data-cb-property="scale" + data-cb-toset="2" (a request naming only a DIRECT property such as innerHTML/value leaves Path empty).
+- LDAP.Autocomplete.Set: Fills SEVERAL fields of one group from a SINGLE selected LDAP match. Apply it to the CONTAINER (XContainer / XContainerInvisible / XFieldSet) and tag the member inputs with the CodBi_LDAP_AC_* classes (Mail, FirstName, LastName, Title, Department, Telephone, Account, CommonName, DisplayName) — or give them data-cb-ldapProperty="<ldap attribute>".
+  - Property: the LDAP attribute the TYPED value is matched against (e.g. "mail", "cn") — the key of the directory match.
+  - CSSProposals: optional CSS style of the proposals select.
+  - URL: OPTIONAL (Formcycle does NOT let a form element bind an LDAP source, so there is nothing to list or pick) - the LDAP request url — DECIDED BY THE INSTALLATION (read the "LDAP CONFIGURATION" block): when it states that a url is configured, OMIT data-cb-URL (the configured url is used) and never ask for it; when it states that NO url is configured, data-cb-URL is REQUIRED and its value belongs to the user — use the url the user supplied, never an invented one.
+- LDAP.Autocomplete: Completes ONE XTextField (input type="text") from the LDAP and accepts only values present there — this is the wiring for ANY input field holding an LDAP attribute, ALSO when the request never says "autocomplete" (example: "Füge ein Eingabefeld für die E-Mail-Adresse von Mitarbeitern aus dem LDAP ein" → XTextField + data-cb-func="LDAP.Autocomplete" + data-cb-property="mail").
+  - Property: the LDAP-Property that shall be autocompleted — the NAME OF THE LDAP ATTRIBUTE ("mail" for an e-mail address, "telephoneNumber", "sAMAccountName", "cn", "sn", "givenName"), never a form field name.
+  - URL: OPTIONAL (Formcycle does NOT let a form element bind an LDAP source, so there is nothing to list or pick) - the LDAP request url — DECIDED BY THE INSTALLATION (read the "LDAP CONFIGURATION" block): when a url is configured, OMIT data-cb-URL (the configured url is used) and never ask for it; when NO url is configured, data-cb-URL is REQUIRED and its value belongs to the user — use the url the user supplied (the clarify round asks for it), never an invented one.
+  - CSSProposals: optional CSS style of the proposals select.
+  - MsgNotInLDAP: optional message shown when the entered value is not found in the LDAP.
 - Matomo.Tracking: Applicable on any form to add Matomo/Piwik analytics event tracking.
   - ImageURL: Configures 'ImageURL' for this functionality.
   - SiteID: The ID of the Matomo-Project-Site that shall be used for tracking.
@@ -319,6 +323,8 @@ when CodBi searches within the shared parent container.
 
 ## Element Placeholders (EPs)
 
+- RULE: an EP is a VALUE, never an element and never the functionality - write the EP expression inside the parameter the consuming element documents (HTML.Select.Injection: Values; HTML.Text.Mapper: Replacements; Sys.Log.Console: Data; otherwise the field value) - a parameter name of a DIFFERENT functionality is silently ignored; the functionality parameter keeps the FUNCTIONALITY id (e.g. HTML.Select.Injection + Values = { BayVIS.Behoerden > bezeichnung }).
+
 - AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
   - Param[1]: The question to ask the AI.
   - Param[2]: UseInternet — `"true"` to enable Brave Search internet access. Default: `"false"`.
@@ -328,13 +334,13 @@ when CodBi searches within the shared parent container.
   - Param[6]: Specialist — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`.
   - Param[7]: FilterResults — `"true"` to enable PII filtering on Brave Search queries.
   - Param[8]: JsonParse — `"true"` to parse the AI response as JSON.
-- BayVIS.Ansprechpartner.Details: This Element-Placeholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.
-  - Param[1]: The ID of the contact who's details are to be retrieved.
-  - Param[2]: An optional property of the contact, like e.g.
-- BayVIS.Ansprechpartner.ID: This Element-Placeholder retrieves the ID of a contact by first- & last-name (order insensitive).
-  - Param[1]: The first- and last-name separated by a space (order- & case-insensitive).
-- BayVIS.Ansprechpartner: This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
-  - Param[1]: A property of the directory, for example "bezeichnung".
+- BayVIS.Ansprechpartner.Details: Retrieves ONE contact's complete record as a single OBJECT - the source for HTML.Text.Mapper.
+  - Param[1]: The numeric contact ID, or a chain returning IDs: { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } (the ID EP returns an ARRAY, so I > 0 picks the first match).
+  - Param[2]: OPTIONAL - a single property name (e.g. "email"); OMIT it to receive the WHOLE record object. Its properties are vorname, nachname, email, zimmer, apEmail, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, ... - put this object into HTML.Text.Mapper's data-cb-replacements and name the [(property)] placeholders after THESE names (a single phone is not a property - compose it from the apTelefon* parts).
+- BayVIS.Ansprechpartner.ID: Retrieves the IDs of a contact by first and last name (order insensitive) as an ARRAY.
+  - Param[1]: The first and last name separated by a space (order- and case-insensitive), e.g. "Salvatore Callari".
+- BayVIS.Ansprechpartner: Retrieves the BayVIS CONTACT directory, or one property of it.
+  - Param[1]: A property of the directory, e.g. "bezeichnung".
 - BayVIS.Behoerden.Details.Gebaeude: This Element-Placeholder retrieves the details of an authority's building specified by the provided ID from the.
   - Param[1]: The ID of the authority to retrieve.
   - Param[2]: The building's ID.
@@ -483,7 +489,7 @@ when CodBi searches within the shared parent container.
   - .CodBi_BayVIS_BehoerdeUndAnsprechpartner: All proper placeholder in the content of the tagged HTMLInputElement 's "innerHTML" will be replaced with the data of the building specified in the global variable BayVIS_Behoerde and the contact details of the contact specified in BayVIS_Hauptansprechpartner.
 - Financial: Registers standard configurations specific to finances.
   - .CodBi_Currency: The HTMLInputElement s tagged with this class will be formatted for Currencies using Cleave.
-  - .CodBi_TRANS_NTW: Applies 'Financial' behavior to elements tagged with '.CodBi_TRANS_NTW'.
+  - .CodBi_TRANS_NTW: Writes each typed digit out as a WORD — but ONLY in GERMAN ("Null" … "Neun"), because the class hard-codes that word list. For ANY other language do NOT use this class: apply `data-cb-func="HTML.Input.Trans.NTW"` with `data-cb-NumberWords` set to that language's ten words (index = digit).
 - Holistic.CSS.Standard: Registers a standard configuration that applies a standard CSS onto the form.
   - Classes: none.
 - Holistic.Matomo.Tracking: Registers a standard configurations using the functionality.
@@ -535,12 +541,12 @@ when CodBi searches within the shared parent container.
   - .CodBi_Print_Remove_PrintOnly: Applies 'Print.Removal' behavior to elements tagged with '.CodBi_Print_Remove_PrintOnly'.
   - .CodBi_Print_Remove_Tagged: HTMLElement.remove s the tagged element.
 - UI.Panels: Registers standard configurations providing CodBi-"HTML.Panel"s.
-  - .CodBi_Accordion_A: Sets up accordions using the HTML.Panel.Accordion Functionality named either CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C or CodBi_Accordion_D depending on the Standardconfiguration-Class used.
-  - .CodBi_Accordion_B: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_B'.
-  - .CodBi_Accordion_C: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_C'.
-  - .CodBi_Accordion_D: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_D'.
-  - .CodBi_HTML_Panel_Flat: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Flat'.
-  - .CodBi_HTML_Panel_Index: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Index'.
-  - .CodBi_HTML_Panel_Minimal: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Minimal'.
-  - .CodBi_HTML_Panel_NoCordion: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_NoCordion'.
+  - .CodBi_Accordion_A: Applies HTML.Panel.Accordion with the set name CodBi_Accordion_Set_A to the tagged WRAPPER CONTAINER (XContainer/XFieldSet — the container is NOT a panel and gets no panel class). Every panel inside it then belongs to that set, so only one is open at a time.
+  - .CodBi_Accordion_B: Same as CodBi_Accordion_A, set name CodBi_Accordion_Set_B. ONE letter = ONE accordion group per form (there are only A-D): use the FIRST letter not yet used in the form.
+  - .CodBi_Accordion_C: Same as CodBi_Accordion_A, set name CodBi_Accordion_Set_C. When ALL FOUR letters are already used, do not reuse one: put data-cb-func="HTML.Panel.Accordion" + data-cb-Accordion="<unique set name>" on the wrapper instead.
+  - .CodBi_Accordion_D: Same as CodBi_Accordion_A, set name CodBi_Accordion_Set_D. The accordion class alone does NOT make anything collapsible — EVERY member inside needs its own panel class (CodBi_HTML_Panel_Standard/Flat/Minimal/Index).
+  - .CodBi_HTML_Panel_Flat: Applies HTML.Panel (finished look, generated header) to the tagged element — use on an XFieldSet panel nested inside another panel (2nd level).
+  - .CodBi_HTML_Panel_Index: Applies HTML.Panel with an index/table-of-contents look to the tagged element — use for numbered unfoldable sections.
+  - .CodBi_HTML_Panel_Minimal: Applies HTML.Panel to the tagged element — use on an XFieldSet panel two levels deep (3rd level).
+  - .CodBi_HTML_Panel_NoCordion: MARKER class — a panel tagged with it is NOT joined into the surrounding accordion set (for a nested panel that must stay independent). It applies no panel itself, so the element still needs its own panel class.
   - .CodBi_HTML_Panel_Standard: A panel with shaded gray background for the auto generated \<h2> header that changes the title's color to darkgreen when unfolded.

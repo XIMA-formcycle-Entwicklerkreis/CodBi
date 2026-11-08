@@ -1,0 +1,585 @@
+Compiled from "FcLdapQueryExecutor.java"
+public final class de.xima.fc.workflow.executor.FcLdapQueryExecutor extends de.xima.fc.workflow.executor.ABaseActionExecutor<de.xima.fc.workflow.model.nodes.FcLdapQueryProps, de.xima.fc.workflow.error.EFcLdapQueryError, de.xima.fc.workflow.error.EFcLdapQuerySoftError> {
+  private static final java.lang.String QUESTION;
+
+  public de.xima.fc.workflow.executor.FcLdapQueryExecutor(de.xima.fc.interfaces.workflow.params.INodeExecutionParams<de.xima.fc.workflow.model.nodes.FcLdapQueryProps>);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: invokespecial #2                  // Method de/xima/fc/workflow/executor/ABaseActionExecutor."<init>":(Lde/xima/fc/interfaces/workflow/params/INodeExecutionParams;)V
+       5: return
+
+  public de.xima.fc.interfaces.workflow.execution.INormalCompletionResult execute() throws de.xima.fc.exceptions.AbstractAbruptCompletionException;
+    Code:
+       0: aload_0
+       1: getfield      #3                  // Field props:Ljava/lang/Object;
+       4: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+       7: invokevirtual #5                  // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.isUseClientLdapQuery:()Z
+      10: ifeq          18
+      13: aload_0
+      14: invokevirtual #6                  // Method executeClientLdapQuery:()Lde/xima/fc/interfaces/workflow/execution/INormalCompletionResult;
+      17: areturn
+      18: aload_0
+      19: invokevirtual #7                  // Method executeCustomLdapQuery:()Lde/xima/fc/interfaces/workflow/execution/INormalCompletionResult;
+      22: areturn
+
+  private org.apache.commons.lang3.tuple.Pair<com.unboundid.ldap.sdk.LDAPConnection, java.lang.Integer> createConnectionFromClient() throws de.xima.fc.exceptions.NodeThrewException;
+    Code:
+       0: aload_0
+       1: getfield      #8                  // Field ctx:Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext;
+       4: invokeinterface #9,  1            // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext.env:()Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData;
+       9: astore_1
+      10: getstatic     #10                 // Field de/xima/fc/dao/DaoProvider.MANDANTLDAPDATA_DAO:Lde/xima/fc/dao/interfaces/IMandantLdapDataDao;
+      13: aload_1
+      14: invokeinterface #11,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getEntityContext:()Lde/xima/fc/interfaces/IEntityContext;
+      19: aload_1
+      20: invokeinterface #12,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getClient:()Lde/xima/fc/entities/Mandant;
+      25: invokeinterface #13,  3           // InterfaceMethod de/xima/fc/dao/interfaces/IMandantLdapDataDao.getByMandant:(Lde/xima/fc/interfaces/IEntityContext;Lde/xima/fc/entities/Mandant;)Lde/xima/fc/entities/MandantLdapData;
+      30: astore_2
+      31: goto          41
+      34: astore_3
+      35: aload_0
+      36: aload_3
+      37: invokevirtual #15                 // Method createExceptionLdapConnNotFound:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      40: athrow
+      41: aload_2
+      42: ifnonnull     59
+      45: aload_0
+      46: new           #16                 // class java/lang/IllegalArgumentException
+      49: dup
+      50: ldc           #17                 // String Client LDAP connection does not exist
+      52: invokespecial #18                 // Method java/lang/IllegalArgumentException."<init>":(Ljava/lang/String;)V
+      55: invokevirtual #15                 // Method createExceptionLdapConnNotFound:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      58: athrow
+      59: aload_2
+      60: invokestatic  #19                 // Method de/xima/fc/ldap/LdapConnectionConfigFactory.forMandantLdapData:(Lde/xima/fc/entities/MandantLdapData;)Lde/xima/fc/ldap/LdapConnectionConfig;
+      63: astore_3
+      64: invokestatic  #20                 // Method javax/enterprise/inject/spi/CDI.current:()Ljavax/enterprise/inject/spi/CDI;
+      67: ldc           #21                 // class de/xima/fc/ldap/ILdapService
+      69: iconst_0
+      70: anewarray     #22                 // class java/lang/annotation/Annotation
+      73: invokevirtual #23                 // Method javax/enterprise/inject/spi/CDI.select:(Ljava/lang/Class;[Ljava/lang/annotation/Annotation;)Ljavax/enterprise/inject/Instance;
+      76: invokeinterface #24,  1           // InterfaceMethod javax/enterprise/inject/Instance.get:()Ljava/lang/Object;
+      81: checkcast     #21                 // class de/xima/fc/ldap/ILdapService
+      84: astore        4
+      86: aload         4
+      88: aload_3
+      89: invokeinterface #25,  2           // InterfaceMethod de/xima/fc/ldap/ILdapService.createConnection:(Lde/xima/fc/ldap/LdapConnectionConfig;)Lcom/unboundid/ldap/sdk/LDAPConnection;
+      94: aload_2
+      95: invokevirtual #26                 // Method de/xima/fc/entities/MandantLdapData.getPageSize:()Ljava/lang/Integer;
+      98: invokestatic  #27                 // Method org/apache/commons/lang3/tuple/Pair.of:(Ljava/lang/Object;Ljava/lang/Object;)Lorg/apache/commons/lang3/tuple/Pair;
+     101: areturn
+     102: astore_3
+     103: aload_0
+     104: aload_3
+     105: invokevirtual #28                 // Method createExceptionUnableToConnect:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+     108: athrow
+    Exception table:
+       from    to  target type
+          10    31    34   Class java/lang/Exception
+          59   101   102   Class java/lang/Exception
+
+  private org.apache.commons.lang3.tuple.Pair<com.unboundid.ldap.sdk.LDAPConnection, java.lang.Integer> createConnectionFromQuery() throws de.xima.fc.exceptions.NodeThrewException;
+    Code:
+       0: aload_0
+       1: getfield      #8                  // Field ctx:Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext;
+       4: invokeinterface #9,  1            // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext.env:()Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData;
+       9: astore_1
+      10: aload_0
+      11: getfield      #3                  // Field props:Ljava/lang/Object;
+      14: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+      17: invokevirtual #29                 // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.getLdapConnection:()Lde/xima/fc/workflow/UuidEntityRef;
+      20: invokevirtual #30                 // Method de/xima/fc/workflow/UuidEntityRef.getUuid:()Ljava/util/UUID;
+      23: astore_2
+      24: getstatic     #31                 // Field de/xima/fc/dao/DaoProvider.LDAPZUGRIFF_DAO:Lde/xima/fc/dao/interfaces/ILDAPZugriffDao;
+      27: aload_1
+      28: invokeinterface #11,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getEntityContext:()Lde/xima/fc/interfaces/IEntityContext;
+      33: aload_1
+      34: invokeinterface #12,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getClient:()Lde/xima/fc/entities/Mandant;
+      39: aload_2
+      40: invokeinterface #32,  4           // InterfaceMethod de/xima/fc/dao/interfaces/ILDAPZugriffDao.getByUUID:(Lde/xima/fc/interfaces/IEntityContext;Lde/xima/fc/entities/Mandant;Ljava/util/UUID;)Lde/xima/fc/entities/LDAPZugriff;
+      45: astore_3
+      46: goto          58
+      49: astore        4
+      51: aload_0
+      52: aload         4
+      54: invokevirtual #15                 // Method createExceptionLdapConnNotFound:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      57: athrow
+      58: aload_3
+      59: ifnonnull     83
+      62: aload_0
+      63: new           #16                 // class java/lang/IllegalArgumentException
+      66: dup
+      67: aload_2
+      68: invokestatic  #33                 // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+      71: invokedynamic #34,  0             // InvokeDynamic #0:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+      76: invokespecial #18                 // Method java/lang/IllegalArgumentException."<init>":(Ljava/lang/String;)V
+      79: invokevirtual #15                 // Method createExceptionLdapConnNotFound:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      82: athrow
+      83: aload_3
+      84: invokestatic  #35                 // Method de/xima/fc/ldap/LdapConnectionConfigFactory.forLdapZugriff:(Lde/xima/fc/entities/LDAPZugriff;)Lde/xima/fc/ldap/LdapConnectionConfig;
+      87: astore        4
+      89: invokestatic  #20                 // Method javax/enterprise/inject/spi/CDI.current:()Ljavax/enterprise/inject/spi/CDI;
+      92: ldc           #21                 // class de/xima/fc/ldap/ILdapService
+      94: iconst_0
+      95: anewarray     #22                 // class java/lang/annotation/Annotation
+      98: invokevirtual #23                 // Method javax/enterprise/inject/spi/CDI.select:(Ljava/lang/Class;[Ljava/lang/annotation/Annotation;)Ljavax/enterprise/inject/Instance;
+     101: invokeinterface #24,  1           // InterfaceMethod javax/enterprise/inject/Instance.get:()Ljava/lang/Object;
+     106: checkcast     #21                 // class de/xima/fc/ldap/ILdapService
+     109: astore        5
+     111: aload         5
+     113: aload         4
+     115: invokeinterface #25,  2           // InterfaceMethod de/xima/fc/ldap/ILdapService.createConnection:(Lde/xima/fc/ldap/LdapConnectionConfig;)Lcom/unboundid/ldap/sdk/LDAPConnection;
+     120: astore        6
+     122: aload         6
+     124: aload_3
+     125: invokevirtual #36                 // Method de/xima/fc/entities/LDAPZugriff.getPageSize:()Ljava/lang/Integer;
+     128: invokestatic  #27                 // Method org/apache/commons/lang3/tuple/Pair.of:(Ljava/lang/Object;Ljava/lang/Object;)Lorg/apache/commons/lang3/tuple/Pair;
+     131: areturn
+     132: astore        4
+     134: aload_0
+     135: aload         4
+     137: invokevirtual #28                 // Method createExceptionUnableToConnect:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+     140: athrow
+    Exception table:
+       from    to  target type
+          24    46    49   Class java/lang/Exception
+          83   131   132   Class java/lang/Exception
+
+  private de.xima.fc.exceptions.NodeThrewException createExceptionLdapConnNotFound(java.lang.Exception);
+    Code:
+       0: aload_0
+       1: getstatic     #37                 // Field de/xima/fc/workflow/error/EFcLdapQueryError.LDAP_CONNECTION_NOT_FOUND:Lde/xima/fc/workflow/error/EFcLdapQueryError;
+       4: aload_1
+       5: invokevirtual #38                 // Method java/lang/Exception.getMessage:()Ljava/lang/String;
+       8: aload_1
+       9: invokevirtual #39                 // Method createException:(Ljava/lang/Enum;Ljava/lang/String;Ljava/lang/Throwable;)Lde/xima/fc/exceptions/NodeThrewException;
+      12: areturn
+
+  private de.xima.fc.exceptions.NodeThrewException createExceptionLdapQueryNotFound(java.lang.Exception);
+    Code:
+       0: aload_0
+       1: getstatic     #40                 // Field de/xima/fc/workflow/error/EFcLdapQueryError.LDAP_QUERY_NOT_FOUND:Lde/xima/fc/workflow/error/EFcLdapQueryError;
+       4: aload_1
+       5: invokevirtual #38                 // Method java/lang/Exception.getMessage:()Ljava/lang/String;
+       8: aload_1
+       9: invokevirtual #39                 // Method createException:(Ljava/lang/Enum;Ljava/lang/String;Ljava/lang/Throwable;)Lde/xima/fc/exceptions/NodeThrewException;
+      12: areturn
+
+  private de.xima.fc.exceptions.NodeThrewException createExceptionQueryExecutionFailed(java.lang.Exception);
+    Code:
+       0: aload_0
+       1: getstatic     #41                 // Field de/xima/fc/workflow/error/EFcLdapQueryError.QUERY_EXECUTION_FAILED:Lde/xima/fc/workflow/error/EFcLdapQueryError;
+       4: aload_1
+       5: invokevirtual #38                 // Method java/lang/Exception.getMessage:()Ljava/lang/String;
+       8: aload_1
+       9: invokevirtual #39                 // Method createException:(Ljava/lang/Enum;Ljava/lang/String;Ljava/lang/Throwable;)Lde/xima/fc/exceptions/NodeThrewException;
+      12: areturn
+
+  private de.xima.fc.exceptions.NodeThrewException createExceptionUnableToConnect(java.lang.Exception);
+    Code:
+       0: aload_0
+       1: getstatic     #42                 // Field de/xima/fc/workflow/error/EFcLdapQueryError.UNABLE_TO_CONNECT:Lde/xima/fc/workflow/error/EFcLdapQueryError;
+       4: aload_1
+       5: invokevirtual #38                 // Method java/lang/Exception.getMessage:()Ljava/lang/String;
+       8: aload_1
+       9: invokevirtual #39                 // Method createException:(Ljava/lang/Enum;Ljava/lang/String;Ljava/lang/Throwable;)Lde/xima/fc/exceptions/NodeThrewException;
+      12: areturn
+
+  private de.xima.fc.exceptions.NodeThrewException createInvalidSearchFilter(com.unboundid.ldap.sdk.LDAPException, java.lang.String);
+    Code:
+       0: aload_0
+       1: getstatic     #43                 // Field de/xima/fc/workflow/error/EFcLdapQueryError.INVALID_SEARCH_FILTER:Lde/xima/fc/workflow/error/EFcLdapQueryError;
+       4: aload_1
+       5: invokevirtual #44                 // Method com/unboundid/ldap/sdk/LDAPException.getMessage:()Ljava/lang/String;
+       8: aload_1
+       9: aload_2
+      10: invokedynamic #45,  0             // InvokeDynamic #1:accept:(Ljava/lang/String;)Ljava/util/function/Consumer;
+      15: invokevirtual #46                 // Method createException:(Ljava/lang/Enum;Ljava/lang/String;Ljava/lang/Throwable;Ljava/util/function/Consumer;)Lde/xima/fc/exceptions/NodeThrewException;
+      18: areturn
+
+  private de.xima.fc.interfaces.workflow.execution.INormalCompletionResult createResult(com.alibaba.fastjson.JSONArray);
+    Code:
+       0: aload_0
+       1: getfield      #47                 // Field params:Lde/xima/fc/interfaces/workflow/params/INodeExecutionParams;
+       4: invokeinterface #48,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/params/INodeExecutionParams.normalResult:()Lde/xima/fc/interfaces/workflow/params/INormalCompletionResultBuilder;
+       9: astore_2
+      10: aload_1
+      11: ifnull        47
+      14: aload_1
+      15: invokevirtual #49                 // Method com/alibaba/fastjson/JSONArray.stream:()Ljava/util/stream/Stream;
+      18: invokeinterface #50,  1           // InterfaceMethod java/util/stream/Stream.count:()J
+      23: lstore_3
+      24: aload_1
+      25: ldc           #51                 // class com/alibaba/fastjson/JSONObject
+      27: invokevirtual #52                 // Method com/alibaba/fastjson/JSONArray.toJavaList:(Ljava/lang/Class;)Ljava/util/List;
+      30: astore        5
+      32: aload_2
+      33: lload_3
+      34: aload         5
+      36: invokedynamic #53,  0             // InvokeDynamic #2:accept:(JLjava/util/List;)Lde/xima/fc/interfaces/workflow/value/IValueCreator;
+      41: invokeinterface #54,  2           // InterfaceMethod de/xima/fc/interfaces/workflow/params/INormalCompletionResultBuilder.success:(Lde/xima/fc/interfaces/workflow/value/IValueCreator;)Lde/xima/fc/interfaces/workflow/params/INormalCompletionResultBuilder;
+      46: pop
+      47: aload_2
+      48: invokeinterface #55,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/params/INormalCompletionResultBuilder.build:()Ljava/lang/Object;
+      53: checkcast     #56                 // class de/xima/fc/interfaces/workflow/execution/INormalCompletionResult
+      56: areturn
+
+  private de.xima.fc.entities.LDAPAbfrage determineLdapQuery() throws de.xima.fc.exceptions.NodeThrewException;
+    Code:
+       0: aload_0
+       1: getfield      #8                  // Field ctx:Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext;
+       4: invokeinterface #9,  1            // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext.env:()Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData;
+       9: astore_1
+      10: aload_0
+      11: getfield      #3                  // Field props:Ljava/lang/Object;
+      14: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+      17: invokevirtual #57                 // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.getLdapQuery:()Lde/xima/fc/workflow/UuidEntityRef;
+      20: invokevirtual #30                 // Method de/xima/fc/workflow/UuidEntityRef.getUuid:()Ljava/util/UUID;
+      23: astore_2
+      24: getstatic     #58                 // Field de/xima/fc/dao/DaoProvider.LDAPABFRAGE_DAO:Lde/xima/fc/dao/interfaces/ILDAPAbfrageDao;
+      27: aload_1
+      28: invokeinterface #11,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getEntityContext:()Lde/xima/fc/interfaces/IEntityContext;
+      33: aload_1
+      34: invokeinterface #12,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getClient:()Lde/xima/fc/entities/Mandant;
+      39: aload_2
+      40: invokeinterface #59,  4           // InterfaceMethod de/xima/fc/dao/interfaces/ILDAPAbfrageDao.getByUUID:(Lde/xima/fc/interfaces/IEntityContext;Lde/xima/fc/entities/Mandant;Ljava/util/UUID;)Lde/xima/fc/entities/LDAPAbfrage;
+      45: astore_3
+      46: goto          58
+      49: astore        4
+      51: aload_0
+      52: aload         4
+      54: invokevirtual #60                 // Method createExceptionLdapQueryNotFound:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      57: athrow
+      58: aload_3
+      59: ifnonnull     83
+      62: aload_0
+      63: new           #16                 // class java/lang/IllegalArgumentException
+      66: dup
+      67: aload_2
+      68: invokestatic  #33                 // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+      71: invokedynamic #61,  0             // InvokeDynamic #3:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+      76: invokespecial #18                 // Method java/lang/IllegalArgumentException."<init>":(Ljava/lang/String;)V
+      79: invokevirtual #60                 // Method createExceptionLdapQueryNotFound:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      82: athrow
+      83: aload_3
+      84: areturn
+    Exception table:
+       from    to  target type
+          24    46    49   Class java/lang/Exception
+
+  private java.io.Serializable[] determineQueryParameters();
+    Code:
+       0: aload_0
+       1: getfield      #3                  // Field props:Ljava/lang/Object;
+       4: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+       7: invokevirtual #62                 // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.getQueryParameters:()Ljava/util/List;
+      10: invokestatic  #63                 // Method org/apache/commons/collections4/ListUtils.emptyIfNull:(Ljava/util/List;)Ljava/util/List;
+      13: astore_1
+      14: aload_1
+      15: invokeinterface #64,  1           // InterfaceMethod java/util/List.stream:()Ljava/util/stream/Stream;
+      20: invokedynamic #65,  0             // InvokeDynamic #4:apply:()Ljava/util/function/Function;
+      25: invokeinterface #66,  2           // InterfaceMethod java/util/stream/Stream.map:(Ljava/util/function/Function;)Ljava/util/stream/Stream;
+      30: invokedynamic #67,  0             // InvokeDynamic #5:apply:()Ljava/util/function/IntFunction;
+      35: invokeinterface #68,  2           // InterfaceMethod java/util/stream/Stream.toArray:(Ljava/util/function/IntFunction;)[Ljava/lang/Object;
+      40: checkcast     #69                 // class "[Ljava/io/Serializable;"
+      43: areturn
+
+  private org.apache.commons.lang3.tuple.Pair<java.lang.String, java.io.Serializable[]> determineQueryParametersAndPrepareQuery();
+    Code:
+       0: aload_0
+       1: getfield      #3                  // Field props:Ljava/lang/Object;
+       4: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+       7: invokevirtual #70                 // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.getQuery:()Ljava/lang/String;
+      10: astore_1
+      11: aload_0
+      12: getfield      #8                  // Field ctx:Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext;
+      15: invokeinterface #71,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext.placeholder:()Lde/xima/fc/interfaces/workflow/execution/IWorkflowPlaceholderHandler;
+      20: aconst_null
+      21: invokeinterface #72,  2           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowPlaceholderHandler.createReplacerParams:(Lde/xima/fc/interfaces/placeholder/params/IContextReplacerParams;)Lde/xima/fc/mdl/placeholder/DefaultReplacerParameters;
+      26: astore_2
+      27: aload_2
+      28: getstatic     #73                 // Field de/xima/fc/mdl/enums/EPlaceholderEscaper.PLAIN_TEXT:Lde/xima/fc/mdl/enums/EPlaceholderEscaper;
+      31: invokevirtual #74                 // Method de/xima/fc/mdl/placeholder/DefaultReplacerParameters.setEscaper:(Lde/xima/fc/interfaces/placeholder/params/IPlaceholderEscaper;)V
+      34: aload_1
+      35: ldc           #76                 // String ?
+      37: aload_2
+      38: invokestatic  #77                 // Method de/xima/fc/placeholder/PlaceholderReplacer.extractAndReplace:(Ljava/lang/String;Ljava/lang/String;Lde/xima/fc/interfaces/placeholder/params/IReplacerParams;)Lorg/apache/commons/lang3/tuple/Pair;
+      41: astore_3
+      42: aload_3
+      43: invokevirtual #78                 // Method org/apache/commons/lang3/tuple/Pair.getLeft:()Ljava/lang/Object;
+      46: checkcast     #79                 // class java/lang/String
+      49: aload_3
+      50: invokevirtual #80                 // Method org/apache/commons/lang3/tuple/Pair.getRight:()Ljava/lang/Object;
+      53: checkcast     #81                 // class java/util/List
+      56: aload_3
+      57: invokevirtual #80                 // Method org/apache/commons/lang3/tuple/Pair.getRight:()Ljava/lang/Object;
+      60: checkcast     #81                 // class java/util/List
+      63: invokeinterface #82,  1           // InterfaceMethod java/util/List.size:()I
+      68: anewarray     #79                 // class java/lang/String
+      71: invokeinterface #83,  2           // InterfaceMethod java/util/List.toArray:([Ljava/lang/Object;)[Ljava/lang/Object;
+      76: checkcast     #69                 // class "[Ljava/io/Serializable;"
+      79: invokestatic  #27                 // Method org/apache/commons/lang3/tuple/Pair.of:(Ljava/lang/Object;Ljava/lang/Object;)Lorg/apache/commons/lang3/tuple/Pair;
+      82: areturn
+
+  private java.lang.String[] determineResultAttributes();
+    Code:
+       0: aload_0
+       1: getfield      #3                  // Field props:Ljava/lang/Object;
+       4: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+       7: invokevirtual #84                 // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.getResultAttributes:()Ljava/util/List;
+      10: invokestatic  #85                 // Method org/apache/commons/collections4/CollectionUtils.isEmpty:(Ljava/util/Collection;)Z
+      13: ifeq          18
+      16: aconst_null
+      17: areturn
+      18: aload_0
+      19: getfield      #3                  // Field props:Ljava/lang/Object;
+      22: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+      25: invokevirtual #84                 // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.getResultAttributes:()Ljava/util/List;
+      28: invokeinterface #64,  1           // InterfaceMethod java/util/List.stream:()Ljava/util/stream/Stream;
+      33: invokedynamic #86,  0             // InvokeDynamic #6:apply:()Ljava/util/function/Function;
+      38: invokeinterface #66,  2           // InterfaceMethod java/util/stream/Stream.map:(Ljava/util/function/Function;)Ljava/util/stream/Stream;
+      43: invokedynamic #87,  0             // InvokeDynamic #7:apply:()Ljava/util/function/IntFunction;
+      48: invokeinterface #68,  2           // InterfaceMethod java/util/stream/Stream.toArray:(Ljava/util/function/IntFunction;)[Ljava/lang/Object;
+      53: checkcast     #88                 // class "[Ljava/lang/String;"
+      56: areturn
+
+  private java.lang.String[] determineResultAttributes(de.xima.fc.entities.LDAPAbfrage);
+    Code:
+       0: aload_1
+       1: invokevirtual #89                 // Method de/xima/fc/entities/LDAPAbfrage.getAttribute:()Ljava/util/List;
+       4: invokestatic  #85                 // Method org/apache/commons/collections4/CollectionUtils.isEmpty:(Ljava/util/Collection;)Z
+       7: ifeq          12
+      10: aconst_null
+      11: areturn
+      12: aload_1
+      13: invokevirtual #89                 // Method de/xima/fc/entities/LDAPAbfrage.getAttribute:()Ljava/util/List;
+      16: aload_1
+      17: invokevirtual #89                 // Method de/xima/fc/entities/LDAPAbfrage.getAttribute:()Ljava/util/List;
+      20: invokeinterface #82,  1           // InterfaceMethod java/util/List.size:()I
+      25: anewarray     #79                 // class java/lang/String
+      28: invokeinterface #83,  2           // InterfaceMethod java/util/List.toArray:([Ljava/lang/Object;)[Ljava/lang/Object;
+      33: checkcast     #88                 // class "[Ljava/lang/String;"
+      36: areturn
+
+  private de.xima.fc.interfaces.workflow.execution.INormalCompletionResult executeClientLdapQuery() throws de.xima.fc.exceptions.NodeThrewException;
+    Code:
+       0: aload_0
+       1: invokevirtual #90                 // Method determineLdapQuery:()Lde/xima/fc/entities/LDAPAbfrage;
+       4: astore_1
+       5: aload_0
+       6: invokevirtual #91                 // Method determineQueryParameters:()[Ljava/io/Serializable;
+       9: astore_2
+      10: aload_0
+      11: aload_1
+      12: invokevirtual #92                 // Method determineResultAttributes:(Lde/xima/fc/entities/LDAPAbfrage;)[Ljava/lang/String;
+      15: astore_3
+      16: aload_0
+      17: aload_1
+      18: invokevirtual #93                 // Method getClientLdapDataIfRequired:(Lde/xima/fc/entities/LDAPAbfrage;)Lde/xima/fc/entities/MandantLdapData;
+      21: astore        4
+      23: aload_0
+      24: getfield      #8                  // Field ctx:Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext;
+      27: invokeinterface #71,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext.placeholder:()Lde/xima/fc/interfaces/workflow/execution/IWorkflowPlaceholderHandler;
+      32: aconst_null
+      33: invokeinterface #72,  2           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowPlaceholderHandler.createReplacerParams:(Lde/xima/fc/interfaces/placeholder/params/IContextReplacerParams;)Lde/xima/fc/mdl/placeholder/DefaultReplacerParameters;
+      38: astore        5
+      40: aload         5
+      42: getstatic     #73                 // Field de/xima/fc/mdl/enums/EPlaceholderEscaper.PLAIN_TEXT:Lde/xima/fc/mdl/enums/EPlaceholderEscaper;
+      45: invokevirtual #74                 // Method de/xima/fc/mdl/placeholder/DefaultReplacerParameters.setEscaper:(Lde/xima/fc/interfaces/placeholder/params/IPlaceholderEscaper;)V
+      48: aload_1
+      49: aload         4
+      51: aload_2
+      52: aload_3
+      53: aload         5
+      55: invokestatic  #94                 // Method de/xima/fc/manager/LDAPQueryManager.executeQuery:(Lde/xima/fc/entities/LDAPAbfrage;Lde/xima/fc/entities/MandantLdapData;[Ljava/io/Serializable;[Ljava/lang/String;Lde/xima/fc/interfaces/placeholder/params/IReplacerParams;)Lcom/alibaba/fastjson/JSONArray;
+      58: astore        6
+      60: aload_0
+      61: aload         6
+      63: invokevirtual #95                 // Method createResult:(Lcom/alibaba/fastjson/JSONArray;)Lde/xima/fc/interfaces/workflow/execution/INormalCompletionResult;
+      66: areturn
+      67: astore        4
+      69: aload_0
+      70: aload         4
+      72: aload_1
+      73: invokevirtual #97                 // Method de/xima/fc/entities/LDAPAbfrage.getAbfrage:()Ljava/lang/String;
+      76: invokevirtual #98                 // Method handleLdapException:(Lcom/unboundid/ldap/sdk/LDAPException;Ljava/lang/String;)Lde/xima/fc/exceptions/NodeThrewException;
+      79: athrow
+      80: astore        4
+      82: aload_0
+      83: aload         4
+      85: invokevirtual #101                // Method createExceptionQueryExecutionFailed:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      88: athrow
+    Exception table:
+       from    to  target type
+          16    66    67   Class com/unboundid/ldap/sdk/LDAPException
+          16    66    80   Class com/alibaba/fastjson/JSONException
+          16    66    80   Class java/lang/IllegalArgumentException
+          16    66    80   Class java/security/GeneralSecurityException
+
+  private de.xima.fc.interfaces.workflow.execution.INormalCompletionResult executeCustomLdapQuery() throws de.xima.fc.exceptions.NodeThrewException;
+    Code:
+       0: aload_0
+       1: invokevirtual #102                // Method determineQueryParametersAndPrepareQuery:()Lorg/apache/commons/lang3/tuple/Pair;
+       4: astore_1
+       5: aload_0
+       6: invokevirtual #103                // Method determineResultAttributes:()[Ljava/lang/String;
+       9: astore_2
+      10: aload_0
+      11: getfield      #3                  // Field props:Ljava/lang/Object;
+      14: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+      17: invokevirtual #104                // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.isUseClientLdapConnection:()Z
+      20: ifeq          30
+      23: aload_0
+      24: invokevirtual #105                // Method createConnectionFromClient:()Lorg/apache/commons/lang3/tuple/Pair;
+      27: goto          34
+      30: aload_0
+      31: invokevirtual #106                // Method createConnectionFromQuery:()Lorg/apache/commons/lang3/tuple/Pair;
+      34: astore_3
+      35: aload_3
+      36: invokevirtual #78                 // Method org/apache/commons/lang3/tuple/Pair.getLeft:()Ljava/lang/Object;
+      39: checkcast     #107                // class com/unboundid/ldap/sdk/LDAPConnection
+      42: astore        4
+      44: aload_0
+      45: getfield      #3                  // Field props:Ljava/lang/Object;
+      48: checkcast     #4                  // class de/xima/fc/workflow/model/nodes/FcLdapQueryProps
+      51: invokevirtual #108                // Method de/xima/fc/workflow/model/nodes/FcLdapQueryProps.getBaseDN:()Ljava/lang/String;
+      54: aload_1
+      55: invokevirtual #78                 // Method org/apache/commons/lang3/tuple/Pair.getLeft:()Ljava/lang/Object;
+      58: checkcast     #79                 // class java/lang/String
+      61: aload         4
+      63: aload_3
+      64: invokevirtual #80                 // Method org/apache/commons/lang3/tuple/Pair.getRight:()Ljava/lang/Object;
+      67: checkcast     #109                // class java/lang/Integer
+      70: invokevirtual #110                // Method java/lang/Integer.intValue:()I
+      73: aload_1
+      74: invokevirtual #80                 // Method org/apache/commons/lang3/tuple/Pair.getRight:()Ljava/lang/Object;
+      77: checkcast     #69                 // class "[Ljava/io/Serializable;"
+      80: aload_2
+      81: invokestatic  #111                // Method de/xima/fc/manager/LDAPQueryManager.executeQuery:(Ljava/lang/String;Ljava/lang/String;Lcom/unboundid/ldap/sdk/LDAPConnection;I[Ljava/io/Serializable;[Ljava/lang/String;)Lcom/alibaba/fastjson/JSONArray;
+      84: astore        5
+      86: aload_0
+      87: aload         5
+      89: invokevirtual #95                 // Method createResult:(Lcom/alibaba/fastjson/JSONArray;)Lde/xima/fc/interfaces/workflow/execution/INormalCompletionResult;
+      92: astore        6
+      94: aload         4
+      96: ifnull        104
+      99: aload         4
+     101: invokevirtual #112                // Method com/unboundid/ldap/sdk/LDAPConnection.close:()V
+     104: aload         6
+     106: areturn
+     107: astore        5
+     109: aload         4
+     111: ifnull        131
+     114: aload         4
+     116: invokevirtual #112                // Method com/unboundid/ldap/sdk/LDAPConnection.close:()V
+     119: goto          131
+     122: astore        6
+     124: aload         5
+     126: aload         6
+     128: invokevirtual #114                // Method java/lang/Throwable.addSuppressed:(Ljava/lang/Throwable;)V
+     131: aload         5
+     133: athrow
+     134: astore        4
+     136: aload_0
+     137: aload         4
+     139: aload_1
+     140: invokevirtual #78                 // Method org/apache/commons/lang3/tuple/Pair.getLeft:()Ljava/lang/Object;
+     143: checkcast     #79                 // class java/lang/String
+     146: invokevirtual #98                 // Method handleLdapException:(Lcom/unboundid/ldap/sdk/LDAPException;Ljava/lang/String;)Lde/xima/fc/exceptions/NodeThrewException;
+     149: athrow
+     150: astore        4
+     152: aload_0
+     153: aload         4
+     155: invokevirtual #101                // Method createExceptionQueryExecutionFailed:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+     158: athrow
+    Exception table:
+       from    to  target type
+          44    94   107   Class java/lang/Throwable
+         114   119   122   Class java/lang/Throwable
+          35   104   134   Class com/unboundid/ldap/sdk/LDAPException
+         107   134   134   Class com/unboundid/ldap/sdk/LDAPException
+          35   104   150   Class com/alibaba/fastjson/JSONException
+          35   104   150   Class java/lang/IllegalArgumentException
+          35   104   150   Class java/security/GeneralSecurityException
+         107   134   150   Class com/alibaba/fastjson/JSONException
+         107   134   150   Class java/lang/IllegalArgumentException
+         107   134   150   Class java/security/GeneralSecurityException
+
+  private de.xima.fc.entities.MandantLdapData getClientLdapDataIfRequired(de.xima.fc.entities.LDAPAbfrage);
+    Code:
+       0: aload_1
+       1: invokevirtual #115                // Method de/xima/fc/entities/LDAPAbfrage.isUseMandantZugriff:()Z
+       4: ifne          9
+       7: aconst_null
+       8: areturn
+       9: aload_0
+      10: getfield      #8                  // Field ctx:Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext;
+      13: invokeinterface #9,  1            // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext.env:()Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData;
+      18: invokeinterface #12,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getClient:()Lde/xima/fc/entities/Mandant;
+      23: astore_2
+      24: aload_2
+      25: ifnull        54
+      28: getstatic     #10                 // Field de/xima/fc/dao/DaoProvider.MANDANTLDAPDATA_DAO:Lde/xima/fc/dao/interfaces/IMandantLdapDataDao;
+      31: aload_0
+      32: getfield      #8                  // Field ctx:Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext;
+      35: invokeinterface #9,  1            // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionContext.env:()Lde/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData;
+      40: invokeinterface #11,  1           // InterfaceMethod de/xima/fc/interfaces/workflow/execution/IWorkflowExecutionEnvironmentData.getEntityContext:()Lde/xima/fc/interfaces/IEntityContext;
+      45: aload_2
+      46: invokeinterface #13,  3           // InterfaceMethod de/xima/fc/dao/interfaces/IMandantLdapDataDao.getByMandant:(Lde/xima/fc/interfaces/IEntityContext;Lde/xima/fc/entities/Mandant;)Lde/xima/fc/entities/MandantLdapData;
+      51: goto          55
+      54: aconst_null
+      55: areturn
+
+  private de.xima.fc.exceptions.NodeThrewException handleLdapException(com.unboundid.ldap.sdk.LDAPException, java.lang.String);
+    Code:
+       0: aload_1
+       1: invokevirtual #116                // Method com/unboundid/ldap/sdk/LDAPException.getResultCode:()Lcom/unboundid/ldap/sdk/ResultCode;
+       4: getstatic     #117                // Field com/unboundid/ldap/sdk/ResultCode.FILTER_ERROR:Lcom/unboundid/ldap/sdk/ResultCode;
+       7: if_acmpne     17
+      10: aload_0
+      11: aload_1
+      12: aload_2
+      13: invokevirtual #118                // Method createInvalidSearchFilter:(Lcom/unboundid/ldap/sdk/LDAPException;Ljava/lang/String;)Lde/xima/fc/exceptions/NodeThrewException;
+      16: areturn
+      17: aload_0
+      18: aload_1
+      19: invokevirtual #101                // Method createExceptionQueryExecutionFailed:(Ljava/lang/Exception;)Lde/xima/fc/exceptions/NodeThrewException;
+      22: areturn
+
+  private static java.lang.String[] lambda$determineResultAttributes$3(int);
+    Code:
+       0: iload_0
+       1: anewarray     #79                 // class java/lang/String
+       4: areturn
+
+  private static java.lang.String[] lambda$determineQueryParameters$2(int);
+    Code:
+       0: iload_0
+       1: anewarray     #79                 // class java/lang/String
+       4: areturn
+
+  private static void lambda$createResult$1(long, java.util.List, de.xima.fc.interfaces.workflow.value.IValueConfigurator);
+    Code:
+       0: aload_3
+       1: invokeinterface #119,  1          // InterfaceMethod de/xima/fc/interfaces/workflow/value/IValueConfigurator.asRecord:()Lde/xima/fc/interfaces/workflow/value/IRecordValueBuilder;
+       6: ldc           #120                // String rowsCount
+       8: lload_0
+       9: invokestatic  #121                // Method java/lang/Long.valueOf:(J)Ljava/lang/Long;
+      12: invokeinterface #122,  3          // InterfaceMethod de/xima/fc/interfaces/workflow/value/IRecordValueBuilder.property:(Ljava/lang/String;Ljava/lang/Object;)Lde/xima/fc/interfaces/workflow/value/IRecordValueBuilder;
+      17: ldc           #123                // String rows
+      19: aload_2
+      20: invokeinterface #122,  3          // InterfaceMethod de/xima/fc/interfaces/workflow/value/IRecordValueBuilder.property:(Ljava/lang/String;Ljava/lang/Object;)Lde/xima/fc/interfaces/workflow/value/IRecordValueBuilder;
+      25: pop
+      26: return
+
+  private static void lambda$createInvalidSearchFilter$0(java.lang.String, de.xima.fc.interfaces.workflow.value.IRecordValueBuilder);
+    Code:
+       0: aload_1
+       1: invokeinterface #124,  1          // InterfaceMethod de/xima/fc/interfaces/workflow/value/IRecordValueBuilder.asRecord:()Lde/xima/fc/interfaces/workflow/value/IRecordValueBuilder;
+       6: ldc           #125                // String filter
+       8: aload_0
+       9: invokeinterface #122,  3          // InterfaceMethod de/xima/fc/interfaces/workflow/value/IRecordValueBuilder.property:(Ljava/lang/String;Ljava/lang/Object;)Lde/xima/fc/interfaces/workflow/value/IRecordValueBuilder;
+      14: pop
+      15: return
+}

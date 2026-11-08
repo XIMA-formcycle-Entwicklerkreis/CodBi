@@ -39,14 +39,45 @@ internal object ClarifySkipPolicy {
    * @param endingPageVeto true when a deterministic detector matched a workflow that needs an
    *   Abschlussseite/HTML template but the user did NOT name a concrete existing one — the clarify
    *   round MUST run so the user is offered the AVAILABLE pages by name. A veto only.
+   * @param codbiDisabledVeto true when the CodBi switch is OFF — forces the round (see below).
+   * @param codbiActivated true when the USER's own previous answer was the option "activate the
+   *   CodBi functions": the client switched CodBi on and repeats the request. That answer is the
+   *   user's GO-AHEAD to build, so no further question is asked — the deterministic vetoes above
+   *   still win, because they cover information that answer never settled (a missing
+   *   Abschlussseite, a cross-form reference).
    */
   fun skipReason(
       needsClarification: Boolean?,
       needsToolContext: Set<String>?,
       hasClarificationAnswers: Boolean,
       referenceVeto: Boolean,
-      endingPageVeto: Boolean = false
+      endingPageVeto: Boolean = false,
+      codbiDisabledVeto: Boolean = false,
+      codbiActivated: Boolean = false
   ): String? {
+    // Deterministic signals can only FORCE the round — they are checked first because they cover
+    // information no answer to a previous question could have settled.
+    if (referenceVeto) return null
+    // When the workflow needs an ending page the user did not name, force the round so the user is
+    // asked which AVAILABLE Abschlussseite to use instead of the build silently guessing a name.
+    if (endingPageVeto) return null
+    // CODBI SWITCH OFF — never skip. With the switch off the assistant does NOT receive the CodBi
+    // catalog, so it knows NOTHING about the extended functionalities. As soon as a request implies
+    // a behaviour a plain Formcycle widget does not provide (blocking specific dates/values, AI
+    // validation, address autocomplete, LDAP, tracking, panels, ...) it cannot decide HOW to
+    // implement it and MUST ask — including the hint that enabling the CodBi switch in the dialog
+    // provides exactly those functionalities. The tier-1 signal cannot see this, because it reasons
+    // about the CodBi-enabled world. The round itself stays cheap: when nothing is genuinely
+    // missing it answers NO_CLARIFICATION and the build proceeds immediately, so this is a veto
+    // (force the round), not a forced question.
+    if (codbiDisabledVeto) return null
+    // THE USER SAID GO: their answer was the option that activates CodBi, so the client turned the
+    // CodBi switch on and repeats the request with the functionality catalog. Asking again here
+    // produced exactly the useless follow-up rounds this rule removes (a run that had already been
+    // approved asked twice for the field title and for the text of a message placeholder). The
+    // decision is the user's own click, not a keyword in any language.
+    if (codbiActivated)
+        return "the user chose the CodBi-activation answer — CodBi is on and the request is repeated, so no further question is asked"
     // The AI explicitly said "no question is needed" (a missing key is NOT a no).
     if (needsClarification != false) return null
     // The AI explicitly said "nothing to load first" (a missing key is NOT an empty request).
@@ -54,11 +85,6 @@ internal object ClarifySkipPolicy {
     if (needsToolContext.isNotEmpty()) return null
     // A re-run that already carries answers must be able to ask one genuine follow-up.
     if (hasClarificationAnswers) return null
-    // Deterministic signals can only FORCE the round.
-    if (referenceVeto) return null
-    // When the workflow needs an ending page the user did not name, force the round so the user is
-    // asked which AVAILABLE Abschlussseite to use instead of the build silently guessing a name.
-    if (endingPageVeto) return null
     return "tier-1 needsClarification=false, needsToolContext=[] and no reference veto"
   }
 }

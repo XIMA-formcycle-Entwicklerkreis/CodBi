@@ -31,6 +31,72 @@ class ClarifySkipPolicyTest {
   }
 
   @Test
+  fun `the CodBi switch being off never skips the clarify round`() {
+    // With CodBi disabled the assistant cannot apply ANY CodBi capability, so a request that needs
+    // one (blocking specific dates/values, AI validation, address autocomplete, ...) must be
+    // CLARIFIED — the tier-1 signal is based on the CodBi-enabled world and cannot see that
+    // limitation. The veto only forces the round; the round itself answers NO_CLARIFICATION when
+    // nothing is genuinely missing, so no question is asked needlessly.
+    assertNull(
+        ClarifySkipPolicy.skipReason(
+            needsClarification = false,
+            needsToolContext = emptySet(),
+            hasClarificationAnswers = false,
+            referenceVeto = false,
+            codbiDisabledVeto = true),
+        "CodBi disabled must force the clarify round")
+    // The veto must not change the CodBi-enabled behaviour.
+    assertNotNull(
+        ClarifySkipPolicy.skipReason(
+            needsClarification = false,
+            needsToolContext = emptySet(),
+            hasClarificationAnswers = false,
+            referenceVeto = false,
+            codbiDisabledVeto = false))
+  }
+
+  @Test
+  fun `the user picking the CodBi-activation answer never faces another clarify round`() {
+    // Reported: after choosing "CodBi-Funktionen aktivieren" the assistant switched CodBi on and
+    // repeated the request, but the clarify round ran again and again — asking for the field title
+    // (twice) and for the text of a message placeholder. That answer IS the user's go-ahead, so the
+    // round is skipped even though the run carries answers (which normally forbids a skip).
+    assertNotNull(
+        ClarifySkipPolicy.skipReason(
+            needsClarification = true,
+            needsToolContext = setOf("chat_history"),
+            hasClarificationAnswers = true,
+            referenceVeto = false,
+            codbiActivated = true),
+        "the CodBi-activation answer must skip the clarify round")
+    // The deterministic vetoes still win: they cover information that answer never settled.
+    assertNull(
+        ClarifySkipPolicy.skipReason(
+            needsClarification = false,
+            needsToolContext = emptySet(),
+            hasClarificationAnswers = true,
+            referenceVeto = true,
+            codbiActivated = true),
+        "a cross-form / earlier-work reference still forces the round")
+    assertNull(
+        ClarifySkipPolicy.skipReason(
+            needsClarification = false,
+            needsToolContext = emptySet(),
+            hasClarificationAnswers = true,
+            referenceVeto = false,
+            endingPageVeto = true,
+            codbiActivated = true),
+        "a missing Abschlussseite still forces the round")
+    // Without the flag the previous behaviour is untouched: answers keep the round.
+    assertNull(
+        ClarifySkipPolicy.skipReason(
+            needsClarification = false,
+            needsToolContext = emptySet(),
+            hasClarificationAnswers = true,
+            referenceVeto = false))
+  }
+
+  @Test
   fun `a missing needsClarification key fails open`() {
     assertNull(reason(null))
   }

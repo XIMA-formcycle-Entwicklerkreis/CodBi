@@ -1,0 +1,865 @@
+Classfile jar:file:///C:/Users/callari/.m2/repository/de/xima/fc/fc-common/8.5.3/fc-common-8.5.3.jar!/de/xima/fc/entities/LDAPZugriff.class
+  Last modified 19.03.2026; size 5259 bytes
+  SHA-256 checksum 26e1c37dcdc09273d12451890540cd0a07390ebbf2ad624dbf50688ca323cc5f
+  Compiled from "LDAPZugriff.java"
+public class de.xima.fc.entities.LDAPZugriff extends de.xima.fc.entities.AClientDependentEntity implements de.xima.fc.entities.interfaces.INameProviding,de.xima.fc.entities.interfaces.IDescriptionProviding,de.xima.fc.entities.interfaces.IUUIDEntity
+  minor version: 0
+  major version: 55
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #20                         // de/xima/fc/entities/LDAPZugriff
+  super_class: #21                        // de/xima/fc/entities/AClientDependentEntity
+  interfaces: 3, fields: 14, methods: 25, attributes: 2
+Constant pool:
+    #1 = Methodref          #21.#151      // de/xima/fc/entities/AClientDependentEntity."<init>":()V
+    #2 = Methodref          #152.#153     // java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+    #3 = Fieldref           #20.#154      // de/xima/fc/entities/LDAPZugriff.pageSize:Ljava/lang/Integer;
+    #4 = Fieldref           #20.#155      // de/xima/fc/entities/LDAPZugriff.port:I
+    #5 = Fieldref           #20.#156      // de/xima/fc/entities/LDAPZugriff.referralHopCount:Ljava/lang/Integer;
+    #6 = Fieldref           #20.#157      // de/xima/fc/entities/LDAPZugriff.useSSL:Z
+    #7 = Fieldref           #20.#158      // de/xima/fc/entities/LDAPZugriff.authName:Ljava/lang/String;
+    #8 = Fieldref           #20.#159      // de/xima/fc/entities/LDAPZugriff.authPassword:Ljava/lang/String;
+    #9 = Fieldref           #20.#160      // de/xima/fc/entities/LDAPZugriff.beschreibung:Ljava/lang/String;
+   #10 = Fieldref           #20.#161      // de/xima/fc/entities/LDAPZugriff.host:Ljava/lang/String;
+   #11 = Fieldref           #20.#162      // de/xima/fc/entities/LDAPZugriff.id:Ljava/lang/Long;
+   #12 = Fieldref           #20.#163      // de/xima/fc/entities/LDAPZugriff.name:Ljava/lang/String;
+   #13 = Methodref          #20.#164      // de/xima/fc/entities/LDAPZugriff.getUUIDObject:()Ljava/util/UUID;
+   #14 = Methodref          #165.#166     // java/util/UUID.toString:()Ljava/lang/String;
+   #15 = Fieldref           #20.#167      // de/xima/fc/entities/LDAPZugriff.uuid:Ljava/util/UUID;
+   #16 = Methodref          #165.#168     // java/util/UUID.randomUUID:()Ljava/util/UUID;
+   #17 = Methodref          #165.#169     // java/util/UUID.fromString:(Ljava/lang/String;)Ljava/util/UUID;
+   #18 = Methodref          #20.#170      // de/xima/fc/entities/LDAPZugriff.setUUIDObject:(Ljava/util/UUID;)V
+   #19 = Methodref          #20.#171      // de/xima/fc/entities/LDAPZugriff.getId:()Ljava/lang/Long;
+   #20 = Class              #172          // de/xima/fc/entities/LDAPZugriff
+   #21 = Class              #173          // de/xima/fc/entities/AClientDependentEntity
+   #22 = Class              #174          // de/xima/fc/entities/interfaces/INameProviding
+   #23 = Class              #175          // de/xima/fc/entities/interfaces/IDescriptionProviding
+   #24 = Class              #176          // de/xima/fc/entities/interfaces/IUUIDEntity
+   #25 = Utf8               ATTR_PAGESIZE
+   #26 = Utf8               Ljava/lang/String;
+   #27 = Utf8               ConstantValue
+   #28 = String             #52           // pageSize
+   #29 = Utf8               ATTR_REFERRAL_HOPCOUNT
+   #30 = String             #56           // referralHopCount
+   #31 = Utf8               ATTR_USESSL
+   #32 = String             #57           // useSSL
+   #33 = Utf8               COL_UUID
+   #34 = String             #59           // uuid
+   #35 = Utf8               authName
+   #36 = Utf8               RuntimeVisibleAnnotations
+   #37 = Utf8               Ljavax/validation/constraints/Size;
+   #38 = Utf8               max
+   #39 = Integer            150
+   #40 = Utf8               Lde/xima/fc/annotations/ExportDetails;
+   #41 = Utf8               encrypt
+   #42 = Integer            1
+   #43 = Utf8               RuntimeVisibleTypeAnnotations
+   #44 = Utf8               authPassword
+   #45 = Integer            500
+   #46 = Utf8               beschreibung
+   #47 = Integer            250
+   #48 = Utf8               host
+   #49 = Utf8               name
+   #50 = Integer            50
+   #51 = Utf8               Ljavax/validation/constraints/NotEmpty;
+   #52 = Utf8               pageSize
+   #53 = Utf8               Ljava/lang/Integer;
+   #54 = Utf8               port
+   #55 = Utf8               I
+   #56 = Utf8               referralHopCount
+   #57 = Utf8               useSSL
+   #58 = Utf8               Z
+   #59 = Utf8               uuid
+   #60 = Utf8               Ljava/util/UUID;
+   #61 = Utf8               <init>
+   #62 = Utf8               ()V
+   #63 = Utf8               Code
+   #64 = Utf8               LineNumberTable
+   #65 = Utf8               LocalVariableTable
+   #66 = Utf8               this
+   #67 = Utf8               Lde/xima/fc/entities/LDAPZugriff;
+   #68 = Utf8               getAuthName
+   #69 = Utf8               ()Ljava/lang/String;
+   #70 = Utf8               Lde/xima/fc/beans/ann/TransferAttribute;
+   #71 = Utf8               Lorg/hibernate/annotations/Type;
+   #72 = Utf8               type
+   #73 = Utf8               de.xima.fc.persistence.hibernate.FcEncryptedStringType
+   #74 = Utf8               Ljavax/persistence/Column;
+   #75 = Utf8               auth_name
+   #76 = Utf8               getAuthPassword
+   #77 = Utf8               auth_password
+   #78 = Utf8               getBeschreibung
+   #79 = Utf8               description
+   #80 = Utf8               getHost
+   #81 = Utf8               getId
+   #82 = Utf8               ()Ljava/lang/Long;
+   #83 = Utf8               Ljavax/persistence/TableGenerator;
+   #84 = Utf8               fc_pk_gen_ldapaccess
+   #85 = Utf8               table
+   #86 = Utf8               fc_keys
+   #87 = Utf8               pkColumnName
+   #88 = Utf8               gen_name
+   #89 = Utf8               valueColumnName
+   #90 = Utf8               gen_val
+   #91 = Utf8               pkColumnValue
+   #92 = Utf8               connection_ldap
+   #93 = Utf8               Ljavax/persistence/GeneratedValue;
+   #94 = Utf8               generator
+   #95 = Utf8               strategy
+   #96 = Utf8               Ljavax/persistence/GenerationType;
+   #97 = Utf8               TABLE
+   #98 = Utf8               Ljavax/persistence/Id;
+   #99 = Utf8               incoming
+  #100 = Integer            0
+  #101 = Utf8               getName
+  #102 = Utf8               getPageSize
+  #103 = Utf8               ()Ljava/lang/Integer;
+  #104 = Utf8               pagesize
+  #105 = Utf8               getPort
+  #106 = Utf8               ()I
+  #107 = Utf8               de.xima.fc.persistence.hibernate.FcEncryptedIntegerType
+  #108 = Utf8               parameters
+  #109 = Utf8               Lorg/hibernate/annotations/Parameter;
+  #110 = Utf8               defaultValue
+  #111 = Utf8               value
+  #112 = Utf8               389
+  #113 = Utf8               getReferralHopCount
+  #114 = Utf8               hopcount
+  #115 = Utf8               getUUID
+  #116 = Utf8               Ljavax/persistence/Transient;
+  #117 = Utf8               getUUIDObject
+  #118 = Utf8               ()Ljava/util/UUID;
+  #119 = Utf8               StackMapTable
+  #120 = Utf8               nullable
+  #121 = Utf8               length
+  #122 = Integer            36
+  #123 = Utf8               de.xima.fc.type.NullSafeUUID
+  #124 = Utf8               isUseSSL
+  #125 = Utf8               ()Z
+  #126 = Utf8               use_ssl
+  #127 = Utf8               setAuthName
+  #128 = Utf8               (Ljava/lang/String;)V
+  #129 = Utf8               setAuthPassword
+  #130 = Utf8               setBeschreibung
+  #131 = Utf8               setHost
+  #132 = Utf8               setName
+  #133 = Utf8               setPageSize
+  #134 = Utf8               (Ljava/lang/Integer;)V
+  #135 = Utf8               setPort
+  #136 = Utf8               (I)V
+  #137 = Utf8               setReferralHopCount
+  #138 = Utf8               setUseSSL
+  #139 = Utf8               (Z)V
+  #140 = Utf8               setUUID
+  #141 = Utf8               setUUIDObject
+  #142 = Utf8               (Ljava/util/UUID;)V
+  #143 = Utf8               ()Ljava/io/Serializable;
+  #144 = Utf8               SourceFile
+  #145 = Utf8               LDAPZugriff.java
+  #146 = Utf8               Ljavax/persistence/Table;
+  #147 = Utf8               Ljavax/persistence/Entity;
+  #148 = Utf8               Lorg/hibernate/annotations/BatchSize;
+  #149 = Utf8               size
+  #150 = Integer            10
+  #151 = NameAndType        #61:#62       // "<init>":()V
+  #152 = Class              #177          // java/lang/Integer
+  #153 = NameAndType        #178:#179     // valueOf:(I)Ljava/lang/Integer;
+  #154 = NameAndType        #52:#53       // pageSize:Ljava/lang/Integer;
+  #155 = NameAndType        #54:#55       // port:I
+  #156 = NameAndType        #56:#53       // referralHopCount:Ljava/lang/Integer;
+  #157 = NameAndType        #57:#58       // useSSL:Z
+  #158 = NameAndType        #35:#26       // authName:Ljava/lang/String;
+  #159 = NameAndType        #44:#26       // authPassword:Ljava/lang/String;
+  #160 = NameAndType        #46:#26       // beschreibung:Ljava/lang/String;
+  #161 = NameAndType        #48:#26       // host:Ljava/lang/String;
+  #162 = NameAndType        #180:#181     // id:Ljava/lang/Long;
+  #163 = NameAndType        #49:#26       // name:Ljava/lang/String;
+  #164 = NameAndType        #117:#118     // getUUIDObject:()Ljava/util/UUID;
+  #165 = Class              #182          // java/util/UUID
+  #166 = NameAndType        #183:#69      // toString:()Ljava/lang/String;
+  #167 = NameAndType        #59:#60       // uuid:Ljava/util/UUID;
+  #168 = NameAndType        #184:#118     // randomUUID:()Ljava/util/UUID;
+  #169 = NameAndType        #185:#186     // fromString:(Ljava/lang/String;)Ljava/util/UUID;
+  #170 = NameAndType        #141:#142     // setUUIDObject:(Ljava/util/UUID;)V
+  #171 = NameAndType        #81:#82       // getId:()Ljava/lang/Long;
+  #172 = Utf8               de/xima/fc/entities/LDAPZugriff
+  #173 = Utf8               de/xima/fc/entities/AClientDependentEntity
+  #174 = Utf8               de/xima/fc/entities/interfaces/INameProviding
+  #175 = Utf8               de/xima/fc/entities/interfaces/IDescriptionProviding
+  #176 = Utf8               de/xima/fc/entities/interfaces/IUUIDEntity
+  #177 = Utf8               java/lang/Integer
+  #178 = Utf8               valueOf
+  #179 = Utf8               (I)Ljava/lang/Integer;
+  #180 = Utf8               id
+  #181 = Utf8               Ljava/lang/Long;
+  #182 = Utf8               java/util/UUID
+  #183 = Utf8               toString
+  #184 = Utf8               randomUUID
+  #185 = Utf8               fromString
+  #186 = Utf8               (Ljava/lang/String;)Ljava/util/UUID;
+{
+  public static final java.lang.String ATTR_PAGESIZE;
+    descriptor: Ljava/lang/String;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    ConstantValue: String pageSize
+
+  public static final java.lang.String ATTR_REFERRAL_HOPCOUNT;
+    descriptor: Ljava/lang/String;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    ConstantValue: String referralHopCount
+
+  public static final java.lang.String ATTR_USESSL;
+    descriptor: Ljava/lang/String;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    ConstantValue: String useSSL
+
+  public static final java.lang.String COL_UUID;
+    descriptor: Ljava/lang/String;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    ConstantValue: String uuid
+
+  private java.lang.String authName;
+    descriptor: Ljava/lang/String;
+    flags: (0x0002) ACC_PRIVATE
+    RuntimeVisibleAnnotations:
+      0: #37(#38=I#39)
+        javax.validation.constraints.Size(
+          max=150
+        )
+      1: #40(#41=Z#42)
+        de.xima.fc.annotations.ExportDetails(
+          encrypt=true
+        )
+    RuntimeVisibleTypeAnnotations:
+      0: #37(#38=I#39): FIELD
+        javax.validation.constraints.Size(
+          max=150
+        )
+
+  private java.lang.String authPassword;
+    descriptor: Ljava/lang/String;
+    flags: (0x0002) ACC_PRIVATE
+    RuntimeVisibleAnnotations:
+      0: #37(#38=I#45)
+        javax.validation.constraints.Size(
+          max=500
+        )
+      1: #40(#41=Z#42)
+        de.xima.fc.annotations.ExportDetails(
+          encrypt=true
+        )
+    RuntimeVisibleTypeAnnotations:
+      0: #37(#38=I#45): FIELD
+        javax.validation.constraints.Size(
+          max=500
+        )
+
+  private java.lang.String beschreibung;
+    descriptor: Ljava/lang/String;
+    flags: (0x0002) ACC_PRIVATE
+    RuntimeVisibleAnnotations:
+      0: #37(#38=I#47)
+        javax.validation.constraints.Size(
+          max=250
+        )
+    RuntimeVisibleTypeAnnotations:
+      0: #37(#38=I#47): FIELD
+        javax.validation.constraints.Size(
+          max=250
+        )
+
+  private java.lang.String host;
+    descriptor: Ljava/lang/String;
+    flags: (0x0002) ACC_PRIVATE
+    RuntimeVisibleAnnotations:
+      0: #37(#38=I#45)
+        javax.validation.constraints.Size(
+          max=500
+        )
+      1: #40(#41=Z#42)
+        de.xima.fc.annotations.ExportDetails(
+          encrypt=true
+        )
+    RuntimeVisibleTypeAnnotations:
+      0: #37(#38=I#45): FIELD
+        javax.validation.constraints.Size(
+          max=500
+        )
+
+  private java.lang.String name;
+    descriptor: Ljava/lang/String;
+    flags: (0x0002) ACC_PRIVATE
+    RuntimeVisibleAnnotations:
+      0: #37(#38=I#50)
+        javax.validation.constraints.Size(
+          max=50
+        )
+      1: #51()
+        javax.validation.constraints.NotEmpty
+    RuntimeVisibleTypeAnnotations:
+      0: #37(#38=I#50): FIELD
+        javax.validation.constraints.Size(
+          max=50
+        )
+      1: #51(): FIELD
+        javax.validation.constraints.NotEmpty
+
+  private java.lang.Integer pageSize;
+    descriptor: Ljava/lang/Integer;
+    flags: (0x0002) ACC_PRIVATE
+
+  private int port;
+    descriptor: I
+    flags: (0x0002) ACC_PRIVATE
+
+  private java.lang.Integer referralHopCount;
+    descriptor: Ljava/lang/Integer;
+    flags: (0x0002) ACC_PRIVATE
+
+  private boolean useSSL;
+    descriptor: Z
+    flags: (0x0002) ACC_PRIVATE
+
+  private java.util.UUID uuid;
+    descriptor: Ljava/util/UUID;
+    flags: (0x0002) ACC_PRIVATE
+
+  public de.xima.fc.entities.LDAPZugriff();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method de/xima/fc/entities/AClientDependentEntity."<init>":()V
+         4: aload_0
+         5: sipush        1000
+         8: invokestatic  #2                  // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        11: putfield      #3                  // Field pageSize:Ljava/lang/Integer;
+        14: aload_0
+        15: sipush        389
+        18: putfield      #4                  // Field port:I
+        21: aload_0
+        22: iconst_5
+        23: invokestatic  #2                  // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        26: putfield      #5                  // Field referralHopCount:Ljava/lang/Integer;
+        29: aload_0
+        30: iconst_0
+        31: putfield      #6                  // Field useSSL:Z
+        34: return
+      LineNumberTable:
+        line 22: 0
+        line 43: 4
+        line 45: 14
+        line 47: 21
+        line 49: 29
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      35     0  this   Lde/xima/fc/entities/LDAPZugriff;
+
+  public java.lang.String getAuthName();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #7                  // Field authName:Ljava/lang/String;
+         4: areturn
+      LineNumberTable:
+        line 58: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #70()
+        de.xima.fc.beans.ann.TransferAttribute
+      1: #71(#72=s#73)
+        org.hibernate.annotations.Type(
+          type="de.xima.fc.persistence.hibernate.FcEncryptedStringType"
+        )
+      2: #74(#49=s#75)
+        javax.persistence.Column(
+          name="auth_name"
+        )
+
+  public java.lang.String getAuthPassword();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #8                  // Field authPassword:Ljava/lang/String;
+         4: areturn
+      LineNumberTable:
+        line 66: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #70()
+        de.xima.fc.beans.ann.TransferAttribute
+      1: #71(#72=s#73)
+        org.hibernate.annotations.Type(
+          type="de.xima.fc.persistence.hibernate.FcEncryptedStringType"
+        )
+      2: #74(#49=s#77)
+        javax.persistence.Column(
+          name="auth_password"
+        )
+
+  public java.lang.String getBeschreibung();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #9                  // Field beschreibung:Ljava/lang/String;
+         4: areturn
+      LineNumberTable:
+        line 73: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #74(#49=s#79)
+        javax.persistence.Column(
+          name="description"
+        )
+
+  public java.lang.String getHost();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #10                 // Field host:Ljava/lang/String;
+         4: areturn
+      LineNumberTable:
+        line 79: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #71(#72=s#73)
+        org.hibernate.annotations.Type(
+          type="de.xima.fc.persistence.hibernate.FcEncryptedStringType"
+        )
+
+  public java.lang.Long getId();
+    descriptor: ()Ljava/lang/Long;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #11                 // Field id:Ljava/lang/Long;
+         4: areturn
+      LineNumberTable:
+        line 93: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #83(#49=s#84,#85=s#86,#87=s#88,#89=s#90,#91=s#92)
+        javax.persistence.TableGenerator(
+          name="fc_pk_gen_ldapaccess"
+          table="fc_keys"
+          pkColumnName="gen_name"
+          valueColumnName="gen_val"
+          pkColumnValue="connection_ldap"
+        )
+      1: #93(#94=s#84,#95=e#96.#97)
+        javax.persistence.GeneratedValue(
+          generator="fc_pk_gen_ldapaccess"
+          strategy=Ljavax/persistence/GenerationType;.TABLE
+        )
+      2: #98()
+        javax.persistence.Id
+      3: #70(#99=Z#100)
+        de.xima.fc.beans.ann.TransferAttribute(
+          incoming=false
+        )
+
+  public java.lang.String getName();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #12                 // Field name:Ljava/lang/String;
+         4: areturn
+      LineNumberTable:
+        line 100: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #74(#49=s#49)
+        javax.persistence.Column(
+          name="name"
+        )
+
+  public java.lang.Integer getPageSize();
+    descriptor: ()Ljava/lang/Integer;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #3                  // Field pageSize:Ljava/lang/Integer;
+         4: areturn
+      LineNumberTable:
+        line 106: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #74(#49=s#104)
+        javax.persistence.Column(
+          name="pagesize"
+        )
+
+  public int getPort();
+    descriptor: ()I
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #4                  // Field port:I
+         4: ireturn
+      LineNumberTable:
+        line 114: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #71(#72=s#107,#108=[@#109(#49=s#110,#111=s#112)])
+        org.hibernate.annotations.Type(
+          type="de.xima.fc.persistence.hibernate.FcEncryptedIntegerType"
+          parameters=[@org.hibernate.annotations.Parameter(
+            name="defaultValue"
+            value="389"
+          )]
+        )
+
+  public java.lang.Integer getReferralHopCount();
+    descriptor: ()Ljava/lang/Integer;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #5                  // Field referralHopCount:Ljava/lang/Integer;
+         4: areturn
+      LineNumberTable:
+        line 120: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #74(#49=s#114)
+        javax.persistence.Column(
+          name="hopcount"
+        )
+
+  public java.lang.String getUUID();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokevirtual #13                 // Method getUUIDObject:()Ljava/util/UUID;
+         4: invokevirtual #14                 // Method java/util/UUID.toString:()Ljava/lang/String;
+         7: areturn
+      LineNumberTable:
+        line 126: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       8     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #116()
+        javax.persistence.Transient
+
+  public java.util.UUID getUUIDObject();
+    descriptor: ()Ljava/util/UUID;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #15                 // Field uuid:Ljava/util/UUID;
+         4: ifnonnull     14
+         7: aload_0
+         8: invokestatic  #16                 // Method java/util/UUID.randomUUID:()Ljava/util/UUID;
+        11: putfield      #15                 // Field uuid:Ljava/util/UUID;
+        14: aload_0
+        15: getfield      #15                 // Field uuid:Ljava/util/UUID;
+        18: areturn
+      LineNumberTable:
+        line 133: 0
+        line 134: 7
+        line 136: 14
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      19     0  this   Lde/xima/fc/entities/LDAPZugriff;
+      StackMapTable: number_of_entries = 1
+        frame_type = 14 /* same */
+    RuntimeVisibleAnnotations:
+      0: #74(#49=s#59,#120=Z#100,#121=I#122)
+        javax.persistence.Column(
+          name="uuid"
+          nullable=false
+          length=36
+        )
+      1: #71(#72=s#123)
+        org.hibernate.annotations.Type(
+          type="de.xima.fc.type.NullSafeUUID"
+        )
+
+  public boolean isUseSSL();
+    descriptor: ()Z
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #6                  // Field useSSL:Z
+         4: ireturn
+      LineNumberTable:
+        line 142: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #74(#49=s#126)
+        javax.persistence.Column(
+          name="use_ssl"
+        )
+
+  public void setAuthName(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #7                  // Field authName:Ljava/lang/String;
+         5: return
+      LineNumberTable:
+        line 147: 0
+        line 148: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1 authName   Ljava/lang/String;
+
+  public void setAuthPassword(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #8                  // Field authPassword:Ljava/lang/String;
+         5: return
+      LineNumberTable:
+        line 152: 0
+        line 153: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1 authPassword   Ljava/lang/String;
+
+  public void setBeschreibung(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #9                  // Field beschreibung:Ljava/lang/String;
+         5: return
+      LineNumberTable:
+        line 157: 0
+        line 158: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1 beschreibung   Ljava/lang/String;
+
+  public void setHost(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #10                 // Field host:Ljava/lang/String;
+         5: return
+      LineNumberTable:
+        line 162: 0
+        line 163: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1  host   Ljava/lang/String;
+
+  public void setName(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #12                 // Field name:Ljava/lang/String;
+         5: return
+      LineNumberTable:
+        line 167: 0
+        line 168: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1  name   Ljava/lang/String;
+
+  public void setPageSize(java.lang.Integer);
+    descriptor: (Ljava/lang/Integer;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #3                  // Field pageSize:Ljava/lang/Integer;
+         5: return
+      LineNumberTable:
+        line 172: 0
+        line 173: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1 pageSize   Ljava/lang/Integer;
+
+  public void setPort(int);
+    descriptor: (I)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: iload_1
+         2: putfield      #4                  // Field port:I
+         5: return
+      LineNumberTable:
+        line 177: 0
+        line 178: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1  port   I
+
+  public void setReferralHopCount(java.lang.Integer);
+    descriptor: (Ljava/lang/Integer;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #5                  // Field referralHopCount:Ljava/lang/Integer;
+         5: return
+      LineNumberTable:
+        line 182: 0
+        line 183: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1 referralHopCount   Ljava/lang/Integer;
+
+  public void setUseSSL(boolean);
+    descriptor: (Z)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: iload_1
+         2: putfield      #6                  // Field useSSL:Z
+         5: return
+      LineNumberTable:
+        line 187: 0
+        line 188: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1 useSSL   Z
+
+  public void setUUID(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: invokestatic  #17                 // Method java/util/UUID.fromString:(Ljava/lang/String;)Ljava/util/UUID;
+         5: invokevirtual #18                 // Method setUUIDObject:(Ljava/util/UUID;)V
+         8: return
+      LineNumberTable:
+        line 192: 0
+        line 193: 8
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       9     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       9     1  uuid   Ljava/lang/String;
+
+  public void setUUIDObject(java.util.UUID);
+    descriptor: (Ljava/util/UUID;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #15                 // Field uuid:Ljava/util/UUID;
+         5: return
+      LineNumberTable:
+        line 197: 0
+        line 198: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lde/xima/fc/entities/LDAPZugriff;
+            0       6     1  uuid   Ljava/util/UUID;
+
+  public java.io.Serializable getId();
+    descriptor: ()Ljava/io/Serializable;
+    flags: (0x1041) ACC_PUBLIC, ACC_BRIDGE, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokevirtual #19                 // Method getId:()Ljava/lang/Long;
+         4: areturn
+      LineNumberTable:
+        line 18: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lde/xima/fc/entities/LDAPZugriff;
+    RuntimeVisibleAnnotations:
+      0: #83(#49=s#84,#85=s#86,#87=s#88,#89=s#90,#91=s#92)
+        javax.persistence.TableGenerator(
+          name="fc_pk_gen_ldapaccess"
+          table="fc_keys"
+          pkColumnName="gen_name"
+          valueColumnName="gen_val"
+          pkColumnValue="connection_ldap"
+        )
+      1: #93(#94=s#84,#95=e#96.#97)
+        javax.persistence.GeneratedValue(
+          generator="fc_pk_gen_ldapaccess"
+          strategy=Ljavax/persistence/GenerationType;.TABLE
+        )
+      2: #98()
+        javax.persistence.Id
+      3: #70(#99=Z#100)
+        de.xima.fc.beans.ann.TransferAttribute(
+          incoming=false
+        )
+}
+SourceFile: "LDAPZugriff.java"
+RuntimeVisibleAnnotations:
+  0: #146(#49=s#92)
+    javax.persistence.Table(
+      name="connection_ldap"
+    )
+  1: #147()
+    javax.persistence.Entity
+  2: #148(#149=I#150)
+    org.hibernate.annotations.BatchSize(
+      size=10
+    )

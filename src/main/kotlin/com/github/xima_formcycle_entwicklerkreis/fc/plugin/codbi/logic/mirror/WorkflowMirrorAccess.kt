@@ -326,6 +326,7 @@ object WorkflowMirrorAccess {
           pathName = pathName,
           triggerType = triggerType,
           roots = rootsBuilt,
+          sourceFormKey = formKey?.trim().orEmpty(),
           revision = signature,
           sourceStatesByUuid = statesByName,
           sourceStatesExternalAccess = statesExternalAccess)
@@ -661,11 +662,14 @@ object WorkflowMirrorAccess {
         ?.let {
           return it
         }
+    // Fallback to the newest version. Navigate FROM the Projekt entity via its `workflowVersions`
+    // collection (stable across FORMCYCLE versions) rather than filtering `WorkflowVersion` on a
+    // `project` attribute — `WorkflowVersion.project` does not exist on 8.5.3.
     val versionRows =
         query(
             em,
-            "SELECT wv.id FROM de.xima.fc.entities.WorkflowVersion wv " +
-                "WHERE wv.project.id = :pid ORDER BY wv.versionNumber DESC",
+            "SELECT wv.id FROM de.xima.fc.entities.Projekt p " +
+                "JOIN p.workflowVersions wv WHERE p.id = :pid ORDER BY wv.versionNumber DESC",
             mapOf("pid" to projectId))
     return (versionRows.firstOrNull() as? Number)?.toLong()?.takeIf { it > 0L }
   }
@@ -783,7 +787,20 @@ object WorkflowMirrorAccess {
       @Suppress("UNCHECKED_CAST")
       (query.javaClass.getMethod("getResultList").invoke(query) as? List<*>) ?: emptyList<Any>()
     } catch (x: Exception) {
-      logger.warn("[WorkflowMirrorAccess] query failed: {}", x.message)
+      // Reflection `invoke` wraps the real error in an InvocationTargetException whose message is
+      // null -- that null leaves "query failed: null" in the log and hides the actual cause. Unwrap
+      // it so the real (e.g. QuerySyntaxException) message is visible.
+      val actual =
+          when (x) {
+            is java.lang.reflect.InvocationTargetException -> x.targetException
+            else -> x
+          } ?: x
+      logger.warn(
+          "[WorkflowMirrorAccess] query failed ({}): {} | jpql={}",
+          actual.javaClass.simpleName,
+          actual.message ?: actual.toString(),
+          jpql.replace('\n', ' '))
+      logger.debug("[WorkflowMirrorAccess] query failed stacktrace", actual)
       emptyList<Any>()
     }
   }

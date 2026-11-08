@@ -99,24 +99,40 @@ class MirrorServletAction : IPluginServletAction {
         }
         "applytriggerpaths" -> {
           // Opt-in: create/update the triggered paths in the reflecting form and remove the ones
-          // whose trigger disappeared. Only tasks carrying the Mirror marker are ever touched.
+          // whose trigger disappeared. Only tasks carrying the Mirror marker are ever touched. The
+          // widget sends the paths it already owns (its internal reference) so a path it created
+          // before is reused + reconciled instead of duplicated.
           val formKey = params.requestParameters["form"]?.firstOrNull()?.trim().orEmpty()
           val element = params.requestParameters["element"]?.firstOrNull()?.trim().orEmpty()
           val elementKey = params.requestParameters["element_key"]?.firstOrNull()?.trim()
           val target = params.requestParameters["target"]?.firstOrNull()?.trim().orEmpty()
           val prefix = params.requestParameters["prefix"]?.firstOrNull()?.trim()
-          val note =
+          val owned = params.requestParameters["owned"]?.firstOrNull()?.trim()
+          val result =
               MirrorTriggerPaths.syncTriggeredPaths(
-                  userContext, formKey, element, elementKey, target, prefix)
+                  userContext, formKey, element, elementKey, target, prefix, owned)
           logger.debug(
-              "[MirrorServletAction] action='applytriggerpaths' form='{}' -> '{}' target='{}': {}",
+              "[MirrorServletAction] action='applytriggerpaths' form='{}' -> '{}' target='{}': {} " +
+                  "owned={}",
               formKey,
               element,
               target,
-              note)
+              result.note,
+              result.owned.map { it.taskId })
+          // The authoritative owned references come back so the widget can persist them and reuse
+          // the same tasks on the next sync.
+          val ownedArray = JSONArray()
+          for (ref in result.owned) {
+            val obj = JSONObject()
+            obj["taskId"] = ref.taskId
+            obj["source"] = ref.source
+            obj["sourceTask"] = ref.sourceTask
+            ownedArray.add(obj)
+          }
           val body = JSONObject()
           body["status"] = "ok"
-          body["note"] = note
+          body["note"] = result.note
+          body["owned"] = ownedArray
           jsonResponse(body.toJSONString())
         }
         "sync" -> {

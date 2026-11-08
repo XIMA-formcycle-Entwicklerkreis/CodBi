@@ -43,5 +43,6 @@
   { "file": "codbi-fallback-apply.md", "key": "codbi.fallback_apply" },
   { "file": "codbi-fallback-workflow.md", "key": "codbi.fallback_workflow" },
   { "file": "codbi-canonical-output-rules.md", "key": "codbi.canonical_output_rules" },
+  { "file": "codbi-codbi-disabled.md", "key": "codbi.codbi_disabled" },
   { "file": "codbi-translation-delta-instruction.md", "key": "codbi.translation_delta_instruction" }
 ]

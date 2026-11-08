@@ -552,6 +552,13 @@ interface ClarificationQuestion {
   allowFreeText?: boolean;
   /** True when the user may pick MORE THAN ONE option (checkboxes); false = exactly one (radio). */
   multiSelect?: boolean;
+  /**
+   * The EXACT text of the option that means "turn the CodBi switch on and repeat the request with
+   * the functionalities available". Declared by the AI for a question asked while the switch is
+   * OFF, so picking that option can switch CodBi on and re-run the inference with the functionality
+   * catalog — without matching the user's wording in any language.
+   */
+  codbiOption?: string;
 }
 
 /** One answered clarification round (used for the change log and the re-run conversation). */
@@ -645,6 +652,11 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  sent to the AI at all. Defaults to ON. When OFF, the AI only receives Formcycle widgets and
    *  workflow nodes, and no CodBi is applied in any pass. */
   useCodbi = true;
+  /** Set when the user's clarification answer picked the option the AI marked as "activate the
+   *  CodBi functions". The NEXT run then sends `codbiActivated=true`, so the backend executes the
+   *  approved request instead of opening another clarify round (which produced useless follow-up
+   *  questions). Cleared as soon as that run is dispatched. */
+  private codbiActivatedForNextRun = false;
   /** Reasoning-effort override for the next run (footer dropdown placed directly BEFORE the CodBi
    *  switch). "default" = use the configured plugin property; any other value overrides BOTH the
    *  per-specialist (AI_Assistant_ReasoningEffort_<name>) and the global
@@ -3266,6 +3278,12 @@ export class AiAssistant implements OnInit, OnDestroy {
       },
     ];
     this.clarificationHistory.push(...turns);
+    // CODBI: picking the option the AI marked as "activate the CodBi functions" switches the CodBi
+    // switch ON (and persists it) BEFORE the re-run, so the re-run carries the functionality
+    // catalog and the requested capability is actually applied — instead of only the plain field
+    // being built with a hint. The marker is AI-declared (`codbiOption`), so no language or wording
+    // matching is involved.
+    this.applyClarificationCodbiChoice();
     const file = this.clarificationFile;
     this.clarificationVisible = false;
     setTimeout(() => this.removeOverlayMask(".cb-ai-clarification-mask"), 0);
@@ -3283,6 +3301,35 @@ export class AiAssistant implements OnInit, OnDestroy {
       }
       this.runPhase2(ctx.prompt, ctx.modelId, ctx.intent, [...ctx.imageParams, ...extra], ctx.chatOptions);
     })();
+  }
+
+  /**
+   * Switches the CodBi switch ON when the user picked the option the AI marked as the CodBi choice
+   * (`codbiOption`) in ANY of the pending questions.
+   *
+   * The option text is compared whitespace-normalized and case-insensitively, but it is the AI's
+   * OWN option text — never the user's wording — so the check is language-agnostic by construction.
+   * Nothing happens when CodBi is already on, when no question carries the marker, or when the user
+   * answered differently (free text): then the run continues exactly as before.
+   */
+  private applyClarificationCodbiChoice(): void {
+    if (this.useCodbi) return;
+    const normalize = (s: string | undefined): string =>
+      String(s ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLocaleLowerCase();
+    const activates = this.pendingClarification.some((q) => {
+      const marked = normalize(q.codbiOption);
+      if (!marked) return false;
+      return (this.clarificationOption[q.id] ?? []).some((o) => normalize(o) === marked);
+    });
+    if (!activates) return;
+    this.onUseCodbiChange(true);
+    // Tell the backend that THIS run is the user's approved build, so it does not open another
+    // clarify round (the answers already settle how to proceed).
+    this.codbiActivatedForNextRun = true;
+    this.cdr.markForCheck();
   }
 
   /** Ctrl+Enter in the clarification textarea submits the answers. */
@@ -4491,6 +4538,11 @@ export class AiAssistant implements OnInit, OnDestroy {
       intent,
       useCodbi: String(this.useCodbi),
       askAllQuestions: String(this.askAllQuestions),
+      // ONE-SHOT: the previous clarification answer was the option the AI marked as "activate the
+      // CodBi functions". This run is therefore the user's APPROVED build — the backend executes it
+      // instead of opening another clarify round (which used to ask useless follow-ups such as the
+      // field title or the text of a message placeholder).
+      ...(this.codbiActivatedForNextRun ? { codbiActivated: "true" } : {}),
       useBuergerserviceNaming: String(this.useBuergerserviceNaming),
       // Per-request reasoning budget (the footer dropdown); "default" = use the configured property.
       reasoningEffort: this.reasoningEffort,
@@ -4498,6 +4550,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       // "earlier chat turns" context label) to match the UI.
       lang: (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage ?? "",
     };
+    // Consume the one-shot go-ahead flag: every later run behaves normally again.
+    this.codbiActivatedForNextRun = false;
     // The checked Formcycle elements (widgets / nodes / triggers) that may be transmitted to the
     // AI, when the user has configured them via the element picker.
     this.appendAllowedElements(data);
@@ -4662,6 +4716,9 @@ export class AiAssistant implements OnInit, OnDestroy {
               options: Array.isArray(q["options"]) ? (q["options"] as string[]).map(String) : [],
               allowFreeText: q["allowFreeText"] !== false,
               multiSelect: q["multiSelect"] === true,
+              ...(typeof q["codbiOption"] === "string" && String(q["codbiOption"]).trim()
+                ? { codbiOption: String(q["codbiOption"]) }
+                : {}),
             })),
           );
           return;

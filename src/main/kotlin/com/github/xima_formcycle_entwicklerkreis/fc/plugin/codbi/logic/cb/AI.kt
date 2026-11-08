@@ -76,6 +76,27 @@ abstract class AI : CodBi(), IPluginServletAction {
     @Volatile @JvmStatic var matomoApiKey: String? = null
 
     /**
+     * LDAP request URL that the CodBi LDAP functionalities use when their own `URL` parameter is
+     * empty. Configured via the plugin property `LDAP_URL` (frontend domain) — see also
+     * [ldapUrlBackend]; the form runtime resolves whichever of the two matches the browser's domain
+     * (`resolveLdapUrl()` in `global-scope.ts`).
+     */
+    @Volatile @JvmStatic var ldapUrl: String? = null
+
+    /**
+     * Backend-domain variant of [ldapUrl]. Configured via the plugin property `LDAP_URL_BACKEND`.
+     */
+    @Volatile @JvmStatic var ldapUrlBackend: String? = null
+
+    /**
+     * True when at least one LDAP request URL is configured for this installation. The LDAP
+     * functionalities then resolve it themselves, so their `URL` parameter may be omitted and must
+     * NEVER be asked for; when this is false the `URL` parameter is a value only the user can give.
+     */
+    @JvmStatic
+    fun isLdapUrlConfigured(): Boolean = !ldapUrl.isNullOrBlank() || !ldapUrlBackend.isNullOrBlank()
+
+    /**
      * Shared semaphore that limits concurrent **local** AI inferences across all modules (LLAMA,
      * Tesseract, Whisper). Configured via `AI_LLAMA_ENGINE_MaxConcurrent` (default 2).
      */

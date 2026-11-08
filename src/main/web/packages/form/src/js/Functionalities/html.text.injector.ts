@@ -41,7 +41,7 @@ export class HTML_Text_Injector {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
-  @SupportedFormelementtype(["XTextField", "XTextArea"])
+  @SupportedFormelementtype(["XTextField", "XTextArea", "XSpan"])
   @ParameterTypes({
     Placeholder: {
       type: "string",

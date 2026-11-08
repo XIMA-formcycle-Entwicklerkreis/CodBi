@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
@@ -36,10 +37,20 @@ object MirrorPushService {
    */
   fun pushForSourceProject(userContext: Any?, sourceProjectId: Long): String {
     if (sourceProjectId <= 0L) return "SKIPPED:no-project"
+    // 1. The opt-in "triggered paths" FIRST: saving the source form can add a BUTTON together with
+    // a
+    //    new workflow path, and the reflecting form must receive that path even though it is never
+    //    opened in the designer (its live Mirror renders the button and registers the namespaced
+    //    key, so the path is all that is missing for the click to run).
+    val triggered =
+        MirrorTriggerPaths.ensureTriggeredPathsForSourceProject(userContext, sourceProjectId)
+    // 2. Then the lanes of the paths that already exist.
     val reflectors = collectReflectors(userContext, sourceProjectId)
     if (reflectors.isEmpty()) {
       logger.debug(
-          "[CodBi][Mirror] source-push: no Mirror node mirrors project {}", sourceProjectId)
+          "[CodBi][Mirror] source-push: no Mirror node mirrors project {} (triggered paths: {})",
+          sourceProjectId,
+          triggered)
       return "SKIPPED:no-reflectors"
     }
     val bySource =
@@ -57,7 +68,7 @@ object MirrorPushService {
     }
     val summary = notes.joinToString(" | ")
     logger.debug("[CodBi][Mirror] source-push for project {}: {}", sourceProjectId, summary)
-    return summary
+    return if (triggered.startsWith("SKIPPED")) summary else "$summary | triggered: $triggered"
   }
 
   /**
@@ -159,6 +170,19 @@ object MirrorPushService {
         if (note.startsWith("PUSHED")) pushed++
       }
     }
+    // Safety net for a source change the designer's save hook never saw (e.g. a change made by the
+    // AI assistant, or by another node of a cluster): also make sure the opt-in triggered paths of
+    // every reflecting form exist. Throttled, so the periodic pass stays cheap.
+    val sourceProjects =
+        discovered.mapNotNull { MirrorFormAccess.projectIdOf(it.sourceFormKey) }.distinct()
+    for (sourceProjectId in sourceProjects) {
+      val note = ensureTriggeredPathsThrottled(userContext, sourceProjectId)
+      if (note != "THROTTLED" && !note.startsWith("SKIPPED")) {
+        logger.debug(
+            "[CodBi][Mirror] auto-sync: triggered paths for project {}: {}", sourceProjectId, note)
+      }
+    }
+
     if (notes.isEmpty()) {
       logger.debug("[CodBi][Mirror] auto-sync: nothing to do ({} lane(s) checked)", checked)
       return "IN_SYNC:checked=$checked"
@@ -204,6 +228,31 @@ object MirrorPushService {
       }
     }
     return "PUSHED:$pushed/${reflectors.size} reflectors (revision $revision)"
+  }
+
+  /**
+   * Last watcher-driven triggered-path pass per source project (keeps the polling cost bounded).
+   */
+  private val lastTriggeredEnsure = ConcurrentHashMap<Long, Long>()
+
+  /**
+   * Minimum interval between two watcher-driven triggered-path passes of the same source project.
+   */
+  private const val TRIGGERED_ENSURE_INTERVAL_MS = 120_000L
+
+  /**
+   * Watcher-side guard around [MirrorTriggerPaths.ensureTriggeredPathsForSourceProject]: refreshes
+   * a source project at most every [TRIGGERED_ENSURE_INTERVAL_MS]. The SOURCE-SAVE hook calls the
+   * sync directly (not throttled); this only keeps the periodic pass cheap.
+   */
+  private fun ensureTriggeredPathsThrottled(userContext: Any?, sourceProjectId: Long): String {
+    if (sourceProjectId <= 0L) return "SKIPPED:invalid-source"
+    val now = System.currentTimeMillis()
+    val last = lastTriggeredEnsure[sourceProjectId]
+    if (last != null && now - last < TRIGGERED_ENSURE_INTERVAL_MS) return "THROTTLED"
+    if (lastTriggeredEnsure.size > 512) lastTriggeredEnsure.clear()
+    lastTriggeredEnsure[sourceProjectId] = now
+    return MirrorTriggerPaths.ensureTriggeredPathsForSourceProject(userContext, sourceProjectId)
   }
 
   /**

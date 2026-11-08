@@ -10,7 +10,6 @@ import { OR } from "xdbc/src/DBC/OR";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { UNDEFINED } from "xdbc/src/DBC/UNDEFINED";
 // #endregion XDBC
-import { CodBiError } from "../global-scope";
 import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
 /**
@@ -106,6 +105,9 @@ export class HTML_Panel {
    *  - Folded:                           States whether this panel is folded (TRUE) or unfolded (everything else) when
    *                                      it is loaded (defaults to TRUE).
    *  - CSSHeaderHover:                   The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
+   *  - CSSHeaderFoldedHover:             The optional header's CSS:hover to be applied instead of `CSSHeaderHover`
+   *                                      while the panel is FOLDED. This overrides the generic hover style when the
+   *                                      panel has been collapsed, and falls back to `CSSHeaderHover` otherwise.
    *  - CSSHeaderActive:                  The optional header's CSS:active (defaults to { scale : .9 ;}).
    *  - CSSHeaderUnfolded:                The optional CSS to be applied onto the header when the panel is unfolded.
    *  - CSSHeaderFolded:                  The optional CSS to be applied onto the header when the panel is FOLDED —
@@ -162,13 +164,18 @@ export class HTML_Panel {
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    *
-   * @throws  A {@link CodBiError } if the tagged {@link Element } does not contain
-   *          a child of CSS-Class "CodBi_HTML_Panel_Header".*/
+   * A panel WITHOUT a `.CodBi_HTML_Panel_Header` child never fails: the header is generated (titled
+   * from `autoheadertitle`, else from the fieldset's `legend`). */
   @DBC.ParamvalueProvider
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
     Folded: { type: "boolean", default: "true" },
     CSSHeaderHover: { type: "string", default: "The optional header's CSS:hover (defaults to { scale : 1.1 ;})." },
+    CSSHeaderFoldedHover: {
+      type: "string",
+      default:
+        "The optional header's CSS:hover to be applied instead of CSSHeaderHover while the panel is FOLDED. Overrides the generic hover style when the panel has been collapsed; falls back to CSSHeaderHover otherwise.",
+    },
     CSSHeaderActive: { type: "string", default: "The optional header's CSS:active (defaults to { scale : .9 ;})." },
     CSSHeaderFolded: {
       type: "string",
@@ -255,7 +262,7 @@ export class HTML_Panel {
   public static functionality(
     @TYPE.PRE("string", "autoheadertitle :: autoheadertitlesupplementsspacer :: scrollblock")
     @TYPE.PRE("string | boolean", "folded :: generateheader :: scroll :: scrolltotop")
-    @TYPE.PRE("string", "cssheaderfolded")
+    @TYPE.PRE("string", "cssheaderfolded :: cssheaderfoldedhover")
     @TYPE.PRE("string | number", "autoheaderlevel")
     @OR.PRE(
       [new EQ("start"), new EQ("center"), new EQ("end"), new EQ("nearest"), new UNDEFINED()],
@@ -278,11 +285,32 @@ export class HTML_Panel {
 
     let header: HTMLElement | null;
 
-    if (
-      toLoad.generateheader &&
-      toProcess.children.length > 0 &&
-      (toLoad.generateheader as string).toLocaleLowerCase() === "true"
-    ) {
+    // — A `generateheader` flag (string "true"/"TRUE"/" true", or the boolean TRUE) generates the
+    //   header even when the panel is EMPTY. The former extra condition
+    //   `toProcess.children.length > 0` skipped the generation for a container without children,
+    //   which then fell through to the querySelector below, found no `.CodBi_HTML_Panel_Header`
+    //   (nothing had been generated) and threw "contains no HTML-Element tagged with
+    //   CSS-CodBi_HTML_Panel_Header" — an empty panel (e.g. a freshly created accordion member that
+    //   is filled later) could therefore never be built, and since the throw happens before the panel
+    //   registers itself, such a panel also never joined its accordion set.
+    // — FALLBACK: no header child exists yet, but a title IS given (autoheadertitle) → generate the
+    //   header as well instead of throwing. A panel that carries its own
+    //   `.CodBi_HTML_Panel_Header` child is never overridden.
+    const generateHeaderFlag =
+      toLoad.generateheader === true ||
+      String(toLoad.generateheader ?? "")
+        .trim()
+        .toLowerCase() === "true";
+    const hasHeaderChild = toProcess.querySelector(".CodBi_HTML_Panel_Header") !== null;
+    const autoTitle = typeof toLoad.autoheadertitle === "string" ? toLoad.autoheadertitle.trim() : "";
+    const generateHeader = generateHeaderFlag || (!hasHeaderChild && autoTitle !== "");
+
+    if (generateHeader) {
+      if (!generateHeaderFlag) {
+        console.warn(
+          `[CodBi] HTML.Panel on "${toProcess.getAttribute("data-name") ?? "?"}": no CodBi_HTML_Panel_Header child and generateheader is not set — generating the header from autoheadertitle instead of failing.`,
+        );
+      }
       // #region Normalize [ toLoad.scroll ].
       if (toLoad.scroll === undefined) {
         toLoad.scroll = false;
@@ -368,10 +396,28 @@ export class HTML_Panel {
     }
 
     if (header === null) {
-      throw new CodBiError(
-        `Tagged <div> or <fieldset> "${toProcess.getAttribute("data-name")}" contains no HTML-Element tagged with CSS-"CodBi_HTML_Panel_Header".`,
+      // LAST RESORT — never fail: a panel without a header element is unusable (it can never be
+      // folded/unfolded and it never joins its accordion set), and an exception here also aborts the
+      // remaining initialisation. Generate the header instead, titled from `autoheadertitle`, else
+      // from the fieldset's `legend`, else left empty.
+      const legendTitle = toProcess.querySelector("legend")?.innerHTML ?? "";
+      const fallbackTitle = autoTitle !== "" ? autoTitle : legendTitle;
+      // biome-ignore lint/suspicious/noConsole: a silent fallback would hide a mis-wired panel.
+      console.warn(
+        `[CodBi] HTML.Panel on "${toProcess.getAttribute("data-name") ?? "?"}": no CodBi_HTML_Panel_Header child found — generating one (title: "${fallbackTitle}").`,
       );
-    } else {
+      const wrpFallback = document.createElement("div");
+      wrpFallback.classList.add("cHeader");
+      header = document.createElement("div");
+      header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel as string}>` : ""}${fallbackTitle}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel as string}>` : ""}`;
+      if (toLoad.autoheadercss) {
+        header.setAttribute("style", toLoad.autoheadercss as string);
+      }
+      header.classList.add("CodBi_HTML_Panel_Header");
+      wrpFallback.appendChild(header);
+      toProcess.insertBefore(wrpFallback, toProcess.firstChild);
+    }
+    {
       (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Header = header;
 
       toProcess.classList.add("--HTML_Panel");
@@ -418,6 +464,7 @@ export class HTML_Panel {
         }
         header?.remove();
         (toProcess as HTMLElement).parentElement?.appendChild(header);
+        header?.classList.add("CodBi_HTML_Panel_Folded");
       } else {
         if (toLoad.cssheaderunfolded) {
           header?.setAttribute("style", toLoad.cssheaderunfolded as string);
@@ -472,6 +519,12 @@ export class HTML_Panel {
       .XFieldSetWrapper:has( #${parentID}) .CodBi_HTML_Panel_Header:hover > * { ${toLoad.cssheaderhover ? "" : "margin-left: 5% ; transition: .5s all ;"}}
       #${parentID} .CodBi_HTML_Panel_Header:active,
       .XFieldSetWrapper:has( #${parentID}) .CodBi_HTML_Panel_Header:active    { ${toLoad.cssheaderactive ? toLoad.cssheaderactive : "scale : .9 ;"}}
+
+      // The FOLDED header is a general sibling of the panel (moved to the panel's parent on folding),
+      // so — unlike "CSSHeaderHover" — it cannot be anchored on id-"parentID". Instead the header is
+      // tagged with the "CodBi_HTML_Panel_Folded"-class while folded (see fold/unfold handlers); this
+      // class-based :hover rule therefore applies reliably regardless of ids or DOM nesting.
+      .CodBi_HTML_Panel_Header.CodBi_HTML_Panel_Folded:hover { ${toLoad.cssheaderfoldedhover ? toLoad.cssheaderfoldedhover : "color: darkorange ;"} }
 
       ${
         toLoad.cssanimfadeinpanel
@@ -531,6 +584,8 @@ export class HTML_Panel {
           } else {
             (toProcess as HTMLElement).insertBefore(header, headerAfterElement);
           }
+
+          header.classList.remove("CodBi_HTML_Panel_Folded");
 
           if (toLoad.cssafterheadercontentunfolded || toLoad.cssafterheaderunfolded) {
             header.parentElement?.insertBefore(styleAfterUnfolded, header);
@@ -598,6 +653,7 @@ export class HTML_Panel {
             header.setAttribute("style", styHeader);
           }
           (toProcess as HTMLElement).parentElement?.appendChild(header);
+          header.classList.add("CodBi_HTML_Panel_Folded");
 
           if (toLoad.cssafterheadercontentunfolded || toLoad.cssafterheaderunfolded) {
             styleAfterUnfolded.remove();

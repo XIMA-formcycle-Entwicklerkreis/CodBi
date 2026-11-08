@@ -3,13 +3,16 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 import com.alibaba.fastjson.JSON
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.hp.gagawa.java.FertileNode
 import com.hp.gagawa.java.Node
 import com.hp.gagawa.java.elements.Div
 import de.xima.fc.form.common.items.XItem
 import de.xima.fc.form.common.models.IXFormRenderConfig
 import de.xima.fc.form.common.models.IXFormRenderContext
+import de.xima.fc.form.common.models.XButtonDescriptor
 import de.xima.fc.form.common.models.XForm
+import de.xima.fc.form.common.models.XItemRenderCtx
 import org.slf4j.LoggerFactory
 
 /**
@@ -56,6 +59,13 @@ object MirrorFormAccess {
 
   /** Technical form-key prefix used across the plugin (mirrors the assistant's `project-<id>`). */
   private const val PROJECT_KEY_PREFIX = "project-"
+
+  /**
+   * Property the form designer stamps on every item the Mirror materialized (its value is the
+   * Mirror item's id). Kept in sync with `MIRROR_OWNER_PROPERTY` in the designer module
+   * (`MirrorChildItems.ts`), which is what writes it.
+   */
+  const val MIRRORED_CHILD_OWNER_PROPERTY = "codbi_mirror_owner"
 
   /** Builds the technical key used to reference a form by its project id. */
   fun formKey(projectId: Long): String = PROJECT_KEY_PREFIX + projectId
@@ -919,7 +929,8 @@ object MirrorFormAccess {
       formName: String? = null,
       elementKey: String? = null,
       validationModel: JSONObject? = null,
-      namePrefix: String? = null
+      namePrefix: String? = null,
+      submitButtonTarget: XItemRenderCtx? = null
   ): Div? {
     if (renderConfig == null || renderContext == null) return null
     val json = loadFormJson(userContext, formKey, formName) ?: return null
@@ -956,10 +967,60 @@ object MirrorFormAccess {
             HashSet(),
             validationModel)
       }
+      registerMirroredSubmitButtons(form, namePrefix, submitButtonTarget, renderContext)
       node
     } catch (x: Exception) {
       logger.warn("[MirrorFormAccess] renderElementNode failed: {}", x.message)
       null
+    }
+  }
+
+  /**
+   * Registers the SUBMIT BUTTONS of the mirrored subtree in FORMCYCLE's form-request session map.
+   *
+   * FORMCYCLE accepts a submit only when the submitted key (`buttonListName` + `buttonName`) is in
+   * the map the renderer built while rendering the form (`XItemRenderCtx.storeSubmitButton` →
+   * `xfc-pp-buttonmap`, read back by `FormProcessUtil.decodeSubmittedXfAction`). Otherwise the
+   * click is rejected with “Button key … not found in current form request session - was the form
+   * submit manipulated?” and no workflow ever starts — which is exactly what happened to a button
+   * that was added to the SOURCE element after the reflecting form was last saved: that button
+   * exists only in this LIVE render (its persisted mirror COPY is what usually registers the key).
+   *
+   * The registration is idempotent (a key the renderer already stored is overwritten with the same
+   * descriptor), so it can never weaken the manipulation check: it only adds the keys this widget
+   * is RENDERING right now — the mirrored subtree's own buttons, identified by the namespace
+   * prefix.
+   */
+  private fun registerMirroredSubmitButtons(
+      form: XForm,
+      namePrefix: String?,
+      itemRenderCtx: XItemRenderCtx?,
+      renderContext: IXFormRenderContext?
+  ) {
+    if (itemRenderCtx == null || renderContext == null) return
+    val prefix = namePrefix?.trim().orEmpty()
+    if (prefix.isEmpty()) return
+    val session = runCatching { renderContext.getFRQSessionAttributes() }.getOrNull() ?: return
+    val items = runCatching { form.getXItems() }.getOrNull()?.values ?: return
+    var registered = 0
+    for (item in items) {
+      val descriptors = runCatching { XButtonDescriptor.eachButton(item) }.getOrNull() ?: continue
+      for (descriptor in descriptors) {
+        val listName = runCatching { descriptor.getButtonListName() }.getOrNull().orEmpty()
+        if (!listName.startsWith(prefix)) continue
+        val action = runCatching { descriptor.getAction() }.getOrNull() ?: continue
+        if (runCatching { action.getType()?.isSubmitsForm() }.getOrNull() != true) continue
+        runCatching { itemRenderCtx.storeSubmitButton(descriptor, action, session) }
+            .onSuccess { registered++ }
+      }
+    }
+    if (registered > 0) {
+      logger.debug(
+          "[MirrorFormAccess] registered {} mirrored submit button(s) of '{}' in the form request " +
+              "session (prefix '{}')",
+          registered,
+          runCatching { form.getXItems()?.size }.getOrNull(),
+          prefix)
     }
   }
 
@@ -1065,6 +1126,198 @@ object MirrorFormAccess {
         rootRef,
         prefix)
     return true
+  }
+
+  /**
+   * Reference map from the **source** form's element references to their **reflected**
+   * counterparts, used by the workflow materializer to re-point copied workflow-node parameters
+   * (`customParameters`) at the mirrored copies.
+   *
+   * A reflected workflow path is a COPY of the source path, and many node types reference form
+   * ELEMENTS by their technical id/name inside `customParameters` — e.g.
+   * `FC_IMPORT_FORM_VALUE_FROM_XML` stores its “XML-Quelle” as
+   * `{"resource":{"type":"UPLOAD","identifier":"<upload field>"}}` and its `xpathMapping` names the
+   * target fields by id, `FC_RETURN_FILE`/`FC_EMAIL.attachments` name an upload field, and mail
+   * bodies use `[%field%]` placeholders. Copied verbatim, those references keep naming the SOURCE
+   * element, which does not exist in the reflecting form — the node then shows an EMPTY element
+   * picker in its properties dialog and does nothing at execution time.
+   *
+   * The mapping is:
+   * - source element NAME -> the copy's NAMESPACED name (`<mirrorName>_<sourceName>`, the name the
+   *   design-time copies AND the live render register), and
+   * - source element ID -> the copy's ID (the designer mints a new one).
+   *
+   * Copied items are recognized by the [MIRRORED_CHILD_OWNER_PROPERTY] the designer materialization
+   * stamps on them; their namespaced name is stripped back to the source name using the owning
+   * Mirror's own name (with a suffix match as fallback when that cannot be resolved).
+   *
+   * @return an empty map when either form cannot be read or the reflecting form holds no copies.
+   */
+  fun mirroredElementReferenceMap(
+      userContext: Any?,
+      sourceFormKey: String?,
+      targetFormKey: String?
+  ): Map<String, String> {
+    if (sourceFormKey.isNullOrBlank() || targetFormKey.isNullOrBlank()) return emptyMap()
+    val sourceJson = loadFormJson(userContext, sourceFormKey) ?: return emptyMap()
+    val targetJson = loadFormJson(userContext, targetFormKey) ?: return emptyMap()
+    val sourceIdByName = LinkedHashMap<String, String>()
+    forEachItemProperties(sourceJson) { props ->
+      val name = props.getString("name").orEmpty()
+      val id = props.getString("id").orEmpty()
+      if (name.isNotEmpty() && id.isNotEmpty()) sourceIdByName.putIfAbsent(name, id)
+    }
+    if (sourceIdByName.isEmpty()) return emptyMap()
+    val targetNameById = LinkedHashMap<String, String>()
+    forEachItemProperties(targetJson) { props ->
+      val id = props.getString("id").orEmpty()
+      val name = props.getString("name").orEmpty()
+      if (id.isNotEmpty() && name.isNotEmpty()) targetNameById[id] = name
+    }
+    val out = LinkedHashMap<String, String>()
+    forEachItemProperties(targetJson) { props ->
+      val owner = props.getString(MIRRORED_CHILD_OWNER_PROPERTY)?.trim().orEmpty()
+      if (owner.isEmpty()) return@forEachItemProperties
+      val copyName = props.getString("name").orEmpty().trim()
+      if (copyName.isEmpty()) return@forEachItemProperties
+      val copyId = props.getString("id").orEmpty().trim()
+      val ownerName = targetNameById[owner].orEmpty()
+      val prefix = if (ownerName.isEmpty()) "" else "${ownerName}_"
+      // The copy is named `<mirrorName>_<sourceName>`; strip that namespace. When the owning Mirror
+      // cannot be resolved, fall back to matching a KNOWN source name as a suffix.
+      val sourceName =
+          when {
+            prefix.isNotEmpty() && copyName.startsWith(prefix) -> copyName.removePrefix(prefix)
+            else -> sourceIdByName.keys.firstOrNull { it == copyName || copyName.endsWith("_$it") }
+          } ?: return@forEachItemProperties
+      val sourceId = sourceIdByName[sourceName] ?: return@forEachItemProperties
+      out[sourceName] = copyName
+      if (copyId.isNotEmpty()) out[sourceId] = copyId
+    }
+    logger.debug(
+        "[MirrorFormAccess] element reference map '{}' -> '{}': {} entr(ies) {}",
+        sourceFormKey,
+        targetFormKey,
+        out.size,
+        out.entries.joinToString(", ") { "${it.key}=${it.value}" })
+    return out
+  }
+
+  /**
+   * A Mirror widget of a SAVED form, as the server-side triggered-path sync needs it.
+   *
+   * @param namePrefix the namespace prefix of the mirrored child items (`<widgetName>_`), i.e. the
+   *   namespace the live render registers and the reflected trigger must reference.
+   * @param ownedRefsJson the widget's own reference to the paths it already created (JSON array).
+   */
+  data class MirrorWidgetRef(
+      val name: String,
+      val elementRef: String,
+      val elementKey: String?,
+      val namePrefix: String,
+      val createTriggeredPaths: Boolean,
+      val ownedRefsJson: String?,
+  )
+
+  /**
+   * The Mirror widgets of [targetFormKey] that mirror [sourceFormKey], read from the SAVED form
+   * JSON.
+   *
+   * This is what lets the server sync the opt-in triggered paths **without the reflecting form
+   * being opened in the designer**: a save of the source form can add a new button plus its
+   * workflow path, and only a scan of the reflecting form's widgets can tell which element that
+   * form mirrors and under which name prefix (the designer's own `applytriggerpaths` only runs
+   * while that form is being edited).
+   *
+   * @return every widget pointing at the source form — including the ones whose opt-in is OFF, so
+   *   the caller decides. Empty when the form cannot be read or mirrors nothing from the source.
+   */
+  fun mirrorWidgets(
+      userContext: Any?,
+      targetFormKey: String?,
+      sourceFormKey: String?
+  ): List<MirrorWidgetRef> {
+    if (sourceFormKey.isNullOrBlank() || targetFormKey.isNullOrBlank()) return emptyList()
+    val json = loadFormJson(userContext, targetFormKey) ?: return emptyList()
+    val out = ArrayList<MirrorWidgetRef>()
+    forEachItemProperties(json) { props ->
+      val form = props.getString(Constants.MIRROR_PROPERTY_FORM)?.trim().orEmpty()
+      if (form != sourceFormKey) return@forEachItemProperties
+      val element = props.getString(Constants.MIRROR_PROPERTY_ELEMENT)?.trim().orEmpty()
+      if (element.isEmpty()) return@forEachItemProperties
+      val name = props.getString("name")?.trim().orEmpty()
+      out.add(
+          MirrorWidgetRef(
+              name = name,
+              elementRef = element,
+              elementKey =
+                  props.getString(Constants.MIRROR_PROPERTY_ELEMENT_KEY)?.trim()?.takeIf {
+                    it.isNotEmpty()
+                  },
+              namePrefix = if (name.isEmpty()) "" else "${name}_",
+              createTriggeredPaths =
+                  asBooleanFlag(props[Constants.MIRROR_PROPERTY_CREATE_TRIGGERED_PATHS]),
+              ownedRefsJson = props.getString(Constants.MIRROR_PROPERTY_TRIGGERED_REFS)))
+    }
+    logger.debug(
+        "[MirrorFormAccess] {} Mirror widget(s) of '{}' mirror '{}': {}",
+        out.size,
+        targetFormKey,
+        sourceFormKey,
+        out.joinToString(", ") {
+          "[${it.name} -> ${it.elementRef}${if (it.createTriggeredPaths) " +paths" else ""}]"
+        })
+    return out
+  }
+
+  /** Reads a persisted flag the designer writes as `true` / `1` / `"true"`. */
+  private fun asBooleanFlag(value: Any?): Boolean =
+      when (value) {
+        null -> false
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> value.trim().equals("true", ignoreCase = true) || value.trim() == "1"
+        else -> false
+      }
+
+  /**
+   * Technical NAME of every form element of [formKey], keyed by the element's internal ID.
+   *
+   * A workflow node or trigger may reference a form element by its internal ID (`xi-btn-5`) instead
+   * of its technical name. The mirrored COPIES are named `<mirrorName>_<sourceName>`, never
+   * `<mirrorName>_<sourceId>`, so an ID reference has to be translated through this map — prefixing
+   * the id itself produces a name that exists nowhere, which is exactly what made a reflected
+   * trigger show no selected button and never fire.
+   */
+  fun elementNamesById(userContext: Any?, formKey: String?): Map<String, String> {
+    if (formKey.isNullOrBlank()) return emptyMap()
+    val json = loadFormJson(userContext, formKey) ?: return emptyMap()
+    val out = LinkedHashMap<String, String>()
+    forEachItemProperties(json) { props ->
+      val id = props.getString("id").orEmpty().trim()
+      val name = props.getString("name").orEmpty().trim()
+      if (id.isNotEmpty() && name.isNotEmpty()) out.putIfAbsent(id, name)
+    }
+    return out
+  }
+
+  /** Visits the `properties` object of every item of a form JSON (flat array and nested items). */
+  private fun forEachItemProperties(json: JSONObject, action: (JSONObject) -> Unit) {
+    val seen = HashSet<String>()
+    fun walk(items: JSONArray?) {
+      if (items == null) return
+      for (index in 0 until items.size) {
+        val item = items.getJSONObject(index) ?: continue
+        val props = item.getJSONObject("properties") ?: continue
+        val ref = props.getString("id").orEmpty().ifBlank { props.getString("name").orEmpty() }
+        // Guard against a re-visited item (a nested `items` array plus the flat array both naming
+        // it).
+        if (ref.isNotEmpty() && !seen.add(ref)) continue
+        action(props)
+        walk(item.getJSONArray("items"))
+      }
+    }
+    walk(json.getJSONArray("items"))
   }
 
   /**

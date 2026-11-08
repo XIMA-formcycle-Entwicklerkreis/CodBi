@@ -1,270 +1,363 @@
 # CodBi Core Elements (Compact)
 
-Element-only reference: what each functionality, element placeholder, and standard class does.
+Element-only reference: what each functionality, element placeholder, and standard class does, and WHEN to use it. FUNCTIONALITY = something you APPLY to an element (it becomes the element function). ELEMENT PLACEHOLDER (EP) = a VALUE you place INSIDE a parameter of another element - the EP expression { EPName > Param1 ; Param2 } is written into the parameter the consuming element documents for it (HTML.Select.Injection: Values; HTML.Text.Mapper: Replacements; Sys.Log.Console: Data; otherwise the field value) - a parameter name of a DIFFERENT functionality is silently ignored. An EP is NEVER the element you build and NEVER the function. STANDARD CLASS = a styling/configuration class you add to cssclasses.
+
+PASS-1 CONTRACT — every entry below is exactly two things: (1) one sentence saying WHAT it does, (2) a `USE WHEN …` sentence saying which request it maps to. That is all pass-1 needs to CHOOSE an element; the exact parameters, attributes and JSON skeletons are NOT part of this catalog — request them with `{"status":"need_codbi_details","elements":[...],"widgets":[...]}` and they are delivered in the next pass. Read EVERY entry before deciding; when a request matches an entry's `USE WHEN`, name that id in the details request instead of building a workaround (e.g. a regex or a hand-written script).
 
 ## Functionalities
 
 ### AI.LLAMA.CHAT
-Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
+Embeds a multi-turn AI chat widget (needs a local LLAMA server from the CodBi settings).
+USE WHEN a real chat/KI-Chat window is requested (message history, input, send/stop, file upload) — NOT for a single answered question (that is AI.LLAMA.STANDARD.TXTQA).
 
 ### AI.LLAMA.STANDARD.QA
-Applicable on an XUpload to answer questions about the uploaded document (image/PDF) with a local AI: put data-cb-func='ai.llama.standard.qa' plus data-cb-MaxPixelSize on the XUpload and create ONE XTextField/XTextArea per question, each tagged with the CSS class AI_LLAMA_STANDARD_QA_Question and carrying its own data-cb-Question attribute. Do NOT put the functionality on the container or on the question fields. Use this (NOT ai.llama.standard.txtqa) whenever the analysis source is an UPLOADED FILE — ai.llama.standard.txtqa only reads TEXT values the user typed into input fields, never an uploaded binary. data-cb-Mode='analyse' is MANDATORY (ALWAYS set it explicitly — never omit it) for OPEN questions about the document answered into the tagged field (e.g. 'was für eine Rechnung'). SPECIALIST: only when the request names or implies a specific specialist (e.g. 'mit Cerebras', 'let Cerebras answer') add data-cb-Specialist='<that configured specialist name>' to the XUpload to route to it — it is NOT stamped unconditionally just because this build runs through a specialist. For a YES/NO CHECK of the uploaded document (e.g. 'prüfe ob das Bild eine Rechnung ist' / 'verify whether the upload is an invoice') set data-cb-Mode='verify' plus the yes/no question in data-cb-Question on the XUpload, and make sure that data-cb-Question ends with an explicit 'answer only with yes or no' instruction (e.g. 'Antworte nur mit Ja oder Nein.'); when the check also names a specialist (e.g. 'mit Cerebras') add data-cb-Specialist='<that configured specialist name>' to the XUpload.
+Answers questions about an UPLOADED document/image/PDF (XUpload) with a local AI.
+USE WHEN the analysis source is an UPLOADED FILE ("prüfe, was für eine Rechnung hochgeladen wurde", "answer questions about the uploaded document") — never for text the user typed (that is AI.LLAMA.STANDARD.TXTQA).
 
 ### AI.LLAMA.STANDARD.TXTQA
-Applicable on the FIRST source input field to have a local AI answer questions from the text values the user typed: the fields whose values supply the source context are tagged with the CSS class AI_LLAMA_TXTQA_Source, the functionality goes on the FIRST of them, and the field that RECEIVES the answer is tagged AI_LLAMA_STANDARD_TXTQA_Question with its own data-cb-Question attribute (that field's id is the question key). The receiving field must NOT also carry the functionality.
+Has a local AI answer a question from the TEXT the user typed into other fields and writes the answer into a dedicated display field.
+USE WHEN the expected result is OPEN generated content ("beantworten lassen", "let the AI answer", "was für eine Rechnung ist das") — not a pass/fail check (that is AI.LLAMA.STANDARD.TXTVERIFY).
 
 ### AI.LLAMA.STANDARD.TXTVERIFY
-Applicable on a SINGLE text input/textarea to VERIFY its value with a local AI when the user leaves the field (blur): the value is sent together with the verification question (data-cb-Question attribute preferred, else the Question parameter; <[this]> resolves to the field's own value) and the field stays invalid with the AI's explanation as its error text unless the AI answers with the PositiveResponse word (default 'yes'). Use it for 'prüfe/validiere, ob …' / 'verify whether …' requests on ONE field.
+Verifies ONE field's value with a local AI when the user leaves the field (blur) and shows the verdict as that field's error.
+USE WHEN input must be checked against a KNOWN criterion with a pass/fail verdict ("prüfe/validiere ob …", "check whether …", "ob die Summe 9 ergibt") — NOT for a fixed list of forbidden values or dates (that is HTML.Input.Blacklist) and NOT for generating text (TXTQA).
 
 ### AI.OCR
-Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
+Extracts text from uploaded images or PDFs (OCR) and returns it as a value.
+USE WHEN the content of an upload must be read as text ("Text aus dem Scan auslesen", "extract the text from the uploaded PDF").
 
 ### Date.Frame
-For a date range (start/minimum + end/maximum date, e.g. 'Kursbeginn'/'Kursende', 'Start'/'End', 'Von'/'Bis'). A two-field date RANGE is ALWAYS Date.Frame — do NOT model a range as a mere Date.Min. PREFER the standard CSS classes: apply CodBi_DateFrame_N_Begin to the START date field AND CodBi_DateFrame_N_End to the END date field (SAME N — BOTH fields get their own class; there is NO combined CodBi_DateFrame_N_Begin_End class; these classes go ONLY on the two date XTextField fields, never on a container/fieldset). FALLBACK when the classes cannot be used: data-cb-func=date.frame on the BEGIN field only with data-cb-maxfield = dot-prefixed END field name (e.g. .tfKursende) — do NOT put the functionality on the end date element. A Date.Min may be ADDED to the start field, but the range itself still requires the Begin/End frame classes on BOTH fields.
+Keeps two date fields in a begin/end (min/max) range.
+USE WHEN a date RANGE is requested ("Von/Bis", "Kursbeginn/Kursende", "start and end date") — a single bounded date is Date.Min, not a range.
 
 ### Date.Min
-Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates). BIRTH-DATE FIELDS (Geburtsdatum, Geburtstag, birth date, birthday): NEVER apply data-cb-reverse=true / a FUTURE Date.Min / 'Mindestdatum heute oder morgen' to a birth-date field — a birth date lies in the PAST. A constraint like 'keine Vergangenheitsdaten'/'no past dates'/'no future dates' on a birth date means NO FUTURE DATES → the ONLY valid CodBi behavior is the CodBi_NoFutureDate class (max = today). Do NOT add Date.Min and do NOT add any weekend restriction. A PAST minimum (e.g. 'mindestens 18 Jahre' → minimum=18, unit=y, NO reverse) is valid only when an age limit is requested.
+Enforces a minimum/maximum allowed date on a date field, relative to today (age limit, "not in the past", "from tomorrow on").
+USE WHEN dates before a bound must be rejected ("nicht in der Vergangenheit", "mindestens 18 Jahre", "at least X years ago"). NOT for a Cleave-masked date field (HTML.Input.Cleave) — that one bounds its dates with its OWN `DateMin`/`DateMax` parameters. There is no `Date.Max` functionality.
 
 ### Date.NoWeekends
-Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply to a BIRTH-DATE field (Geburtsdatum, Geburtstag, birth date, birthday) — people can be born on any weekday, so a 'keine Wochenenden'/'no weekends' constraint on a birth date must be IGNORED (apply nothing, ask nothing). Only meaningful for future-dated/booking-type dates (course date, appointment, delivery).
+Blocks weekend dates in the datepicker.
+USE WHEN a booking/appointment/course/delivery date must fall on a weekday ("keine Wochenenden", "no weekends") — NEVER on a birth date.
 
 ### Date.Time.Join.Span
-Connects four HTMLInputElement s (a begin date-, a begin time-, an end date- and an end time-field) to.
+Links a begin date+time pair and an end date+time pair so the end datetime must lie after the begin datetime.
+USE WHEN TWO date/time PAIRS form one span ("Anfangs- und Endzeitpunkt", "start and end date-time").
 
 ### Date.Time.Join
-Joins the Date of a date-HTMLInputElement with the time of a time-HTMLInputElement.
+Joins one date field with one time field into a single datetime value.
+USE WHEN one date plus one time must be combined ("Datum und Uhrzeit zusammenführen").
 
 ### DQ.Table.View
-Displays the result of a Formcycle DataQuery as an injected HTML table and enables exporting it to an Excel file (.xlsx). Applicable on an XContainer/XContainerInvisible; configure via the separate data-cb-* attributes (data-cb-dataquery REQUIRED, data-cb-columns = the CSV column definition or FULLY EMPTY data-cb-columns="" when the user skips it (the table then renders an EMPTY table and the user adds the CSV later in the function's CSV editor), data-cb-exportbutton = CSS CLASS selector ('.') of a real generated export button, data-cb-filename/data-cb-sheetname REQUIRED and derived from the query name; data-cb-excludecolumns = CSV of column names EXCLUDED from the Excel export (language-agnostic, triggered by e.g. "ohne die Spalten alpha und gamma" / "without the columns" / "do not export" - those columns stay visible in the table but are omitted from the .xlsx); data-cb-urlparttoreplace and data-cb-urlpartreplacement = optional pair, combined by position, that replaces a URL part in the query's datasource URL). WHENEVER an Excel export is requested, the SAME container MUST carry ALL SIX attributes together (data-cb-func, data-cb-dataquery, data-cb-columns, data-cb-filename, data-cb-sheetname, data-cb-exportbutton) - never only the first three. The export XButtonList is a SINGLE NON-navigation button with NO action placed as a SIBLING of the DQ container (never inside its elements array - the table is rendered inside that container), emitted as its own valid top-level item starting `{ "className": "XButtonList"` (a single `{` - a double-brace `{{` prefix makes the item be dropped). The button's stable class goes into the `cssclasses` property - there is NO `classNames` property on the button, so NEVER write `buttons:[{ "classNames":[...] }]` (it is ignored and the selector matches nothing). The button's visible LABEL MUST be exactly "Export Excel" and MUST live in the buttons[].value property (value => "Export Excel") - Formcycle renders buttons[].value as the button's visible text; `title` is a separate optional TOOLTIP and is NEVER the button label (a button with the label in `title` and an empty value "" renders an EMPTY button), so value MUST NEVER be empty. Never use 'Senden'/'Absenden' as the label (those are send-labels). NO WORKFLOW: the DQ.Table.View export is performed ENTIRELY CLIENT-SIDE by the functionality - the export button is a pure click-handler and MUST NOT create any Formcycle workflow/task/node (no FC_EXPORT_*, no FC_RETURN_FILE, no export lane) and MUST NOT be treated as (or renamed to) a 'Senden'/submit trigger. The button's Formcycle "Aktion" must be 'keine Aktion' (no action) - stored in action.optionId = 'no action' (action { page => '', check => false, optionId => 'no action' }); without it the designer renders 'absenden + prüfen' (submit), which submits the form instead of exporting. This no-action export button is the ONLY NON-submit XButtonList button - do NOT apply the submit-button rule to it.
+Displays the result of a Formcycle DataQuery as an HTML table and can export it to Excel.
+USE WHEN a dataquery result must be shown and/or exported ("Tabelle aus der Abfrage anzeigen", "Excel-Export der Abfrage").
 
 ### Form.Navigator
-Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms. PLACEMENT — the navigator must be reachable on EVERY page: create a SEPARATE XContainer (div) and place it inside the form's XHeader or XFooter when one exists; only when there is NO header/footer add it to EVERY page's elements array. NEVER place it on only one page. PREVIEW — this CodBi Form.Navigator is the ONLY navbar with a preview capability: set the `Preview` parameter to `true` (emit the attribute `data-cb-preview="true"` NEXT TO `data-cb-func="Form.Navigator"` in the same element's `attributes` array — a preview navbar missing `data-cb-preview="true"` is a FAIL) to let the user jump to EVERY page (even unvisited). A navbar request needing "preview"/"Vorschau" (all pages reachable, not blocked, "direkt zu jeder Seite springen") is therefore ALWAYS this functionality, never the Formcycle XNavigationBar.
+Adds a navigation/progress bar across the form's pages.
+USE WHEN the form has 2+ pages and needs page navigation ("Navigationsleiste", "navbar"), optionally with preview of all pages.
 
 ### Google.Website.Translator
-The Google Website-Translator element-id.
+Embeds the Google website translator into the page.
+USE WHEN the whole form/page must be machine-translated by Google ("Google-Übersetzer einbinden").
 
 ### HTML.CSS
-Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
+Injects CSS rules into the page or into a region of it.
+USE WHEN CSS rules/properties are requested ("CSS-Regeln", opacity/Durchsichtigkeit, scale/Skalierung, colours, header styling).
 
 ### HTML.Input.Blacklist
-The Functionality defines a blacklist of values that may not be the value of an HTMLInputElement.
+Rejects a FIXED list of values on an input; with a datepicker those dates are additionally blocked in the picker.
+USE WHEN specific VALUES or DATES must not be enterable ("die Werte/Daten 01.12.2026 und 10.12.2026 dürfen nicht eingegeben werden", "must not accept the values X, Y") — the deterministic counterpart of TXTVERIFY for known values.
+MESSAGE WIRING — there is NO message parameter: the error is Prefix + List + Postfix (List only with ShowBlacklist=true); with NO dictated message set NONE of these — the built-in message is shown.
+MESSAGE MAPPING — ONLY when the user dictates a message, map it: "vor XXX nach" becomes Prefix="vor ", Postfix=" nach", ShowBlacklist=true (XXX = the list position, never literal text).
 
 ### HTML.Input.Cleave
-Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
+Applies input masking/formatting (credit card, phone, IBAN, date) via Cleave.js.
+USE WHEN typed input must be MASKED or auto-formatted ("Eingabemaske", "format as phone/IBAN/date"). On a DATE field it ALSO owns the allowed date RANGE: its own `DateMin` / `DateMax` parameters (each in the American dashed form "YYYY-MM-DD") restrict which dates can be entered — use THEM when the request limits the enterable dates ("nur Daten von … bis …", "dates from X to Y") and NEVER Date.Min for such a field.
 
 ### HTML.Input.NoAutocomplete
-This functionality deactivates the autocomplete for the provided HTMLInputElement .
+Turns off the browser's autocomplete for an input.
+USE WHEN autofill suggestions must be suppressed ("keine Autovervollständigung", "no autocomplete").
 
 ### HTML.Input.REGEX
-Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
+Restricts, validates or reformats the typed characters of a field against a regular expression.
+USE WHEN CHARACTERS must be blocked or only certain characters allowed ("darf die Zeichen e$% nicht enthalten", "nur Ziffern") — NOT for a fixed list of whole values or dates (that is HTML.Input.Blacklist).
 
 ### HTML.Input.TinyMCE
-MANDATORY — it is INVALID to apply HTML.Input.TinyMCE with only data-cb-func and WITHOUT both data-cb-plugins and data-cb-toolbar. Whenever you apply data-cb-func=HTML.Input.TinyMCE to a XTextArea, ALWAYS also emit data-cb-plugins and data-cb-toolbar. For a message/story: data-cb-plugins="advlist, autolink, lists, link, image, media, charmap" and data-cb-toolbar="undo redo | blocks | bold italic underline | bullist numlist | link image media" (do NOT include the raw-HTML 'code' option unless the field is explicitly for HTML source).
+Turns a textarea into a TinyMCE rich-text (WYSIWYG) editor.
+USE WHEN rich-text editing is requested ("Rich-Text-Editor", "WYSIWYG", a formatted story/message).
 
 ### HTML.Input.Trans.Capital
-Gets the transformer that converts the input to capitalized words.
+Transforms typed input into capitalised words while typing.
+USE WHEN entered text must be auto-capitalised ("jedes Wort groß schreiben", "capitalize each word").
 
 ### HTML.Input.Trans.NTW
-Turns a number into its word representation, separating each digit with a dash.
+Turns a typed number into words, one word per digit, dash-separated ("123" → "Eins-Zwei-Drei"). Its `NumberWords` parameter holds the ten words (0-9, index = digit) of the TARGET LANGUAGE — write them out in the request's language (Spanish "Cero,Uno,Dos,Tres,Cuatro,Cinco,Seis,Siete,Ocho,Nueve"); optional `PreFix`/`PostFix`.
+USE WHEN entered digits must become their WORDS in ANY language ("Ziffern in Wörter", "number to words", "en palabras"). This is NOT HTML.Input.Cleave — Cleave has no NumberWords and must never be used for it. The `CodBi_TRANS_NTW` standard CLASS only knows GERMAN words, so for another language apply this functionality instead.
 
 ### HTML.Input.Trans.RegEx
-Get the actual transformer that does a String.replace with the toLoad.extractor and.
+Transforms typed input with a regex replace (extractor → replacement).
+USE WHEN typed text must be REFORMATTED by pattern ("Format umwandeln", "Punkte/Leerzeichen entfernen").
 
 ### HTML.Panel.Accordion
-Applicable on a container (XContainer/XFieldSet) that wraps multiple collapsible panels. Joins all child panels with the .CodBi.--HTML_Panel class into an accordion group where only one panel can be open at a time. Set the data-cb-Accordion parameter to a unique group name.
+Makes the panels inside the tagged WRAPPER container mutually exclusive: unfolding one folds the others of the same group. Parameter `Accordion` = the group NAME (required — and every member panel repeats it); the wrapper itself is NOT a panel, and WITHOUT this on the wrapper the members stay independent panels and nothing folds together.
+USE WHEN only ONE of several collapsible sections may be open at a time ("Akkordeon") - request it TOGETHER WITH UI.Panels in the same details request. PREFER the class (CodBi_Accordion_A … _D on the wrapper, one group per letter) over this functionality.
 
 ### HTML.Panel
-Applicable on any element to wrap it in a collapsible accordion/panel widget. PREFERRED: 'Standard-Panel' / 'aufklappbares/collapsible panel' on a FIELDSET = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property (never data-cb-func=html.panel on a fieldset). On an XCONTAINER (div — no legend) use data-cb-func=html.panel and you MUST also set data-cb-generateheader='true' and a NON-EMPTY data-cb-autoheadertitle: the autoheadertitle is the ONLY source of the container panel's header text — use the title from the prompt, or if the prompt names no title, INVENT a short, meaningful title from the container's purpose/content in the form's language. When the prompt does not describe the header's look, ALSO generate restrained header CSS via the data-cb-* CSS parameters (every value is a RAW CSS declaration list WITHOUT braces, e.g. background:#eef2f7; padding:10px 14px; border-radius:6px;): data-cb-cssheaderfolded (base look while FOLDED — set it to the SAME CSS as data-cb-cssheaderunfolded so a folded panel looks identical), data-cb-cssheaderunfolded (base look while unfolded), data-cb-cssheaderhover, data-cb-cssheaderactive, and a fold indicator via data-cb-cssafterheadercontent (folded) plus data-cb-cssafterheadercontentunfolded (unfolded) — e.g. a downward arrow when folded and an upward arrow when unfolded. Follow the prompt exactly when it does describe the look. MANDATORY — NEVER SKIP A CONTAINER PANEL'S HEADER STYLING (even when the request does not mention styling): creating/converting an XContainer into a collapsible panel (data-cb-func=html.panel) REQUIRES (a) HTML.Panel in the need_codbi_details request, (b) data-cb-generateheader='true' + a non-empty data-cb-autoheadertitle, (c) the header CSS set ON THE PANEL ITSELF via the html.panel parameters (data-cb-cssheaderfolded = data-cb-cssheaderunfolded, plus data-cb-cssheaderhover, data-cb-cssheaderactive, data-cb-cssafterheadercontent[unfolded]) unless the prompt specifies a different look, and (d) HTML.Panel listed in the _codbiApplicability applied array. NEVER return codbiVerdict='none' with empty considered/applied for such a request. The same applies when the form ALREADY has container panels without header styling — set the header CSS parameters and report HTML.Panel as considered/applied.
+Turns a container (XContainer/XContainerInvisible/XFieldSet) into a collapsible panel with a clickable header — generated from `AutoHeaderTitle`, or an existing `CodBi_HTML_Panel_Header` child.
+USE WHEN a section must be collapsible ("aufklappbares Panel"). PREFER the classes CodBi_HTML_Panel_Standard/_Flat/_Minimal/_Index — on an XFieldSet (its `legend` is the title) as well as on a container that also carries a non-empty `AutoHeaderTitle`; use this functionality only for a custom look.
 
 ### HTML.Select.Favorites
-Rearranges the HTMLOptionElement within the HTMLSelectElement "toProcess" in order to place the.
+Keeps every option of a select and only MOVES the favourite ones (plus a divider option it INSERTs itself) above the rest; it never adds, removes or filters options.
+USE WHEN some existing options shall be prioritised ("Favoriten", "Bayern und Hessen zuerst"), optionally under a divider ("Trenner"), or when the divider shall select a fixed option ("beim Trenner soll X ausgewählt sein") or one option shall be preselected ("X soll anfangs ausgewählt sein") - request Divider/DividerTarget/Favorites/InitialElement and keep ALL options of the select.
 
 ### HTML.Select.Injection
-This functionality populates a HTMLSelectElement by generating HTMLOptionElement for each.
+Populates a select with one option per entry of an ELEMENT PLACEHOLDER (EP); the EP is a VALUE (in `Values`), NEVER the functionality.
+USE WHEN the option list must come from data / a lookup ("Optionen injizieren", "alle Aemter/Behoerden anzeigen", "alle im BayVIS registrierten Aemter", "Behoerdenauswahl", "a select listing all localities", "Kantone der Schweiz") - and also when the matching standard-configuration class is NOT active in this form (an inactive class is inert), then use the raw wiring.
 
 ### HTML.SETAttribute
-Applicable on any element to dynamically set one or more HTML attributes on it.
+Sets ONE HTML attribute (incl. style) on the element itself at runtime - e.g. title, placeholder, readonly, disabled.
+USE WHEN ONE attribute of ONE element must be set in place ("set the title attribute of that field to X", "title-Attribut auf X setzen", "set attribute/style of that field") - also on a field you create in the SAME request. NOT for the Formcycle Help/hint (that is the field property helptext) and NOT for marking a field required (that is required=1).
 
 ### HTML.Text.Injector
-Applicable on XTextField/XTextArea or XSpan to inject a dynamic text value into the element's value. CRITICAL WIRING — data-cb-replacement only reaches the field value when BOTH are set: (1) data-cb-property MUST be set to 'value' on XTextField/XTextArea and 'innerHTML' on XSpan, AND (2) the data-cb-placeholder (default '[[INJECTOR_REPLACEMENT]]') MUST be placed inside the OWN value property of the field (XTextField/XTextArea) or its rtevalue property (XSpan) — e.g. 'value':'[[INJECTOR_REPLACEMENT]]' — otherwise data-cb-replacement never reaches the value. data-cb-func stays 'HTML.Text.Injector' (the FUNCTIONALITY name, never an EP name). To show SEVERAL related BayVIS values together in one place (e.g. a header with an employee's name + phone + e-mail), NEVER create one Injector element per value - use ONE HTML.Text.Mapper whose data-cb-replacements fetches the needed detail object once and whose single template holds all [(property)] placeholders (ONE resolution instead of N).
+Puts ONE plain value into an element at a placeholder (default [[INJECTOR_REPLACEMENT]]).
+USE WHEN exactly ONE value must be written into a field or span ("Wert einsetzen", a single value) - a text that must CONTAIN data (one or several record properties) is HTML.Text.Mapper, NOT this.
 
 ### HTML.Text.Mapper
-Applicable on any element to map object properties to named placeholders in a text template. Placeholder syntax is a PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). data-cb-replacements is the object (or array of objects) whose property values fill the [(property)] placeholders and may be an EP placeholder resolving to an object (e.g. "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). CRITICAL — when data-cb-replacements is fed by an EP that returns an OBJECT, use [(property)] placeholders naming the ACTUAL properties of that EP's result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP string. The text template with the [(property)] placeholders lives in the field's OWN content property (value/rtevalue via data-cb-property); there is NO data-cb-Template attribute. SEVERAL BAYVIS VALUES SHOWN TOGETHER - to display a person's contact block in ONE place (e.g. a header with employee Salvatore Callari's name + e-mail + phone) do NOT create one element per value; fetch his ONE detail object with data-cb-replacements = { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } } (NO Data.Join) and map every requested value to a [(property)] placeholder naming the person object's REAL properties (vorname, nachname, email, zimmer, apEmail, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl). A person's phone is NOT a single property - it is split into the apTelefon* parts (there is no phone/telefon property), so compose the phone from them. NEVER read a person's phone from BayVIS.Behoerden.Details - the authority object has NO phone and NO postal address (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, ...); postal addresses live on BayVIS.Behoerden.Details.Gebaeude. Data.Join is needed only when the values genuinely come from DIFFERENT detail objects (e.g. a building address + a person). A single Mapper element resolves ONCE; N Injector elements each resolve their own EP (N requests). data-cb-property is REQUIRED and names the RUNTIME property receiving the mapped text: 'innerHTML' on an XSpan (template stored in the XSpan's Formcycle rtevalue) and 'value' on an XTextArea/XTextField (template stored in the field's Formcycle value) - never 'rtevalue' (Formcycle JSON storage key only, not a runtime DOM property). BayVIS.Behoerden.* may ONLY be used when the request NAMES a Behörde/authority - NEVER invent an authority name: 'BayVIS' is the system/data source, not an authority, so { BayVIS.Behoerden.ID > Bayvis } cannot resolve. A person-only request (an employee's name, no Behörde named) uses BayVIS.Ansprechpartner.Details alone. NEVER fill a BayVIS-derived contact field with invented literal text (e.g. 'Bayvis Straße 1', 'kontakt@bayvis.de', '+49 30 12345678') - the person's real e-mail/phone/name are mapped from { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <name> } } } via [(email)]/[(apEmail)], the apTelefon* parts and [(vorname)] [(nachname)] placeholders; hard-coding made-up contact values is a FAIL. A person's FULL record - name AND all contact data (email/apEmail, phone parts apTelefon*) - is BayVIS.Ansprechpartner.Details; BayVIS.Behoerden.Details carries NONE of a person's data and is only for an authority the request names.
+Fills a text template with the properties of ONE object via [(property)] placeholders.
+USE WHEN a text must CONTAIN data ("Text mit den Kontaktdaten von X", "Kontaktblock", name + phone + e-mail) - and request it TOGETHER WITH the element placeholder that supplies the object.
 
 ### JSON.SET
-Applicable on a hidden field to store a JSON-serialized value derived from another element.
+Sets a named PROPERTY of the element it is applied to - or of a nested object reached by a dotted Path from it - e.g. style.scale, style.display, style.color, innerHTML; it also stores a hard-coded JSON value in a hidden field.
+USE WHEN the request names a PROPERTY of an element as a dotted path ("setze dessen style.scale Eigenschaft auf 2", "style.display auf none", "set innerHTML to ..."): the path splits into Path (all parts but the last, e.g. "style") and Property (the last part, e.g. "scale") - or a hard-coded JSON value must be stored ("JSON speichern"); live field values are combined by a Formcycle calculation field (XFormula), not by this.
 
 ### LDAP.Autocomplete.Set
-Applicable on form fields that should be auto-filled from a selected LDAP directory match.
+Fills SEVERAL fields of one group from a SINGLE selected LDAP/Active-Directory match (e-mail, first/last name, title, department, phone, account, ...).
+USE WHEN one selected person must populate a whole group of fields ("Mitarbeiter auswählen, dann Name/Mail/Telefon übernehmen", "LDAP-Daten übernehmen") - apply it to the CONTAINER and tag the member fields with the CodBi_LDAP_AC_* classes. There is NO LDAP source to select (Formcycle cannot bind an LDAP connection/query to a form element). The LDAP url is decided by the INSTALLATION - see the "LDAP CONFIGURATION" block: omit it when one is configured, ask for it when none is.
 
 ### LDAP.Autocomplete
-Applicable on a text input that should autocomplete entries from an LDAP directory search.
+Completes ONE text input from the LDAP/Active Directory and accepts only values that exist there - this is how EVERY input field for an LDAP attribute (employee e-mail, phone, account, name) is built, also when the request never says "autocomplete".
+USE WHEN a field must hold an LDAP/Active-Directory value ("Eingabefeld für die E-Mail-Adresse von Mitarbeitern aus dem LDAP") - the attribute named in the request (e-mail → mail) is the property. There is NO LDAP source to select. The LDAP URL is decided by the INSTALLATION (see the "LDAP CONFIGURATION" block): omit it when a url is configured and never ask for one; when NO url is configured it is REQUIRED and belongs to the user, so ask for it.
 
 ### Matomo.Tracking
-Applicable on any form to add Matomo/Piwik analytics event tracking.
+Adds Matomo/Piwik analytics event tracking to the form.
+USE WHEN usage tracking with Matomo is requested ("Matomo-Tracking", "Statistik").
 
 ### Media.Image.Cropper
-Applicable on an XUpload field for images; adds an interactive crop dialog before upload. ONLY for actual image cropping ("Bild-Cropper", "with crop") — a plain "Vorschau"/"preview" request is the FORMCYCLE preview, set the DIRECT XUpload property `"filepreview":"1"` instead and do NOT tag the upload with the cropper.
+Adds an interactive crop dialog before an image is uploaded.
+USE WHEN uploaded images must be cropped ("Bild zuschneiden") — a plain preview is the Formcycle `filepreview` property, not this.
 
 ### MEDIA.INPUT.SPEECH
-Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.
+Enables speech-to-text dictation into a text field via the browser Web Speech API.
+USE WHEN dictation must work without a server-side model ("Spracheingabe", "browser speech").
 
 ### Media.Input.Speech.Whisper
-Applicable on a text input field or textarea to enable speech-to-text dictation via a self-hosted Whisper model on the Formcycle server. DSGVO/GDPR-compliant as no audio data leaves the server.
+Enables speech-to-text dictation via a self-hosted Whisper model (no audio leaves the server).
+USE WHEN dictation must run server-side/GDPR-safe ("Whisper", "DSGVO-konforme Spracheingabe").
 
 ### Media.MultipleUpload
-Enables a file upload to support selecting multiple files for upload. USE on an XUpload whenever several files shall be uploadable ("mehrere Dateien", "multiple files"). Apply it ON that XUpload: data-cb-func="Media.MultipleUpload" (+ data-cb-Maximum when a file count is named) AND the Formcycle native multiple-file property "uploadMultiple":"1".
+Lets one upload accept several files.
+USE WHEN several files must be uploadable ("mehrere Dateien", "multiple files").
 
 ### OnChange.Conditional
-This functionality applies a certain functionality onto the object toProcess depending on whether.
+Applies another functionality to an element only while a condition on other fields holds.
+USE WHEN a check or effect must depend on another field's value ("nur wenn … dann prüfen", "validate only if …").
 
 ### OpenPLZ.Autocomplete
-Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
+German address autocomplete (postal code, locality, street) against OpenPLZ.
+USE WHEN a German address group must be autocompleted ("Adresse mit PLZ-Autovervollständigung").
 
 ### Print.Remove
-Applicable on any element that should be invisible when the form is printed.
+Hides the element when the form is printed.
+USE WHEN content must not appear on the printout ("beim Drucken ausblenden").
 
 ### Security.Captcha.Google
-This functionality needs a site key that can be obtained at https://developers.google.com/recaptcha and.
+Embeds a Google reCAPTCHA check in the form.
+USE WHEN the form needs a Google captcha ("reCAPTCHA", "Spam-Schutz").
 
 ### Sys.Log.Console
-Applicable for debugging; logs CodBi runtime data to the browser developer console.
+Logs CodBi runtime data to the browser developer console.
+USE WHEN debugging output is requested ("Log-Ausgabe in die Konsole").
 
 ### Time.Frame
-Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element. USE IT ONLY AS THE FALLBACK: the CSS-class pair CodBi_TimeFrame_<N>_Begin + CodBi_TimeFrame_<N>_End already applies it — apply the free class pair and NOTHING else; this functionality plus data-cb-maxfield only when every frame pair is taken (both together is a redundant FAIL).
+Keeps two time fields in a begin/end (min/max) order.
+USE WHEN a time RANGE is requested ("von/bis Uhrzeit", "start and end time").
 
 ## Element Placeholders
 
+An ELEMENT PLACEHOLDER is NEVER the element you build and NEVER the functionality: the EP expression is a VALUE written INSIDE the parameter the consuming element documents for it (HTML.Select.Injection: Values; HTML.Text.Mapper: Replacements; Sys.Log.Console: Data; otherwise the field value) - a parameter name of a DIFFERENT functionality is silently ignored. Request these entries only to learn the exact EP id and its parameters, then wire them into the element that consumes them.
+
 ### AI.LLAMA.STD.QA
-This Element-Placeholder acquires the AI response to a question.
+Returns the AI answer to a question about an uploaded document.
+USE WHEN a value must hold the answer of a document question.
 
 ### BayVIS.Ansprechpartner.Details
-This Element-Placeholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.
+Returns ONE person's complete record OBJECT (vorname, nachname, email and the apTelefon* parts).
+USE WHEN a person's contact details must be shown - request it TOGETHER WITH HTML.Text.Mapper, whose [(property)] placeholders are filled from this object. BayVIS data is NEVER a Formcycle datasource: "the contact details from the BayVIS of <name>" needs NO datasource - only this EP chain.
 
 ### BayVIS.Ansprechpartner.ID
-This Element-Placeholder retrieves the ID of a contact by first- & last-name (order insensitive).
+Resolves a contact's IDs from first and last name (order insensitive) and returns them as an ARRAY.
+USE WHEN a NAMED person's record must be fetched - request it TOGETHER WITH BayVIS.Ansprechpartner.Details, which consumes its first ID via { I > 0 ; ... }.
 
 ### BayVIS.Ansprechpartner
-This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
+Reads the BayVIS contact directory, or one property of it, per parameter.
+USE WHEN a list of contacts or a single property of the directory is needed.
 
 ### BayVIS.Behoerden.Details.Gebaeude
-This Element-Placeholder retrieves the details of an authority's building specified by the provided ID from the.
+Retrieves the details of an authority's building (the only EP with postal addresses).
+USE WHEN an authority's address is needed.
 
 ### BayVIS.Behoerden.Details
-This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
+Retrieves the details of an authority by ID.
+USE WHEN authority metadata (designation, type, e-mail) is needed — it has NO phone and NO address.
 
 ### BayVIS.Behoerden.Gebaeude.ID
-This Element-Placeholder retrieves the IDs of authoritie's buildings by the.
+Resolves the building IDs of authorities.
+USE WHEN a house-number/building ID chain is needed.
 
 ### BayVIS.Behoerden.ID
-This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
+Resolves authority IDs from a designation (case insensitive).
+USE WHEN an authority name must be turned into an ID.
 
 ### BayVIS.Behoerden
-This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.
+Reads the BayVIS authority directory (or one property of it, e.g. bezeichnung = the office name) and returns it as a list/value.
+USE WHEN a list of authorities or one property of the directory is needed as a VALUE - e.g. as the `Values` entry of HTML.Select.Injection ("{ BayVIS.Behoerden > bezeichnung }", with ReClean on); it is an ELEMENT PLACEHOLDER and belongs in a value parameter, NEVER in the functionality (func) parameter. BayVIS data is NEVER a Formcycle datasource: never set a `datasource` for it and never ask for one.
 
 ### Data.CSV
-This Element Placeholder turns a CSV-String into an Array < string >.
+Turns a CSV string into an array.
+USE WHEN CSV text must become an array.
 
 ### Data.Join
-Joins the properties of multiple object s into one.
+Joins the properties of several objects into one.
+USE WHEN values genuinely come from DIFFERENT detail objects — not for a single object.
 
 ### Date.Arithmetic
-This Element-Placeholder turns a String into a Date .
+Adds or subtracts a period to/from a date.
+USE WHEN a date must be shifted ("in 3 Tagen", "3 days after the date in field X").
 
 ### Date.FromString
-This Element-Placeholder turns a String into a Date .
+Parses a string into a date.
+USE WHEN a text value must be treated as a date.
 
 ### Date.Holidays
-The requested years.
+Returns the public holidays of the requested year(s).
+USE WHEN holiday dates must be considered ("Feiertage").
 
 ### Date.Today
-Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
+Returns today's date, optionally with arithmetic applied.
+USE WHEN the current date is needed ("heute", "today").
 
 ### Date.Weekends
-This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
+Registers the weekend EP (plus the CSS injection it needs).
+USE WHEN weekend dates must be computed ("Wochenenden").
 
 ### DOM.Query
-This Element-Placeholder queries an Element .
+Queries an element from the DOM.
+USE WHEN a value must be read from the page/DOM.
 
 ### F
-Finds the objects within an Array that have a specific property with a specific value.
+Finds the objects within an array that carry a given property value.
+USE WHEN a list must be narrowed to the matching entry ("den Eintrag mit … finden").
 
 ### I
-This Element-Placeholder acquires a specific element.
+Acquires one element of an array by index.
+USE WHEN a single entry of a list is needed.
 
 ### JSON.Path
-This Element-Placeholder retrieves an Object at a specific path out of the one given in the.
+Retrieves the value at a JSON path of the given object.
+USE WHEN a nested JSON value must be read.
 
 ### LDAP.Find
-This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified.
+Searches an LDAP directory using the default or a given connection.
+USE WHEN LDAP data must be fetched for further use.
 
 ### Net.URL
-This Element-Placeholder retrieves the content of a URL.
+Retrieves the content of a URL.
+USE WHEN a remote resource must be read.
 
 ### OpenPLZ.Localities
-An OpenPLZ -Request specialized into searching for localities.
+OpenPLZ request specialised in searching localities.
+USE WHEN localities/cities must be searched.
 
 ### OpenPLZ.OrganizationalUnits
-An OpenPLZ -Request specialized into retrieving organizational units.
+OpenPLZ request specialised in retrieving organisational units.
+USE WHEN organisational units must be retrieved.
 
 ### OpenPLZ.Streets
-An OpenPLZ -Request specialized into searching for streets.
+OpenPLZ request specialised in searching streets.
+USE WHEN streets must be searched.
 
 ### OpenPLZ.TextSearch
-An OpenPLZ -Request performing a full text-search.
+OpenPLZ request performing a full-text search.
+USE WHEN a free-text OpenPLZ search is needed.
 
 ### OpenPLZ
-Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.
+Retrieves data from the OpenPLZ administrative-units servlet per parameter.
+USE WHEN administrative-unit data must be read directly.
 
 ### Sorted
-An Elementplaceholder sorts the Array passed as the 1st parameter in.
+Sorts the array passed as the first parameter.
+USE WHEN a list must be ordered.
 
 ### Unique
-An Elementplaceholder filters the Array passed as the 1st parameter from duplicates.
+Filters duplicates out of the array passed as the first parameter.
+USE WHEN a list must be de-duplicated.
 
 ### V
-This Element-Placeholder acquires a global variable's value.
+Reads the value of a global variable.
+USE WHEN a global variable's value is referenced.
 
 ### VP
-This Element-Placeholder acquires a value from window.codbiSettings.gv.
+Reads a value from `window.codbiSettings.gv`.
+USE WHEN a plugin-setting value must be read.
 
 ## Standard Configurations
 
 ### AI
-Registers standard configurations providing targets that're used with.
+Registers the standard configurations/CSS targets used by the AI functionalities.
+USE WHEN an AI functionality is applied (targets/classes come from here).
 
 ### Appointments
-Registers standard configurations specific to appointment arrangements.
+Registers the standard configurations specific to appointment arrangements.
+USE WHEN appointment date/time handling and its classes are needed.
 
 ### BayVIS
-Registers standard configurations specific to buildings registered in BayVIS.
+Registers the standard configurations specific to buildings/authorities in BayVIS.
+USE WHEN a BayVIS building/authority block is built.
 
 ### Financial
-Registers standard configurations specific to finances.
+Registers the standard configurations specific to financial fields (CodBi_Currency; CodBi_TRANS_NTW = digits to GERMAN words only — any other language uses HTML.Input.Trans.NTW with its own NumberWords).
+USE WHEN money/amount fields are built.
 
 ### Holistic.CSS.Standard
-Registers a standard configuration that applies a standard CSS onto the form.
+Applies a standard CSS to the whole form.
+USE WHEN the form should get the standard CodBi look.
 
 ### Holistic.Matomo.Tracking
-Registers a standard configurations using the functionality.
+Applies Matomo tracking to the whole form via the functionality.
+USE WHEN tracking should cover the complete form.
 
 ### Holistic.Media.Input.Speech
-Registers a standard configuration that applies Speech-to-Text onto every.
+Applies speech-to-text to every text field of the form.
+USE WHEN dictation should be available form-wide (browser speech).
 
 ### Holistic.Media.Input.Speech.Whisper
-Registers a standard configuration that applies Whisper Speech-to-Text onto every.
+Applies Whisper speech-to-text to every text field of the form.
+USE WHEN dictation should be available form-wide (server/Whisper).
 
 ### LDAP.Autofill
-Registers standard configurations specific to LDAP-Autocompletion in HTMLInputElement s.
+Registers the standard configurations for LDAP autocompletion on inputs.
+USE WHEN LDAP autocompletion is applied.
 
 ### OpenPLZ.AC.SET
-Registers standard configurations that binds HTMLInputElements tagged with the.
+The four address-part classes of a German address group: CodBi_OpenPLZ_AC_SET_PLZ (postal code), CodBi_OpenPLZ_AC_SET_Locality (locality/city), CodBi_OpenPLZ_AC_SET_Street (street), CodBi_OpenPLZ_AC_SET_BuildingNumber (building number).
+USE WHEN the request builds an ADDRESS group — decide by MEANING (any language), then put the matching class on the field that IS that address part. NEVER on a field whose name/label merely contains an address word (a "Wort in Großbuchstaben" capitalisation field, a "Report", an e-mail "...-Adresse"). If the group lacks a street / house-number field, CREATE it. No server-side net does this for you.
 
 ### People
-Registers standard configurations specific to people characteristics.
+Registers the standard classes for people data (first/last name, e-mail, phone, postal code, building number).
+USE WHEN person fields are created — each of them MUST carry its People class.
 
 ### Print.Removal
-Registers standard configurations that remove HTMLElement s from the DOM.
+Registers the standard configurations that remove elements from the DOM when printing.
+USE WHEN elements are hidden for print via the standard classes.
 
 ### UI.Panels
-Registers standard configurations providing CodBi-"HTML.Panel"s.
+Standard classes for collapsible panels and accordions: CodBi_HTML_Panel_Standard/_Flat/_Minimal/_Index (each applies HTML.Panel with a finished look) and CodBi_Accordion_A … _D (each applies HTML.Panel.Accordion to the tagged wrapper container, one group per letter — use the first letter not yet used, only four exist). A panel class fits an XFieldSet (legend = title) AND a container that carries its own non-empty `AutoHeaderTitle`.
+USE WHEN panels or accordions are built: PREFER these classes over the HTML.Panel / HTML.Panel.Accordion functionalities; use those directly only when no class is left (A-D used up) or a custom look is requested.

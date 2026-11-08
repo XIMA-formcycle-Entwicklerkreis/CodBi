@@ -741,6 +741,15 @@ class AICodBiAssistant : IPluginServletAction {
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?.let { AI.matomoApiKey = it }
+    // LDAP request url(s) of this installation (LDAP_URL = frontend domain, LDAP_URL_BACKEND =
+    // backend domain). The CodBi LDAP functionalities fall back to them when their own URL
+    // parameter
+    // is empty, so the assistant must know whether they exist: with a configured url the parameter
+    // is omitted and never asked for; without one the url is a value only the user can supply and
+    // the clarify round has to ask for it. Re-read on every plugin re-initialization.
+    AI.ldapUrl = configData.properties.getProperty("LDAP_URL")?.trim()?.takeIf { it.isNotBlank() }
+    AI.ldapUrlBackend =
+        configData.properties.getProperty("LDAP_URL_BACKEND")?.trim()?.takeIf { it.isNotBlank() }
     // Maximum number of additional detail-reruns for form modification. Re-read on every plugin
     // re-initialization, so configuration changes take effect on the next request.
     configData.properties
@@ -1826,6 +1835,15 @@ class AICodBiAssistant : IPluginServletAction {
     // widgets and workflow nodes. Also disables the server-side Holistic.* standard-config
     // application (e.g. Holistic.Cleave.Date must not be applied when CodBi is off).
     val useCodbi = params.requestParameters["useCodbi"]?.firstOrNull()?.toBoolean() ?: true
+    // THE USER'S GO-AHEAD: the previous clarification answer was the option "activate the CodBi
+    // functions". The client switched the CodBi switch on and repeats the SAME request, so this run
+    // must execute instead of asking anything else — without that, every answered round re-ran the
+    // clarify round and produced useless follow-up questions (observed: two extra rounds asking for
+    // the field title and for the text of a message placeholder). The flag is set by the assistant
+    // dialog ONLY when the user clicked the option the AI marked as the CodBi choice, so it is the
+    // user's own decision — never a keyword in any language.
+    val codbiActivatedByAnswer =
+        params.requestParameters["codbiActivated"]?.firstOrNull()?.toBoolean() ?: false
 
     // When true, the AI asks ALL clarification questions in a single round instead of limiting
     // itself to at most 3 per round (see buildClarificationSystemPrompt).
@@ -2264,6 +2282,17 @@ class AICodBiAssistant : IPluginServletAction {
     // the lookup fails.
     val availableDatasourceNames = loadAvailableDatasourceNames(params)
     val availableDatasources = buildAvailableDatasourcesBlock(availableDatasourceNames)
+    // LDAP CONFIGURATION block: tells the AI whether this installation already has an LDAP request
+    // url (plugin property LDAP_URL / LDAP_URL_BACKEND). With one, the LDAP functionalities omit
+    // their URL parameter and no question is allowed; without one, the URL is a user-owned value
+    // the
+    // clarify round MUST ask for instead of emitting a field that cannot resolve.
+    val ldapConfigBlock = buildLdapConfigBlock()
+    logger.info(
+        "[AICodBiAssistant] LDAP url configured: {} (LDAP_URL={}, LDAP_URL_BACKEND={})",
+        AI.isLdapUrlConfigured(),
+        if (AI.ldapUrl.isNullOrBlank()) "<empty>" else "set",
+        if (AI.ldapUrlBackend.isNullOrBlank()) "<empty>" else "set")
     logger.info(
         "[AICodBiAssistant] Available Formcycle datasources found: {}{}",
         availableDatasourceNames.size,
@@ -2338,7 +2367,16 @@ class AICodBiAssistant : IPluginServletAction {
             clarificationContext,
             chatContext,
             clarificationCompletionPages,
-            endingPageVeto)
+            endingPageVeto,
+            // CodBi switch OFF: never skip the round. Without the catalog the assistant knows
+            // nothing about the extended functionalities, so any request implying one (blocking
+            // specific dates/values, AI validation, autocomplete, ...) needs a clarification — the
+            // round can also point the user at the dialog's CodBi switch (see
+            // codbi-codbi-disabled).
+            codbiDisabledVeto = !useCodbi,
+            // ... but once the user ANSWERED that question with the CodBi-activation option, the
+            // switch is on and the run is the approved build — no further questions.
+            codbiActivated = codbiActivatedByAnswer)
     if (clarifySkipReason != null) {
       logger.info(
           "[AICodBiAssistant] Clarify-check SKIPPED — {} (one full clarify inference saved; the build proceeds immediately)",
@@ -2430,6 +2468,7 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationFormVariables,
                 clarificationWorkflowMails,
                 availableDatasources,
+                ldapConfigBlock,
                 clarificationXslTemplates,
                 // The AI's own classification also authorises the scenario blocks: `sections`
                 // carries the pass-1 capability tags (e.g. "datasource"), so an AI-recognised
@@ -2687,6 +2726,7 @@ class AICodBiAssistant : IPluginServletAction {
                   changeHistoryContext,
                   matomoStatsContext,
                   availableDatasources,
+                  ldapConfigBlock,
                   availableDatasourceNames,
                   chatAnswerResult?.sections ?: emptySet(),
                   getUserContext(params),
@@ -3150,13 +3190,11 @@ class AICodBiAssistant : IPluginServletAction {
     // is
     // null otherwise), so a form is never echoed back without a change.
     if (resolvedFormJson != null) {
-      // Verification of the deterministic standard-class nets: they log EVERY class they add on the
-      // finished form (see applyOpenPlzClassesToForm / applyPeopleClassesToForm). If those
-      // additions
-      // do not survive to the form that is actually emitted, a transformation BETWEEN the form
-      // modification and this point dropped them — the two counts below make that visible in one
-      // run
-      // instead of being inferred from the designer.
+      // Verification of the standard classes the AI applied (plus the datatype-driven People net,
+      // see applyPeopleClassesToForm): the net logs EVERY class it adds and the AI reports its own
+      // ones. If those classes do not survive to the form that is actually emitted, a
+      // transformation BETWEEN the form modification and this point dropped them — the two counts
+      // below make that visible in one run instead of being inferred from the designer.
       logger.info(
           "[AICodBiAssistant] Emitting form: {} chars, CodBi_People_* occurrences={}, CodBi_OpenPLZ_AC_SET_* occurrences={}",
           resolvedFormJson.length,
@@ -4220,6 +4258,9 @@ class AICodBiAssistant : IPluginServletAction {
       changeHistoryContext: String? = null,
       matomoStatsContext: String? = null,
       availableDatasources: String? = null,
+      // LDAP CONFIGURATION block (see [buildLdapConfigBlock]): with a configured installation url
+      // the LDAP functionalities omit `data-cb-URL`; without one the url must come from the user.
+      ldapConfig: String? = null,
       availableDatasourceNames: List<String> = emptyList(),
       keepSections: Set<String> = emptySet(),
       // Used by the deterministic `_copyElements` expansion: the foreign form is read through
@@ -4356,6 +4397,11 @@ class AICodBiAssistant : IPluginServletAction {
     // one (the .md prompts carry the rule: use a listed name, otherwise ASK instead of inventing).
     if (!availableDatasources.isNullOrBlank()) {
       effectiveSystemPrompt += "\n\n" + availableDatasources.trim()
+    }
+    // LDAP url availability (see [buildLdapConfigBlock]): decides whether `data-cb-URL` is omitted
+    // (installation url configured) or is a user-owned value that must have been asked for.
+    if (!ldapConfig.isNullOrBlank()) {
+      effectiveSystemPrompt += "\n\n" + ldapConfig.trim()
     }
     // Web results that an EARLIER pass of THIS run already looked up (e.g. during the clarification
     // round). Without them the model cannot act on its own finding: observed — it searched for a
@@ -4515,6 +4561,69 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
+    // CODBI-DISABLED EMPTY-ANSWER REPAIR — MODEL-DRIVEN and LANGUAGE-AGNOSTIC: with the switch OFF
+    // the model may answer pass-1 with NEITHER items NOR a USABLE details request — either a bare
+    // `{"items":[],"_codbiApplicability":{…}}` (observed several times) or a `need_codbi_details`
+    // envelope that names NOTHING (empty "elements" AND empty "widgets", see
+    // [CodbiDetailsDemandPolicy]). Both leave the run on the unchanged form. Ask the SAME model
+    // once
+    // more and let IT name the widgets it needs — no keyword or word matching, so a free-text task
+    // in ANY language is handled the same way. A legitimate removal answer (only `_removedItems`)
+    // or an ALREADY SPECIFIED details request never reaches this round — that request is honoured
+    // instead (see the `!useCodbi` branch, which delivers the requested widget templates).
+    val pass1Signal = extractCodbiDetailsRequest(cleaned)
+    val pass1SignalSpecified =
+        pass1Signal != null &&
+            CodbiDetailsDemandPolicy.isSpecified(pass1Signal.elements, pass1Signal.widgets)
+    if (!useCodbi &&
+        !hasTopLevelItems(cleaned) &&
+        !pass1SignalSpecified &&
+        !cleaned.contains("_removedItems")) {
+      logger.warn(
+          "[AICodBiAssistant] CodBi disabled — pass-1 returned NO items and no widget request; re-running pass-1 with the 'name the widgets you need' requirement so the request is not lost")
+      val emptyRepairUserContent =
+          userContent +
+              "\n\nREPAIR — YOUR PREVIOUS ANSWER CONTAINED NO CHANGES: the \"items\" array was EMPTY and you made no widget request, so the form stays exactly as it is and the user's request is lost. Answer the SAME request again and do ONE of these two things:\n" +
+              "  (a) CHANGE the existing element(s) — when the request can be fulfilled by modifying elements that are ALREADY in the form, emit their items (each with \"properties.name\"/\"properties.id\") exactly as the protocol above requires; or\n" +
+              "  (b) if the request needs a NEW widget (a widget class that is NOT already in the form), answer ONLY with {\"status\":\"need_codbi_details\",\"elements\":[],\"widgets\":[\"<WidgetClass>\"]} and name EVERY widget class you need (elements stays EMPTY; take the class names from the widget catalog in the system prompt). You will receive that widget's exact template in the NEXT pass and build it there — this run contains NO widget templates, so never emit a new widget here.\n" +
+              "An answer with an empty \"items\" array AND no widget request is a FAIL — it leaves the form unchanged.\n\n" +
+              "REMINDER 3 (unchanged): put ONLY the changed properties in each item; everything else is restored by the server."
+      val emptyRepairMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(effectiveSystemPrompt)}},""")
+        append(
+            """{"role":"user","content":${buildUserContent(emptyRepairUserContent, imageParts)}}""")
+        append("]")
+      }
+      val emptyRepairModel = auxModelFor(AuxRole.REPAIR, modelId)
+      val emptyRepairRaw = instance.performFormAssist(emptyRepairModel, emptyRepairMessages)
+      val emptyRepairUsage = instance.takeLastAssistUsage()
+      tokensIn += emptyRepairUsage?.promptTokens ?: estimateTokens(emptyRepairMessages)
+      tokensOut += emptyRepairUsage?.completionTokens ?: estimateTokens(emptyRepairRaw)
+      reportTrip(
+          "form-pass-1-empty-repair",
+          emptyRepairModel,
+          emptyRepairUsage,
+          emptyRepairMessages,
+          emptyRepairRaw)
+      val repairedEmpty = repairAiJson(extractJson(stripThinkTags(emptyRepairRaw)))
+      // Accept the repaired answer only when it actually moves the run forward: items, a removal
+      // list, or a SPECIFIED widget request. A second blank demand is discarded (it would replace
+      // a usable answer with an envelope that changes nothing).
+      val repairedEmptySignal = extractCodbiDetailsRequest(repairedEmpty)
+      if (hasTopLevelItems(repairedEmpty) ||
+          (repairedEmptySignal != null &&
+              CodbiDetailsDemandPolicy.isSpecified(
+                  repairedEmptySignal.elements, repairedEmptySignal.widgets)) ||
+          repairedEmpty.contains("_removedItems")) {
+        cleaned = repairedEmpty
+        logReEmissionStats("form-pass-1-empty-repair", repairedEmpty, persistJson)
+      } else {
+        logger.warn(
+            "[AICodBiAssistant] Pass-1 empty-answer repair STILL returned neither items nor a widget request — the request cannot be applied")
+      }
+    }
+
     // A copy-only answer (`_copyElements` with no item diff) must still be treated as a valid form
     // response: small models sometimes omit the `items` array and/or the `_diff` marker. Normalize
     // the envelope BEFORE the form-shape checks so the copy directive survives to the server-side
@@ -4614,7 +4723,8 @@ class AICodBiAssistant : IPluginServletAction {
       // to the request's wording, inventing a name (observed: "Staatsangehoerigkeit" instead of the
       // listed "56_Staatsangehoerigkeiten") which the final guard then clears to user-defined.
       val datasourceSection =
-          if (availableDatasources.isNullOrBlank()) "" else "\n\n" + availableDatasources.trim()
+          (if (availableDatasources.isNullOrBlank()) "" else "\n\n" + availableDatasources.trim()) +
+              (if (ldapConfig.isNullOrBlank()) "" else "\n\n" + ldapConfig.trim())
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
@@ -4654,7 +4764,7 @@ class AICodBiAssistant : IPluginServletAction {
         // request (targeted full details) or the forced final complete-form pass re-injects
         // {{CODBI_FULL_SECTION}} — so parameter names are never lost, only deferred.
         val rethinkSystemPrompt =
-            loadCodbiRethinkPrompt() +
+            loadCodbiRethinkPrompt(useCodbi) +
                 historySection +
                 clarificationSection +
                 chatSection +
@@ -4748,21 +4858,22 @@ class AICodBiAssistant : IPluginServletAction {
                 "XContainerInvisible",
                 "XHeader",
                 "XFooter")
-        val targetItems =
-            if (targetElementIds.isEmpty()) {
-              JsonArray().also { arr ->
-                for (item in allItems) {
-                  if (!item.isJsonObject) continue
-                  val obj = item.asJsonObject
-                  val props = obj.getAsJsonObject("properties")
-                  val className = obj.get("className")?.takeIf { it.isJsonPrimitive }?.asString
-                  val hasElements = (props?.getAsJsonArray("elements")?.size() ?: 0) > 0
-                  if ((className != null && className in containerClassesForTarget) ||
-                      hasElements) {
-                    arr.add(obj)
-                  }
+        fun containerTargets(): JsonArray =
+            JsonArray().also { arr ->
+              for (item in allItems) {
+                if (!item.isJsonObject) continue
+                val obj = item.asJsonObject
+                val props = obj.getAsJsonObject("properties")
+                val className = obj.get("className")?.takeIf { it.isJsonPrimitive }?.asString
+                val hasElements = (props?.getAsJsonArray("elements")?.size() ?: 0) > 0
+                if ((className != null && className in containerClassesForTarget) || hasElements) {
+                  arr.add(obj)
                 }
               }
+            }
+        val targetItems =
+            if (targetElementIds.isEmpty()) {
+              containerTargets()
             } else {
               // Expand target IDs to include:
               // 1. Child elements of targeted containers/fieldsets (e.g. targeting a fieldset for
@@ -4857,13 +4968,26 @@ class AICodBiAssistant : IPluginServletAction {
                   }
                 }
               }
-              JsonArray().also { arr ->
-                for (item in allItems) {
-                  if (!item.isJsonObject) continue
-                  val itemId = item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString
-                  if (itemId != null && itemId in expandedIds) arr.add(item)
-                }
-              }
+              val expanded =
+                  JsonArray().also { arr ->
+                    for (item in allItems) {
+                      if (!item.isJsonObject) continue
+                      val itemId =
+                          item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString
+                      if (itemId != null && itemId in expandedIds) arr.add(item)
+                    }
+                  }
+              if (expanded.size() == 0) {
+                // The applicability report named only elements that do NOT exist yet (this pass
+                // creates them), so nothing resolved. Sending an EMPTY item list left the model
+                // without the form it edits: it invented a bare XSelect with a single "Bitte
+                // waehlen" option instead of wiring the real one. Fall back to the container/page
+                // items - the tree the new element is nested into.
+                logger.warn(
+                    "[AICodBiAssistant] Pass-2 targets resolved to NO existing item (targets={}) - sending the container/page items instead of an empty list",
+                    targetElementIds)
+                containerTargets()
+              } else expanded
             }
 
         // The DETAILED XSpan template (the illustration rules with the worked example and the
@@ -5244,15 +5368,31 @@ class AICodBiAssistant : IPluginServletAction {
     cleaned = normalizeMatomoTrackingInRawJson(cleaned)
 
     if (!useCodbi) {
-      // CodBi disabled: never send any CodBi reference/details in any pass. Only rebuild Formcycle
-      // widgets the AI created in pass-1 (their exact JSON templates were never requested), so they
-      // are not left in a hallucinated persist structure. Otherwise keep the pass-1 result as-is.
+      // CodBi disabled: never send any CodBi reference/details in any pass — but the widget
+      // TEMPLATES must still be delivered, otherwise the run ends on the unchanged form. Pass-1
+      // only carries the widget NAME catalog (by design, token saving), so it cannot build a new
+      // widget itself; the protocol makes it answer with a `need_codbi_details` request naming the
+      // widget classes it needs. That request MUST be honoured here (it was silently dropped
+      // before, which is why an answered clarification produced no form at all).
+      //
+      // The CodBi FUNCTION ids such a signal may also name are dropped: with the switch off there
+      // is no CodBi knowledge in ANY pass — only the Formcycle widget templates are sent.
+      val signalledWidgets =
+          extractCodbiDetailsRequest(cleaned)?.let { signal ->
+            if (CodbiDetailsDemandPolicy.isSpecified(signal.elements, signal.widgets)) {
+              signal.widgets
+            } else emptyList()
+          } ?: emptyList()
+      // Widgets the AI wired into the form WITHOUT requesting their details carry a hallucinated
+      // persist structure — they are rebuilt from their exact templates in the same pass.
       val createdWidgets = extractNewWidgetClassNames(cleaned, persistJson)
-      if (createdWidgets.isNotEmpty()) {
+      val widgetsToDeliver =
+          (signalledWidgets.filter { it.isNotBlank() } + createdWidgets).distinct()
+      if (widgetsToDeliver.isNotEmpty()) {
         logger.info(
-            "[AICodBiAssistant] CodBi disabled — pass-2 rebuilding Formcycle widgets: {}",
-            createdWidgets.joinToString(", "))
-        cleaned = rerunWithCodbiDetails(emptyList(), createdWidgets, useCodbi = false)
+            "[AICodBiAssistant] CodBi disabled — pass-2 building/rebuilding Formcycle widgets with their exact templates: {}",
+            widgetsToDeliver.joinToString(", "))
+        cleaned = rerunWithCodbiDetails(emptyList(), widgetsToDeliver, useCodbi = false)
       }
     } else {
       val requestedDetails = extractCodbiDetailsRequest(cleaned)
@@ -5531,17 +5671,14 @@ class AICodBiAssistant : IPluginServletAction {
       // one request never yields the designed/interactive text twice. Pre-existing elements are the
       // survivor and are never touched — only a NEW copy is dropped.
       val dedupedForm = dropDuplicateTextSpans(recaptchaForm, persistJson)
-      // Deterministic OpenPLZ.AC.SET safety net, re-applied to the FINISHED form: the net also runs
-      // on the PASS-1 result, but pass-2 re-emits every created widget IN FULL, so those pass-1
-      // items
-      // (and the address classes the net had added to them) are overwritten by pass-2's version.
-      // See
-      // [applyOpenPlzClassesToForm].
-      val openPlzForm = applyOpenPlzClassesToForm(dedupedForm)
-      // People standard classes — same reasoning as the OpenPLZ net (pass-2 overwrites the pass-1
-      // items, so it must run on the finished form). Skipped entirely when the request explicitly
-      // asks for Cleave formatting.
-      val peopleForm = applyPeopleClassesToForm(openPlzForm, prompt)
+      // People standard classes on the FINISHED form: pass-2 re-emits every widget it creates IN
+      // FULL, so a class the model set in pass-1 is overwritten by pass-2's version. The net only
+      // mirrors the datatype the MODEL chose (never a name/label wording — see
+      // [applyPeopleClassesToForm]) and is skipped when the request explicitly asks for Cleave
+      // formatting. There is deliberately NO equivalent net for the OpenPLZ.AC.SET address classes:
+      // deciding whether a request is about an address/locality is the AI's job, not a keyword
+      // match's.
+      val peopleForm = applyPeopleClassesToForm(dedupedForm, prompt)
       // Deterministic COPY of elements from ANOTHER form (`_copyElements`). The AI named only the
       // source references; the server clones the complete foreign subtree (children, options,
       // attributes, CodBi wiring) here, after every other normalization, so the copy stays faithful
@@ -6860,58 +6997,6 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
-   * Re-applies the deterministic OpenPLZ.AC.SET net ([applyOpenPlzAddressClasses]) to a FINISHED
-   * form JSON, i.e. AFTER the pass-2 splice.
-   *
-   * The net also runs inside [restoreStrippedFields] on the PASS-1 result — but pass-2 re-emits
-   * every widget it creates IN FULL, so those pass-1 items (together with any
-   * `CodBi_OpenPLZ_AC_SET_*` class the net had added to them) are replaced by pass-2's version and
-   * the classes are lost. Running it again here guarantees the address-part classes reach the
-   * designer even when the model omits them in the pass that actually builds the widgets.
-   *
-   * Only its PASS 1 (tagging the existing address-part fields) is needed here: its PASS 2 creates a
-   * missing street/house-number field from the XTextField base template of the AI response wrapper,
-   * which no longer exists at this point — and that part has already run in the pass-1 invocation,
-   * where the template was available.
-   */
-  private fun applyOpenPlzClassesToForm(formJson: String): String {
-    return try {
-      val root = JsonParser.parseString(formJson).asJsonObject
-      val items = root.getAsJsonArray("items") ?: return formJson
-      applyOpenPlzAddressClasses(items, null)
-      root.toString()
-    } catch (e: Exception) {
-      logger.warn(
-          "[AICodBiAssistant] OpenPLZ.AC.SET safety net on the finished form failed: {}", e.message)
-      formJson
-    }
-  }
-
-  /** Field-name tokens that identify the People standard's person-field classes. */
-  private val PEOPLE_MAIL_TOKENS = setOf("email", "mail")
-  private val PEOPLE_PHONE_TOKENS = setOf("telefon", "phone", "tel", "mobil", "mobile", "handy")
-  private val PEOPLE_PLZ_TOKENS = setOf("plz", "postleitzahl", "postalcode", "zip", "zipcode")
-  private val PEOPLE_BUILDING_TOKENS = setOf("hausnummer", "hausnr", "buildingnumber")
-  private val PEOPLE_NAME_TOKENS =
-      setOf(
-          "vorname",
-          "nachname",
-          "firstname",
-          "lastname",
-          "surname",
-          "givenname",
-          "familienname",
-          "name",
-          "first",
-          "last")
-  /** Unambiguous label words — a label match alone identifies the person field. */
-  private val PEOPLE_MAIL_LABEL = listOf("e-mail", "email", "mail")
-  private val PEOPLE_PHONE_LABEL = listOf("telefon", "phone")
-  private val PEOPLE_PLZ_LABEL = listOf("postleitzahl", "plz")
-  private val PEOPLE_BUILDING_LABEL = listOf("hausnummer")
-  private val PEOPLE_NAME_LABEL = listOf("vorname", "nachname")
-
-  /**
    * A request that explicitly asks for Cleave formatting exempts the fields from the automatic
    * People standard (see the standard-configuration rule): then Cleave is exactly what the user
    * wants, and the AI's own Cleave-aware output is left untouched.
@@ -6921,16 +7006,22 @@ class AICodBiAssistant : IPluginServletAction {
   /**
    * Deterministic safety net for the People standard configuration classes.
    *
-   * DECISION: a person field ALWAYS carries its `CodBi_People_*` class. A datatype that also
-   * triggers a `Holistic.Cleave.*` standard (phone/plzDE) is NOT a reason to omit it — the server
-   * activates the Cleave standard automatically and the People class is additive. The classes are
-   * added ONLY when the request does not explicitly ask for Cleave formatting
-   * ([PEOPLE_CLEAVE_REQUEST]).
+   * WHICH class a field needs is the AI's decision — the prompts (always-sent build instruction,
+   * pass-2 structure rules, standard-configuration reference) mandate a `CodBi_People_*` class on
+   * every person field. This net only mirrors a decision the MODEL itself already made in a
+   * STRUCTURED property: the field's `datatype`. `email`/`phone`/`plzDE` are unambiguous,
+   * language-independent facts about a field, whereas a field NAME or LABEL cannot be classified
+   * reliably across the languages and phrasings users write in ("Wort" contains "ort", "Report"
+   * contains "ort", "E-Mail-Adresse" contains "adresse", …) — that kind of guessing is exactly what
+   * stamped `CodBi_OpenPLZ_AC_SET_Locality` onto a capitalisation field and has been removed.
    *
-   * Like the OpenPLZ net this runs on the FINISHED form: pass-2 re-emits every widget it creates in
-   * full, so a net that only ran before pass-2 would see its classes overwritten. It only ever
-   * ADDS, and at most ONE `CodBi_People_*` field class per field (a field is either a PLZ or a
-   * building number, never both).
+   * So: an e-mail/phone/PLZ field the model marked with its datatype keeps its People class even
+   * when pass-2 re-emitted the widget without it, and everything else is left exactly as the AI
+   * built it (first/last-name fields, building numbers, … are the AI's own business). A datatype
+   * that also triggers a `Holistic.Cleave.*` standard (phone/plzDE) is NOT a reason to omit the
+   * class — the server activates the Cleave standard automatically and the People class is
+   * additive. Skipped entirely when the request explicitly asks for Cleave formatting
+   * ([PEOPLE_CLEAVE_REQUEST]).
    */
   private fun applyPeopleClassesToForm(formJson: String, prompt: String): String {
     if (PEOPLE_CLEAVE_REQUEST.containsMatchIn(prompt)) {
@@ -6950,24 +7041,14 @@ class AICodBiAssistant : IPluginServletAction {
         // Never tag an AI functionality answer / receiver field (e.g. the field that receives the
         // document-QA answer) with a People class — such a field has nothing to do with a person.
         if (isAiAnswerField(props)) continue
-        val label = (props.get("label")?.asString ?: "").lowercase()
+        // The datatype is the ONLY signal this net may read: a structured property the model set
+        // deliberately, never the wording of a name or label (see the KDoc above).
         val datatype = props.get("datatype")?.asString ?: ""
-        val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }.toSet()
         val cls =
             when {
-              datatype.equals("email", true) ||
-                  words.any { it in PEOPLE_MAIL_TOKENS } ||
-                  PEOPLE_MAIL_LABEL.any { label.contains(it) } -> "CodBi_People_Mail"
-              datatype.equals("phone", true) ||
-                  words.any { it in PEOPLE_PHONE_TOKENS } ||
-                  PEOPLE_PHONE_LABEL.any { label.contains(it) } -> "CodBi_People_Phone"
-              datatype.equals("plzDE", true) ||
-                  words.any { it in PEOPLE_PLZ_TOKENS } ||
-                  PEOPLE_PLZ_LABEL.any { label.contains(it) } -> "CodBi_People_PLZ"
-              words.any { it in PEOPLE_BUILDING_TOKENS } ||
-                  PEOPLE_BUILDING_LABEL.any { label.contains(it) } -> "CodBi_People_BuildingNumber"
-              words.any { it in PEOPLE_NAME_TOKENS } ||
-                  PEOPLE_NAME_LABEL.any { label.contains(it) } -> "CodBi_People_Name"
+              datatype.equals("email", true) -> "CodBi_People_Mail"
+              datatype.equals("phone", true) -> "CodBi_People_Phone"
+              datatype.equals("plzDE", true) -> "CodBi_People_PLZ"
               else -> null
             }
         if (cls == null) continue
@@ -7023,245 +7104,6 @@ class AICodBiAssistant : IPluginServletAction {
                           "data-cb-Question", ignoreCase = true)
                 } == true
     return hasAiReceiverClass || hasAiQuestionAttr
-  }
-
-  /**
-   * Deterministic safety net for the OpenPLZ.AC.SET standard: ensures the matching
-   * `CodBi_OpenPLZ_AC_SET_*` CSS class is present on any XTextField that represents an address part
-   * (street, building number, postal code, locality). The AI is instructed to apply these classes
-   * but sometimes omits them (or pass-2 is skipped), so this guarantees they reach the designer.
-   * Existing classes (e.g. "Goon") are preserved - nothing is ever removed or overridden. The
-   * postal code field additionally gets the `plzDE` datatype (when none is set) so the
-   * Holistic.Cleave.PLZ standard stays active.
-   *
-   * In addition, when a complete address group (a postal-code field AND a locality field tagged
-   * with the OpenPLZ classes inside the same container) has no street field and no house-number
-   * field (and no combined address field), missing `tfStrasse` + `tfHausnummer` fields are created
-   * with the matching OpenPLZ classes — closing the gap where a prompt asks for
-   * "PLZ/Ort/Straße/Hausnummer" German autocomplete but the generated fieldset only contains PLZ
-   * and Ort.
-   */
-  private fun applyOpenPlzAddressClasses(resultItems: JsonArray, baseObj: JsonObject?) {
-    // Pass 1 — apply OpenPLZ.AC.SET classes to existing address-part fields.
-    for (el in resultItems) {
-      if (!el.isJsonObject) continue
-      val item = el.asJsonObject
-      if (item.get("className")?.asString != "XTextField") continue
-      val props = item.getAsJsonObject("properties") ?: continue
-      val name = props.get("name")?.asString ?: continue
-      // NEVER tag an AI functionality answer / receiver field (e.g. the field that receives the
-      // document-QA answer and carries the AI_LLAMA_STANDARD_QA_Question class, or any field with a
-      // data-cb-Question attribute - txtQA / document QA). Such a field has NOTHING to do with an
-      // address, and stamping CodBi_OpenPLZ_AC_SET_Locality (or any address class) onto it corrupts
-      // the AI output into a bogus postal-code/locality autocomplete field.
-      if (isAiAnswerField(props)) {
-        logger.info("[AICodBiAssistant] OpenPLZ.AC.SET net skipped AI answer field '{}'", name)
-        continue
-      }
-      // Split camelCase names into words (e.g. "tfPostalCode" -> [tf, postal, code]) and match the
-      // address-part tokens so unrelated names (e.g. "tfReport") never match by accident.
-      val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }
-      // A postal-code field is identified LANGUAGE-INDEPENDENTLY by its datatype: "plzDE" can only
-      // mean a (German) postal code no matter what happened to the field's name or label.
-      val datatype = props.get("datatype")?.asString ?: ""
-      val label = (props.get("label")?.asString ?: "").lowercase()
-      val cls =
-          when {
-            datatype.equals("plzDE", true) -> "CodBi_OpenPLZ_AC_SET_PLZ"
-            words.any { it in setOf("street", "strasse", "straße") } ||
-                setOf("street", "strasse", "straße", "adresse", "address").any {
-                  label.contains(it)
-                } -> "CodBi_OpenPLZ_AC_SET_Street"
-            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ||
-                setOf("hausnummer", "hausnr", "building", "building number", "house").any {
-                  label.contains(it)
-                } -> "CodBi_OpenPLZ_AC_SET_BuildingNumber"
-            words.any {
-              it in setOf("postal", "postalcode", "postleitzahl", "plz", "zip", "zipcode")
-            } ||
-                setOf("postleitzahl", "plz", "postal", "postal code", "zip", "zipcode").any {
-                  label.contains(it)
-                } -> "CodBi_OpenPLZ_AC_SET_PLZ"
-            words.any { it in setOf("locality", "city", "ort", "wohnort") } ||
-                setOf("city", "ort", "wohnort", "locality", "town").any { label.contains(it) } ->
-                "CodBi_OpenPLZ_AC_SET_Locality"
-            else -> null
-          }
-      if (cls == null) continue
-      val cssClasses =
-          if (props.has("cssclasses") && props.get("cssclasses").isJsonArray)
-              props.getAsJsonArray("cssclasses")
-          else JsonArray().also { props.add("cssclasses", it) }
-      if (cssClasses.none { it.isJsonPrimitive && it.asString == cls }) {
-        cssClasses.add(cls)
-        logger.info(
-            "[AICodBiAssistant] Applied OpenPLZ.AC.SET CSS class '{}' to address field '{}'",
-            cls,
-            name)
-      }
-      if (cls == "CodBi_OpenPLZ_AC_SET_PLZ" && props.get("datatype")?.asString.isNullOrBlank()) {
-        props.addProperty("datatype", "plzDE")
-        logger.info("[AICodBiAssistant] Set datatype 'plzDE' on postal code field '{}'", name)
-      }
-    }
-    // Pass 2 — create missing street / house-number fields for complete address groups.
-    val baseTextProps = baseObj?.getAsJsonObject("XTextField")?.getAsJsonObject("properties")
-    if (baseTextProps == null) return
-    val childrenByParent = mutableMapOf<String, MutableSet<String>>()
-    val openplzByParent = mutableMapOf<String, MutableSet<String>>()
-    for (el in resultItems) {
-      if (!el.isJsonObject) continue
-      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      val parentId = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
-      val name = props.get("name")?.asString ?: continue
-      childrenByParent.getOrPut(parentId) { mutableSetOf() }.add(name)
-      props
-          .get("cssclasses")
-          ?.takeIf { it.isJsonArray }
-          ?.asJsonArray
-          ?.forEach { c ->
-            if (c.isJsonPrimitive && c.asString.startsWith("CodBi_OpenPLZ_AC_SET_")) {
-              openplzByParent.getOrPut(parentId) { mutableSetOf() }.add(c.asString)
-            }
-          }
-    }
-    val streetNamePattern = Regex("(?i)street|strasse|straße")
-    val buildingNamePattern = Regex("(?i)hausnummer|hausnr|buildingnumber|building")
-    for ((parentId, classes) in openplzByParent) {
-      val hasPlz = classes.contains("CodBi_OpenPLZ_AC_SET_PLZ")
-      val hasLocality = classes.contains("CodBi_OpenPLZ_AC_SET_Locality")
-      if (!hasPlz || !hasLocality) continue
-      val children = childrenByParent[parentId] ?: continue
-      val streetItem = findChildItem(resultItems, parentId, streetNamePattern)
-      val buildingItem = findChildItem(resultItems, parentId, buildingNamePattern)
-      val hasAddress = children.any { it.contains(Regex("(?i)adresse|address")) }
-      if (streetItem != null && buildingItem != null) continue
-      if (hasAddress) continue
-      val containerEl =
-          resultItems.firstOrNull {
-            it.isJsonObject &&
-                it.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString == parentId
-          } ?: continue
-      val containerProps = containerEl.asJsonObject.getAsJsonObject("properties") ?: continue
-      var elements = containerProps.getAsJsonArray("elements")
-      if (elements == null) {
-        val newArr = JsonArray()
-        containerProps.add("elements", newArr)
-        elements = newArr
-      }
-      // STREET AND HOUSE NUMBER SHARE ONE LINE (see the ROW GROUPING RULES): Formcycle renders
-      // sibling fields next to each other only when they carry the SAME `rowid`, and a field
-      // WITHOUT a rowid spans a full-width line of its own. These two fields are created HERE -
-      // AFTER the AI produced its form - so the AI cannot group them, and each one would otherwise
-      // claim a complete line. Join the row either field already has; otherwise use a fresh,
-      // collision-free one (the group is validated later by [normalizeRowIds]).
-      val existingRowId =
-          listOfNotNull(streetItem, buildingItem).firstNotNullOfOrNull {
-            it.getAsJsonObject("properties")
-                ?.get("rowid")
-                ?.takeIf { rowId -> rowId.isJsonPrimitive }
-                ?.asString
-                ?.trim()
-                ?.takeIf { rowId -> rowId.isNotEmpty() }
-          }
-      val pairRowId = existingRowId ?: freshRowId(collectRowIds(resultItems))
-      val street =
-          streetItem
-              ?: createAddressField(
-                  resultItems,
-                  elements,
-                  baseTextProps,
-                  parentId,
-                  "tfStrasse",
-                  "Straße",
-                  "CodBi_OpenPLZ_AC_SET_Street")
-      val building =
-          buildingItem
-              ?: createAddressField(
-                  resultItems,
-                  elements,
-                  baseTextProps,
-                  parentId,
-                  "tfHausnummer",
-                  "Hausnummer",
-                  "CodBi_OpenPLZ_AC_SET_BuildingNumber")
-      for (item in listOfNotNull(street, building)) {
-        item.getAsJsonObject("properties")?.addProperty("rowid", pairRowId)
-      }
-    }
-  }
-
-  /**
-   * Creates a new XTextField item reusing the XTextField base template and appends it to
-   * [elements]. Returns the created item, or `null` when the name is already referenced.
-   */
-  private fun createAddressField(
-      resultItems: JsonArray,
-      elements: JsonArray,
-      baseTextProps: JsonObject,
-      parentId: String,
-      name: String,
-      label: String,
-      cls: String,
-  ): JsonObject? {
-    if (elements.any { it.isJsonPrimitive && it.asString == name }) return null
-    val props = JsonObject()
-    for (entry in baseTextProps.entrySet()) props.add(entry.key, entry.value.deepCopy())
-    props.addProperty("name", name)
-    props.addProperty("id", "xi-${name.lowercase()}")
-    props.addProperty("label", label)
-    props.addProperty("parentid", parentId)
-    val cssClasses = JsonArray()
-    cssClasses.add(cls)
-    props.add("cssclasses", cssClasses)
-    val item = JsonObject()
-    item.addProperty("className", "XTextField")
-    item.add("properties", props)
-    resultItems.add(item)
-    elements.add(name)
-    logger.info(
-        "[AICodBiAssistant] Created missing address field '{}' ({} class) in container '{}'",
-        name,
-        cls,
-        parentId)
-    return item
-  }
-
-  /**
-   * Returns the direct child item of [parentId] whose `name` matches [pattern] - used to detect the
-   * street / house-number fields of an address group - or `null` when there is none.
-   */
-  private fun findChildItem(
-      resultItems: JsonArray,
-      parentId: String,
-      pattern: Regex,
-  ): JsonObject? {
-    for (el in resultItems) {
-      if (!el.isJsonObject) continue
-      val obj = el.asJsonObject
-      val props = obj.getAsJsonObject("properties") ?: continue
-      val parent = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
-      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
-      if (parent == parentId && pattern.containsMatchIn(name)) return obj
-    }
-    return null
-  }
-
-  /** Collects every `rowid` already used by the form items, so a new row never collides. */
-  private fun collectRowIds(resultItems: JsonArray): Set<String> {
-    val rowIds = linkedSetOf<String>()
-    for (el in resultItems) {
-      if (!el.isJsonObject) continue
-      val row =
-          el.asJsonObject
-              .getAsJsonObject("properties")
-              ?.get("rowid")
-              ?.takeIf { it.isJsonPrimitive }
-              ?.asString
-              ?.trim()
-      if (!row.isNullOrEmpty()) rowIds.add(row)
-    }
-    return rowIds
   }
 
   private fun extractAppliedCodbiIds(cleanedJson: String): List<String> {
@@ -8492,6 +8334,103 @@ class AICodBiAssistant : IPluginServletAction {
       get(key)?.takeIf { it.isJsonArray }?.asJsonArray
 
   /**
+   * Renames an attribute entry's `name` key to the canonical `text` key.
+   *
+   * Formcycle stores attributes as `{"text":"<attribute name>","value":"<value>"}`. When the model
+   * emits `{"name": ...}` instead - observed on a select whose `data-cb-func` and every parameter
+   * entry used `name` - the entry is silently ignored by everything that reads the attributes (the
+   * `data-cb-*` promotion in [restoreStrippedFields], the runtime loader and the publish step), so
+   * the functionality appeared applied while NONE of its parameters took effect. Purely structural:
+   * neither the functionality, the parameter name nor the value is interpreted.
+   *
+   * @param items The flat `items` array of the form JSON, repaired in place.
+   */
+  private fun normalizeAttributeEntryKeys(items: JsonArray) {
+    var renamed = 0
+    fun normalize(attrs: JsonArray?) {
+      if (attrs == null) return
+      for (e in attrs) {
+        if (!e.isJsonObject) continue
+        val a = e.asJsonObject
+        if (a.has("text") || !a.has("name")) continue
+        val name = a.get("name") ?: continue
+        a.remove("name")
+        a.add("text", name)
+        renamed++
+      }
+    }
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      normalize(item.arrayProp("attributes"))
+      normalize(item.getAsJsonObject("properties")?.arrayProp("attributes"))
+    }
+    if (renamed > 0) {
+      logger.info("[AICodBiAssistant] Normalized {} attribute entr(ies): 'name' -> 'text'", renamed)
+    }
+  }
+
+  /**
+   * Splits a DOTTED `data-cb-property` of a `JSON.SET` functionality into its documented form.
+   *
+   * `JSON.SET` assigns `ToSet` to `Property` of the object that the OPTIONAL dotted `Path` resolves
+   * from the tagged element (`target = path ? path.split(".")... : element; target[property] =
+   * toset`), and the runtime rejects a `Property` containing a dot. Models regularly put the WHOLE
+   * dotted path into `Property` (reported: "Füge ein Eingabefeld hinzu und setzen dessen
+   * style.scale Eigenschaft auf 2." → `data-cb-property="style.scale"`), which the runtime silently
+   * ignores, so the property was never set. The rewrite is faithful, not a guess: `style.scale` on
+   * the element IS `element.style["scale"]`, i.e. exactly `data-cb-path="style"` +
+   * `data-cb-property="scale"` — the value is untouched. Items whose functionality is NOT
+   * `JSON.SET`, and properties without a dot, are left alone.
+   *
+   * @return The number of repaired items (for logging / tests).
+   */
+  internal fun splitDottedJsonSetProperty(items: JsonArray): Int {
+    var fixed = 0
+
+    fun handle(props: JsonObject) {
+      val func = readDataCbAttribute(props, "data-cb-func") ?: return
+      val carriesJsonSet =
+          func.split(',', ';', '|').any { it.trim().equals("JSON.SET", ignoreCase = true) }
+      if (!carriesJsonSet) return
+      val property = readDataCbAttribute(props, "data-cb-property")?.trim().orEmpty()
+      if (!property.contains('.')) return
+      val segments = property.split('.').map { it.trim() }.filter { it.isNotEmpty() }
+      if (segments.size < 2) return
+      val existingPath = readDataCbAttribute(props, "data-cb-path")?.trim().orEmpty()
+      val pathSegments =
+          (if (existingPath.isEmpty()) emptyList()
+          else existingPath.split('.').map { it.trim() }.filter { it.isNotEmpty() }) +
+              segments.dropLast(1)
+      writeDataCbAttribute(props, "data-cb-path", pathSegments.joinToString("."))
+      writeDataCbAttribute(props, "data-cb-property", segments.last())
+      fixed++
+    }
+
+    fun walk(list: JsonArray) {
+      for (el in list) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        item.getAsJsonObject("properties")?.let { handle(it) }
+        item.get("elements")?.takeIf { it.isJsonArray }?.let { walk(it.asJsonArray) }
+        item
+            .getAsJsonObject("properties")
+            ?.get("elements")
+            ?.takeIf { it.isJsonArray }
+            ?.let { walk(it.asJsonArray) }
+      }
+    }
+
+    walk(items)
+    if (fixed > 0) {
+      logger.info(
+          "[AICodBiAssistant] JSON.SET: split {} dotted data-cb-property value(s) into data-cb-path + data-cb-property",
+          fixed)
+    }
+    return fixed
+  }
+
+  /**
    * Null-safe read of a scalar `properties` member. gson maps a JSON `null` to [JsonNull], whose
    * `getAsString()` (Kotlin `asString`) THROWS `UnsupportedOperationException` instead of returning
    * null — so a single model-emitted `"parentid": null` aborted the whole form build. Returns null
@@ -8548,6 +8487,17 @@ class AICodBiAssistant : IPluginServletAction {
     //    classNames exists, so such an item would be dropped entirely).
     canonicalizeLangSwitchClassName(items)
     canonicalizeDatePickerClassName(items)
+    // 0b) Normalize the KEY of attribute entries: the form stores attributes as
+    //     {"text": "<attribute name>", "value": "<value>"}. Models regularly emit {"name": ...}
+    //     instead (log: a select whose data-cb-func AND its parameter entries all used "name"), and
+    //     such an entry is invisible to everything that reads the attributes - the data-cb-*
+    //     promotion, the runtime loader and the publish step - so the functionality looked applied
+    //     while NONE of its parameters took effect.
+    normalizeAttributeEntryKeys(items)
+    // 0c) JSON.SET: a dotted property ("style.scale") is written as Path + Property, because the
+    //     runtime assigns `target[property]` on the object the Path resolves — a dotted property is
+    //     rejected and the requested CSS/JS property silently never applied.
+    splitDottedJsonSetProperty(items)
     // 1) Fold standalone button-like items into XButtonLists.
     val buttonLike = setOf("BUTTON", "BUTTONS", "XSUBMITBUTTON", "SUBMITBUTTON", "SUBMIT_BUTTON")
     val listItems =
@@ -8627,9 +8577,9 @@ class AICodBiAssistant : IPluginServletAction {
     //    the technical id on a NEW element (observed: "Dropping item 'selDataSourceColumn' with
     //    missing id" although the raw response carried "id":"xi-sel-datasourcecolumn"), so
     // synthesize
-    //    the designer's own convention instead — `xi-` + the lowercased element name, exactly like
-    //    createAddressField does. An item without a name (or a name that is NOT unique, i.e. a
-    //    duplicate) is still dropped, so a broken or doubled widget is never published.
+    //    the designer's own convention instead — `xi-` + the lowercased element name. An item
+    //    without a name (or a name that is NOT unique, i.e. a duplicate) is still dropped, so a
+    //    broken or doubled widget is never published.
     val nameCounts = mutableMapOf<String, Int>()
     for (el in items) {
       if (!el.isJsonObject) continue
@@ -10126,13 +10076,6 @@ class AICodBiAssistant : IPluginServletAction {
       item.remove("class")
       props.remove("class")
     }
-    // Deterministic safety net: ensure the CodBi OpenPLZ.AC.SET classes are present on any
-    // address-part field (street, building number, postal code, locality). The AI is instructed to
-    // apply these classes but may omit them; this guarantees they reach the designer. Existing
-    // classes (e.g. "Goon") are preserved — nothing is removed or overridden.
-    // NOTE: baseObj is read from the result again here (not the one declared inside the
-    // `if (originalItems != null)` block above, which is out of scope at this point).
-    applyOpenPlzAddressClasses(resultItems, result.getAsJsonObject("base"))
     // Holistic.* names (e.g. "Holistic.CSS.Standard", "Holistic.Matomo.Tracking", "Holistic.Media
     // .Input.Speech") are CodBi STANDARD CONFIGURATION ids, NOT per-widget CSS classes. They are
     // activated at the FORM level via the CodBi section of the form properties (the
@@ -10327,16 +10270,16 @@ class AICodBiAssistant : IPluginServletAction {
         props.remove(key)
       }
     }
-    // The AI may have MOVED an element's HTML.Panel onto a NEW outer wrapper container (the prompt
-    // "the weekday container should no longer be the collapsible panel itself, but a container
-    // AROUND the weekday container"). It correctly removes the panel attributes from the inner
-    // container, but the generic restore above re-adds every ORIGINAL property the AI omitted —
-    // including the original "attributes" array — so the inner container gets the panel back and
-    // the
-    // form renders TWO nested collapsible panels. Re-strip the duplicated inner panel here (only
-    // when its parent is an AI-created panel wrapper, so a legitimate pre-existing nested panel is
-    // never touched).
-    stripPanelFromInnerContainerWrappedByNewPanel(resultItems, originalItems)
+    // --- Ensure the WRAPPER of an accordion actually carries the accordion ---
+    // The members repeat data-cb-Accordion="<set>", but the WRAPPER must carry HTML.Panel.Accordion
+    // (or a CodBi_Accordion_* class). Without it the members stay independent panels and nothing
+    // folds together - see addMissingWrapperAccordion.
+    addMissingWrapperAccordion(resultItems)
+    // NOTE: there is deliberately NO "strip a duplicated html.panel from an inner container" pass
+    // any more. It fired on AI-created containers (e.g. two freshly built accordion members that
+    // were nested while a wrapper was repaired) and silently removed half of a correctly built
+    // accordion. Whatever the restore above re-adds is the model's own previous state; repairing it
+    // is the model's job, not a keyword/heuristic pass's.
     // --- Ensure accordion members have a consistent initial folded state ---
     // The accordion membership classes (CodBi_Accordion_A..D) group panels so only one is open at a
     // time. Panels default to unfolded (open). When the model sets the Formcycle "open" property
@@ -10698,12 +10641,16 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * Removes UI.Panels PANEL-TYPE CSS classes (`CodBi_HTML_Panel_Standard/Flat/Index/Minimal` and
-   * `CodBi_HTML_Panel_NoCordion`) from an **XContainer / XContainerInvisible**. Those classes apply
-   * the HTML.Panel functionality using the fieldset's `legend` as the header, so on a container (a
-   * div without a legend) they are INERT — a vestigial leftover, e.g. when the container was
-   * previously a panel (`data-cb-func=html.panel`) and the prompt moved the panel to a new outer
-   * wrapper. Removing them can never change the rendered behavior of a container. The accordion
-   * membership classes (`CodBi_Accordion_A..D`) DO belong on the wrapping container and are kept.
+   * `CodBi_HTML_Panel_NoCordion`) from an **XContainer / XContainerInvisible** that cannot provide
+   * a header TITLE. Those classes apply the HTML.Panel functionality with `GenerateHeader = TRUE`
+   * and an EMPTY `AutoHeaderTitle` (a FIELDSET fills it from its `legend`, a container has none) —
+   * on a container without its own title the panel would therefore get a header with NO text, which
+   * is what makes the class look "inert" there.
+   *
+   * A container that supplies its OWN non-empty `data-cb-autoheadertitle` keeps the class: the
+   * standard configuration only writes its attribute when it is absent, so such a container renders
+   * a fully titled, styled panel — exactly like a fieldset. The accordion membership classes
+   * (`CodBi_Accordion_A..D`) always belong on the wrapping container and are never touched.
    *
    * @param resultItems The flat `items` array of the form JSON to scan in place.
    */
@@ -10721,6 +10668,8 @@ class AICodBiAssistant : IPluginServletAction {
       if (cls != "XContainer" && cls != "XContainerInvisible") continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
       val cssClasses = props.arrayProp("cssclasses") ?: continue
+      // A container that brings its own header title can use the panel class like a fieldset.
+      if (hasNonEmptyAutoHeaderTitle(props)) continue
       var removed = false
       val kept = JsonArray()
       for (i in 0 until cssClasses.size()) {
@@ -10734,143 +10683,158 @@ class AICodBiAssistant : IPluginServletAction {
       if (removed) {
         props.add("cssclasses", kept)
         logger.info(
-            "[AICodBiAssistant] Stripped fieldset-only panel CSS class from container '{}' (panel classes only work on XFieldSet; inert on a container)",
+            "[AICodBiAssistant] Stripped panel CSS class from container '{}' (the container supplies no data-cb-autoheadertitle, so the generated header would have no text)",
             props.get("name")?.asString ?: "<unknown>")
       }
     }
   }
 
   /**
-   * Removes a DUPLICATED HTML.Panel from an inner container when the AI moved the panel to a NEW
-   * outer wrapper container.
-   *
-   * Use case: the prompt "the weekday container should no longer be the collapsible panel itself,
-   * but a container AROUND the weekday container". The AI correctly creates a new outer XContainer,
-   * attaches the HTML.Panel (`data-cb-func=html.panel` + its parameters) to it, and removes the
-   * panel attributes from the inner weekday container. However, the generic restore in
-   * [restoreStrippedFields] re-adds every ORIGINAL property the AI omitted — including the original
-   * `attributes` array — so the inner container gets the panel back and the form renders TWO nested
-   * collapsible panels.
-   *
-   * This guard removes the panel (`data-cb-func` value `html.panel` plus the panel-only
-   * [PANEL_ONLY_PARAM_PREFIXES] parameters) from the INNER container, but ONLY when its parent
-   * container ALSO carries the panel AND that parent does NOT exist in the original form (i.e. the
-   * AI created it as the new wrapper). Everything else is left untouched, so a legitimate
-   * pre-existing nested panel is never modified.
-   *
-   * @param resultItems The flat `items` array of the merged form JSON (scanned/modified in place).
-   * @param originalItems The `items` array of the ORIGINAL form (used to detect AI-created
-   *   wrappers).
+   * Returns `true` when [props] carry a NON-EMPTY `data-cb-autoheadertitle`, i.e. the panel header
+   * text the standard configuration would otherwise leave empty. Checks both the direct-key and the
+   * `attributes`-array representation.
    */
-  private fun stripPanelFromInnerContainerWrappedByNewPanel(
-      resultItems: JsonArray,
-      originalItems: JsonArray?
-  ) {
-    val originalNames = mutableSetOf<String>()
-    originalItems?.forEach { el ->
-      if (el.isJsonObject) {
-        el.asJsonObject
-            .getAsJsonObject("properties")
-            ?.get("name")
-            ?.takeIf { it.isJsonPrimitive }
-            ?.asString
-            ?.let { originalNames.add(it) }
-      }
-    }
-
-    val panelPropsByName = mutableMapOf<String, JsonObject>()
-    val parentNameByChild = mutableMapOf<String, String>()
-    for (el in resultItems) {
-      if (!el.isJsonObject) continue
-      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
-      props.arrayProp("elements")?.forEach { ref ->
-        if (ref.isJsonPrimitive) parentNameByChild[ref.asString] = name
-      }
-      if (hasHtmlPanelFunctionality(props)) panelPropsByName[name] = props
-    }
-
-    for ((innerName, innerProps) in panelPropsByName) {
-      val outerName = parentNameByChild[innerName] ?: continue
-      if (outerName !in panelPropsByName) continue // parent is not a panel
-      if (outerName in originalNames)
-          continue // wrapper existed before — not the "moved panel" case
-      stripHtmlPanelFunctionality(innerProps)
-      logger.info(
-          "[AICodBiAssistant] Removed duplicated html.panel from inner container '{}' (panel moved to new outer wrapper '{}')",
-          innerName,
-          outerName)
-    }
-  }
-
-  /**
-   * Returns `true` when [props] carries an `html.panel` functionality, in either the direct-key
-   * (`properties["data-cb-func"]`) or the `attributes`-array form. A comma-separated `data-cb-func`
-   * list matches only when one of its entries is EXACTLY `html.panel` — a different functionality
-   * whose name merely contains that substring (e.g. `HTML.Panel.Accordion`) must NOT match.
-   */
-  private fun hasHtmlPanelFunctionality(props: JsonObject): Boolean {
-    fun isPanelFunc(v: String?): Boolean =
-        v != null && v.split(",").any { it.trim().equals("html.panel", ignoreCase = true) }
-    if (isPanelFunc(props.get("data-cb-func")?.takeIf { it.isJsonPrimitive }?.asString)) return true
+  private fun hasNonEmptyAutoHeaderTitle(props: JsonObject): Boolean {
+    fun titled(value: String?): Boolean = !value.isNullOrBlank()
+    if (titled(props.get("data-cb-autoheadertitle")?.takeIf { it.isJsonPrimitive }?.asString))
+        return true
     val attrs = props.arrayProp("attributes") ?: return false
     for (e in attrs) {
       if (!e.isJsonObject) continue
       val o = e.asJsonObject
-      if (o.get("text")?.asString.equals("data-cb-func", ignoreCase = true)) {
-        if (isPanelFunc(o.get("value")?.takeIf { it.isJsonPrimitive }?.asString)) return true
+      if (o.get("text")?.asString.equals("data-cb-autoheadertitle", ignoreCase = true) &&
+          titled(o.get("value")?.takeIf { it.isJsonPrimitive }?.asString)) {
+        return true
       }
     }
     return false
   }
 
   /**
-   * Removes the `html.panel` functionality from [props]: the `html.panel` entry of any
-   * `data-cb-func` list plus every panel-only [PANEL_ONLY_PARAM_PREFIXES] parameter. Handles both
-   * the direct-key and the `attributes`-array representation. Non-panel `data-cb-*` entries and any
-   * other `data-cb-func` functionalities are preserved.
+   * ADDITIVE repair: puts the accordion onto its WRAPPER when only the members declare one.
+   *
+   * An accordion needs two halves that must always be emitted together:
+   * - every member panel repeats the SAME `data-cb-Accordion="<set>"` (that shared name is what
+   *   makes the panels mutually exclusive), and
+   * - the WRAPPING container carries `data-cb-func="HTML.Panel.Accordion"` plus the same
+   *   `data-cb-Accordion="<set>"`, or one of the standard classes `CodBi_Accordion_A..D`.
+   *
+   * Models regularly emit only the members. Observed: `fdPanelOne` and `fdPanelTwo` both carried
+   * `data-cb-Accordion="myAccordion"` while the wrapping `fdAccordionWrapper` had NO attribute at
+   * all, so the finished form contained two independent panels and no accordion.
+   *
+   * The repair is purely ADDITIVE and needs no interpretation of the user request: the set name is
+   * copied VERBATIM from the members that already declare it. A wrapper that already carries an
+   * accordion (function or standard class) is left untouched, as is any container whose children do
+   * not agree on exactly one non-empty set name. Nothing is ever removed or rewritten.
+   *
+   * @param resultItems The flat `items` array of the form JSON, repaired in place.
+   * @return the number of wrappers that were repaired.
    */
-  private fun stripHtmlPanelFunctionality(props: JsonObject) {
-    // (a) direct data-cb-* keys
-    val direct = props.get("data-cb-func")?.takeIf { it.isJsonPrimitive }?.asString
-    if (direct != null) {
-      val remaining =
-          direct
-              .split(",")
-              .map { it.trim() }
-              .filterNot { it.equals("html.panel", ignoreCase = true) }
-      if (remaining.isEmpty()) props.remove("data-cb-func")
-      else props.addProperty("data-cb-func", remaining.joinToString(","))
+  internal fun addMissingWrapperAccordion(resultItems: JsonArray): Int {
+    val byName = mutableMapOf<String, JsonObject>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val name = props.stringProp("name")
+      if (name.isNullOrBlank()) continue
+      byName[name] = el.asJsonObject
     }
-    props.entrySet().removeIf { (key, _) ->
-      PANEL_ONLY_PARAM_PREFIXES.any { key.lowercase().startsWith(it) }
+    if (byName.isEmpty()) return 0
+    var repaired = 0
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      val className = item.get("className")?.takeIf { it.isJsonPrimitive }?.asString
+      if (className != "XContainer" &&
+          className != "XContainerInvisible" &&
+          className != "XFieldSet") {
+        continue
+      }
+      val props = item.getAsJsonObject("properties") ?: continue
+      if (carriesAccordion(props)) continue
+      val children = props.arrayProp("elements") ?: continue
+      val groups =
+          children
+              .mapNotNull { c -> c.takeIf { it.isJsonPrimitive }?.asString }
+              .mapNotNull { childName -> byName[childName] }
+              .mapNotNull { child ->
+                val childProps = child.getAsJsonObject("properties")
+                if (childProps == null) null
+                else readDataCbAttribute(childProps, "data-cb-Accordion")?.trim()
+              }
+              .filter { it.isNotEmpty() }
+              .distinct()
+      if (groups.size != 1) continue
+      val group = groups.single()
+      writeDataCbAttribute(props, "data-cb-func", "HTML.Panel.Accordion")
+      writeDataCbAttribute(props, "data-cb-Accordion", group)
+      repaired++
+      logger.info(
+          "[AICodBiAssistant] Added the missing HTML.Panel.Accordion to the accordion wrapper '{}' (its members already repeat data-cb-Accordion=\"{}\")",
+          props.stringProp("name") ?: "<unknown>",
+          group)
     }
-    // (b) attributes-array form
-    val attrs = props.arrayProp("attributes") ?: return
-    val kept = JsonArray()
+    return repaired
+  }
+
+  /**
+   * True when [props] already describe an accordion themselves: a `data-cb-func` holding
+   * `HTML.Panel.Accordion` (comma-separated lists are supported) or any `CodBi_Accordion_*` class.
+   */
+  private fun carriesAccordion(props: JsonObject): Boolean {
+    val func = readDataCbAttribute(props, "data-cb-func")
+    if (func != null &&
+        func.split(",").any { it.trim().equals("HTML.Panel.Accordion", ignoreCase = true) }) {
+      return true
+    }
+    val classes = props.arrayProp("cssclasses") ?: return false
+    return classes.any { c ->
+      c.isJsonPrimitive && c.asString.startsWith("CodBi_Accordion_", ignoreCase = true)
+    }
+  }
+
+  /** Reads a `data-cb-*` value from the direct `properties` keys OR the `attributes` array. */
+  private fun readDataCbAttribute(props: JsonObject, key: String): String? {
+    props.stringProp(key)?.let {
+      return it
+    }
+    val attrs = props.arrayProp("attributes") ?: return null
     for (e in attrs) {
-      if (!e.isJsonObject) {
-        kept.add(e)
-        continue
-      }
+      if (!e.isJsonObject) continue
       val o = e.asJsonObject
-      val text = o.get("text")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
-      if (text.equals("data-cb-func", ignoreCase = true)) {
-        val v = o.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
-        val remaining =
-            v.split(",").map { it.trim() }.filterNot { it.equals("html.panel", ignoreCase = true) }
-        if (remaining.isEmpty()) continue
-        val neo = JsonObject()
-        neo.addProperty("text", "data-cb-func")
-        neo.addProperty("value", remaining.joinToString(","))
-        kept.add(neo)
-      } else if (PANEL_ONLY_PARAM_PREFIXES.any { text.lowercase().startsWith(it) }) {
-        continue
-      } else {
-        kept.add(e)
+      if (o.get("text")?.takeIf { it.isJsonPrimitive }?.asString.equals(key, ignoreCase = true)) {
+        return o.get("value")?.takeIf { it.isJsonPrimitive }?.asString
       }
     }
-    props.add("attributes", kept)
+    return null
+  }
+
+  /**
+   * Writes a `data-cb-*` value into the `attributes` array (the form's canonical representation
+   * once the direct `data-cb-*` keys have been materialized), replacing an entry with the same
+   * name.
+   */
+  private fun writeDataCbAttribute(props: JsonObject, key: String, value: String) {
+    props.remove(key)
+    val attrs =
+        if (props.has("attributes") && props.get("attributes").isJsonArray) {
+          props.getAsJsonArray("attributes")
+        } else {
+          JsonArray().also { props.add("attributes", it) }
+        }
+    for (e in attrs) {
+      if (!e.isJsonObject) continue
+      val o = e.asJsonObject
+      if (o.get("text")?.takeIf { it.isJsonPrimitive }?.asString.equals(key, ignoreCase = true)) {
+        o.addProperty("value", value)
+        return
+      }
+    }
+    val attr = JsonObject()
+    attr.addProperty("text", key)
+    attr.addProperty("value", value)
+    attrs.add(attr)
   }
 
   /**
@@ -26163,6 +26127,13 @@ class AICodBiAssistant : IPluginServletAction {
       append("\n")
       append(
           "RULE — whenever a parameter must name one of these datasources — an XSelect's `datasource` property (also on the DS widgets) AND `DQ.Table.View`'s `data-cb-dataquery` ATTRIBUTE — the value MUST be one of the names ABOVE, copied VERBATIM (character-for-character, INCLUDING any leading number/prefix such as \"56_\").\n")
+      // EXCLUSION (teaches, does not decide): BayVIS / Bayernportal data is produced at RUNTIME by
+      // the BayVIS element placeholders and is therefore NOT one of the configured datasources.
+      // Without this line the clarify round answered "Erstelle einen Text welches die Kontaktdaten
+      // aus dem BayVIS von <Person> enthält." with a "which Formcycle datasource?" question instead
+      // of the XSpan + HTML.Text.Mapper + BayVIS.Ansprechpartner.Details wiring.
+      append(
+          "EXCLUSION — BAYVIS / BAYERNPORTAL DATA IS NEVER ONE OF THESE DATASOURCES: authorities (Behörden), contacts (Ansprechpartner) and their contact/address details come from the BayVIS element placeholders at RUNTIME ({ BayVIS.Behoerden > bezeichnung }, { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <Vorname Nachname> } } }, BayVIS.Behoerden.Details, BayVIS.Behoerden.Details.Gebaeude, ...). They are NOT in the list above and MUST NOT be bound here: never set a `datasource`, never put a BayVIS name into `data-cb-dataquery`, and NEVER ask the user which Formcycle datasource to use for BayVIS data — build it with the BayVIS EP plus the consuming functionality (HTML.Text.Mapper for a text block, HTML.Select.Injection for a list of authorities/contacts).\n")
       append(
           "- CHOOSE BY MEANING (the datasource's subject/what it contains), NOT by string equality: the wording in the request (e.g. \"Staatsangehörigkeiten\", \"die Altstadtfest-Abfrage\") need not match the technical name (e.g. \"56_Staatsangehoerigkeiten\", \"INHALT.Antrag auf Zulassung … Altstadtfest 2027\") — bind the listed name that FITS. NEVER treat the user's wording as the technical name when that wording is not in this list.\n")
       append(
@@ -26180,6 +26151,41 @@ class AICodBiAssistant : IPluginServletAction {
       append(
           "    * only if NO listed name fits AT ALL, offer the full list so the user can pick one.\n")
       append("- Then bind the name the user picks, VERBATIM.\n")
+    }
+  }
+
+  /**
+   * Builds the "LDAP CONFIGURATION" block injected into the clarification AND form prompts.
+   *
+   * The CodBi LDAP functionalities ([`LDAP.Autocomplete`], `LDAP.Autocomplete.Set`, the `LDAP.Find`
+   * EP) fall back to an installation-wide LDAP request url when their own `URL` parameter is empty
+   * — `resolveLdapUrl()` in the form runtime picks `window.codbiSettings.LDAP.URL` or
+   * `...URL_BACKEND`, which [`CodbiFormResourcesPlugin`] fills from the plugin properties
+   * `LDAP_URL` / `LDAP_URL_BACKEND`. Two very different situations therefore exist, and the AI
+   * cannot know them without being told:
+   * - a url IS configured → `data-cb-URL` must be OMITTED, and the user must never be asked for an
+   *   LDAP url/endpoint (asked anyway was the reported "url parameter is missing" follow-up);
+   * - NO url is configured → the lookup cannot work at all, `URL` is a value only the user can
+   *   provide, and the clarify round must ASK for it instead of emitting a dead field.
+   *
+   * Pure (only reads the [AI] properties) so it is unit-testable.
+   */
+  internal fun buildLdapConfigBlock(): String {
+    val configured = AI.isLdapUrlConfigured()
+    return if (configured) {
+      "\nLDAP CONFIGURATION — an LDAP request url IS configured for this installation (plugin " +
+          "property LDAP_URL / LDAP_URL_BACKEND). The CodBi LDAP functionality resolves it by " +
+          "itself, so `data-cb-URL` MUST BE OMITTED on LDAP.Autocomplete / LDAP.Autocomplete.Set " +
+          "and the user MUST NEVER be asked for an LDAP url, endpoint, connection or source — " +
+          "there is nothing to ask and nothing to pick.\n"
+    } else {
+      "\nLDAP CONFIGURATION — NO LDAP request url is configured for this installation (the plugin " +
+          "property LDAP_URL is empty). An LDAP lookup therefore CANNOT run without an explicit " +
+          "url: `data-cb-URL` is a REQUIRED parameter of LDAP.Autocomplete / LDAP.Autocomplete.Set " +
+          "and its value belongs to the user. When the request needs an LDAP value and neither the " +
+          "request nor the clarification/chat history names an LDAP request url, ASK the user for " +
+          "that url (ONE free-text question) — NEVER invent or guess a url, and never emit the " +
+          "field without it.\n"
     }
   }
 
@@ -26827,16 +26833,28 @@ class AICodBiAssistant : IPluginServletAction {
           if (useCodbi && useBuergerserviceNaming)
               "\n" + (cb["codbi.buergerservice_naming"] ?: "") + "\n"
           else ""
-      // Pass-1 receives CONDENSED catalogs (each entry = heading + first sentence). Pass-1 only
-      // DECIDES and requests details (see "NO DIRECT WIDGET CREATION"), so the full per-entry build
-      // syntax is unnecessary here — the decision cores in this same prompt carry the rules and the
-      // exact specs arrive in pass-2. The element NAMES (headings) are what pass-1 needs to build a
-      // `need_codbi_details` request.
+      // Pass-1 receives CONDENSED catalogs. Pass-1 only DECIDES and requests details (see "NO
+      // DIRECT WIDGET CREATION"), so the per-entry build syntax is unnecessary here — the exact
+      // specs arrive in pass-2. But the element catalog must still be DECIDABLE: each entry keeps
+      // its purpose ("what it does" + `USE WHEN …`) without any parameters, because a bare name
+      // does
+      // not let the model map a request to the right functionality (that gap made it pick
+      // txtverify for a fixed list of forbidden dates instead of HTML.Input.Blacklist). The widget
+      // catalog stays name-only: widgets are chosen by the decision cores and requested in this
+      // same
+      // pass anyway.
       val widgetsSectionCondensed = CodbiCapabilities.buildWidgetsSectionCondensed()
-      val elementsSectionCondensed = CodbiCapabilities.buildSectionCondensed()
+      // The CodBi FUNCTIONALITY CATALOG ("what it is / when to apply it") is a CodBi-only reference
+      // and therefore travels ONLY when the form assistant's CodBi switch is ON — see
+      // [CodbiCapabilities.pass1ElementCatalog]. With the switch OFF the assistant builds a plain
+      // Formcycle form: the widget catalog stays (it is Formcycle knowledge), the CodBi catalog and
+      // its decision core do not.
       val codbiPart =
           if (useCodbi) {
-            "\n" + (cb["codbi.general_decision"] ?: "") + "\n" + elementsSectionCondensed
+            "\n" +
+                (cb["codbi.general_decision"] ?: "") +
+                "\n" +
+                CodbiCapabilities.pass1ElementCatalog(useCodbi)
           } else {
             ""
           }
@@ -26871,8 +26889,24 @@ class AICodBiAssistant : IPluginServletAction {
       // specialist names are valid, so it cannot match a prompt like "let Cerebras answer" to a
       // configured specialist nor ask a sensible clarification question. This is configuration-
       // static per deployment, so it lives on the volatile catalog side of the cache split.
-      val specialistPart = buildSpecialistContext(modelId)
-      val requestCatalogs = specialistPart + widgetsSectionCondensed + codbiPart
+      // The specialist block teaches `data-cb-Specialist` — CodBi knowledge, so it follows the same
+      // switch as the catalog above.
+      val specialistPart = if (useCodbi) buildSpecialistContext(modelId) else ""
+      // CodBi switch OFF: this prompt still carries the CodBi decision cores (JSON protocol,
+      // details
+      // request, "NO DIRECT WIDGET CREATION"), which makes the model look for CodBi mechanisms that
+      // do not exist in this run — observed result: a meta details request instead of a form. The
+      // disabled block overrides them: build with plain Formcycle, never emit `data-cb-*`, and
+      // record
+      // or ask for the missing capability instead of inventing a workaround.
+      val codbiDisabledPart = if (useCodbi) "" else "\n\n" + loadCodbiDisabledRules() + "\n"
+      // CODBI SWITCH OFF — pass-1 stays LEAN on purpose: the widget catalog keeps its name +
+      // purpose
+      // level. Shipping JSON templates here would cost ~51k chars for the six core widgets alone
+      // (XSpan alone is ~32k) — exactly what the pass-1/pass-2 split exists to avoid. The model
+      // requests the templates it needs via `need_codbi_details` (widgets only, `elements` empty)
+      // and builds them in pass-2.
+      val requestCatalogs = specialistPart + widgetsSectionCondensed + codbiPart + codbiDisabledPart
       val composed =
           if (promptCachingEnabled)
           // static core -> static canonical rules -> volatile catalogs -> per-request naming
@@ -27001,8 +27035,14 @@ When NO configured specialist sensibly matches the user's request:
         loadPromptWithClasspathFallback("codbi.fallback_classify_intent") ?: "")
   }
 
-  /** Loads the CodBi rethink (blind pass) prompt from the database. */
-  private fun loadCodbiRethinkPrompt(): String {
+  /**
+   * Loads the CodBi rethink (blind pass) prompt from the database.
+   *
+   * [useCodbi] is the form assistant dialog's CodBi switch: with the switch OFF the condensed CodBi
+   * element catalog is NOT appended (a plain Formcycle build must not receive CodBi functionality
+   * infos nor pay for them).
+   */
+  private fun loadCodbiRethinkPrompt(useCodbi: Boolean = true): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_rethink") ?: ""
     try {
@@ -27013,6 +27053,20 @@ When NO configured specialist sensibly matches the user's request:
       // a form-assistant prompt) for nothing.
       val fcWidgets = PromptLoader.loadPrompt(em, "formcycle.widgets")
       val taskInstruction = loadPromptWithClasspathFallback("codbi.rethink_instruction") ?: ""
+      if (!useCodbi) {
+        // CodBi switch OFF: this pass must NOT carry the CodBi rethink decision core / build annex
+        // (it teaches data-cb-* wiring and CodBi mechanisms that do not exist in this run). Send
+        // the
+        // plain rethink instruction + the widget reference + the disabled-run rules instead.
+        return PromptLoader.resolvePlaceholders(
+            taskInstruction +
+                "\n\n" +
+                loadCodbiDisabledRules() +
+                "\n" +
+                PromptSectionGate.applySectionGates(
+                    FormcycleElementFilter.scrubWidgetSections(fcWidgets ?: ""),
+                    PromptSectionGate.KNOWN_TAGS))
+      }
       // The blind rethink pass is only reached when pass-1 explicitly reported that NO CodBi
       // element placeholders / functionalities AND NO widget templates apply (requested.isEmpty()
       // && widgets.isEmpty()). In that scenario the AI is building a plain Formcycle form, so
@@ -27040,7 +27094,7 @@ When NO configured specialist sensibly matches the user's request:
                   FormcycleElementFilter.scrubWidgetSections(fcWidgets ?: ""),
                   PromptSectionGate.KNOWN_TAGS) +
               "\n" +
-              "{{CODBI_ELEMENTS_SECTION}}")
+              CodbiCapabilities.pass1ElementCatalog(useCodbi))
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load rethink prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_rethink") ?: ""
@@ -27048,6 +27102,15 @@ When NO configured specialist sensibly matches the user's request:
       em?.close()
     }
   }
+
+  /**
+   * Loads the "CodBi disabled" rule block (`codbi-codbi-disabled.md`) used whenever the form
+   * assistant dialog's CodBi switch is OFF: plain-Formcycle-only build, no `data-cb-*`, no CodBi
+   * details request, and an explicit "ask / record the limitation" rule instead of inventing a
+   * workaround.
+   */
+  private fun loadCodbiDisabledRules(): String =
+      loadPromptWithClasspathFallback("codbi.codbi_disabled") ?: ""
 
   /**
    * Builds the "your requested details are above — build now, do NOT re-request" instruction that
@@ -27110,9 +27173,9 @@ When NO configured specialist sensibly matches the user's request:
       val widgets = if (promptCachingEnabled) widgetIds.distinct().sorted() else widgetIds
       val widgetPart = buildWidgetDetailsSection(em, widgets, effectiveKeepTags)
       if (!useCodbi) {
-        // CodBi disabled: the pass-2 prompt contains only the Formcycle widget templates so the AI
-        // can rebuild the widgets it created — no CodBi reference/details are sent at all.
-        return widgetPart
+        // CodBi disabled: only the Formcycle widget templates (so the AI can rebuild the widgets it
+        // created) plus the disabled-run rules — no CodBi reference/details are sent at all.
+        return loadCodbiDisabledRules() + "\n\n" + widgetPart
       }
       val categories = PromptLoader.loadCategory(em, "codbi")
       // Only the cross-cutting general DECISION rules form the base — the detailed standard/
@@ -27423,7 +27486,19 @@ When NO configured specialist sensibly matches the user's request:
       val question: String = "",
       val options: List<String> = emptyList(),
       val allowFreeText: Boolean = true,
-      val multiSelect: Boolean = false
+      val multiSelect: Boolean = false,
+      /**
+       * CODBI-DISABLED RUNS: the EXACT text of the option that means "turn the CodBi switch on and
+       * repeat the request with the functionalities available".
+       *
+       * The model marks its OWN option instead of the server pattern-matching the user's answer, so
+       * this stays language- and wording-agnostic: whatever the question and its options say, the
+       * answer that IS this option is the user's consent to enable CodBi. The form assistant reads
+       * the marker from the clarification response, switches CodBi on and re-runs the inference —
+       * which then carries the functionality catalog. Serialized to the client as-is (Gson omits a
+       * null), so an ordinary question never carries it.
+       */
+      val codbiOption: String? = null
   )
 
   /**
@@ -27526,6 +27601,15 @@ When NO configured specialist sensibly matches the user's request:
    * sentinel nor a JSON shape IS the question the model wanted to ask — no question-word or keyword
    * list decides that. Only the formatting is normalised (Unicode spaces such as U+202F/U+00A0 that
    * models emit between words, collapsed whitespace, Markdown emphasis markers).
+   *
+   * EXCEPTION - an ACKNOWLEDGEMENT is not a question. Reported: the request "Erstelle ein Text
+   * welches die Kontaktdaten aus dem BayVIS von Salvatore Callari enthält." made the model answer
+   * "Ok, mache ich." and the user got a clarification POPUP whose only "question" was that promise.
+   * Such a reply carries no ask, so the round must count as "nothing to ask" and the build
+   * proceeds. The test is structural and language-agnostic (never a keyword/word list): a real
+   * question contains a question mark, or at least is a full sentence that does not END like a
+   * statement - a period/exclamation ("mache ich."), or two words or fewer ("Alles klar", "Ok") -
+   * is treated as an acknowledgement.
    */
   private fun clarificationFromProse(raw: String): ClarificationRequest? {
     val text =
@@ -27536,6 +27620,15 @@ When NO configured specialist sensibly matches the user's request:
     if (text.isEmpty() || text.length > 600) return null
     if (text.startsWith("{") || text.startsWith("[")) return null
     if (text.equals("NO_CLARIFICATION", ignoreCase = true)) return null
+    val hasQuestionMark = text.contains('?') || text.contains('\u00BF')
+    val endsLikeStatement =
+        text.endsWith(".") || text.endsWith("!") || text.endsWith("\u2026") || text.endsWith(":")
+    val wordCount = text.split(' ').count { it.isNotBlank() }
+    if (!hasQuestionMark && (endsLikeStatement || wordCount <= 2)) {
+      logger.info(
+          "[AICodBiAssistant] Clarification prose is an acknowledgement, not a question - nothing to ask")
+      return null
+    }
     return ClarificationRequest(
         listOf(
             ClarificationQuestion(
@@ -27564,7 +27657,14 @@ When NO configured specialist sensibly matches the user's request:
         } ?: emptyList()
     val allowFree = q.get("allowFreeText")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: true
     val multiSelect = q.get("multiSelect")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-    return ClarificationQuestion(id, text, options, allowFree, multiSelect)
+    // Which of the offered options means "turn the CodBi switch on" (see [ClarificationQuestion]).
+    // Only a text that is actually OFFERED is accepted — a marker naming no visible option could
+    // never be picked, and keeping it would suggest an option that is not on screen.
+    val codbiOption =
+        firstNonBlankString(q.get("codbiOption"), q.get("codbiSwitchOption"))?.takeIf { marker ->
+          options.any { it.trim() == marker }
+        }
+    return ClarificationQuestion(id, text, options, allowFree, multiSelect, codbiOption)
   }
 
   /** Returns the first non-blank string value among [elements], or null. */
@@ -27696,6 +27796,7 @@ When NO configured specialist sensibly matches the user's request:
       formVariables: String? = null,
       workflowMails: String? = null,
       availableDatasources: String? = null,
+      ldapConfig: String? = null,
       xslTemplates: String? = null,
       clarificationTopics: Set<String> = emptySet()
   ): String {
@@ -27851,6 +27952,10 @@ When NO configured specialist sensibly matches the user's request:
       // with an invented EP — ASK the user, offering these names as the question's options.
       val availableDatasourcesBlock =
           if (!availableDatasources.isNullOrBlank()) availableDatasources.trim() + "\n" else ""
+      // LDAP CONFIGURATION: whether this installation already has an LDAP request url decides if
+      // the
+      // LDAP functionalities omit `data-cb-URL` (never ask) or need the url from the user (ASK).
+      val ldapConfigBlock = if (!ldapConfig.isNullOrBlank()) ldapConfig.trim() + "\n" else ""
       // AVAILABLE XSLT TEMPLATES (the client's XSL text templates). Injected so the AI can MATCH a
       // template the request already names against the real list instead of asking which XSLT
       // template to use — a template named in the request IS the answer to that question. Only when
@@ -27879,6 +27984,11 @@ When NO configured specialist sensibly matches the user's request:
       //   digest text actually reached the final system prompt. If the placeholder is missing from
       // the
       //   DB copy, .replace() silently no-ops and the AI never sees the span content.
+      // CodBi switch OFF: the clarification template assumes/offers CodBi mechanisms (navbar, AI
+      // functionalities, address autocomplete, ...) that this run cannot build. Tell the model so,
+      // that it ASKS for a plain-Formcycle alternative instead of silently dropping the requirement
+      // (the user's "dates must not be enterable" case has no plain-Formcycle equivalent).
+      val codbiDisabledBlock = if (useCodbi) "" else "\n" + loadCodbiDisabledRules() + "\n"
       val hasPlaceholder = template.contains("{{TEXT_SPAN_CONTENT}}")
       val finalPrompt =
           template
@@ -27900,7 +28010,9 @@ When NO configured specialist sensibly matches the user's request:
               formVariablesBlock +
               workflowMailsBlock +
               availableDatasourcesBlock +
-              xslTemplatesBlock
+              ldapConfigBlock +
+              xslTemplatesBlock +
+              codbiDisabledBlock
       // Optionally drop the SCENARIO-SPECIFIC blocks that do not apply to this request (payment /
       // live-data / HTTP / approval), so the clarification prompt stays small for the common case
       // (a
@@ -28968,7 +29080,9 @@ When NO configured specialist sensibly matches the user's request:
       clarificationContext: String,
       chatContext: String,
       completionPages: String?,
-      endingPageVeto: Boolean
+      endingPageVeto: Boolean,
+      codbiDisabledVeto: Boolean = false,
+      codbiActivated: Boolean = false
   ): String? {
     val ai = chatAnswerResult
     val referenceVeto =
@@ -28978,7 +29092,9 @@ When NO configured specialist sensibly matches the user's request:
         needsToolContext = ai?.needsToolContext,
         hasClarificationAnswers = clarificationContext.isNotBlank(),
         referenceVeto = referenceVeto,
-        endingPageVeto = endingPageVeto)
+        endingPageVeto = endingPageVeto,
+        codbiDisabledVeto = codbiDisabledVeto,
+        codbiActivated = codbiActivated)
   }
 
   private fun tryClarification(
@@ -29004,6 +29120,7 @@ When NO configured specialist sensibly matches the user's request:
       formVariables: String? = null,
       workflowMails: String? = null,
       availableDatasources: String? = null,
+      ldapConfig: String? = null,
       xslTemplates: String? = null,
       clarificationTopics: Set<String> = emptySet(),
       onUsage: ((Int, Int) -> Unit)? = null
@@ -29029,6 +29146,7 @@ When NO configured specialist sensibly matches the user's request:
             formVariables,
             workflowMails,
             availableDatasources,
+            ldapConfig,
             xslTemplates,
             clarificationTopics)
     val messagesJson = buildString {
@@ -29410,9 +29528,23 @@ When NO configured specialist sensibly matches the user's request:
       // never approved.
       val needsEndingPage: Boolean? =
           obj.get("needsEndingPage")?.let { if (it.isJsonPrimitive) it.asBoolean else null }
+      // FAIL OPEN on a MISSING `hasInstructions` key (presence check, exactly like the other
+      // decision keys above). The canonical envelope always carries it, so an ABSENT key means the
+      // model emitted a partial envelope — defaulting it to `false` silently downgraded the user's
+      // change to an answer-only turn (observed: "Erstelle ein Text …" produced
+      // hasInstructions=false
+      // and the answer "Ok, mache ich.", the form was never modified). Treating an absent key as
+      // `true` hands the decision to the build pass instead of discarding the request. An EXPLICIT
+      // `false` is still honoured (a genuine neutral acknowledgment stays answer-only).
+      val hasInstructionsRaw: Boolean? =
+          obj.get("hasInstructions")?.let { if (it.isJsonPrimitive) it.asBoolean else null }
+      if (hasInstructionsRaw == null) {
+        logger.warn(
+            "[AICodBiAssistant] Chat envelope carries no 'hasInstructions' key — failing open to instructions=true so the build pass decides instead of discarding the request")
+      }
       ChatAnswer(
           hasQuestion = obj.get("hasQuestion")?.asBoolean ?: false,
-          hasInstructions = obj.get("hasInstructions")?.asBoolean ?: false,
+          hasInstructions = hasInstructionsRaw ?: true,
           answer = obj.get("answer")?.asString?.trim() ?: "",
           tokensIn = estimateTokens(messagesJson),
           tokensOut = estimateTokens(raw),

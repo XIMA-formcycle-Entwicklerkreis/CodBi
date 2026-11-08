@@ -104,6 +104,26 @@ const MIRROR_ELEMENT_PROPERTY = String(Constants["mirror.property.element"]);
 const MIRROR_ELEMENT_KEY_PROPERTY = String(Constants["mirror.property.element_key"]);
 
 /**
+ * The Mirror widget's INTERNAL reference to the workflow paths it created in the reflecting form.
+ *
+ * It stores a JSON array of `{taskId, source, sourceTask}` entries — the id of each created
+ * `WorkflowTask` plus the SOURCE form + source task it mirrors. On every sync this reference is sent
+ * to the server, which uses it to recognize the paths this widget already created and REUSE +
+ * reconcile them instead of creating duplicates (which happened on every re-selection / after a
+ * `publish()` into a new workflow version).
+ */
+const MIRROR_TRIGGERED_REFS_PROPERTY = String(Constants["mirror.property.triggered_refs"]);
+
+/**
+ * Property on the Mirror item holding the EXACT source signature this Mirror last materialized its
+ * child items from: `form|element|version|revision`. Unlike the persisted version/revision
+ * (which are per FORM and don't name the element), this survives the full page reload that a
+ * workflow save triggers — so the next selection recognizes the children already exist and does not
+ * destroy + recreate them.
+ */
+const MIRROR_MATERIALIZED_SIGNATURE_PROPERTY = "codbi_mirror_materialized_signature";
+
+/**
  * The item currently being edited. Some designer entry points only expose the selection through
  * `getSelectedItems()` + `getItem()`, so do not rely on `getSelectedMasterItem()` alone — that was
  * why the Mirror form editor could fail to repair its reference even though it knew the old value.
@@ -765,10 +785,15 @@ async function syncMirrorChildrenWorker(
 
   const tree = await mirrorElementTree(form, element, elementKey);
   const fullSignature = `${signature}${tree.version}|${tree.revision}`;
-  if (materializedByMirror.get(mirrorId) === fullSignature) {
-    // Same source, already materialized. Nothing to do — avoid the destructive remove + recreate.
-    // The opt-in triggered workflow paths are still applied (it may have been switched on after the
-    // children were materialized).
+  // Same source, already materialized — either in this session (in-memory map) or in a PREVIOUS
+  // session whose full page reload cleared the in-memory map (the persisted signature, which names
+  // the source element, not just the form). Nothing to do — avoid the destructive remove + recreate.
+  // The opt-in triggered workflow paths are still applied (they may have been switched on after the
+  // children were materialized).
+  const storedSignature = String(propertiesOf(mirror)?.[MIRROR_MATERIALIZED_SIGNATURE_PROPERTY] ?? "");
+  if (materializedByMirror.get(mirrorId) === fullSignature || storedSignature === fullSignature) {
+    materializedByMirror.set(mirrorId, fullSignature);
+    persistMaterializedSignature(designer, mirror, fullSignature);
     applyTriggeredPaths(
       designer,
       mirror,
@@ -782,6 +807,7 @@ async function syncMirrorChildrenWorker(
   if (tree.items.length === 0) {
     removeGeneratedChildren(designer, mirrorId);
     materializedByMirror.set(mirrorId, fullSignature);
+    persistMaterializedSignature(designer, mirror, fullSignature);
     // Still manage the opt-in triggered paths (the element itself may be the trigger).
     applyTriggeredPaths(
       designer,
@@ -846,16 +872,11 @@ async function syncMirrorChildrenWorker(
   remapCopiedReferences(designer, tree.items, itemByRef);
 
   // Remember which source version these copies came from, so a later change can be detected.
-  try {
-    const props = (propertiesOf(mirror) ?? mirror.properties ?? {}) as TItemProperties;
-    props[MIRROR_SOURCE_VERSION_PROPERTY] = tree.version;
-    props[MIRROR_SOURCE_REVISION_PROPERTY] = tree.revision;
-  } catch {
-    /* ignore */
-  }
+  persistSourceStamp(designer, mirror, tree.version, tree.revision);
 
   // This source is now materialized; a later request for the identical source can be skipped.
   materializedByMirror.set(mirrorId, fullSignature);
+  persistMaterializedSignature(designer, mirror, fullSignature);
 
   // Opt-in: keep the workflow paths that this element triggers in sync with the reflecting form.
   applyTriggeredPaths(designer, mirror, form, element, elementKey, namePrefix);
@@ -1095,22 +1116,110 @@ function applyTriggeredPaths(
     console.warn("[CodBi] Mirror: this form's id is unknown — triggered workflow paths not applied");
     return;
   }
+  // The widget's INTERNAL reference to the paths it already created. Sending it lets the server
+  // recognize and REUSE those tasks (reconciling any drift) instead of creating duplicates on every
+  // re-selection / after a publish into a new workflow version.
+  const ownedRefsJson = String(propertiesOf(mirror)?.[MIRROR_TRIGGERED_REFS_PROPERTY] ?? "");
   const url =
     `${mirrorActionUrl()}&action=applytriggerpaths` +
     `&form=${encodeURIComponent(form)}` +
     `&element=${encodeURIComponent(element)}` +
     `${elementKey ? `&element_key=${encodeURIComponent(elementKey)}` : ""}` +
     `&target=${encodeURIComponent(`project-${formId}`)}` +
-    `&prefix=${encodeURIComponent(namePrefix)}`;
+    `&prefix=${encodeURIComponent(namePrefix)}` +
+    `&owned=${encodeURIComponent(ownedRefsJson)}`;
   void fetch(url, { credentials: "same-origin" })
     .then((response) => response.json())
     .then(async (data: unknown) => {
       console.info("[CodBi] Mirror: triggered workflow paths", data);
+      // Persist the authoritative owned references the server reports back, so the widget keeps
+      // recognizing the tasks it owns across reloads.
+      rememberTriggeredRefs(designer, mirror, data);
       if (triggeredPathsChanged(data)) {
         await saveMirrorForm(designer, `project-${formId}:${element}`);
       }
     })
     .catch((error) => console.warn("[CodBi] Mirror: triggered workflow paths failed", error));
+}
+
+/**
+ * Persists the server's authoritative list of owned workflow references (`{taskId, source,
+ * sourceTask}`) back onto the Mirror widget's property bags, so the widget always knows the paths it
+ * created and what they reference — its internal reference for the next sync.
+ */
+function rememberTriggeredRefs(designer: IDesignerLike, mirror: IMirrorItemLike, data: unknown): void {
+  // Only write back when the server actually returned an `owned` array (its authoritative answer).
+  // A missing `owned` means an older server build or an error response — leave the stored reference
+  // untouched, never clear it on a transient failure.
+  const owned = (data as { owned?: unknown } | undefined)?.owned;
+  if (!Array.isArray(owned)) {
+    return;
+  }
+  const next = owned
+    .filter(
+      (entry): entry is { taskId?: unknown; source?: unknown; sourceTask?: unknown } =>
+        typeof entry === "object" && entry !== null,
+    )
+    .map((entry) => ({
+      taskId: Number(entry.taskId ?? 0),
+      source: String(entry.source ?? ""),
+      sourceTask: Number(entry.sourceTask ?? 0),
+    }))
+    .filter((entry) => entry.taskId > 0 && entry.source && entry.sourceTask > 0);
+  const bags = writablePropertyBags(mirror);
+  if (bags.length === 0) {
+    return;
+  }
+  const json = JSON.stringify(next);
+  for (const props of bags) {
+    props[MIRROR_TRIGGERED_REFS_PROPERTY] = json;
+  }
+  notifyDesignerChanged(designer);
+  console.info("[CodBi] Mirror: recorded {} owned workflow references", next.length);
+}
+
+/**
+ * Persists the exact source signature this Mirror's child items were materialized from onto the
+ * widget's property bags, so the children are recognized as already present after a full page
+ * reload (which clears the in-memory `materializedByMirror` map). See
+ * [MIRROR_MATERIALIZED_SIGNATURE_PROPERTY].
+ *
+ * The designer's persist differ is nudged afterwards: without that nudge the write stays inside the
+ * property bag and the NEXT `publish()`/save (the one `applyTriggeredPaths` performs after it changed
+ * a workflow path) ships a form whose stored signature is still the old/absent one. The reload that
+ * follows that save clears the in-memory map, the signature check then fails, and the mirrored child
+ * items are needlessly destroyed and re-created on the next selection — the visible symptom of a
+ * Mirror whose reflected fields never stop being rebuilt.
+ */
+function persistMaterializedSignature(designer: IDesignerLike, mirror: IMirrorItemLike, fullSignature: string): void {
+  const bags = writablePropertyBags(mirror);
+  if (bags.length === 0) {
+    return;
+  }
+  for (const props of bags) {
+    props[MIRROR_MATERIALIZED_SIGNATURE_PROPERTY] = fullSignature;
+  }
+  notifyDesignerChanged(designer);
+}
+
+/**
+ * Persists the source form version/revision the child items were materialized from (through the
+ * writable property bags, so the write reaches the saved form like every other Mirror property).
+ *
+ * `refreshAllMirrors` / `refreshMirrorIfStale` compare exactly these two values against the live
+ * source stamp to decide whether a re-sync is needed; a stamp that never made it into the model made
+ * every visit look "stale" and re-materialized the copies for an unchanged source.
+ */
+function persistSourceStamp(designer: IDesignerLike, mirror: IMirrorItemLike, version: number, revision: number): void {
+  const bags = writablePropertyBags(mirror);
+  if (bags.length === 0) {
+    return;
+  }
+  for (const props of bags) {
+    props[MIRROR_SOURCE_VERSION_PROPERTY] = version;
+    props[MIRROR_SOURCE_REVISION_PROPERTY] = revision;
+  }
+  notifyDesignerChanged(designer);
 }
 
 /**

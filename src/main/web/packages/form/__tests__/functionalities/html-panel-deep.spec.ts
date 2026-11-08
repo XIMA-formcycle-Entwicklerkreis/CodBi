@@ -783,7 +783,10 @@ describe("HTML_Panel functionality — deep coverage", () => {
 
   // ── No header throws ──
   describe("error handling", () => {
-    it("throws when no .CodBi_HTML_Panel_Header exists", () => {
+    it("generates a header instead of throwing when none exists", () => {
+      // A panel without a header can never fold/unfold — and an exception aborted the remaining
+      // initialisation (so such a panel also never joined its accordion set). The functionality now
+      // always provides a header, titled from autoheadertitle / the legend when available.
       const panel = document.createElement("div");
       panel.id = "noheader";
       panel.setAttribute("data-name", "myPanel");
@@ -792,7 +795,9 @@ describe("HTML_Panel functionality — deep coverage", () => {
 
       expect(() => {
         HTML_Panel.functionality({ folded: "false" }, panel);
-      }).toThrow();
+      }).not.toThrow();
+      expect(panel.querySelector(".CodBi_HTML_Panel_Header")).not.toBeNull();
+      expect(panel.classList.contains("--HTML_Panel")).toBe(true);
     });
   });
 

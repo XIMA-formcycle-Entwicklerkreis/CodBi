@@ -290,7 +290,11 @@ internal object FormcycleElementFilter {
           // (rich-text/unescaped value) and in the node catalogues. When the node is forbidden or
           // not in the allowed set, the assistant must not even learn about it.
           "com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiExtendedAccessorNodePlugin" to
-              listOf("extended accessor", "erweiterter zugriff"))
+              listOf("extended accessor", "erweiterter zugriff"),
+          // CodBi XML auto-import node: like the accessor, its prose disappears when the node is
+          // not installed/allowed.
+          "com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CbXmlAutoImportNodePlugin" to
+              listOf("xml auto import", "xml-auto-import", "xml automatischer import"))
 
   /**
    * Generic markdown section scrubber: keeps the preamble (everything before the first `##`/`###`

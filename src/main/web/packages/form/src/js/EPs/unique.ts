@@ -31,7 +31,7 @@ export class Unique {
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Hasn't at least the Array to filter been provided?")
+    @GREATER.PRE(0, true, false, "length", "Hasn't at least the Array to filter been provided?")
     @AE.PRE(new INSTANCE(Array), 0)
     @AE.PRE(new TYPE("string"), 1)
     @AE.PRE(new REGEX(REGEX.stdExp.property), 1)

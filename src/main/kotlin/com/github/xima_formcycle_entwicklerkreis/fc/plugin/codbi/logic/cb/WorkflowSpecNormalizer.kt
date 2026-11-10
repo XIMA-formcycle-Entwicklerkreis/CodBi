@@ -36,6 +36,16 @@ internal object WorkflowSpecNormalizer {
   const val MIRROR_NODE_TYPE = "Mirror"
 
   /**
+   * The workflow-node type the CodBi XML auto-import handler is REGISTERED under (see
+   * `CbXmlAutoImportNodePlugin`).
+   */
+  const val XML_AUTO_IMPORT_NODE_TYPE = "cbXMLAutoImport"
+
+  /** The handler class of the XML auto-import node — an accepted alias only. */
+  const val XML_AUTO_IMPORT_HANDLER_CLASS =
+      "com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CbXmlAutoImportNodePlugin"
+
+  /**
    * The workflow-node type of the INSTALLED "create a record in another form" plugin
    * (`de.xima.advanced.plugin`), i.e. the value that must end up in `WorkflowNode.ITEM_TYPE`.
    */
@@ -107,6 +117,16 @@ internal object WorkflowSpecNormalizer {
       type.equals("Mirror node", ignoreCase = true) -> MIRROR_NODE_TYPE
       type.equals("Spiegel", ignoreCase = true) -> MIRROR_NODE_TYPE
       type.equals("Spiegel-Knoten", ignoreCase = true) -> MIRROR_NODE_TYPE
+      // CodBi XML auto-import node: the registered type is case-sensitive and models love to
+      // re-case it or emit the handler class / display label instead.
+      type.equals(XML_AUTO_IMPORT_NODE_TYPE, ignoreCase = true) -> XML_AUTO_IMPORT_NODE_TYPE
+      type == XML_AUTO_IMPORT_HANDLER_CLASS -> XML_AUTO_IMPORT_NODE_TYPE
+      type.endsWith(".CbXmlAutoImportNodePlugin") -> XML_AUTO_IMPORT_NODE_TYPE
+      type.equals("XmlAutoImport", ignoreCase = true) -> XML_AUTO_IMPORT_NODE_TYPE
+      type.equals("CbXMLAutoImport", ignoreCase = true) -> XML_AUTO_IMPORT_NODE_TYPE
+      type.equals("XML auto import", ignoreCase = true) -> XML_AUTO_IMPORT_NODE_TYPE
+      type.equals("XML-Auto-Import", ignoreCase = true) -> XML_AUTO_IMPORT_NODE_TYPE
+      type.equals("XML Automatischer Import", ignoreCase = true) -> XML_AUTO_IMPORT_NODE_TYPE
       type == LEGACY_CREATE_RECORD_NODE_TYPE -> REMOTE_FORM_RECORD_NODE_TYPE
       type == REMOTE_FORM_RECORD_NODE_TYPE -> REMOTE_FORM_RECORD_NODE_TYPE
       type.endsWith(".CreateRecordNodePlugin") -> REMOTE_FORM_RECORD_NODE_TYPE

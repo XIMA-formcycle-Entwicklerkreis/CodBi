@@ -229,6 +229,31 @@ internal object LocalApiDocPrompts {
       if (name == "Holistic.Media.Input.Speech" || name == "Holistic.Media.Input.Speech.Whisper") {
         exclusionNote =
             " NOTE: the CSS classes listed on this standard (CodBi_XCL_Speech / CodBi_XCL_Speech_Whisper) are EXCLUSION classes — they REMOVE a single field from the global speech standard. To ENABLE speech-on-all-text-fields, ONLY report this standard in _codbiApplicability.applied; do NOT put any class on an element."
+        // Speech input can be implemented in two mutually exclusive ways: the browser's Web Speech
+        // API (`Holistic.Media.Input.Speech`, cloud/DSGVO-relevant) or the on-premise local Whisper
+        // module (`Holistic.Media.Input.Speech.Whisper`, data stays on the server). Whether local
+        // Whisper is available is a per-installation, config-level fact (the `Active_AI` plugin
+        // property must contain `whisper`) that the AI cannot infer, so it is told explicitly here.
+        // When Whisper is enabled the AI should ASK the user "Web Speech API or local Whisper?"
+        // before choosing; when it is NOT enabled, local Whisper is not available and only the Web
+        // Speech variant may be used (no need to ask).
+        exclusionNote +=
+            if (AI.isWhisperEnabled()) {
+              " If the request means adding speech-to-text input to a field (in ANY language or" +
+                  " wording — e.g. a field you can speak into, a dictation field, a microphone field)," +
+                  " ASK them once whether they want the browser's Web Speech API" +
+                  " (`Holistic.Media.Input.Speech`) or the on-premise local Whisper" +
+                  " (`Holistic.Media.Input.Speech.Whisper`) — both are available here."
+            } else {
+              " Local Whisper (`Holistic.Media.Input.Speech.Whisper`) is NOT available on this" +
+                  " installation (the `Active_AI` plugin property does not enable it). If the request" +
+                  " means adding speech-to-text input to a field (in ANY language or wording — e.g. a" +
+                  " dictation field, a microphone field, or explicitly mentioning Whisper), INFORM the" +
+                  " user that local Whisper is not active and OFFER these three options: (1) use the" +
+                  " local Whisper standard (`Holistic.Media.Input.Speech.Whisper`) anyway, (2) use the" +
+                  " browser's Web Speech API (`Holistic.Media.Input.Speech`) instead, or (3) do nothing" +
+                  " (abort the inference). Do NOT silently pick one of these options for the user."
+            }
       }
       return "This is a CodBi Standard Configuration applied at the FORM level. To activate it, include {\"id\":\"$name\",\"targets\":[]} in the top-level _codbiApplicability \"applied\" array (empty targets). Do NOT add any CSS class to an element and do NOT set data-cb-func to \"$name\" to apply it.$exclusionNote$globalNote0"
     }

@@ -81,6 +81,172 @@ cb-ai-assistant-log {
     flex-wrap: wrap;
 }
 
+/* Cross-form selector (only shown to users allowed to sync) next to the Export button. It is an
+   INLINE dropdown (trigger button + absolutely positioned list INSIDE the component) instead of a
+   PrimeNG select overlay: the overlay is appended to <body>, and inside this transformed assistant
+   dialog its position was unreliable (options at the trigger's bottom-right corner / across the
+   window). Anchored like this, the list always starts at the trigger's LEFT edge, directly BELOW
+   it and exactly as wide as the trigger. */
+.cb-log-form-select {
+    position: relative;
+    flex: 0 0 auto;
+    width: 300px;
+    max-width: 300px;
+}
+
+.cb-log-form-select__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    height: 2.2rem;
+    padding: 0 0.65rem;
+    font: inherit;
+    font-size: 0.85em;
+    color: #333;
+    background: #fff;
+    /* Dark orange frame — matches the CodBi accent used by the assistant's own controls. */
+    border: 1px solid darkorange;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.cb-log-form-select__trigger:hover:not(:disabled) {
+    border-color: #ff9f40;
+}
+
+.cb-log-form-select__trigger:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.cb-log-form-select--open .cb-log-form-select__trigger {
+    border-color: #ff8c00;
+    box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2);
+}
+
+.cb-log-form-select__label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.cb-log-form-select__label--muted {
+    color: #999;
+}
+
+.cb-log-form-select__chevron {
+    flex: 0 0 auto;
+    font-size: 0.75em;
+    color: #888;
+}
+
+/* Transparent full-screen catcher: a click anywhere closes the list (no document listeners). */
+.cb-log-form-select__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2147482900;
+}
+
+/* The list itself: LEFT edge = trigger LEFT edge, TOP = trigger BOTTOM, width = trigger width. */
+.cb-log-form-select__panel {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    width: 100%;
+    max-width: 300px;
+    max-height: min(40vh, 320px);
+    margin: 0;
+    padding: 0.2rem 0;
+    list-style: none;
+    background: #fff;
+    border: 1px solid darkorange;
+    border-radius: 6px;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+    overflow-y: auto;
+    z-index: 2147483000;
+}
+
+.cb-log-form-select__option {
+    padding: 0.35rem 0.65rem;
+    cursor: pointer;
+}
+
+.cb-log-form-select__option:hover {
+    background: #fff4e6;
+}
+
+.cb-log-form-select__option--selected {
+    background: #ffe8cc;
+}
+
+.cb-log-form-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.cb-log-form-option__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Inside the dropdown panel the form names WRAP onto multiple lines (the panel is only as wide as
+   the trigger), so a long name is fully readable instead of being truncated with an ellipsis. The
+   selected value in the trigger keeps its single-line ellipsis from the rule above. */
+.cb-log-form-select-panel .p-select-option {
+    white-space: normal;
+    overflow: visible;
+}
+
+.cb-log-form-select-panel .cb-log-form-option {
+    display: flex;
+    width: 100%;
+}
+
+.cb-log-form-select-panel .cb-log-form-option__name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* A deleted form stays selectable but is visually de-emphasized and struck through. */
+.cb-log-form-option--deleted .cb-log-form-option__name {
+    color: #999;
+    text-decoration: line-through;
+}
+
+.cb-log-form-option__tag {
+    flex: 0 0 auto;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-size: 0.68em;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.cb-log-form-option__tag--current {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.cb-log-form-option__tag--deleted {
+    background: #fdecea;
+    color: #c62828;
+}
+
 /* Own line below the toolbar holding the search input. */
 .cb-log-search-row {
     display: flex;

@@ -132,8 +132,15 @@ internal class MessageBuilder(
         appendMailInstructions()
       }
 
-      if (!searchEnabled || !BraveSearch.isAvailable) {
+      if (!searchEnabled) {
         appendNoInternetPrompt()
+      } else if (!BraveSearch.isAvailable) {
+        // Internet access was REQUESTED (X-Search=true, e.g. AI.LLAMA.STD.QA param 2) but this
+        // installation has no Brave Search API key. Without this distinction the model was told the
+        // generic "you do NOT have internet access" rule and answered e.g. "I have no access to
+        // current weather data" — which looks like a model defect although the search backend is
+        // simply not configured.
+        appendNoInternetRequestedPrompt()
       }
 
       appendRulesPrompt()
@@ -295,6 +302,26 @@ internal class MessageBuilder(
       append(ChatPromptFragments.section("no_internet") ?: "")
       append(" ")
     }
+  }
+
+  /**
+   * Internet access was REQUESTED by the caller (`X-Search: true`, e.g. the second parameter of the
+   * `AI.LLAMA.STD.QA` element placeholder) but no Brave Search API key is configured on this
+   * installation. The generic [appendNoInternetPrompt] wording ("you do NOT have internet access")
+   * made the model answer live-data questions with "I have no access to current weather data",
+   * which reads like a model defect although only the search backend is missing. This variant keeps
+   * the "never fabricate" rule but names the actual reason.
+   */
+  private fun StringBuilder.appendNoInternetRequestedPrompt() {
+    val requested = ChatPromptFragments.section("no_internet_requested")
+    if (requested.isNullOrBlank()) {
+      // An older seeded fragment catalogue (no `no_internet_requested` row yet) must never degrade
+      // to sending NO rule at all — the plain "no internet" rule is the safe fallback.
+      appendNoInternetPrompt()
+      return
+    }
+    append(requested)
+    append(" ")
   }
 
   private fun StringBuilder.appendRulesPrompt() {

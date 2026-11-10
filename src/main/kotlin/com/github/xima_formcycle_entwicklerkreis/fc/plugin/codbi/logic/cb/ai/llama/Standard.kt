@@ -1914,6 +1914,16 @@ class Standard : LLAMA() {
           it.key.equals("X-Search", ignoreCase = true) && it.value.equals("true", ignoreCase = true)
         }
     log(LogLevel.INFO, "Search enabled: $searchEnabled")
+    // Diagnosability: X-Search=true only EXPRESSES the wish to search — the actual capability comes
+    // from the Brave Search API key. Without this line the run looks like "search on" while the
+    // model is told it has no internet access and answers live-data questions with "no access".
+    if (searchEnabled && !BraveSearch.isAvailable) {
+      log(
+          LogLevel.WARNING,
+          "Search requested (X-Search=true) but BraveSearch is NOT configured " +
+              "(plugin property AI_BraveSearch_ApiKey is empty) — the model is told it has no " +
+              "internet access and will refuse live data (weather, prices, news).")
+    }
     val locationEnabled =
         headers.entries.any {
           it.key.equals("X-Location", ignoreCase = true) &&

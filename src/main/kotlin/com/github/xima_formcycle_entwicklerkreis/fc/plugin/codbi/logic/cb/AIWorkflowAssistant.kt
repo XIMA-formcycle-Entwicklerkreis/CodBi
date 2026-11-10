@@ -3090,6 +3090,62 @@ class AIWorkflowAssistant : IPluginServletAction {
             mappings.size)
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"xmlSource":$xmlSourceJson$xslJson,"xpathMapping":[${mappings.joinToString(",")}]}"""
       }
+      "cbXMLAutoImport" -> {
+        // CUSTOM_PARAMS stores CbXmlAutoImportNodeProps (fc-plugin-codbi):
+        //   xmlSource: SingleFile — the SAME shape as FC_IMPORT_FORM_VALUE_FROM_XML (upload
+        //              element, FORM file, previous node's FILE_PROVIDE_ACTION or an external url)
+        //   excludedFields: List<String> — form fields that must NOT be filled
+        //   overwriteExisting / trimValues / importRepeatedValues / dryRun: Boolean
+        // The node imports EVERY value of the file whose field exists in the form, so there is NO
+        // per-field mapping to emit — only the (optional) exclusion list.
+        val uploadField =
+            workflowParamString(spec.nodeParams, "uploadField")
+                .ifBlank { workflowParamString(spec.nodeParams, "fileField") }
+                .ifBlank { workflowParamString(spec.nodeParams, "uploadFieldTechnicalId") }
+        val fileName = workflowParamString(spec.nodeParams, "fileName")
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        val sourceUrl = workflowParamString(spec.nodeParams, "url")
+        @Suppress("UNCHECKED_CAST") val rawSource = spec.nodeParams["xmlSource"] as? Map<*, *>
+        val autoImportSourceJson =
+            when {
+              rawSource != null -> gson.toJson(rawSource)
+              uploadField.isNotBlank() ->
+                  """{"resource":{"type":"UPLOAD","identifier":${gson.toJson(uploadField)}}}"""
+              fileName.isNotBlank() -> {
+                val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+                if (fileUuid != null) {
+                  """{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$fileUuid"}}}"""
+                } else {
+                  """{"searchFilename":${gson.toJson(fileName)}}"""
+                }
+              }
+              nodeUuid.isNotBlank() && taskUuid.isNotBlank() ->
+                  """{"resource":{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}}"""
+              sourceUrl.isNotBlank() -> """{"url":${gson.toJson(sourceUrl)}}"""
+              else -> {
+                logger.warn(
+                    "[AIWorkflowAssistant] buildNodeParams cbXMLAutoImport: no xmlSource (uploadField/fileName/previous node/url) — the node will fail with SOURCE_REQUIRED")
+                "null"
+              }
+            }
+        val autoImportExcluded = CbXmlAutoImportParams.excludedFields(spec.nodeParams)
+        val autoImportOverwrite =
+            CbXmlAutoImportParams.flag(spec.nodeParams, "overwriteExisting", true)
+        val autoImportTrim = CbXmlAutoImportParams.flag(spec.nodeParams, "trimValues", true)
+        val autoImportRepeats =
+            CbXmlAutoImportParams.flag(spec.nodeParams, "importRepeatedValues", true)
+        val autoImportDryRun = CbXmlAutoImportParams.flag(spec.nodeParams, "dryRun", false)
+        logger.info(
+            "[AIWorkflowAssistant] buildNodeParams cbXMLAutoImport: xmlSource={}, excluded={}, overwrite={}, trim={}, repeats={}, dryRun={}",
+            autoImportSourceJson,
+            autoImportExcluded.size,
+            autoImportOverwrite,
+            autoImportTrim,
+            autoImportRepeats,
+            autoImportDryRun)
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"xmlSource":$autoImportSourceJson,"excludedFields":[${autoImportExcluded.joinToString(",") { gson.toJson(it) }}],"overwriteExisting":$autoImportOverwrite,"trimValues":$autoImportTrim,"importRepeatedValues":$autoImportRepeats,"dryRun":$autoImportDryRun}"""
+      }
       "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
         // FcWriteFormRecordAttrProps has ONE list, "customAttributes" (the designer's
         // "Modifications"

@@ -1,0 +1,661 @@
+<ui:composition xmlns="http://www.w3.org/1999/xhtml"
+    xmlns:h="http://xmlns.jcp.org/jsf/html"
+    xmlns:f="http://xmlns.jcp.org/jsf/core"
+    xmlns:ui="http://xmlns.jcp.org/jsf/facelets"
+    xmlns:p="http://primefaces.org/ui"
+    xmlns:xi="http://www.xima.de/taglib/xfc">
+
+    <xi:namingContainer id="CbXmlAutoImportNode">
+
+        <script>
+            (function () {
+                var amp = String.fromCharCode(38);
+                var prefix = "#{request.contextPath}/plugin?name=Resource" + amp + "Path=";
+                // CodBi logo used as the watermark of the options panel (see the style block below).
+                // Set as a CSS custom property on :root; the ampersand is built with fromCharCode so
+                // this facelet stays well-formed XML.
+                try {
+                    document.documentElement.style.setProperty(
+                        "--codbi-logo-url",
+                        'url("' + prefix + "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg" + '")'
+                    );
+                } catch (e) {
+                    /* decorative only */
+                }
+            })();
+        </script>
+
+        <xi:newWorkflowActionBase id="base" value="#{model}"
+            legend="#{msg['cbXMLAutoImport.name']}" />
+
+        <style>
+            /* CodBi look for the XML Auto Import node (darkorange accent). */
+            .codbi-xml-import-node .codbi-xml-import-label {
+                display: block;
+                margin: 0.65em 0 0.2em 0;
+                font-weight: 600;
+            }
+            .codbi-xml-import-node .codbi-xml-import-input {
+                box-sizing: border-box !important;
+                width: 100% !important;
+                height: 2.05em !important;
+                padding: 0 0.5em !important;
+                border: 1px solid #cbd5e1 !important;
+                border-left: 3px solid darkorange !important;
+                border-radius: 4px !important;
+                background: #fff !important;
+                color: inherit !important;
+            }
+            .codbi-xml-import-node .codbi-xml-import-input:focus {
+                outline: none !important;
+                border-left-color: darkorange !important;
+                box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2) !important;
+            }
+            /* The identifier holds the URL only: hidden unless the panel is rendered for URL. */
+            .codbi-xml-import-node input.codbi-xml-import-identifier {
+                display: none;
+                margin-top: 0.35em;
+            }
+            .codbi-xml-import-node[data-source-type="URL"] input.codbi-xml-import-identifier {
+                display: block !important;
+            }
+            .codbi-xml-import-node textarea.codbi-xml-import-exclusions {
+                display: none !important;
+            }
+            .codbi-xml-import-node .codbi-xml-import-hint {
+                display: block;
+                margin-top: 0.2em;
+                color: #6b7280;
+                font-size: 0.9em;
+            }
+            .codbi-xml-import-node .codbi-xml-import-chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.35em;
+                min-height: 1.6em;
+                margin: 0.35em 0;
+            }
+            .codbi-xml-import-node .codbi-xml-import-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35em;
+                padding: 0.15em 0.45em;
+                border: 1px solid darkorange;
+                border-radius: 999px;
+                background: #fff3e6;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                font-size: 0.9em;
+            }
+            .codbi-xml-import-node .codbi-xml-import-chip__remove {
+                padding: 0;
+                border: 0;
+                background: transparent;
+                color: darkorange;
+                font-size: 1em;
+                line-height: 1;
+                cursor: pointer;
+            }
+            .codbi-xml-import-node .codbi-xml-import-add {
+                display: flex;
+                gap: 0.35em;
+                align-items: center;
+            }
+            .codbi-xml-import-node .codbi-xml-import-exclusion-new {
+                flex: 1 1 auto;
+            }
+            .codbi-xml-import-node .codbi-xml-import-check {
+                display: flex;
+                align-items: center;
+                gap: 0.5em;
+                margin: 0.45em 0;
+            }
+            .codbi-xml-import-node .codbi-xml-import-check input[type="checkbox"] {
+                width: 16px;
+                height: 16px;
+                accent-color: darkorange;
+                cursor: pointer;
+            }
+            .codbi-xml-import-node .codbi-xml-import-preview {
+                margin-top: 0.9em;
+                padding: 0.75em 0.9em;
+                border: 1px solid darkorange;
+                border-left: 4px solid darkorange;
+                border-radius: 6px;
+                background: linear-gradient(135deg, #fffdf9 0%, #fff3e6 100%);
+                box-shadow: 0 0 0.4em rgba(255, 140, 0, 0.18);
+            }
+            .codbi-xml-import-node .codbi-xml-import-preview__title {
+                margin-bottom: 0.5em;
+                font-weight: 700;
+                color: #a85a00;
+            }
+            .codbi-xml-import-node .codbi-xml-import-preview__row {
+                display: flex;
+                align-items: baseline;
+                gap: 0.5em;
+                margin: 0.2em 0;
+            }
+            .codbi-xml-import-node .codbi-xml-import-preview__label {
+                min-width: 8em;
+                color: #6b7280;
+            }
+            .codbi-xml-import-node .codbi-xml-import-preview__value {
+                font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                word-break: break-all;
+            }
+
+            /* ── Options fieldset: CodBi logo watermark behind the controls ───────────────────── */
+            .codbi-xml-import-node .codbi-xml-import-options {
+                position: relative;
+                overflow: hidden;
+            }
+            /* The watermark sits between the fieldset background and its content, so the content
+               must not paint an opaque background over it. */
+            .codbi-xml-import-node .codbi-xml-import-options > .ui-fieldset-content,
+            .codbi-xml-import-node .codbi-xml-import-options > .ui-fieldset-content > div {
+                background: transparent !important;
+            }
+            .codbi-xml-import-node .codbi-xml-import-options > .ui-fieldset-content {
+                position: relative;
+                z-index: 1;
+            }
+            .codbi-xml-import-node .codbi-xml-import-options::before {
+                content: "";
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                width: 62%;
+                height: 78%;
+                transform: translate(-50%, -50%);
+                background: var(--codbi-logo-url) center / contain no-repeat;
+                opacity: 0.1;
+                pointer-events: none;
+                z-index: 0;
+            }
+        </style>
+
+        <div class="codbi-xml-import-node" data-codbi-xml-import="true"
+            data-action-name="CodBi_Mirror"
+            data-context-path="#{request.contextPath}"
+            data-project-id="#{workflowProviderBean.project.id}"
+            data-source-type="#{model.sourceType}">
+
+            <p:fieldset id="sourceSection"
+                legend="#{msg['workflow.xml_auto_import.section_source']}"
+                styleClass="fc-fieldset">
+
+                <label class="codbi-xml-import-label"
+                    for="xmlImportSourceType"
+                    title="#{msg['workflow.xml_auto_import.sourceType.tooltip']}">
+                    #{msg['workflow.xml_auto_import.sourceType']}
+                </label>
+                <!--
+                    Plain HTML select: PrimeFaces' selectOneMenu does not expose its current value
+                    reliably (its label and hidden select drifted apart), which made the panel show
+                    the wrong source field. This select's value is mirrored into the bound hidden
+                    input below, so the type is persisted exactly like every other field and the
+                    script can always read it.
+                -->
+                <select id="xmlImportSourceType"
+                    class="codbi-xml-import-input codbi-xml-import-source-type"
+                    title="#{msg['workflow.xml_auto_import.sourceType.tooltip']}">
+                    <option value="UPLOAD">#{msg['workflow.xml_auto_import.sourceType.upload']}</option>
+                    <option value="FORM_RESOURCE">#{msg['workflow.xml_auto_import.sourceType.formResource']}</option>
+                    <option value="PREVIOUS_NODE">#{msg['workflow.xml_auto_import.sourceType.previousNode']}</option>
+                    <option value="URL">#{msg['workflow.xml_auto_import.sourceType.url']}</option>
+                </select>
+                <p:inputText id="xmlImportSourceTypeValue"
+                    value="#{model.sourceType}"
+                    styleClass="codbi-xml-import-source-type-value"
+                    style="display:none !important">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        global="false" />
+                </p:inputText>
+
+                <!--
+                    Source PICKER (upload element / form file / previous node) — a real <select>.
+                    It and the URL input below are BOTH rendered; the script shows exactly the one
+                    that belongs to the current "Quellentyp" (the panel markup is not re-rendered by
+                    the type change, so this has to happen in the DOM). Choosing an entry writes its
+                    technical value into the bound identifier input.
+                -->
+                <label class="codbi-xml-import-label codbi-xml-import-picker-label"
+                    title="#{msg['workflow.xml_auto_import.source.tooltip']}">
+                    #{msg['workflow.xml_auto_import.source']}
+                </label>
+                <select class="codbi-xml-import-input codbi-xml-import-picker"
+                    data-empty-label="#{msg['workflow.xml_auto_import.source.none']}"
+                    data-no-options-label="#{msg['workflow.xml_auto_import.options.empty']}"
+                    title="#{msg['workflow.xml_auto_import.source.tooltip']}">
+                    <option value="">#{msg['workflow.xml_auto_import.source.none']}</option>
+                </select>
+
+                <!-- URL input — shown only for the URL source type (see the script below). -->
+                <label class="codbi-xml-import-label codbi-xml-import-url-label"
+                    for="xmlImportSourceIdentifier"
+                    title="#{msg['workflow.xml_auto_import.sourceIdentifier.tooltip']}">
+                    #{msg['workflow.xml_auto_import.sourceIdentifier']}
+                </label>
+                <p:inputText id="xmlImportSourceIdentifier"
+                    value="#{model.sourceIdentifier}"
+                    styleClass="codbi-xml-import-input codbi-xml-import-identifier"
+                    title="#{msg['workflow.xml_auto_import.sourceIdentifier.tooltip']}">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        global="false" />
+                </p:inputText>
+                <h:outputText styleClass="codbi-xml-import-hint"
+                    value="#{msg['workflow.xml_auto_import.sourceIdentifier.hint']}" />
+
+                <p:outputPanel id="xmlImportPreview" layout="block"
+                    styleClass="codbi-xml-import-preview">
+                    <div class="codbi-xml-import-preview__title">
+                        <h:outputText value="#{msg['workflow.xml_auto_import.preview.title']}" />
+                    </div>
+                    <div class="codbi-xml-import-preview__row">
+                        <span class="codbi-xml-import-preview__label">
+                            <h:outputText value="#{msg['workflow.xml_auto_import.preview.source']}" />
+                        </span>
+                        <code class="codbi-xml-import-preview__value">#{empty model.sourceIdentifier ? '&#8212;' : model.sourceIdentifier}</code>
+                    </div>
+                    <div class="codbi-xml-import-preview__row">
+                        <span class="codbi-xml-import-preview__label">
+                            <h:outputText
+                                value="#{msg['workflow.xml_auto_import.preview.placeholder']}" />
+                        </span>
+                        <code class="codbi-xml-import-preview__value">[%$#{model.name}.RESULT.summary%]</code>
+                    </div>
+                </p:outputPanel>
+            </p:fieldset>
+
+            <p:fieldset id="exclusionSection"
+                legend="#{msg['workflow.xml_auto_import.exclusions.section']}"
+                styleClass="fc-fieldset">
+
+                <h:outputText styleClass="codbi-xml-import-hint"
+                    value="#{msg['workflow.xml_auto_import.exclusions.hint']}" />
+
+                <!-- Chips rendered by the script below from the hidden textarea. -->
+                <div class="codbi-xml-import-chips"
+                    data-codbi-xml-import-exclusion-list="true"></div>
+
+                <!-- Field picker: offers every fillable field that is not excluded yet. Choosing
+                     an entry adds it to the list above. -->
+                <div class="codbi-xml-import-add">
+                    <select class="codbi-xml-import-input codbi-xml-import-exclusion-new"
+                        data-empty-label="#{msg['workflow.xml_auto_import.exclusions.pick']}"
+                        data-no-options-label="#{msg['workflow.xml_auto_import.options.empty']}"
+                        title="#{msg['workflow.xml_auto_import.exclusions.placeholder']}">
+                        <option value="">#{msg['workflow.xml_auto_import.exclusions.pick']}</option>
+                    </select>
+                </div>
+
+                <!--
+                    Authoritative, normally submitted value: one excluded field per line. Kept hidden
+                    because JSF cannot bind a row-by-row list editor without a backing bean.
+                -->
+                <p:inputTextarea id="xmlImportExclusionText"
+                    value="#{model.excludedFieldText}"
+                    styleClass="codbi-xml-import-exclusions">
+                    <p:ajax event="change" partialSubmit="true"
+                        listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                        global="false" />
+                </p:inputTextarea>
+            </p:fieldset>
+
+            <p:fieldset id="optionsSection"
+                legend="#{msg['workflow.xml_auto_import.section_options']}"
+                styleClass="fc-fieldset codbi-xml-import-options">
+
+                <div class="codbi-xml-import-check">
+                    <p:selectBooleanCheckbox id="xmlImportOverwrite"
+                        value="#{model.overwriteExisting}">
+                        <p:ajax event="change" partialSubmit="true"
+                            listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                            update=":flowchartForm:flowchart" global="false" />
+                    </p:selectBooleanCheckbox>
+                    <p:outputLabel for="xmlImportOverwrite"
+                        title="#{msg['workflow.xml_auto_import.overwriteExisting.tooltip']}"
+                        value="#{msg['workflow.xml_auto_import.overwriteExisting']}" />
+                </div>
+
+                <div class="codbi-xml-import-check">
+                    <p:selectBooleanCheckbox id="xmlImportTrimValues"
+                        value="#{model.trimValues}">
+                        <p:ajax event="change" partialSubmit="true"
+                            listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                            update=":flowchartForm:flowchart" global="false" />
+                    </p:selectBooleanCheckbox>
+                    <p:outputLabel for="xmlImportTrimValues"
+                        title="#{msg['workflow.xml_auto_import.trimValues.tooltip']}"
+                        value="#{msg['workflow.xml_auto_import.trimValues']}" />
+                </div>
+
+                <div class="codbi-xml-import-check">
+                    <p:selectBooleanCheckbox id="xmlImportRepeats"
+                        value="#{model.importRepeatedValues}">
+                        <p:ajax event="change" partialSubmit="true"
+                            listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                            update=":flowchartForm:flowchart" global="false" />
+                    </p:selectBooleanCheckbox>
+                    <p:outputLabel for="xmlImportRepeats"
+                        title="#{msg['workflow.xml_auto_import.importRepeatedValues.tooltip']}"
+                        value="#{msg['workflow.xml_auto_import.importRepeatedValues']}" />
+                </div>
+
+                <div class="codbi-xml-import-check">
+                    <p:selectBooleanCheckbox id="xmlImportDryRun" value="#{model.dryRun}">
+                        <p:ajax event="change" partialSubmit="true"
+                            listener="#{elementPropertiesBean.storeCurrent}" process="@this"
+                            update=":flowchartForm:flowchart" global="false" />
+                    </p:selectBooleanCheckbox>
+                    <p:outputLabel for="xmlImportDryRun"
+                        title="#{msg['workflow.xml_auto_import.dryRun.tooltip']}"
+                        value="#{msg['workflow.xml_auto_import.dryRun']}" />
+                </div>
+            </p:fieldset>
+        </div>
+
+        <!--
+            The node's designer behaviour is INLINED on purpose (CDATA keeps the JavaScript valid
+            XML): the panel then needs no extra script request to the plugin resource servlet, which
+            is the most common reason a picker stayed empty.
+        -->
+        <script>
+            //<![CDATA[
+            (function () {
+                var AMP = String.fromCharCode(38);
+                var ROOT = '[data-codbi-xml-import]';
+                var TYPE_URL = 'URL';
+                var ACTION_BY_TYPE = {
+                    UPLOAD: 'uploads',
+                    FORM_RESOURCE: 'resources',
+                    PREVIOUS_NODE: 'nodes'
+                };
+
+                function byClass(root, tag, cls) {
+                    return root.querySelector(tag + '.' + cls);
+                }
+
+                /** Project id: JSF attribute first, designer URL as fallback. */
+                function resolveProjectId(root) {
+                    var raw = String(root.getAttribute('data-project-id') || '').trim();
+                    var direct = raw.replace(/^project[-_]/i, '').replace(/\D/g, '');
+                    if (direct) return direct;
+                    var href = String(window.location.href || '');
+                    var match = /project[-_=](\d+)/i.exec(href) ||
+                        /(?:formId|projectId|form|project)=(\d+)/i.exec(href);
+                    return match ? match[1] : '';
+                }
+
+                function pluginUrl(root, action) {
+                    var actionName = root.getAttribute('data-action-name') || 'CodBi_Mirror';
+                    var contextPath = String(root.getAttribute('data-context-path') || '')
+                        .replace(/\/$/, '');
+                    var projectId = resolveProjectId(root);
+                    if (!projectId) {
+                        console.warn('[CodBi][XmlAutoImport] no project id on this panel', root.getAttribute('data-project-id'));
+                        return null;
+                    }
+                    return contextPath + '/plugin?name=' + encodeURIComponent(actionName) +
+                        AMP + 'action=' + encodeURIComponent(action) +
+                        AMP + 'project=' + encodeURIComponent('project-' + projectId);
+                }
+
+                function fetchList(root, action, done) {
+                    var cache = root.__codbiCache || (root.__codbiCache = {});
+                    if (cache[action]) {
+                        done(cache[action]);
+                        return;
+                    }
+                    var url = pluginUrl(root, action);
+                    if (!url) {
+                        done([]);
+                        return;
+                    }
+                    fetch(url, { credentials: 'same-origin' })
+                        .then(function (response) {
+                            if (!response.ok) {
+                                console.warn('[CodBi][XmlAutoImport] ' + action + ' HTTP ' + response.status, url);
+                                return [];
+                            }
+                            return response.json().catch(function (error) {
+                                console.warn('[CodBi][XmlAutoImport] ' + action + ' no JSON: ' + error, url);
+                                return [];
+                            });
+                        })
+                        .then(function (list) {
+                            var items = Array.isArray(list) ? list : [];
+                            if (!items.length) {
+                                console.warn('[CodBi][XmlAutoImport] ' + action + ' returned no options', url);
+                            }
+                            cache[action] = items;
+                            done(items);
+                        })
+                        .catch(function (error) {
+                            console.warn('[CodBi][XmlAutoImport] ' + action + ' failed: ' + error, url);
+                            done([]);
+                        });
+                }
+
+                /** Current source type: the plain select's value, model value as fallback. */
+                function sourceTypeValue(root) {
+                    var select = root.querySelector('select.codbi-xml-import-source-type');
+                    if (select && select.value) return String(select.value).toUpperCase();
+                    return String(root.getAttribute('data-source-type') || 'UPLOAD').toUpperCase();
+                }
+
+                function renderPicker(root, list, selected) {
+                    var picker = byClass(root, 'select', 'codbi-xml-import-picker');
+                    if (!picker) return;
+                    while (picker.firstChild) picker.removeChild(picker.firstChild);
+                    var empty = document.createElement('option');
+                    empty.value = '';
+                    empty.textContent = picker.getAttribute('data-empty-label') || '\u2014';
+                    picker.appendChild(empty);
+                    if (!(list || []).length) {
+                        var none = document.createElement('option');
+                        none.value = '';
+                        none.disabled = true;
+                        none.textContent = picker.getAttribute('data-no-options-label') || '\u2014';
+                        picker.appendChild(none);
+                    }
+                    var found = false;
+                    (list || []).forEach(function (item) {
+                        var option = document.createElement('option');
+                        option.value = String(item.value || '');
+                        option.textContent = String(item.label || item.value || '');
+                        if (option.value === String(selected || '')) found = true;
+                        picker.appendChild(option);
+                    });
+                    if (selected && !found) {
+                        var stale = document.createElement('option');
+                        stale.value = String(selected);
+                        stale.textContent = String(selected);
+                        picker.appendChild(stale);
+                    }
+                    picker.value = String(selected || '');
+                }
+
+                /**
+                 * Shows the control that belongs to the current source type and fills the source
+                 * list. The panel markup is NOT re-rendered when the type changes (the type's p:ajax
+                 * only updates the flowchart canvas), so the switching has to happen in the DOM.
+                 */
+                function refreshSource(root) {
+                    var identifier = byClass(root, 'input', 'codbi-xml-import-identifier');
+                    var picker = byClass(root, 'select', 'codbi-xml-import-picker');
+                    var pickerLabel = root.querySelector('.codbi-xml-import-picker-label');
+                    var urlLabel = root.querySelector('.codbi-xml-import-url-label');
+                    var type = sourceTypeValue(root);
+                    var isUrl = type === TYPE_URL;
+                    // Explicit values: the stylesheet hides the URL input by default.
+                    if (picker) picker.style.display = isUrl ? 'none' : 'block';
+                    if (pickerLabel) pickerLabel.style.display = isUrl ? 'none' : 'block';
+                    if (identifier) identifier.style.display = isUrl ? 'block' : 'none';
+                    if (urlLabel) urlLabel.style.display = isUrl ? 'block' : 'none';
+                    if (isUrl || !picker) return;
+                    var action = ACTION_BY_TYPE[type] || ACTION_BY_TYPE.UPLOAD;
+                    fetchList(root, action, function (list) {
+                        renderPicker(root, list, identifier ? identifier.value : '');
+                    });
+                }
+
+                function readExclusions(textarea) {
+                    if (!textarea) return [];
+                    return String(textarea.value || '')
+                        .split(/[\n,;]+/)
+                        .map(function (value) { return value.trim(); })
+                        .filter(function (value) { return value.length > 0; });
+                }
+
+                function writeExclusions(root, values) {
+                    var textarea = root.querySelector('textarea.codbi-xml-import-exclusions');
+                    if (!textarea) return;
+                    var unique = [];
+                    values.forEach(function (value) {
+                        if (value && unique.indexOf(value) < 0) unique.push(value);
+                    });
+                    textarea.value = unique.join('\n');
+                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                    renderExclusions(root);
+                }
+
+                function renderExclusionOptions(root) {
+                    var select = byClass(root, 'select', 'codbi-xml-import-exclusion-new');
+                    var textarea = root.querySelector('textarea.codbi-xml-import-exclusions');
+                    if (!select || !textarea) return;
+                    var selected = select.value;
+                    var current = readExclusions(textarea);
+                    while (select.firstChild) select.removeChild(select.firstChild);
+                    var empty = document.createElement('option');
+                    empty.value = '';
+                    empty.textContent = select.getAttribute('data-empty-label') || '\u2014';
+                    select.appendChild(empty);
+                    fetchList(root, 'fields', function (list) {
+                        var names = readExclusions(textarea);
+                        if (!(list || []).length) {
+                            var none = document.createElement('option');
+                            none.value = '';
+                            none.disabled = true;
+                            none.textContent = select.getAttribute('data-no-options-label') || '\u2014';
+                            select.appendChild(none);
+                        }
+                        (list || []).forEach(function (item) {
+                            var value = String(item.value || '');
+                            if (!value || names.indexOf(value) >= 0) return;
+                            var option = document.createElement('option');
+                            option.value = value;
+                            option.textContent = String(item.label || value);
+                            select.appendChild(option);
+                        });
+                        select.value = names.indexOf(selected) >= 0 ? '' : selected;
+                    });
+                }
+
+                function renderExclusions(root) {
+                    var textarea = root.querySelector('textarea.codbi-xml-import-exclusions');
+                    var host = root.querySelector('[data-codbi-xml-import-exclusion-list]');
+                    if (!textarea || !host) return;
+                    var current = readExclusions(textarea);
+                    while (host.firstChild) host.removeChild(host.firstChild);
+                    current.forEach(function (value) {
+                        var chip = document.createElement('span');
+                        chip.className = 'codbi-xml-import-chip';
+                        var text = document.createElement('span');
+                        text.textContent = value;
+                        var remove = document.createElement('button');
+                        remove.type = 'button';
+                        remove.className = 'codbi-xml-import-chip__remove';
+                        remove.textContent = '\u00D7';
+                        remove.addEventListener('click', function () {
+                            writeExclusions(root, readExclusions(textarea).filter(function (item) {
+                                return item !== value;
+                            }));
+                        });
+                        chip.appendChild(text);
+                        chip.appendChild(remove);
+                        host.appendChild(chip);
+                    });
+                    renderExclusionOptions(root);
+                }
+
+                function initRoot(root) {
+                    if (!root || root.getAttribute('data-codbi-ready') === 'true') return;
+                    root.setAttribute('data-codbi-ready', 'true');
+
+                    // Source picker
+                    var identifier = byClass(root, 'input', 'codbi-xml-import-identifier');
+                    var picker = byClass(root, 'select', 'codbi-xml-import-picker');
+                    // Source type: plain select → mirror into the bound hidden input (which persists
+                    // the node) and switch the visible field immediately.
+                    var typeSelect = root.querySelector('select.codbi-xml-import-source-type');
+                    var typeValue = byClass(root, 'input', 'codbi-xml-import-source-type-value');
+                    if (typeSelect) {
+                        var initial = String(
+                            root.getAttribute('data-source-type') || typeSelect.value || 'UPLOAD'
+                        ).toUpperCase();
+                        if (initial) typeSelect.value = initial;
+                        typeSelect.addEventListener('change', function () {
+                            if (typeValue) {
+                                typeValue.value = typeSelect.value;
+                                typeValue.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                            refreshSource(root);
+                        });
+                    }
+                    if (picker && identifier) {
+                        picker.addEventListener('change', function () {
+                            identifier.value = picker.value || '';
+                            identifier.dispatchEvent(new Event('change', { bubbles: true }));
+                        });
+                    }
+                    refreshSource(root);
+
+                    // Exclusion list: choosing a field adds it, the chip's "×" removes it.
+                    var exclusionSelect = byClass(root, 'select', 'codbi-xml-import-exclusion-new');
+                    var textarea = root.querySelector('textarea.codbi-xml-import-exclusions');
+                    if (exclusionSelect && textarea) {
+                        exclusionSelect.addEventListener('change', function () {
+                            var value = String(exclusionSelect.value || '').trim();
+                            if (!value) return;
+                            exclusionSelect.value = '';
+                            writeExclusions(root, readExclusions(textarea).concat([value]));
+                        });
+                        renderExclusions(root);
+                    }
+                }
+
+                function initAll() {
+                    var roots = document.querySelectorAll(ROOT);
+                    for (var i = 0; i < roots.length; i++) initRoot(roots[i]);
+                }
+
+                initAll();
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', initAll);
+                }
+                if (window.jQuery) {
+                    window.jQuery(document).on('pfAjaxComplete', function () {
+                        window.setTimeout(initAll, 150);
+                    });
+                }
+                if (window.MutationObserver) {
+                    new MutationObserver(function (mutations) {
+                        for (var i = 0; i < mutations.length; i++) {
+                            if (mutations[i].addedNodes && mutations[i].addedNodes.length) {
+                                window.setTimeout(initAll, 150);
+                                return;
+                            }
+                        }
+                    }).observe(document.body || document.documentElement, {
+                        childList: true,
+                        subtree: true
+                    });
+                }
+            })();
+            //]]>
+        </script>
+    </xi:namingContainer>
+</ui:composition>

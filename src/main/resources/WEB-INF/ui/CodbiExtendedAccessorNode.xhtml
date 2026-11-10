@@ -12,6 +12,15 @@
             (function () {
                 var amp = String.fromCharCode(38);
                 var prefix = "#{request.contextPath}/plugin?name=Resource" + amp + "Path=";
+                // CodBi logo used as the watermark of the options panel (see the style block below).
+                try {
+                    document.documentElement.style.setProperty(
+                        "--codbi-logo-url",
+                        'url("' + prefix + "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg" + '")'
+                    );
+                } catch (e) {
+                    /* decorative only */
+                }
                 if (!document.querySelector("link[data-codbi-accessor-css]")) {
                     var css = document.createElement("link");
                     css.rel = "stylesheet";
@@ -304,6 +313,35 @@
                 accent-color: darkorange;
                 cursor: pointer;
             }
+
+            /* ── Options fieldset: CodBi logo watermark behind the controls ───────────────────── */
+            .codbi-accessor-node .codbi-accessor-options {
+                position: relative;
+                overflow: hidden;
+            }
+            /* The watermark sits between the fieldset background and its content, so the content
+               must not paint an opaque background over it. */
+            .codbi-accessor-node .codbi-accessor-options > .ui-fieldset-content,
+            .codbi-accessor-node .codbi-accessor-options > .ui-fieldset-content > div {
+                background: transparent !important;
+            }
+            .codbi-accessor-node .codbi-accessor-options > .ui-fieldset-content {
+                position: relative;
+                z-index: 1;
+            }
+            .codbi-accessor-node .codbi-accessor-options::before {
+                content: "";
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                width: 62%;
+                height: 78%;
+                transform: translate(-50%, -50%);
+                background: var(--codbi-logo-url) center / contain no-repeat;
+                opacity: 0.1;
+                pointer-events: none;
+                z-index: 0;
+            }
         </style>
 
         <div class="codbi-accessor-node">
@@ -421,7 +459,7 @@
             </p:fieldset>
 
             <p:fieldset legend="#{msg['workflow.extended_accessor.section_options']}"
-                styleClass="fc-fieldset">
+                styleClass="fc-fieldset codbi-accessor-options">
 
                 <div class="codbi-accessor-checks">
 

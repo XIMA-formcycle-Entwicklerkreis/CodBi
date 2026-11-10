@@ -10,6 +10,7 @@ Every Element Placeholder (EP) — built-in or custom — is invoked by writing 
 
 - EPName is the exact element placeholder name (dots, case-sensitive).
 - Parameters are separated by semicolons; use trailing semicolons for unused optional parameters.
+- PARAMETER ORDER IS FIXED BY THE EP — NEVER BY THE WORD ORDER OF THE REQUEST (language-agnostic, ANY language): the EP's DECLARED parameter order decides which value goes into which `;` slot. NEVER fill the slots in the order in which the request happens to mention them. In every Details EP the IDENTIFIER slot is FIRST and the PROPERTY (or format/flag) slot follows — even when the sentence names the property first: "die Mail-Adresse des Amts X" / "the e-mail address of authority X" → id first, then `email`; "die Bezeichnung der Behörde X" → id first, then `bezeichnung`. Reported failure — WRONG: { BayVIS.Behoerden.Details > email ; { BayVIS.Behoerden.ID > Amt für Digitales } } (the property sits in the id slot, which the EP validates as a numeric id → no data); CORRECT: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email }. The same fixed-order rule holds for EVERY multi-parameter EP, e.g. { Date.FromString > <string> ; <format> }, { AI.LLAMA.STD.QA > <question> ; <UseInternet> ; … }, { BayVIS.Behoerden.Details.Gebaeude > <authority id> ; <building id> ; <property> }: a swapped slot never "still works" — it silently returns nothing or the wrong value.
 - Parameter values are RAW strings — never add quotes around them.
 - An EP placeholder IS the value. NEVER represent an EP's data as a JSON object or array literal. The first token inside the braces is the EP's NAME. `data.join` is ONLY an example — ANY EP id works (built-in like AI.LLAMA.STD.QA, OpenPLZ.Localities, or any custom EP defined in the local API doc manager). The pattern is always `{ <any EP id> > Param1 ; Param2 ; ... }`. For example `{"planet":"Pluto","saturation":0.5}` is WRONG; `{ data.join > Param1 ; Param2 }` is CORRECT.
 
@@ -26,16 +27,31 @@ CRITICAL — A LITERAL NAME IS NOT A VARIABLE: a person's/authority's NAME is NE
 
 ## AI.LLAMA.STD.QA
 
-This EP queries an AI to answer a question. USE for weather/AI/knowledge queries. Param[1]=question, Param[2]=UseInternet ("true"). CRITICAL: trailing semicolons for unused params.  This EP is a RUNTIME AI answer; it is only usable when the environment has a suitable AI engine (otherwise the codbi data-cb-Specialist parameter must name a specialist from the "CONFIGURED AI SPECIALISTS" list in the system prompt). Do NOT make a live-data widget depend on it — prefer self-contained JavaScript that fetches a CORS-ENABLED endpoint (see the custom-JavaScript rules).
+This EP queries an AI to answer a question. USE for weather/AI/knowledge queries AND for logging an AI answer to the browser console (Sys.Log.Console data-cb-Data). It needs NO uploaded document — analyzing an uploaded file is the AI.LLAMA.STANDARD.QA functionality. Parameter order (exact): Param[1]=question, Param[2]=UseInternet ("true"), Param[3]=Location, Param[4]=Language, Param[5]=ResponseLanguage, Param[6]=Specialist, Param[7]=FilterResults, Param[8]=JsonParse. CRITICAL: keep every unused slot as a trailing semicolon — an omitted slot SHIFTS all later parameters. This EP is a RUNTIME AI answer; it is only usable when the environment has a suitable AI engine. Do NOT make a live-data widget depend on it — prefer self-contained JavaScript that fetches a CORS-ENABLED endpoint (see the custom-JavaScript rules).
 Example: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }"
+SPECIALIST (Param[6]): when the request names an AI specialist ("mit Cerebras", "des Spezialisten Cerebras", "von Cerebras beantworten lassen", "let Cerebras answer"), put that exact name into Param[6] — ONLY a name listed in the "CONFIGURED AI SPECIALISTS" block of the system prompt. The specialist for THIS EP is an EP PARAMETER; data-cb-Specialist is the attribute of an AI functionality (ai.llama.standard.qa/txtqa/txtverify/chat) and is NEVER used for an EP. Example: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true ; ; ; ; Cerebras }" (question; UseInternet; Location; Language; ResponseLanguage; Specialist). When no specialist is named (or the configured list is missing), leave the slot empty as in the first example — NEVER ask the user for a specialist name and NEVER invent one.
 
 ## Date.Today
 
-Supports arithmetic directly — do NOT wrap it in Date.Arithmetic. Use "{ Date.Today > +1d }" for tomorrow, "{ Date.Today > -1d }" for yesterday. Arithmetic: +N d/m/y (add days/months/years), -N d/m/y (subtract).
+Delivers TODAY as a DATE OBJECT — an OBJECT, never a formatted string. It is therefore the RIGHT input for every EP that needs an object (`JSON.Path`, `Date.Arithmetic`) and the WRONG input for every EP that needs a plain `dd.MM.yyyy` STRING (`Date.Weekends`, `Date.Holidays`).
+
+Supports arithmetic directly — do NOT wrap it in Date.Arithmetic. Parameters (optional, case-insensitive): `NOW` = today's date, or arithmetic tokens `<+|-><number><d|m|y>` applied to today (`+1d` = tomorrow, `-1m` = one month earlier, `+2y` = in two years); ONE token per `;` slot, several may be combined (`{ Date.Today > -1d ; +2m }`). NO parameter at all = today (`{ Date.Today }`); never write an empty arithmetic slot (`{ Date.Today > }`).
+
+READING A MEMBER OF TODAY'S DATE ("`getMonth()` von dem heutigen Tag", "das Jahr von heute", "den Wochentag von heute"): today's date is the OBJECT, so the member is taken with `JSON.Path` — `{ JSON.Path > { Date.Today > NOW } ; getMonth() }`. There is no "date method" EP and `getMonth()` on its own is neither a value nor an EP.
+
+RETURN TYPE: a Date OBJECT (not a string). To DISPLAY something derived from it, read the member with `JSON.Path` (e.g. `getFullYear()`, `toString()`) or format it with `HTML.Text.Mapper`.
+
+## Date.Arithmetic
+
+Parses a date STRING and then SHIFTS it by days/months/years in ONE step — use it when a date must be moved ("in 3 Tagen", "3 days after …", "das Datum … plus/minus …", "a week before …", "a month later"). Parameters: Param[1] = the date STRING (in the format the EP can parse); Param[2] = EITHER the input FORMAT (e.g. `DD/MM/YYYY`) OR the FIRST arithmetic operation — the EP decides by itself: a 2nd parameter containing `+` or `-` is treated as arithmetic, so the format is then skipped and the format defaults; Param[3]+ = further arithmetic operations, ONE per `;` slot. Arithmetic tokens are `<+|-><number><d|m|y>`: `+1d` (one day later), `-2m` (two months earlier), `+10y`. Examples: 'in 3 Tagen ab 01.12.2026' / '3 days after 01.12.2026' → `{ Date.Arithmetic > 01.12.2026 ; +3d }`; with a non-German format '01/12/2026 plus one month' → `{ Date.Arithmetic > 01/12/2026 ; DD/MM/YYYY ; +1m }`; several shifts → `{ Date.Arithmetic > 01.01.1978 ; -1d ; +2m ; -10y }`.
+
+RETURN TYPE: a DATE OBJECT (not a string) — so it must not be fed into a string-parameter EP (e.g. `Date.Weekends`, `Date.Holidays`); to DISPLAY the shifted date use `HTML.Text.Mapper`/`JSON.Path` on the object. For pure parsing WITHOUT a shift prefer `Date.FromString`. Today's date does not need this EP — `{ Date.Today > +3d }` is enough.
 
 ## Date.FromString
 
-Turns a date string into a Date object. Use for any prompt about converting/parsing a date string. Example: "{ Date.FromString > 01.12.1978 }" returns a Date object for December 1st, 1978. Optional second param sets the format (e.g. "DD/MM/YYYY").
+Turns a date STRING into a date so it can be compared, shifted or formatted — use it for any prompt about converting/parsing a date ("01.12.2026 als Datum", "parse this date", "das Datum aus dem Text", "turn … into a date"). Parameters: Param[1] = the date STRING (raw, unquoted); Param[2] OPTIONAL = the input FORMAT (e.g. `DD/MM/YYYY`, `YYYY-MM-DD`) — when omitted, `DD.MM.YYYY` is assumed. Example: "{ Date.FromString > 01.12.1978 }" → the date 1 December 1978; "{ Date.FromString > 12/01/2026 ; DD/MM/YYYY }" → 12 January 2026.
+
+RETURN TYPE: an ARRAY holding ONE DATE OBJECT (`Array<Date|null>`), not a displayable string. Take the date with `{ I > 0 ; { Date.FromString > … } }` when a single Date is required, and never pass the result into a string-parameter EP (`Date.Weekends`, `Date.Holidays`, `BayVIS.Behoerden.ID`, …).
 
 ## Date.Holidays
 
@@ -47,15 +63,50 @@ The year token is ALWAYS `THIS_YEAR` (optionally `THIS_YEAR + N` / `THIS_YEAR - 
 
 Count the YEARS the request names and pass ONE parameter per year, separated by `;`: 'Feiertage dieses und nächstes Jahr' / 'holidays this and next year' → `{ Date.Holidays > THIS_YEAR ; THIS_YEAR + 1 }` — TWO parameters, because a single year token covers only ONE year. When a state is named it goes FIRST, then the years: `{ Date.Holidays > by ; THIS_YEAR ; THIS_YEAR + 1 }`.
 
+### Date.Holidays — SEVERAL STATES, AND THE IDS THAT DO NOT EXIST
+
+The STATES/REGIONS named in a request are PARAMETERS of `Date.Holidays` — one `;` slot per state, never part of the EP's NAME and never a property: 'die diesjährigen Feiertage von Bayern und Hessen' / 'this year's public holidays in Bavaria and Hesse' / 'les jours fériés de cette année en Bavière et en Hesse' (ANY language) → `{ Date.Holidays > by ; he ; THIS_YEAR }` (two states = two parameters, then the year; order is irrelevant, case-insensitive). Reported failure — WRONG: `{ Holiday.BavariaAndHesse > list }` — the id `Holiday.BavariaAndHesse` does NOT exist (the EP catalogue is FIXED; `Date.Holidays` is the ONLY holiday EP) and `list` is not a parameter of it. CORRECT: `{ Date.Holidays > by ; he ; THIS_YEAR }`. NEVER translate the id ("Feiertage" is NOT an EP) and NEVER encode a state, region, country or topic into an id — if you are unsure whether an EP accepts a value, REQUEST its details instead of inventing an id or a property. The EP returns an ARRAY of holiday names and has NO property parameter; render it with HTML.Select.Injection (Values), HTML.Text.Injector combined with Sorted/Unique, or JSON.Path.
+
+## Date.Weekends
+
+Returns the WEEKEND dates (Saturday and Sunday) of a date range as an ARRAY of `dd.MM.yyyy` STRINGS. Its arguments are PLAIN STRINGS in `dd.MM.yyyy` — the EP validates them against a date regex, so a **DATE OBJECT is rejected**: NEVER nest `{ Date.Today > … }`, `{ Date.FromString > … }` or `{ Date.Arithmetic > … }` into it. ONE parameter = the END of the range (the range then starts TODAY); TWO parameters = begin `;` end (param 1 = START, param 2 = END — the START must be the EARLIER date; a reversed pair yields an EMPTY list). Examples: 'Wochenenden bis 01.12.2026' / 'weekends until 01.12.2026' → `{ Date.Weekends > 01.12.2026 }`; 'Wochenenden im Dezember 2026' / 'weekends in December 2026' → `{ Date.Weekends > 01.12.2026 ; 31.12.2026 }`.
+
+Reported failure — WRONG: `{ Date.Weekends > { Date.Today >  } ; { Date.FromString > 01.12.2026 ; dd.MM.yyyy } }` (two Date OBJECTS in string parameters, and a `Date.Today` with an EMPTY arithmetic parameter). CORRECT: `{ Date.Weekends > 01.12.2026 }`.
+
+Also: a `{ Date.Today > }` with an empty arithmetic parameter is invalid on its own — `{ Date.Today }` is enough (add arithmetic only when a shift is wanted, e.g. `{ Date.Today > +1d }`). When a RELATIVE range is requested ("die nächsten 3 Monate", "next 3 months"), do NOT chain EPs into the string slot — pass the concrete `dd.MM.yyyy` strings or leave the end out entirely (one parameter = until that date).
+
 ## JSON.Path
 
-Extracts a property from an object using a dotted path. It can also call methods on an object by using the method name with parentheses as the path, e.g. "toString()" calls the toString method.
+Takes a MEMBER out of an OBJECT: `{ JSON.Path > <object> ; <dotted path> }`. The parameter order is FIXED — the OBJECT first, the PATH second (never the reverse).
 
-Example: "{ JSON.Path > { Date.FromString > 01.12.1978 } ; toString() }" creates a Date and calls toString() on it.
+- A path segment written as a plain name READS A PROPERTY (`name`, `email`, `id`, `value`).
+- A path segment written as `name()` — ROUND BRACKETS, NO SPACE — CALLS A PARAMETERLESS METHOD (`getMonth()`, `getFullYear()`, `toISOString()`, `toString()`). Without the brackets the method object itself would be returned instead of its result.
+- Segments are separated by DOTS (`address.city`); every step must exist — a path interrupted by `undefined`/`null` throws a CodBiError, so never guess a member name.
+- The result is whatever the property/method yields: a Date method returns a NUMBER or STRING (e.g. `getMonth()` is 0-based — 0 = January), not a date object.
 
-Use JSON.Path for any prompt asking to retrieve a property or call a method on a CodBi EP result.
+This is THE EP for "call a method / read a property of an object", in ANY language ("getMonth() von heute", "the year of today", "die Eigenschaft … von …", "extract <property>"). The object may itself be produced by another EP — that is normal EP chaining, the INNER EP resolves first.
+
+Examples: `{ JSON.Path > { Date.FromString > 01.12.1978 } ; toString() }` (a Date → its string form); `{ JSON.Path > { Date.Today > NOW } ; getMonth() }` (the number of the current month); `{ JSON.Path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }` (the `name` property of that result).
+
+Reported failure — WRONG: `data-cb-Data = getMonth()` for "Gib in der Konsole getMonth() von dem heutigen Tag aus." — `getMonth()` alone is neither a value nor an EP: there is NO object to call the method on. CORRECT: `{ JSON.Path > { Date.Today > NOW } ; getMonth() }` — `Date.Today` with `NOW` supplies TODAY as a date OBJECT, and `getMonth()` (with brackets) is the parameterless method called on it.
 
 CRITICAL — ALL OpenPLZ EPs (OpenPLZ, OpenPLZ.Streets, OpenPLZ.Localities, OpenPLZ.OrganizationalUnits, OpenPLZ.TextSearch) return Array<object>. To extract a specific property (e.g. street names), wrap the EP in JSON.Path: "{ JSON.Path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }".
+
+## LDAP.Find
+
+Searches the LDAP / Active Directory and returns the matching entries as an ARRAY. Parameters (FIXED order):
+
+- Param[1] = the LOGICAL COMBINING MODE: the literal token `AND` or `OR` (case-insensitive). It is NOT a word describing the query — `filter`, `query`, `where`, `suche`, `conditions`, `mode` or an `attribute = value` pair are INVALID in this slot (the EP validates it against `AND|OR`; anything else falls back to AND and silently returns the wrong matches). An EMPTY slot means AND.
+- Param[2] = the CONDITIONS: one `attribute = value` pair per condition, ALL of them in this ONE parameter, separated by `|` (e.g. `givenName = Salvatore | sn = Callari`). Spaces around `=` are irrelevant.
+- Param[3] OPTIONAL = the LDAP request url — OMIT it when the installation has one configured (see the "LDAP CONFIGURATION" block); a url the request names explicitly is always wired here.
+
+DECIDING THE MODE BY MEANING (ANY language): ALL conditions must hold — "and", "und", "sowohl … als auch", "beide Bedingungen", "match both/all", "beides" — use `AND`; ANY one is enough — "or", "oder", "entweder … oder", "mindestens eine", "either", "any of them" — use `OR`. When the request just lists several `attribute = value` pairs without naming a connector, use `AND`.
+
+Examples: 'die Mail-Adresse von Salvatore Callari aus dem LDAP' → `{ JSON.Path > { I > 0 ; { LDAP.Find > AND ; sn = Callari } } ; mail }` (each entry carries givenName, sn, mail, title, department, telephoneNumber, sAMAccountName, cn, displayName); both name parts named → `{ LDAP.Find > AND ; givenName = Salvatore | sn = Callari }`.
+
+Reported failure — WRONG: `{ LDAP.Find > filter ; givenName = Salvatore | sn = Callari }` — "filter" is not a mode. CORRECT: `{ LDAP.Find > AND ; givenName = Salvatore | sn = Callari }`.
+
+NEVER put a condition into Param[1] and NEVER spread the conditions over several parameters — EVERY pair belongs in Param[2], joined by `|`.
 
 ## Data.Join
 
@@ -71,7 +122,11 @@ Fetches content from a URL client-side, inside the BROWSER of the form visitor (
 
 ## DOM.Query
 
-Queries the DOM for a CSS selector. The CSS selector from the prompt (dot-prefixed class name) is the parameter.
+Queries the RENDERED page for ONE element and returns it (an `Element`, or `null` when nothing matches). Its ONLY parameter is a CSS SELECTOR string: an element ID as `#xi-header-1` (the element's `id` property), an element NAME as `.header1` (the `name` is rendered as a CSS class) or any selector (`header`, `body`, `.xi-cb-…`). This is THE EP for acquiring DOM ELEMENTS ("das Header-Element", "den Container X", "das Element ganz oben", "the header element") — e.g. `{ DOM.Query > #xi-header-1 }`, `{ DOM.Query > .header1 }`, `{ DOM.Query > header }`.
+
+Reported failure — WRONG: `{ XHeader > header1 }`. `XHeader` — like `XPage`, `XSpan`, `XContainer`, `XTextField`, `XTextArea`, `XSelect`, `XUpload`, … — is a FORMCYCLE WIDGET TYPE (a `className` in the form JSON); a widget type is NEVER an EP id, and a bare element name is never a CSS selector. CORRECT: `{ DOM.Query > #xi-header-1 }` (or `{ DOM.Query > .header1 }`). The value the EP returns IS the element, so it is used directly (e.g. logged via `Sys.Log.Console`'s data-cb-Data) — never wrap the element in another EP id.
+
+A CSS selector is REQUIRED — a call without a selector is rejected: `{ DOM.Query }` is invalid.
 
 ## V (global variables)
 
@@ -91,13 +146,21 @@ WHEN THE USER ASKS TO STORE A VALUE AS A GLOBAL VARIABLE ("als globale Variable 
 
 ## I
 
-Takes a 0-based index and an inner EP that returns an ARRAY, returns the element at that index of the array (e.g. { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } }). ONLY use I when the INNER EP result is an ARRAY. When the inner EP already returns a SINGLE value/object (e.g. a Details EP fed by a global-variable ID via V), do NOT use I.
+Takes ONE entry out of an ARRAY by its position — the "pick one of the list" EP. TWO parameters in this exact order: Param[1] = the INDEX as an integer STRING (0-based: `0` = first entry, `1` = second; a number also works), Param[2] = the ARRAY-returning EP/nested expression.
+
+WHEN TO USE IT (language-agnostic): only when the inner EP yields an ARRAY and exactly ONE entry is needed — "den ersten Treffer", "the first match", "den ersten Eintrag", "einen der …", "pick one of …". The canonical idiom after an array-returning EP (`BayVIS.Behoerden.ID`, `BayVIS.Ansprechpartner.ID`, `BayVIS.Behoerden.Gebaeude.ID`, `Date.FromString`, `F`, `OpenPLZ.*`, `Sorted`, `Unique`) is `{ I > 0 ; <array EP> }`. Example: `{ I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } }` = the first matching authority ID; `{ I > 1 ; { OpenPLZ.Localities > de ; ^A } }` = the SECOND match.
+
+DO NOT use `I` on an EP that already returns a SINGLE value/object — a Details EP fed by one id (`{ BayVIS.Ansprechpartner.Details > { V > <NAME> } }`), a `V`, `JSON.Path`, `Date.Today`, `Date.Holidays > …` and similar need no `I`; wrapping them adds a slot for nothing. The EP tolerates exactly one case: index `0` applied to a NON-array returns that value unchanged (so `{ I > 0 ; <single value> }` is harmless), while any OTHER index on a non-array THROWS a CodBiError ("The second parameter of I must be an array …") — never rely on that, use `I` only for arrays.
+
+OUT OF RANGE: an index beyond the last entry yields NO value (the inner call raises "hasn't … been specified?" downstream) — prefer index `0` for "the first/best match", or narrow the list with `F` before picking.
 
 ## F
 
-Must be the OUTERMOST EP when filtering an array by exact property value. Do NOT wrap F in JSON.Path — F must be outermost.
-Correct: "{ F > postalCode ; 91522 ; { sorted > { unique > { openplz.localities > de ; ^a.* }; name }; name } }"
-WRONG: "{ Sorted > { F > ... } }" or "{ JSON.Path > { F > ... } }"
+Narrows an ARRAY to the entries whose property has ONE EXACT value — the filter EP for list/lookup requests ("den Eintrag mit … finden", "das Objekt, dessen … gleich … ist", "filter by …", "only the one where …", "welcher Eintrag hat …"). THREE parameters, in this exact order: Param[1] = the property NAME (a string), Param[2] = the value to match, Param[3] = the ARRAY to scan (an EP that returns an array, e.g. `{ OpenPLZ.Localities > de ; ^A }`).
+
+RETURN TYPE + SHAPE: `F` ALWAYS returns an ARRAY (one element when one matches, EMPTY when nothing matches) — a single result must be picked with the index EP: `{ I > 0 ; { F > … } }`. `F` must be the OUTERMOST EP of the value it fills: NEVER wrap it in `JSON.Path`, `Sorted` or `Unique` — do the sorting/deduplicating INSIDE its 3rd parameter. Correct: "{ F > postalCode ; 91522 ; { Sorted > { Unique > { OpenPLZ.Localities > de ; ^A } ; name } ; name } }". WRONG: "{ Sorted > { F > … } }" or "{ JSON.Path > { F > … } }".
+
+EXACT MATCH — the comparison is strict (`===`): case-sensitive AND type-sensitive. Pass the value exactly as the data holds it (a NUMBER stays a number, no quotes, no reformatting) — `91522` matches a numeric property, `"91522"` does not, and `Annaberg` does not match `annaberg`. When no entry matches, the result is EMPTY (never an error) — so a request for a single entry should be chained with `I`.
 
 ## Sorted
 
@@ -107,11 +170,34 @@ Sorts an array by a property name.
 
 Deduplicates an array by a property name.
 
+## URLParameter
+
+Reads the value of ONE URL query-string parameter of the page the form is running in: `{ URLParameter > <parameter name> }`. The parameter name is the RAW name used in the address bar (`?FRID=123` → `FRID`) — not its value, not a URL. The result is a STRING (the value), or an EMPTY STRING when the URL does not contain that parameter (it never throws).
+
+- ONE parameter only, unquoted: `{ URLParameter > FRID }`. URL parameter names are case-sensitive — pass the name exactly as the caller writes it.
+- Use it whenever a value must be taken FROM THE URL the visitor used — tracking/lead ids, campaign codes, preselected values, tokens ("den Parameter FRID in der URL ausgeben", "den Wert von ?frid=…", "URL-Parameter", "query parameter", "the value from the address bar", ANY language). Combine it with Sys.Log.Console (data-cb-Data) to print it, JSON.SET (data-cb-toset) to store it in a field's value, or HTML.Text.Injector (data-cb-replacement) to display it.
+- NOT `Net.URL` (that FETCHES a remote URL's content) and NOT the `SV` functionality (that COPIES a URL parameter into a global variable and is a form property, not an EP). To READ the value itself, use this EP.
+
+INVALID: writing the value literally, inventing an id (`{ FRID > }`, `{ URLParameter.FRID }`) or using `{ V > FRID }` for a URL parameter that was never stored in a global variable. CORRECT: `{ URLParameter > FRID }`.
+
 ## OpenPLZ EPs
 
 ALL OpenPLZ EPs (OpenPLZ, OpenPLZ.Streets, OpenPLZ.Localities, OpenPLZ.OrganizationalUnits, OpenPLZ.TextSearch) return Array<object>. Each object has properties like "name", "officialKey", "type", "postalCode", "locality". To extract a specific property, wrap the EP in JSON.Path. If duplicates may occur, deduplicate with Unique.
 
-EP names use dots and are case-sensitive: OpenPLZ.Localities (NOT "openplz.localities"), OpenPLZ.Streets, LDAP.Find (NOT "Ldap.Find").
+PICK THE EP BY WHAT IS BEING LOOKED FOR (language-agnostic, ANY language):
+- LOCALITIES / cities / towns / places ("Ortsvorschläge", "Städte", "cities", "localities") → `OpenPLZ.Localities > <country> ; <name regex> ; <postal-code regex>`.
+- STREETS ("Straßen in <PLZ>", "streets in <postal code>") → `OpenPLZ.Streets > <country> ; <street regex> ; <postal-code regex> ; <locality regex>`.
+- FREE TEXT ("Volltextsuche …", "search for …") → `OpenPLZ.TextSearch > <country> ; <term>`.
+- ORGANISATIONAL UNITS — cantons, federal states, provinces and their municipalities/districts ("alle Kantone der Schweiz", "die Bundesländer", "the cantons of Switzerland", "les cantons de la Suisse", "Provinzen", "districts") → `OpenPLZ.OrganizationalUnits > <country> ; <orgaUnit>`. This EP "does not search for units but rather returns all available ones", i.e. THE LIST of a country's units of that kind.
+- The GENERIC `OpenPLZ` EP is the raw servlet call — country ; orgaUnit ; officialKey ; detail ; up to four explicit search parameters (postalCode / name / locality / searchTerm). Use it ONLY when the request itself names such query values; for "all units of a kind" the specialised `OpenPLZ.OrganizationalUnits` is the correct id.
+
+THE COUNTRY IS ALWAYS ITS 2-LETTER CODE — `de` (Germany), `at` (Austria), `ch` (Switzerland), `li` (Liechtenstein), `en` (England). A COUNTRY NAME is NOT accepted: "Schweiz" / "Switzerland" / "Suisse" / "Svizzera" → `ch`, "Deutschland" / "Germany" → `de`, "Österreich" / "Austria" → `at`, "Liechtenstein" → `li`. An EMPTY first slot falls back to the installation's `OpenPLZ_Country`.
+
+THE ORGA-UNIT TOKEN IS CAPITALIZED ENGLISH — `Cantons` (Kantone), `FederalStates` (Bundesländer/Bundesstaaten), `FederalProvinces` (Provinzen); a unit identified in slot 3 takes `Municipalities` (Gemeinden) or `Districts` (Bezirke) in slot 4. NEVER pass the localised word into that slot and NEVER pass the country there.
+
+Reported failure — WRONG: `{ OpenPLZ > Schweiz }` for "alle Kantone der Schweiz, die in OpenPLZ registriert sind" — a country NAME in slot 1 and no unit at all. CORRECT: `{ OpenPLZ.OrganizationalUnits > ch ; Cantons }`.
+
+EP names use dots and are case-sensitive: OpenPLZ.Localities (NOT "openplz.localities"), OpenPLZ.OrganizationalUnits (NOT "OpenPLZ.Organizationalunit" / "OpenPLZ.Units"), OpenPLZ.Streets, LDAP.Find (NOT "Ldap.Find").
 
 ## BayVIS EPs
 
@@ -122,14 +208,17 @@ CRITICAL — BAYVIS DATA IS NEVER A FORMCYCLE DATASOURCE: BayVIS (Bayernportal) 
 SYNTAX: `>` introduces the FIRST parameter of an EP; every further parameter is separated by `;` (NEVER by `>`). A nested `{ ... }` EP is resolved first and its result becomes that parameter.
 
 BayVIS has THREE kinds of EPs — never confuse them:
-1. **Directory EPs** (`BayVIS.Behoerden`, `BayVIS.Ansprechpartner`) — REQUIRE a property-name parameter and return that column for the whole directory.
-2. **ID-resolver EPs** (`BayVIS.Behoerden.ID`, `BayVIS.Ansprechpartner.ID`) — take a plain STRING name and return the matching numeric ID(s) as an ARRAY.
-3. **Details EPs** (`BayVIS.Behoerden.Details`, `BayVIS.Ansprechpartner.Details`, `BayVIS.Behoerden.Details.Gebaeude`, `BayVIS.Behoerden.Gebaeude.ID`) — take NUMERIC IDs ONLY, never names.
+1. **Directory EPs** (`BayVIS.Behoerden`, `BayVIS.Ansprechpartner`) — REQUIRE a property-name parameter and return that column for the WHOLE directory (every authority / every contact), i.e. an ARRAY. They answer "which authorities/contacts exist" — NEVER "what is the value of ONE named authority".
+2. **ID-resolver EPs** (`BayVIS.Behoerden.ID`, `BayVIS.Ansprechpartner.ID`, `BayVIS.Behoerden.Gebaeude.ID`) — take ONE identifier (a plain STRING designation for the first two, a NUMERIC AUTHORITY id for `Gebaeude.ID`) and return the matching numeric ID(s) as an ARRAY.
+3. **Details EPs** (`BayVIS.Behoerden.Details`, `BayVIS.Ansprechpartner.Details`, `BayVIS.Behoerden.Details.Gebaeude`) — take NUMERIC IDs ONLY, never names.
+
+CRITICAL — ONE NAMED AUTHORITY'S FIELD COMES FROM THE DETAILS EP, NEVER FROM THE DIRECTORY EP (language-agnostic, ANY language): a request for a SPECIFIC, NAMED authority's data — e-mail, phone, designation, type, group, id, logo, address ("die Mail-Adresse des Amt für Digitales", "die E-Mail der Behörde X", "the e-mail of <authority>", "l'adresse e-mail de <autorité>") — is resolved with the name → id → Details chain and the wanted field as the Details EP's property parameter: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email }. `{ BayVIS.Behoerden > email }` is WRONG in that case: the directory EP ignores the authority entirely and returns the e-mail column of EVERY authority (a list) — it cannot select one. The directory EP is ONLY for a LIST/selection of all authorities (e.g. the Values of HTML.Select.Injection: "{ BayVIS.Behoerden > bezeichnung }"). Naming the SYSTEM ("aus dem Bayernportal", "aus der BayVIS", "from BayVIS / the Bayernportal") does NOT mean the directory EP — the SUBJECT of the request decides ("one named authority" → Details, "the list of authorities" → Directory).
 
 CRITICAL — TO GET DETAILS FOR A NAMED PERSON OR AUTHORITY, ALWAYS CHAIN NAME → ID → DETAILS (nest the EPs; the inner EP is resolved first):
 - NEVER pass a person's name to `BayVIS.Ansprechpartner` — its only parameter is a PROPERTY name (e.g. `nachname`, `email`). `{ BayVIS.Ansprechpartner > Salvatore Callari }` is INVALID and rejected.
 - NEVER pass an authority/office name (e.g. "Amt 44") to `BayVIS.Behoerden.Details`, `BayVIS.Behoerden.Details.Gebaeude` or `BayVIS.Behoerden.Gebaeude.ID` — they take NUMERIC IDs only. `{ BayVIS.Behoerden.Details > Amt 44 }` is INVALID.
 - Resolve the name to an ID with the matching `.ID` EP. The `.ID` EPs return an ARRAY, so pick one element with the I (index) EP: { I > 0 ; <array EP> }.
+- CRITICAL — A DESIGNATION WITH DIGITS IS STILL A NAME, NEVER AN ID (language-agnostic, ANY language): an authority is named by its DESIGNATION ("bezeichnung") — "Amt 44", "Amt für Digitales", "Behörde 12", "Bürgeramt Mitte", "office 7", "ufficio 44", "bureau 12". Digits inside a designation are PART OF THE NAME ("Amt 44" is the office called "Amt 44"), they are NOT an authority ID, NOT a building ID and NOT a house number. NEVER extract a number out of a designation and use it as an ID; NEVER "shorten" `{ BayVIS.Behoerden.ID > Amt 44 }` to the literal `44`. An authority ID exists ONLY when (a) the user says so explicitly ("Behörden-ID 44", "authority ID 44", "Amt mit der ID 44") or (b) it came out of `{ BayVIS.Behoerden.ID > <designation> }`. The designation ALWAYS goes — complete, with its digits — into `BayVIS.Behoerden.ID`.
 - WHEN TO USE I vs NOT — the I (index) EP is ONLY used when the INNER EP returns an ARRAY. The `.ID` EPs return an ARRAY → chain I. But a `Details` EP fed by a SINGLE id (e.g. a global variable via V) ALREADY returns a SINGLE object — do NOT wrap it in I. So for a single Ansprechpartner whose id is in a global variable use { BayVIS.Ansprechpartner.Details > { V > <NAME> } } directly — NEVER { I > 0 ; { BayVIS.Ansprechpartner.Details > { V > <NAME> } } }.
 - The `.Details` EPs return a JSON OBJECT whose properties (e.g. vorname, nachname, email, zimmer, apTelefonDurchwahl, ...) fill HTML.Text.Mapper [(property)] placeholders. To display "the details"/specific properties of a resolved object you MUST use HTML.Text.Mapper with data-cb-replacements — HTML.Text.Injector injects only ONE plain STRING and is useless for a JSON object.
 - SEVERAL BAYVIS VALUES DISPLAYED TOGETHER → ONE HTML.Text.Mapper (NOT one HTML.Text.Injector per value): first decide WHERE each requested value actually lives (use the EXACT per-EP property lists below) and fetch each DETAIL OBJECT only ONCE. When ALL requested values belong to ONE detail object — typical case: an EMPLOYEE's contact block, e.g. "die BayVIS-Kontaktdaten und den Namen des Mitarbeiters Salvatore Callari" (his name + e-mail + phone) — data-cb-replacements is JUST that object's Details EP, e.g. data-cb-replacements="{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }" (NO Data.Join), and the single template holds the person's REAL [(property)] placeholders, e.g. "[(vorname)] [(nachname)] — [(email)], Tel. 0[(apTelefonOrtsvorwahl)] [(apTelefonDurchwahl)]". A person's phone is NOT a single property: BayVIS.Ansprechpartner.Details only exposes apTelefonLandvorwahl / apTelefonOrtsvorwahl / apTelefonAnlage / apTelefonDurchwahl (there is NO "phone"/"telefon"/"telephone" property), so assemble the phone text from those placeholders. NEVER read a person's phone/e-mail from BayVIS.Behoerden.Details — that authority object has NO phone and NO postal address (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen); postal/building ADDRESSES live on BayVIS.Behoerden.Details.Gebaeude (hausanschriftStrasse/hausanschriftOrt/hausanschriftPLZ and postanschrift*). Use Data.Join ONLY when the needed values genuinely live in DIFFERENT detail objects (e.g. a building's postal address AND a person's data) — then data-cb-replacements="{ Data.Join > { <first detail-object EP> } ; { <second detail-object EP> } }" and reference each value by the ACTUAL property name of its own object (mind that Data.Join later objects override same-named properties). Never emit one HTML.Text.Injector element per value (each re-resolves its own EP); ONE Mapper element resolves its data-cb-replacements ONCE.
@@ -154,29 +243,44 @@ Authoritative examples:
 
 ### BayVIS.Behoerden
 
-Directory EP — REQUIRES a property name parameter: { BayVIS.Behoerden > bezeichnung } (not bare { BayVIS.Behoerden }).
+Directory EP — REQUIRES a property name parameter: { BayVIS.Behoerden > bezeichnung } (not bare { BayVIS.Behoerden }). It returns that COLUMN for ALL authorities as an ARRAY — it lists the directory and cannot pick ONE authority.
 
 Valid property values: behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge.
 
+Reported failure — WRONG: { BayVIS.Behoerden > email } for "die Mail-Adresse des Amt für Digitales" / "the e-mail address of <authority>" (this returns the e-mail of EVERY authority; the named authority is not even read).
+CORRECT: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email } — the designation selects the authority, `email` is the property of its Details object.
+RIGHT (a LIST of authorities is wanted): { BayVIS.Behoerden > bezeichnung } — e.g. as the Values entry of HTML.Select.Injection.
+
 ### BayVIS.Behoerden.ID
 
-ID-resolver EP — takes a plain STRING authority name and returns an ARRAY of matching numeric IDs. To get a single ID: { I > 0 ; { BayVIS.Behoerden.ID > <authority name> } }. ONLY usable when the prompt NAMES a real Behörde/authority — never invent one ("BayVIS" is the system, not an authority).
+ID-resolver EP — takes the authority DESIGNATION as a plain STRING (exactly as written in the request, digits included: `Amt 44`) and returns an ARRAY of matching numeric IDs. To get a single ID: { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } }. ONLY usable when the prompt NAMES a real Behörde/authority — never invent one ("BayVIS" is the system, not an authority). The result of THIS EP is the only value that may fill an `authority ID` slot of a Details EP — a bare number from the request is NOT an authority ID.
 
 ### BayVIS.Behoerden.Details
 
 Takes a NUMERIC authority ID (NOT a name). Returns the authority METADATA object with EXACTLY these properties: bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen. It has NO phone and NO postal address — a person's phone/e-mail lives in BayVIS.Ansprechpartner.Details, a building/postal address lives in BayVIS.Behoerden.Details.Gebaeude.
 
-Also accepts an OPTIONAL second parameter (separated by `;`) — a property name to extract just that specific field: { BayVIS.Behoerden.Details > <authority ID> ; bezeichnung }.
+Also accepts an OPTIONAL second parameter (separated by `;`) — a property name to extract just that specific field: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } ; <property> }. THIS is the EP for ONE named authority's single field (reported case: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email }) — NEVER { BayVIS.Behoerden > email }, which is the whole-directory column.
+
+ORDER IS FIXED — the authority ID is ALWAYS slot 1 and the property ALWAYS slot 2, no matter that the request mentions the property first ("die Mail-Adresse des Amts X").
+WRONG (reported failure): { BayVIS.Behoerden.Details > email ; { BayVIS.Behoerden.ID > Amt für Digitales } } — swapped: the property sits in the numeric-id slot, so the call returns nothing.
+CORRECT: { BayVIS.Behoerden.Details > { BayVIS.Behoerden.ID > Amt für Digitales } ; email } — and with the I wrapper for the array-returning ID EP: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email }.
 
 ### BayVIS.Behoerden.Details.Gebaeude
 
-Takes TWO NUMERIC parameters separated by `;`: param 1 = authority ID, param 2 = building ID. An optional third `;` parameter is a property to extract (e.g. hausanschriftStrasse). Returns the building OBJECT with these properties: bezeichnung, hausanschriftPLZ, hausanschriftOrt, hausanschriftStrasse, postanschriftPLZ, postanschriftOrt, postanschriftStrasse, logo (no phone here either). Obtain a building ID from the Gebaeude.ID EP (optionally via { I > 0 ; ... } to pick the first).
+Takes TWO NUMERIC parameters separated by `;`: param 1 = AUTHORITY ID, param 2 = BUILDING ID. An optional third `;` parameter is a property to extract (e.g. hausanschriftStrasse). Returns the building OBJECT with these properties: bezeichnung, hausanschriftPLZ, hausanschriftOrt, hausanschriftStrasse, postanschriftPLZ, postanschriftOrt, postanschriftStrasse, logo (no phone here either).
+
+THE TWO SLOTS ARE BOTH MANDATORY AND NOT INTERCHANGEABLE — slot 1 must come from `BayVIS.Behoerden.ID` (designation → authority id) and slot 2 must come from `BayVIS.Behoerden.Gebaeude.ID` (authority id → building id). Both `.ID` EPs return ARRAYS, so EACH slot gets its OWN `{ I > 0 ; ... }` wrapper — the wrapper belongs INSIDE a slot, never around the whole Details.Gebaeude call and never as a replacement for the second slot. A designation ("Amt 44", "Amt für Digitales", ANY language) is never an ID, and the digits of a designation are never an ID either. "The address of the building in which authority X sits" therefore ALWAYS repeats X's designation in BOTH slots: { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } } } } (add `; hausanschriftStrasse` as the 3rd parameter when one field is requested, or omit it to receive the whole building object for HTML.Text.Mapper).
 
 CRITICAL — THE BUILDING OBJECT HAS NO HOUSE-NUMBER PROPERTY: there is NO `hausanschriftHausnummer` (and NO `hausnummer` / `postanschriftHausnummer`) — a placeholder like [(hausanschriftHausnummer)] CANNOT be resolved. The BayVIS street field `hausanschriftStrasse` ALREADY contains street AND house number combined (e.g. "Maximilianstraße 1"), exactly like `postanschriftStrasse`. Render a building's Hausanschrift address as "[(hausanschriftStrasse)], [(hausanschriftPLZ)] [(hausanschriftOrt)]" — NEVER append a separate [(hausanschriftHausnummer)] / [(hausnummer)] after the street.
 
 ### BayVIS.Behoerden.Gebaeude.ID
 
-Takes a NUMERIC authority ID and returns an ARRAY of its building IDs. By authority name: { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > <authority name> } }. To pick one building: { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <authority ID> } }.
+Takes the NUMERIC AUTHORITY ID as its ONLY parameter and returns an ARRAY of that authority's building IDs — it does NOT accept a designation/name, and its result is NOT an authority ID. Chain it from the designation: { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } } } (the inner .ID turns the designation into the authority id, the outer I picks the first building id).
+
+CRITICAL — THIS EP CAN ONLY EVER FILL THE **SECOND** PARAMETER OF BayVIS.Behoerden.Details.Gebaeude. It produces a BUILDING id; the FIRST parameter of that Details EP is the AUTHORITY id. Putting this EP's result into the authority-id slot, or calling Details.Gebaeude with only one parameter, is INVALID.
+
+Reported failure — WRONG: { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > 44 } } } — three defects at once: (a) ONE parameter instead of the mandatory two, (b) the BUILDING-id EP fills the AUTHORITY-id slot, (c) the digits "44" were cut out of the designation "Amt 44" and used as an ID.
+CORRECT: { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } } } } — slot 1 = authority ID, slot 2 = building ID, each one resolved from the SAME designation and each one with its OWN { I > 0 ; ... } wrapper.
 
 CRITICAL — EVERY ADDRESS PLACEHOLDER MUST BE FED BY THE BUILDING EP: any [(hausanschriftStrasse)] / [(hausanschriftPLZ)] / [(hausanschriftOrt)] / [(postanschriftStrasse)] / [(postanschriftPLZ)] / [(postanschriftOrt)] template MUST be resolved by `BayVIS.Behoerden.Details.Gebaeude` (authority ID `;` building ID). NEVER feed an address template with `BayVIS.Behoerden.Details` — that object has NO address properties (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen), so [(hausanschriftStrasse)] etc. stay EMPTY. Correct building-address replacement for a NAMED authority ("Amt für Digitales") — use the building EP with BOTH ids and NO direct name into the Details EP:
 { Data.Join > { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } } } } }

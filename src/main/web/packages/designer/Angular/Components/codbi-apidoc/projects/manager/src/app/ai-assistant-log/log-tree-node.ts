@@ -303,6 +303,7 @@ export interface LogNode {
                 [applyWithoutChildrenLabel]="applyWithoutChildrenLabel"
                 [applyWithoutChildrenTitle]="applyWithoutChildrenTitle"
                 [applyAgainBusy]="applyAgainBusy"
+                [applyAllowed]="applyAllowed"
                 (sensitiveChecked)="sensitiveChecked.emit($event)"
                 (promptOpen)="promptOpen.emit($event)"
                 (chatReplyOpen)="chatReplyOpen.emit($event)"
@@ -355,6 +356,10 @@ export class LogTreeNode {
     "Apply ONLY this element to the CURRENT form — without the child elements that were built inside it";
   /** True while a run is in flight — disables the button so a second run cannot be started. */
   @Input() applyAgainBusy = false;
+  /** Whether re-applying is offered at all. The change log sets this to `false` while it shows a
+   *  FOREIGN form (selected via the cross-form selector): its entries must never be applied to the
+   *  form the designer has open. */
+  @Input() applyAllowed = true;
 
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   /** CodBi logo used as the icon for CodBi CSS class nodes (same resource as the dialog header). */
@@ -529,6 +534,9 @@ export class LogTreeNode {
    *   workflow path row ([applyNodeName]), each carrying the entry in [applyRaw].
    */
   canApplyAgain(node: LogNode): boolean {
+    if (!this.applyAllowed) {
+      return false;
+    }
     if (node.applyItemName || node.applyNodeName) {
       return node.applyRaw != null;
     }
@@ -552,7 +560,7 @@ export class LogTreeNode {
   /** True when this row is a CONTAINER that may ALSO be applied WITHOUT its children — the extra
    *  button next to the normal re-apply button (see [requestApplyWithoutChildren]). */
   canApplyOnlyElement(node: LogNode): boolean {
-    return node.applyContainer === true && node.applyRaw != null && !!node.applyItemName;
+    return this.applyAllowed && node.applyContainer === true && node.applyRaw != null && !!node.applyItemName;
   }
 
   /** Requests applying ONLY this container element; its logged children are skipped. Emitted through

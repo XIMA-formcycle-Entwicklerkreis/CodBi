@@ -742,6 +742,64 @@ export class Media_Input_Speech_Whisper {
     }
   }
   // #endregion Health-Check.
+  /**
+   * Dynamically checks whether the Whisper server is currently reachable.
+   * If the state is already known, the cached result is returned without a round-trip;
+   * otherwise a fresh health check is triggered.
+   *
+   * @returns A Promise resolving to `true` when Whisper is online, `false` when offline,
+   *          or `null` when the endpoint could not be resolved.
+   */
+  static isWhisperRunning(): Promise<boolean | null> {
+    // Endpoint not resolvable → cannot determine runtime state.
+    const pluginUrl = Media_Input_Speech_Whisper.resolvePluginUrl();
+
+    if (!pluginUrl) {
+      return Promise.resolve(null);
+    }
+
+    // Known state already → return it without another round-trip.
+    if (Media_Input_Speech_Whisper.serverReady !== null) {
+      return Promise.resolve(Media_Input_Speech_Whisper.serverReady);
+    }
+
+    return new Promise((resolve) => {
+      const $ = getJQuery();
+
+      $.ajax({
+        url: pluginUrl,
+        type: "GET",
+        cache: false,
+        headers: { "X-Health-Check": "true" },
+        success: (response: unknown) => {
+          const result = (typeof response === "string" ? JSON.parse(response) : response) as {
+            status?: string;
+            error?: string;
+            convertSupported?: boolean;
+          };
+
+          if (result.error || result.status !== "ready") {
+            Media_Input_Speech_Whisper.handleOffline();
+            resolve(false);
+
+            return;
+          }
+
+          Media_Input_Speech_Whisper.handleOnline();
+
+          if (typeof result.convertSupported === "boolean") {
+            Media_Input_Speech_Whisper.convertSupported = result.convertSupported;
+          }
+
+          resolve(true);
+        },
+        error: () => {
+          Media_Input_Speech_Whisper.handleOffline();
+          resolve(false);
+        },
+      });
+    });
+  }
   // #region WAV conversion — see ../commons/whisper-utils.ts
   // #region Styles
   private static ensureStyles(): void {

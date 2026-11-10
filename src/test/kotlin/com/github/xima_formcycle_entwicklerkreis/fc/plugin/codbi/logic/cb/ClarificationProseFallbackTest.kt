@@ -119,6 +119,66 @@ class ClarificationProseFallbackTest {
   }
 
   @Test
+  fun `a numbered-choice offer ending with a period is still a question`() {
+    // Reported: with local Whisper not active, the model answers the speech-field build request in
+    // pass-2 with prose that lists numbered options and ends with a period (not a question mark):
+    // "Lokale Whisper-Spracherkennung ist auf dieser Installation nicht aktiv. Bitte wählen Sie:
+    // 1. Lokale Whisper-Spracherkennung trotzdem verwenden 2. Die Web Speech API des Browsers
+    // verwenden 3. Kein Sprachfeld einfügen.". Without numbered-option recognition this was treated
+    // as an acknowledgement (ends like a statement, no "?") and the user never saw the choices.
+    assertEquals(
+        1,
+        questionTexts(
+                prose(
+                    "Lokale Whisper-Spracherkennung ist nicht aktiv. Bitte wählen Sie: 1. Whisper " +
+                        "trotzdem verwenden 2. Web Speech API verwenden 3. Kein Sprachfeld einfügen."))
+            .size,
+        "a prose choice offer with explicit numbered options must surface as a clarification")
+
+    // The numbered-option recognition is structural, not language/keyword-based — works in any
+    // language and with both "." / ")" list markers.
+    assertEquals(
+        1, questionTexts(prose("Elija: 1) usar Whisper 2) usar Web Speech 3) no añadir")).size)
+    assertEquals(1, questionTexts(prose("Escolha: (1) Whisper (2) Web Speech API")).size)
+  }
+
+  @Test
+  fun `a long imperative instructional clarification without a question mark is still a question`() {
+    // Reported regression: the model asks genuinely for user input as multi-clause imperative
+    // instructional prose with NO "?" and NO numbered list, ending in a period: "Bitte geben Sie
+    // den
+    // gewünschten Anzeigetext (Label) und optional einen Feldnamen (ID) für das neue Eingabefeld an
+    // (z.B. „Ihre Nachricht", id = „msgInput"). Sie können das Feld-ID-Feld leer lassen, wenn Sie
+    // keinen speziellen Namen benötigen." The previous gate treated ANY statement-ending prose as
+    // an
+    // acknowledgement and silently swallowed this real clarification — the popup never appeared.
+    // The acknowledgement exception must only apply to SHORT promises, so this LONG ask is
+    // surfaced.
+    assertEquals(
+        1,
+        questionTexts(
+                prose(
+                    "Bitte geben Sie den gewünschten Anzeigetext (Label) und optional einen " +
+                        "Feldnamen (ID) für das neue Eingabefeld an (z.B. \"Ihre Nachricht\", " +
+                        "id = \"msgInput\"). Sie können das Feld-ID-Feld leer lassen, wenn Sie " +
+                        "keinen speziellen Namen benötigen."))
+            .size,
+        "a long imperative/instructional ask without '?' must surface as a clarification")
+
+    // The disambiguation is length-based and language-agnostic (no keywords) — a long
+    // statement-ending
+    // ask in any language is a clarification, not an acknowledgement.
+    assertEquals(
+        1,
+        questionTexts(
+                prose(
+                    "Por favor, indíqueme el texto visible (etiqueta) y opcionalmente el nombre " +
+                        "del campo (ID) para el nuevo campo de entrada. Puede dejar el ID vacío si no " +
+                        "necesita un nombre especial."))
+            .size)
+  }
+
+  @Test
   fun `a short question with a question mark is still a question`() {
     assertEquals(1, questionTexts(prose("Welche Spalten?")).size)
     assertEquals(1, questionTexts(prose("¿Qué columnas?")).size)

@@ -13,7 +13,7 @@ import { ParameterTypes } from "codbi-common";
 // #region Imports
 // #endregion Imports
 /**
- * Provides the {@link HTML_Select_Injection.functionality }.
+ * Provides the {@link Print_Remove.functionality }.
  *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
@@ -23,21 +23,26 @@ export class Print_Remove {
   /**
    * Registers the "Print.Remove"-Functionality.
    *
-   * This functionality connects two {@link HTMLInputElement }s to not permit the designated
-   * Minimum-{@link HTMLInputElement } to have a date that is after the maximum one (JQuery Datepicker supported).
-   * In order for this functionality to work in repetitive containers, the tagged {@link HTMLInputElement } and the
-   * corresponding **MaxField** need to be within the same container.
+   * This functionality hides an {@link HTMLElement } when the form is rendered for printing while leaving
+   * it visible in the interactive form. The element to hide is resolved in this order: the element matched
+   * by **DocumentSelector**, otherwise the ancestor reached by climbing up **ParentalLevel** times from the
+   * tagged element, otherwise the tagged element itself.
+   * If **Invert** is set, the behaviour is inverted: the element is hidden in the interactive form and shown
+   * when printed (useful for print-only content).
+   *
+   * The functionality does NOT remove the element from the DOM — it only sets `style.display = "none"` on
+   * the resolved {@link HTMLElement }, so the element's value remains available and repeatable containers
+   * keep their structure.
    *
    * Config Parameter:
-   *  - DocumentSelector: The CSS-Selector specifying the {@link HTMLElement } to {@link HTMLElement.remove }.
-   *                      This parameter takes precedence over **ParentalLevel**.
+   *  - DocumentSelector: The CSS-Selector specifying the {@link HTMLElement } to hide (its `style.display`
+   *                      is set to "none"). This parameter takes precedence over **ParentalLevel**.
    *  - ParentalLevel:    The number of elements to climb up the {@link HTMLElement.parentElement }-Tree to get to
-   *                      the {@link HTMLElement } to {@link HTMLElement.remove }.
-   *  - Invert:           Specifies whether this functionality shall be inverted, e.g. the {@link HTMLElement }
-   *                      will get {@link HTMLElement.remove }d in the form but shown
-   *                      when printed (defaults to **NOT SET**).
+   *                      the {@link HTMLElement } to hide.
+   *  - Invert:           Specifies whether this functionality shall be inverted: the {@link HTMLElement }
+   *                      will be hidden in the form but shown when printed (defaults to **NOT SET**).
    *                      If set **ParentalLevel** will be set to "1" if it has not been set, since the
-   *                      CodBi does not allow to remove the {@link HTMLElement } **toProcess**. */
+   *                      CodBi does not allow to hide the {@link HTMLElement } **toProcess** in the form. */
   @ParameterTypes({
     ParentalLevel: {
       type: "integer",

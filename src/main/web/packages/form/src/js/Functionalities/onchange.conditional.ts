@@ -20,61 +20,68 @@ import { ParameterTypes } from "codbi-common";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class OnChange_Conditional {
   /**
-   * This functionality applies a certain functionality onto the {@link object } **toProcess** depending on whether
-   * a given condition is fulfilled or not.
-   * The functionalities to apply are defined by the tagged {@link HTMLInputElement }'s attributes. Those attributes
-   * start with either cb_T_, for attributes to be applied when the tagged {@link HTMLInputElement } and
-   * the "reference" value are successfully compared by the specified "mode", or with cb_F_ if not.
-   * For example to define a JSON.SET that sets the "target"'s style.display property onto the "target"
-   * for both success and failure following attributes are also needed for the tagged {@link HTMLInputElement }:
-   * cb_T_FUNC, cb_T_Path, cb_T_Property, cb_T_ToSet, cb_F_FUNC, cb_F_Path, cb_F_Property, cb_F_ToSet.
-   * Omitting _T_ or _F_ attributes will result in nothing to happen in case of success (_T_) or failure (_F_).
+   * Applies a functionality or attribute change onto a target element while a comparison between a watched
+   * field's value and a date reference holds. It re-evaluates on every `change` of the tagged element and is
+   * the correct mechanism for ORDERING comparisons (after/before a date, older/younger than, more/less than a
+   * number, from/up to) — NOT the Formcycle `hiddenif*` properties, which are for discrete option/checkbox/
+   * empty state only.
+   *
+   * The TRUE/FALSE branches are attributes on the TAGGED element named `data-cb-_T_<param>` (applied when the
+   * comparison holds) and `data-cb-_F_<param>` (when it does not). The `_T_`/`_F_` marker is stripped, so
+   * `data-cb-_T_func` becomes `data-cb-func` on the target. Omitting a branch means nothing happens in that case.
+   * To toggle visibility use `HTML.SETAttribute` on `style`, e.g.:
+   *   data-cb-_T_func="HTML.SETAttribute", data-cb-_T_name="style", data-cb-_T_toset="display:block"
+   *   data-cb-_F_func="HTML.SETAttribute", data-cb-_F_name="style", data-cb-_F_toset="display:none"
+   * Because the functionality runs only on `change`, hide the target AT LOAD with its own
+   * `data-cb-func="HTML.SETAttribute"` + `data-cb-name="style"` + `data-cb-toset="display:none"`.
    *
    * Config Parameter:
-   *  - Reference:  The value the {@link HTMLInputElement }'s value shall be compared with.
-   *  - Mode:       Defines the mode of comparison to apply onto the {@link HTMLInputElement }'s value and the "reference" value.
-   *                Available modes are GTE (greater than or equal), GT ( greater than ), LTE ( lower than or equal ),
-   *                LT ( lower than ), EQ (equal) & NEQ (not equal).
-   *  - Target:     The {@link Element } where to apply one of the specified functionalities depending on whether the
-   *                given "condition" is fulfilled or not or a CSS-Selector.
-   *                To work in a repetitive container a CSS-Selector is mandatory since the functionality performs the
-   *                query relative to the tagged {@link HTMLInputElement }.
-   *  - DateFormat: A optional {@link string } specifying the format the candidate is of. If this parameter isn't undefined
-   *                it triggers value of the tagged field transformation into a {@link Date } prior to compare it with
-   *                the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the
-   *                {@link Date } constructor.
-   *  - Candidate:  The {@link Element } where to get the value to be compared or a CSS-Selector.
-   *                To work in a repetitive container a CSS-Selector is mandatory since the functionality performs the
-   *                query relative to the tagged {@link HTMLInputElement }.
+   *  - Reference:  The threshold the candidate's value is compared with. It MUST resolve to a {@link Date },
+   *                never a plain string: use the element placeholder `{ Date.FromString > 01.06.2026 ; DD.MM.YYYY }`
+   *                (or `{ Date.Today }`). A literal "01.06.2026" has no `getTime()` and breaks the comparison.
+   *  - Mode:       GT (after/later/greater), GTEQ (on/after/at least), LT (before/earlier/less),
+   *                LTEQ (on/before/at most), EQ (exactly) or NEQ (not equal). The enum is GTEQ/LTEQ —
+   *                "GTE"/"LTE" are invalid.
+   *  - Target:     Dot-prefixed CLASS selector of the element whose attributes are changed (e.g.
+   *                ".coSpaetbucherHinweis"), resolved inside the tagged field's container. NEVER an #id selector.
+   *                Candidate and target MUST share the same container/fieldset.
+   *  - DateFormat: The format of the CANDIDATE's value (`datatype:"dateDE"` → "DD.MM.YYYY", native date →
+   *                "YYYY-MM-DD"). Omit it for non-date values; the fallback is the {@link Date } constructor.
+   *  - Candidate:  Dot-prefixed CLASS selector of the watched field (e.g. ".tfKursbeginn" — its own name when the
+   *                tagged field is the watched one). NEVER an #id selector.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    *
-   * @throws  A {@link CodBiError } a "DateFormat" is specified and the tagged {@link HTMLInputElement }'S value
-   *          couldn't be converted to a {@link Date } by {@link formatDate }. */
+   * @throws  A {@link CodBiError } when a "DateFormat" is specified and a NON-EMPTY value (candidate or reference)
+   *          cannot be converted to a {@link Date }. An EMPTY candidate is not an error: the false branch applies. */
   @DBC.ParamvalueProvider
   @ParameterTypes({
-    Reference: { type: "string", default: "The value the tagged input's value shall be compared with." },
+    Reference: {
+      type: "string",
+      default:
+        "The threshold, which MUST resolve to a Date (use the EP { Date.FromString > 01.06.2026 ; DD.MM.YYYY } or { Date.Today }); a literal date string breaks the comparison.",
+    },
     Mode: {
       type: "enum",
       options: ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"],
       default:
-        "Defines the mode of comparison to apply onto the tagged input's value and the reference value. Available modes are GTE (greater than or equal), GT (greater than), LTE (lower than or equal), LT (lower than), EQ (equal) & NEQ (not equal).",
+        "GT (after/later/greater), GTEQ (on/after/at least), LT (before/earlier/less), LTEQ (on/before/at most), EQ (exactly) or NEQ (not equal). The enum values are GTEQ/LTEQ — GTE/LTE are invalid.",
     },
     Target: {
       type: "string",
       default:
-        "The element where to apply one of the specified functionalities depending on whether the given condition is fulfilled or not, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
+        "Dot-prefixed CLASS selector of the element whose attributes are changed (e.g. '.coSpaetbucherHinweis'), resolved inside the watched field's container (never an #id selector). Candidate and target MUST share the same container/fieldset.",
     },
     DateFormat: {
       type: "string",
       default:
-        "An optional string specifying the format the candidate is of. If not undefined it triggers the transformation of the tagged field's value into a Date prior to comparing it with the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the Date constructor.",
+        "The format of the CANDIDATE's value (datatype 'dateDE' -> DD.MM.YYYY, native date -> YYYY-MM-DD). Omit it for non-date values; the fallback is the Date constructor.",
     },
     Candidate: {
       type: "string",
       default:
-        "The element where to get the value to be compared, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
+        "Dot-prefixed CLASS selector of the watched field (e.g. '.tfKursbeginn' — its own name when the tagged field is the watched one); never an #id selector.",
     },
   })
   public static functionality(
@@ -109,48 +116,87 @@ export class OnChange_Conditional {
       // #region Determine fulfillment.
       let fulfilled = false;
       // #region Define candidate & reference.
-      const candidate = toLoad.dateformat
-        ? formatDate(toLoad.dateformat as string, (toLoad.candidate as HTMLInputElement).value as string)
-        : new Date((toLoad.candidate as HTMLInputElement).value);
+      const candidateValue = (toLoad.candidate as HTMLInputElement).value as string;
+      const parsedCandidate = toLoad.dateformat
+        ? formatDate(toLoad.dateformat as string, candidateValue)
+        : new Date(candidateValue);
+      const candidateDate = parsedCandidate instanceof Date ? parsedCandidate : null;
 
-      if (candidate === "Invalid Date") {
+      // An EMPTY candidate is not an error - it simply does not fulfil the condition (false branch).
+      // A NON-empty value that cannot be parsed is a configuration error and is reported.
+      if (candidateDate === null && candidateValue.trim() !== "") {
         throw new CodBiError(
-          `The tagged element's value (${(toProcess as HTMLInputElement).value}) could not be converted to the requested "format (${toLoad.formatDate})".`,
+          `The tagged element's value (${(toProcess as HTMLInputElement).value}) could not be converted to the requested format (${toLoad.dateformat}).`,
         );
       }
 
-      if (Array.isArray(toLoad.reference)) {
-        toLoad.reference = (toLoad.reference as Array<unknown>)[0];
+      let rawReference = toLoad.reference;
+
+      if (Array.isArray(rawReference)) {
+        rawReference = (rawReference as Array<unknown>)[0];
+      }
+
+      // An EP (e.g. Date.FromString / Date.Today) yields a Date; a literal string is accepted as a
+      // fallback so a hand-written configuration still behaves instead of throwing.
+      const parsedReference =
+        rawReference instanceof Date
+          ? rawReference
+          : typeof rawReference === "string" && rawReference.trim() !== ""
+            ? toLoad.dateformat
+              ? formatDate(toLoad.dateformat as string, rawReference)
+              : new Date(rawReference)
+            : null;
+      const referenceDate = parsedReference instanceof Date ? parsedReference : null;
+
+      if (
+        referenceDate === null &&
+        rawReference !== null &&
+        rawReference !== undefined &&
+        String(rawReference).trim() !== ""
+      ) {
+        throw new CodBiError(
+          `The reference (${String(rawReference)}) could not be converted to a Date using the requested format (${toLoad.dateformat}).`,
+        );
+      }
+
+      const candidateTime = candidateDate ? candidateDate.getTime() : Number.NaN;
+      const referenceTime = referenceDate ? referenceDate.getTime() : Number.NaN;
+      const mode = (toLoad.mode as string).toLowerCase();
+
+      if (!["gteq", "gt", "lteq", "lt", "eq", "neq"].includes(mode)) {
+        throw new CodBiError(`Specified mode "${toLoad.mode}" not available.`);
+      }
+
+      // A missing/empty/unparsable candidate NEVER fulfils the condition: the false branch applies.
+      if (Number.isFinite(candidateTime) && Number.isFinite(referenceTime)) {
+        switch (mode) {
+          case "gteq":
+            fulfilled = candidateTime >= referenceTime;
+
+            break;
+          case "gt":
+            fulfilled = candidateTime > referenceTime;
+
+            break;
+          case "lteq":
+            fulfilled = candidateTime <= referenceTime;
+
+            break;
+          case "lt":
+            fulfilled = candidateTime < referenceTime;
+
+            break;
+          case "eq":
+            fulfilled = candidateTime === referenceTime;
+
+            break;
+          case "neq":
+            fulfilled = candidateTime !== referenceTime;
+
+            break;
+        }
       }
       // #endregion Define candidate & reference.
-      switch ((toLoad.mode as string).toLowerCase()) {
-        case "gteq":
-          fulfilled = (candidate as Date).getTime() >= (toLoad.reference as Date).getTime();
-
-          break;
-        case "gt":
-          fulfilled = (candidate as Date).getTime() > (toLoad.reference as Date).getTime();
-
-          break;
-        case "lteq":
-          fulfilled = (candidate as Date).getTime() <= (toLoad.reference as Date).getTime();
-
-          break;
-        case "lt":
-          fulfilled = (candidate as Date).getTime() < (toLoad.reference as Date).getTime();
-
-          break;
-        case "eq":
-          fulfilled = (candidate as Date).getTime() === (toLoad.reference as Date).getTime();
-
-          break;
-        case "neq":
-          fulfilled = (candidate as Date).getTime() !== (toLoad.reference as Date).getTime();
-
-          break;
-        default:
-          throw new CodBiError(`Specified mode "${toLoad.mode}" not available.`);
-      }
       // #endregion Determine fulfillment.
       // #region Attribute re-configuration.
       for (const attribute of toProcess.attributes) {

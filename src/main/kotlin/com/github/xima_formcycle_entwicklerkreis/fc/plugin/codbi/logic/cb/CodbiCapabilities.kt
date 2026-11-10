@@ -40,7 +40,60 @@ internal object CodbiCapabilities {
 
   /** Returns the default capabilities section (elements only). */
   fun buildSection(): String {
-    return resolveMatomoStatsRule(buildSectionBase() + localCondensedSection())
+    return appendWhisperAvailability(
+        resolveMatomoStatsRule(buildSectionBase() + localCondensedSection()))
+  }
+
+  /**
+   * Prepends a dynamic, per-installation note about local Whisper speech-to-text availability to
+   * the given reference section, read live from [AI.isWhisperEnabled] on every build.
+   *
+   * The speech standards (`Holistic.Media.Input.Speech` / `Holistic.Media.Input.Speech.Whisper`)
+   * are ordinary `codbi.standard_configurations` entries and are described STATICALLY in the
+   * bundled/DB prompts — the AI can therefore never infer whether local Whisper is actually enabled
+   * on this server (the `Active_AI` plugin property must contain `whisper`). This call injects that
+   * config-level fact into whichever reference the AI currently receives, so the AI can ask
+   * conditionally or inform the user when local Whisper is not available.
+   *
+   * The note is PREPENDED (not appended) on purpose: in the pass-1 view the reference is condensed
+   * entry-by-entry ([condenseEntryPurposes]) — anything after the last `###` heading is treated as
+   * an entry BODY and truncated to ~220 chars, while everything before the first `##`/`###` heading
+   * is the PREAMBLE and is kept verbatim. Prepending guarantees the full instruction survives every
+   * pass-1/name-index/full-reference flow.
+   */
+  private fun appendWhisperAvailability(text: String): String {
+    if (text.isBlank()) return text
+    return whisperAvailabilityNote() + "\n\n" + text
+  }
+
+  /**
+   * The per-installation Whisper availability instruction, conditioned on [AI.isWhisperEnabled].
+   * When local Whisper is enabled the AI should ask "Web Speech API or local Whisper?"; when it is
+   * NOT enabled the AI must inform the user and offer the abort/alternative options explicitly
+   * instead of silently choosing.
+   */
+  private fun whisperAvailabilityNote(): String {
+    return if (AI.isWhisperEnabled()) {
+      "SPEECH-INPUT AVAILABILITY: local Whisper (`Holistic.Media.Input.Speech.Whisper`) IS enabled" +
+          " on this installation. If your request means adding speech-to-text input to a field (in ANY" +
+          " language or wording — e.g. a field you can speak into, a dictation field, a microphone" +
+          " field), you MUST ask the user once which backend to use: the browser's Web Speech API" +
+          " (`Holistic.Media.Input.Speech`) or the on-premise local Whisper" +
+          " (`Holistic.Media.Input.Speech.Whisper`). Use your understanding of the request's meaning —" +
+          " do not build a speech field without clarifying this with the user."
+    } else {
+      "SPEECH-INPUT AVAILABILITY: local Whisper (`Holistic.Media.Input.Speech.Whisper`) is NOT active" +
+          " on this installation (the `Active_AI` plugin property does not enable it). If your request" +
+          " means adding speech-to-text input to a field (in ANY language or wording — e.g. a field you" +
+          " can speak into, a dictation field, a microphone field, or explicitly mentioning \"Whisper\"" +
+          " / \"lokaler Whisper\" / \"Spracherkennung über unseren lokalen Whisper\"), then BEFORE" +
+          " building you MUST INFORM the user that local Whisper is not active and OFFER these three" +
+          " options: (1) use the local Whisper standard (`Holistic.Media.Input.Speech.Whisper`) anyway," +
+          " (2) use the browser's Web Speech API (`Holistic.Media.Input.Speech`) instead, or (3) do" +
+          " nothing (abort the inference). Use your understanding of the request's meaning to decide" +
+          " when this applies — do NOT silently build a speech field without informing the user and" +
+          " letting them choose."
+    }
   }
 
   /**
@@ -81,7 +134,7 @@ internal object CodbiCapabilities {
 
   /** Returns the full compact API section (elements + parameters + classes). */
   fun buildFullSection(): String {
-    return buildFullSectionBase() + localDetailedSection()
+    return appendWhisperAvailability(buildFullSectionBase() + localDetailedSection())
   }
 
   /**
@@ -579,7 +632,11 @@ internal object CodbiCapabilities {
     // Fallback: bundled details index (classpath).
     val base = fromDb ?: buildRequestedDetailsFromIndex(requestedIds)
     // Always append the requested local API-Doc elements' details.
-    return base + localRequestedDetails(requestedIds)
+    // Also prepend the live Whisper-availability note: this is the pass-2/apply path where the AI
+    // actually builds the form, so it must ALWAYS carry the availability fact it saw in pass-1 —
+    // otherwise the instruction is lost exactly when the AI decides how to realise the speech
+    // field.
+    return appendWhisperAvailability(base + localRequestedDetails(requestedIds))
   }
 
   /**

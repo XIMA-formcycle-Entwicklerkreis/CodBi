@@ -750,6 +750,11 @@ class AICodBiAssistant : IPluginServletAction {
     AI.ldapUrl = configData.properties.getProperty("LDAP_URL")?.trim()?.takeIf { it.isNotBlank() }
     AI.ldapUrlBackend =
         configData.properties.getProperty("LDAP_URL_BACKEND")?.trim()?.takeIf { it.isNotBlank() }
+    // Local Whisper speech-to-text availability — the assistant must know whether the on-premise
+    // Whisper module is enabled before it can offer it as an alternative to the Web Speech API (the
+    // check mirrors the one in the `Whisper` class: `Active_AI` must contain `whisper`).
+    AI.whisperEnabled =
+        (configData.properties.getProperty("Active_AI")?.lowercase() ?: "").contains("whisper")
     // Maximum number of additional detail-reruns for form modification. Re-read on every plugin
     // re-initialization, so configuration changes take effect on the next request.
     configData.properties
@@ -916,8 +921,27 @@ class AICodBiAssistant : IPluginServletAction {
     // Optional X-Form-Key header: when present, only the log entries of that form are returned.
     val formKey =
         params.headerMap.entries.find { it.key.equals("X-Form-Key", ignoreCase = true) }?.value
+    val username = currentUsername(params)
+    // The cross-form selector (all forms with a change log, incl. deleted ones) is only offered to
+    // users allowed to sync the API-Documentation.
+    val syncUser = CodBiElementAccess.isSyncUser(username)
+    val allForms =
+        if (syncUser) {
+          runCatching { fetchAllForms(getUserContext(params), formKey) }
+              .onFailure {
+                logger.warn("[AICodBiAssistant] handleLog: form list unavailable: {}", it.message)
+              }
+              .getOrNull()
+        } else {
+          null
+        }
     return jsonResponse(
-        AiAssistantLog.loadLogs(emf, formKey = formKey, username = currentUsername(params)))
+        AiAssistantLog.loadLogs(
+            emf,
+            formKey = formKey,
+            username = username,
+            isSyncUser = syncUser,
+            allFormsJson = allForms))
   }
 
   // region Apply a change-log entry (no inference)
@@ -5232,6 +5256,21 @@ class AICodBiAssistant : IPluginServletAction {
       // forbids a details request AND any question, and requires the complete form JSON.
       if (extractCodbiDetailsRequest(pass2Cleaned) != null || !pass2IsJson) {
         if (!pass2IsJson) {
+          // Prose pass-2 is normally a failure, but the AI occasionally answers a form-build pass
+          // with a genuine CLARIFYING QUESTION in prose (e.g. the speech-input choice "local
+          // Whisper not active — please pick 1/2/3"). Such prose is a valid user-facing question,
+          // not a broken form response: surface it as the clarification popup (so the user answers
+          // and the run re-executes) instead of discarding it and forcing a final complete-form
+          // pass that silently re-activates the unavailable speech config. Only when the prose is
+          // an acknowledgement/statement (clarificationFromProse returns null) do we force the
+          // final pass as before.
+          clarificationFromProse(pass2Cleaned)?.let { proseReq ->
+            logger.info(
+                "[AICodBiAssistant] Pass-{} answered with a prose clarification question ({} chars) — surfacing it to the user instead of forcing a final pass",
+                rerunCount + 2,
+                pass2Cleaned.length)
+            return clarificationEnvelopeJson(proseReq)
+          }
           logger.warn(
               "[AICodBiAssistant] Pass-{} returned non-JSON prose ({} chars) — forcing final complete-form pass",
               rerunCount + 2,
@@ -8431,6 +8470,234 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Rewrites a SPEECH standard-configuration id mistakenly placed into a field's `data-cb-func`
+   * into the matching FUNCTIONALITY id.
+   *
+   * A standard configuration ("Holistic.Media.Input.Speech" /
+   * "Holistic.Media.Input.Speech.Whisper") is NOT a registered functionality: the frontend resolves
+   * nothing for it (so no mic button appears) AND the form-wide standard's CSS selector
+   * (`:not([data-cb-func])`) excludes the field anyway — the field silently renders WITHOUT speech,
+   * exactly as reported. The correct per-field wiring uses the functionality id
+   * ("Media.Input.Speech" / "Media.Input.Speech.Whisper"). The "Holistic."-prefixed id belongs in
+   * `_codbiApplicability.applied` only when speech should be form-wide, never in `data-cb-func`.
+   *
+   * Runs as a safety net alongside the prompt guidance: even if the model mis-wires, the field gets
+   * a working functionality instead of a silently dead one.
+   */
+  private fun normalizeSpeechDataCbFunc(items: JsonArray): Int {
+    var fixed = 0
+
+    fun handle(props: JsonObject) {
+      val func = readDataCbAttribute(props, "data-cb-func") ?: return
+      val rewritten =
+          func.split(',', ';', '|').joinToString(",") { seg ->
+            when {
+              seg.trim().equals("Holistic.Media.Input.Speech.Whisper", ignoreCase = true) ->
+                  "Media.Input.Speech.Whisper"
+              seg.trim().equals("Holistic.Media.Input.Speech", ignoreCase = true) ->
+                  "Media.Input.Speech"
+              else -> seg
+            }
+          }
+      if (rewritten != func) {
+        writeDataCbAttribute(props, "data-cb-func", rewritten)
+        fixed++
+      }
+    }
+
+    fun walk(list: JsonArray) {
+      for (el in list) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        item.getAsJsonObject("properties")?.let { handle(it) }
+        item.get("elements")?.takeIf { it.isJsonArray }?.let { walk(it.asJsonArray) }
+        item
+            .getAsJsonObject("properties")
+            ?.get("elements")
+            ?.takeIf { it.isJsonArray }
+            ?.let { walk(it.asJsonArray) }
+      }
+    }
+
+    walk(items)
+    if (fixed > 0) {
+      logger.info(
+          "[AICodBiAssistant] SPEECH WIRING: rewrote {} speech standard-configuration id(s) in data-cb-func to the functionality id",
+          fixed)
+    }
+    return fixed
+  }
+
+  /**
+   * True when a standard-configuration id refers to the *local Whisper* standard AND that standard
+   * is NOT available on this installation.
+   *
+   * Local Whisper availability is a config-level fact (the `Active_AI` plugin property must enable
+   * it, mirrored in [AI.isWhisperEnabled]). When Whisper is unavailable the AI must not activate or
+   * wire the `…Speech.Whisper` standard — doing so produces a field the frontend cannot turn into a
+   * working mic (exactly the reported "whisper XCL class / holistic whisper turned on although not
+   * available"). Whether the user instead wants the browser's Web Speech API
+   * (`…Media.Input.Speech`, which is always available) is purely the AI's semantic decision and is
+   * never suppressed here.
+   *
+   * The match is lenient about the `Holistic.` prefix because the AI may emit the id with or
+   * without it ([computeUpdatedStandards] supplies `Holistic.`-prefixed ids, but data-cb-func
+   * values use the unprefixed functionality form).
+   *
+   * @param id The standard-configuration / functionality id to test.
+   */
+  private fun speechStandardSuppressed(id: String): Boolean =
+      !AI.isWhisperEnabled() && id.endsWith("Media.Input.Speech.Whisper")
+
+  /**
+   * Runtime availability note injected into the AI's SYSTEM PROMPTS (clarify + build passes) when
+   * the local Whisper backend is NOT enabled on this installation.
+   *
+   * This is the *semantic*, language-agnostic counterpart to the server-side guard
+   * ([stripUnavailableWhisperWiring]). The guard only prevents a non-functional wiring from being
+   * persisted; it cannot INFORM the user. The clarify/build AI, however, decides by MEANING in the
+   * user's language, so telling it the runtime fact "Whisper is not installed/enabled here" lets it
+   * :
+   * - in the CLARIFY round: ask the user which speech mechanism to use (offer the always-available
+   *   browser Web Speech API, or "wait for Whisper / no speech field") instead of silently wiring a
+   *   field that cannot function;
+   * - in the BUILD passes: never activate/wire the `…Speech.Whisper` standard (it cannot work), and
+   *   use the always-available browser Web Speech API (`Media.Input.Speech`) instead.
+   *
+   * The exact wording/options the AI produces are its own — it phrases them in the user's language.
+   * Nothing here is keyword-matched against the prompt, so the "do not solve deterministically"
+   * constraint is preserved: we only feed a runtime fact and let the AI reason about it.
+   *
+   * @return an empty string when Whisper IS available (nothing to relay), or a short English system
+   *   instruction block when it is not. English is used because the AI itself handles the
+   *   user-facing phrasing/language; the fact itself is installation metadata, not user-facing
+   *   text.
+   */
+  private fun speechAvailabilityNote(): String {
+    if (AI.isWhisperEnabled()) return ""
+    return ("\n\nRUNTIME CAPABILITY (STRICT): the LOCAL WHISPER speech backend is NOT INSTALLED / NOT " +
+        "ENABLED on this server (the `Active_AI` property does not enable Whisper). The speech " +
+        "functionality `Media.Input.Speech.Whisper` (and the `Holistic.Media.Input.Speech.Whisper` " +
+        "standard configuration) CANNOT function here. You must therefore NEVER activate, wire, " +
+        "reference or offer it — in particular NEVER present \"use local Whisper\" / \"lokales Whisper\" " +
+        "as a selectable option for the user: Whisper is simply NOT AVAILABLE and choosing it is " +
+        "impossible, so it must never be offered as a choice (not even flagged as \"may not function\"). " +
+        "The browser's Web Speech API speech functionality `Media.Input.Speech` IS always available and " +
+        "works in the user's browser. " +
+        "LANGUAGE: any question or message you produce for the user MUST be written in the EXACT SAME " +
+        "language as the user's latest prompt (e.g. if the user writes German, write German — never " +
+        "English, never another language). " +
+        "NOT RE-ASKING: if the user has already answered how the field shall be built (e.g. \"normales " +
+        "Textfeld\", \"kein Sprachfeld\", \"gewöhnliches Eingabefeld\", \"plain text field\" — a speech " +
+        "question is then RESOLVED as \"no speech field\"; or \"die Browser-API\" / \"browser\" / \"Web " +
+        "Speech\" — resolved as browser Web Speech), do NOT ask that question again and do NOT build a " +
+        "speech field. " +
+        "When a speech input field is genuinely requested and undecided, choose by MEANING (not by " +
+        "guessing keywords): " +
+        "(a) build it with the always-available `Media.Input.Speech` (browser Web Speech), OR " +
+        "(b) ask ONCE which of the two REAL options they want — browser Web Speech API (available now) " +
+        "vs. no speech field (a plain text field) — and build only after they choose, OR " +
+        "(c) if the request makes clear they intend a field that cannot work as stated, inform them in " +
+        "their language and offer those two real options instead of silently producing a broken field.\n")
+  }
+
+  /**
+   * SAFETY NET: when local Whisper is NOT enabled on this installation, removes every trace of the
+   * Whisper wiring the model may have placed on fields, even though it cannot function:
+   * - `Media.Input.Speech.Whisper` (or its `Holistic.`-prefixed standard form) removed from each
+   *   field's `data-cb-func` array.
+   * - the `CodBi_XCL_Speech_Whisper` exclusion class removed from each field's `cssclasses`.
+   *
+   * The user's decision between "browser Web Speech API" vs. "local Whisper" stays with the AI's
+   * semantic understanding (never decided deterministically here); this is purely a server-side
+   * guard that an unavailable backend is not wired up so the generated field is not silently
+   * broken. The always-available `Media.Input.Speech` (Web Speech API) functionality is left
+   * untouched.
+   *
+   * @param items The flat `items` array of the form JSON to scan in place.
+   * @return The number of fields whose wiring was changed.
+   */
+  private fun stripUnavailableWhisperWiring(items: JsonArray): Int {
+    var fixed = 0
+
+    fun stripFunc(props: JsonObject): Boolean {
+      val func = readDataCbAttribute(props, "data-cb-func") ?: return false
+      val kept =
+          func
+              .split(',', ';', '|')
+              .filter { seg -> !seg.trim().endsWith("Media.Input.Speech.Whisper") }
+              .joinToString(",")
+      if (kept == func) return false
+      if (kept.isBlank()) {
+        // No non-Whisper functionality left - remove the attribute entirely, from BOTH the direct
+        // property key (if the model used one) and its canonical entry in the "attributes" array.
+        props.remove("data-cb-func")
+        val attrs = props.get("attributes")?.takeIf { it.isJsonArray }?.asJsonArray
+        if (attrs != null) {
+          for (i in attrs.size() - 1 downTo 0) {
+            val e = attrs.get(i)
+            if (e.isJsonObject &&
+                e.asJsonObject
+                    .get("text")
+                    ?.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                    .equals("data-cb-func", ignoreCase = true)) {
+              attrs.remove(i)
+            }
+          }
+        }
+      } else {
+        writeDataCbAttribute(props, "data-cb-func", kept)
+      }
+      return true
+    }
+
+    fun stripCss(props: JsonObject): Boolean {
+      val cssClasses =
+          props.get("cssclasses")?.takeIf { it.isJsonArray }?.asJsonArray ?: return false
+      val kept =
+          JsonArray().also { out ->
+            for (i in 0 until cssClasses.size()) {
+              val c = cssClasses.get(i)
+              val shouldKeep = !(c.isJsonPrimitive && c.asString == "CodBi_XCL_Speech_Whisper")
+              if (shouldKeep) out.add(c)
+            }
+          }
+      if (kept.size() == cssClasses.size()) return false
+      props.add("cssclasses", kept)
+      return true
+    }
+
+    fun handle(props: JsonObject) {
+      val a = stripFunc(props)
+      val b = stripCss(props)
+      if (a || b) fixed++
+    }
+
+    fun walk(list: JsonArray) {
+      for (el in list) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        item.getAsJsonObject("properties")?.let { handle(it) }
+        item.get("elements")?.takeIf { it.isJsonArray }?.let { walk(it.asJsonArray) }
+        item
+            .getAsJsonObject("properties")
+            ?.get("elements")
+            ?.takeIf { it.isJsonArray }
+            ?.let { walk(it.asJsonArray) }
+      }
+    }
+
+    walk(items)
+    if (fixed > 0) {
+      logger.info(
+          "[AICodBiAssistant] WHISPER GUARD: local Whisper is NOT enabled - stripped Whisper wiring from {} field(s) (data-cb-func + CodBi_XCL_Speech_Whisper cssclass)",
+          fixed)
+    }
+    return fixed
+  }
+
+  /**
    * Null-safe read of a scalar `properties` member. gson maps a JSON `null` to [JsonNull], whose
    * `getAsString()` (Kotlin `asString`) THROWS `UnsupportedOperationException` instead of returning
    * null — so a single model-emitted `"parentid": null` aborted the whole form build. Returns null
@@ -8498,6 +8765,28 @@ class AICodBiAssistant : IPluginServletAction {
     //     runtime assigns `target[property]` on the object the Path resolves — a dotted property is
     //     rejected and the requested CSS/JS property silently never applied.
     splitDottedJsonSetProperty(items)
+    // 0d) SPEECH WIRING: if the model put a STANDARD-CONFIGURATION id
+    // ("Holistic.Media.Input.Speech"
+    //     / "Holistic.Media.Input.Speech.Whisper") into a field's data-cb-func, rewrite it to the
+    //     matching FUNCTIONALITY id ("Media.Input.Speech" / "Media.Input.Speech.Whisper"). The
+    //     "Holistic."-prefixed id is NOT a registered functionality — the frontend resolves nothing
+    //     for it and the form-wide standard's CSS selector (`:not([data-cb-func])`) excludes the
+    //     field anyway, so without this rewrite the field renders WITHOUT a mic button exactly as
+    //     reported. A form-wide activation belongs in _codbiApplicability.applied, never in
+    //     data-cb-func.
+    normalizeSpeechDataCbFunc(items)
+    // 0e) WHISPER GUARD (safety net): when local Whisper is NOT enabled on this installation, strip
+    //     any residual Whisper wiring the model placed on a field — the
+    // `Media.Input.Speech.Whisper`
+    //     functionality from data-cb-func and the `CodBi_XCL_Speech_Whisper` exclusion class from
+    //     cssclasses. An unavailable backend cannot produce a working mic, so wiring it only yields
+    // a
+    //     silently broken field. This never makes the semantic "inform the user / offer options"
+    //     decision — that stays with the AI — it merely prevents a non-functional wiring from being
+    //     persisted. The always-available Web Speech API (`Media.Input.Speech`) is untouched.
+    if (!AI.isWhisperEnabled()) {
+      stripUnavailableWhisperWiring(items)
+    }
     // 1) Fold standalone button-like items into XButtonLists.
     val buttonLike = setOf("BUTTON", "BUTTONS", "XSUBMITBUTTON", "SUBMITBUTTON", "SUBMIT_BUTTON")
     val listItems =
@@ -11139,7 +11428,8 @@ class AICodBiAssistant : IPluginServletAction {
           for (id in extractAppliedStandardIds(reportObj.get("applied"))) {
             if (id.startsWith("Holistic.") &&
                 id !in active &&
-                (id !in PromptLoader.SYSTEM_CONFIG_NAMES || id in enabledHolistic)) {
+                (id !in PromptLoader.SYSTEM_CONFIG_NAMES || id in enabledHolistic) &&
+                !speechStandardSuppressed(id)) {
               active.add(id)
               logger.info(
                   "[AICodBiAssistant] Activated standard '{}' requested by AI in _codbiApplicability",
@@ -11152,6 +11442,24 @@ class AICodBiAssistant : IPluginServletAction {
               applicabilityReport.take(200),
               e.message)
         }
+      }
+      // --- Final guard: remove any standard whose backend is unavailable on this installation ---
+      // (e.g. the local Whisper standard when Whisper is NOT enabled). This catches a standard that
+      // was ALREADY present in the incoming codbi-prop-standards CSV (not merely one the AI tried
+      // to
+      // add in Mechanism 3) so it does not linger in the persisted form-wide standards.
+      var removedUnavailable = false
+      val itUnavailable = active.iterator()
+      while (itUnavailable.hasNext()) {
+        val id = itUnavailable.next()
+        if (speechStandardSuppressed(id)) {
+          itUnavailable.remove()
+          removedUnavailable = true
+        }
+      }
+      if (removedUnavailable) {
+        logger.info(
+            "[AICodBiAssistant] Whisper unavailable - removed unavailable speech standard(s) from codbi-prop-standards")
       }
       active.joinToString(",")
     } catch (e: Exception) {
@@ -22465,6 +22773,62 @@ class AICodBiAssistant : IPluginServletAction {
             mappings.size)
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"xmlSource":$xmlSourceJson$xslJson,"xpathMapping":[${mappings.joinToString(",")}]}"""
       }
+      "cbXMLAutoImport" -> {
+        // CUSTOM_PARAMS stores CbXmlAutoImportNodeProps (fc-plugin-codbi):
+        //   xmlSource: SingleFile — the SAME shape as FC_IMPORT_FORM_VALUE_FROM_XML (upload
+        //              element, FORM file, previous node's FILE_PROVIDE_ACTION or an external url)
+        //   excludedFields: List<String> — form fields that must NOT be filled
+        //   overwriteExisting / trimValues / importRepeatedValues / dryRun: Boolean
+        // The node imports EVERY value of the file whose field exists in the form, so there is NO
+        // per-field mapping to emit — only the (optional) exclusion list.
+        val uploadField =
+            workflowParamString(spec.nodeParams, "uploadField")
+                .ifBlank { workflowParamString(spec.nodeParams, "fileField") }
+                .ifBlank { workflowParamString(spec.nodeParams, "uploadFieldTechnicalId") }
+        val fileName = workflowParamString(spec.nodeParams, "fileName")
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        val sourceUrl = workflowParamString(spec.nodeParams, "url")
+        @Suppress("UNCHECKED_CAST") val rawSource = spec.nodeParams["xmlSource"] as? Map<*, *>
+        val autoImportSourceJson =
+            when {
+              rawSource != null -> gson.toJson(rawSource)
+              uploadField.isNotBlank() ->
+                  """{"resource":{"type":"UPLOAD","identifier":${gson.toJson(uploadField)}}}"""
+              fileName.isNotBlank() -> {
+                val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+                if (fileUuid != null) {
+                  """{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$fileUuid"}}}"""
+                } else {
+                  """{"searchFilename":${gson.toJson(fileName)}}"""
+                }
+              }
+              nodeUuid.isNotBlank() && taskUuid.isNotBlank() ->
+                  """{"resource":{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}}"""
+              sourceUrl.isNotBlank() -> """{"url":${gson.toJson(sourceUrl)}}"""
+              else -> {
+                logger.warn(
+                    "[AICodBiAssistant] buildNodeParams cbXMLAutoImport: no xmlSource (uploadField/fileName/previous node/url) — the node will fail with SOURCE_REQUIRED")
+                "null"
+              }
+            }
+        val autoImportExcluded = CbXmlAutoImportParams.excludedFields(spec.nodeParams)
+        val autoImportOverwrite =
+            CbXmlAutoImportParams.flag(spec.nodeParams, "overwriteExisting", true)
+        val autoImportTrim = CbXmlAutoImportParams.flag(spec.nodeParams, "trimValues", true)
+        val autoImportRepeats =
+            CbXmlAutoImportParams.flag(spec.nodeParams, "importRepeatedValues", true)
+        val autoImportDryRun = CbXmlAutoImportParams.flag(spec.nodeParams, "dryRun", false)
+        logger.info(
+            "[AICodBiAssistant] buildNodeParams cbXMLAutoImport: xmlSource={}, excluded={}, overwrite={}, trim={}, repeats={}, dryRun={}",
+            autoImportSourceJson,
+            autoImportExcluded.size,
+            autoImportOverwrite,
+            autoImportTrim,
+            autoImportRepeats,
+            autoImportDryRun)
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"xmlSource":$autoImportSourceJson,"excludedFields":[${autoImportExcluded.joinToString(",") { gson.toJson(it) }}],"overwriteExisting":$autoImportOverwrite,"trimValues":$autoImportTrim,"importRepeatedValues":$autoImportRepeats,"dryRun":$autoImportDryRun}"""
+      }
       "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
         // FcWriteFormRecordAttrProps has ONE list, "customAttributes" (the designer's
         // "Modifications"
@@ -26163,29 +26527,44 @@ class AICodBiAssistant : IPluginServletAction {
    * `...URL_BACKEND`, which [`CodbiFormResourcesPlugin`] fills from the plugin properties
    * `LDAP_URL` / `LDAP_URL_BACKEND`. Two very different situations therefore exist, and the AI
    * cannot know them without being told:
-   * - a url IS configured → `data-cb-URL` must be OMITTED, and the user must never be asked for an
-   *   LDAP url/endpoint (asked anyway was the reported "url parameter is missing" follow-up);
-   * - NO url is configured → the lookup cannot work at all, `URL` is a value only the user can
-   *   provide, and the clarify round must ASK for it instead of emitting a dead field.
+   * - a url IS configured → an EXPLICIT url named by the request is still wired (the request always
+   *   wins); only when the request names NO url must `data-cb-URL` (and the 3rd parameter of the
+   *   `LDAP.Find` EP) be OMITTED, and then the user must never be asked for an LDAP url/endpoint
+   *   (asked anyway was the reported "url parameter is missing" follow-up);
+   * - NO url is configured → the lookup cannot work without one, `URL` is a value only the user can
+   *   provide: an explicit url from the request is used, otherwise the clarify round must ASK for
+   *   it instead of emitting a dead field — and that ONE question must also tell the user that the
+   *   url can be stored installation-wide in the plugin properties `LDAP_URL` / `LDAP_URL_BACKEND`,
+   *   in which case no url parameter is needed.
    *
    * Pure (only reads the [AI] properties) so it is unit-testable.
    */
   internal fun buildLdapConfigBlock(): String {
     val configured = AI.isLdapUrlConfigured()
     return if (configured) {
-      "\nLDAP CONFIGURATION — an LDAP request url IS configured for this installation (plugin " +
-          "property LDAP_URL / LDAP_URL_BACKEND). The CodBi LDAP functionality resolves it by " +
-          "itself, so `data-cb-URL` MUST BE OMITTED on LDAP.Autocomplete / LDAP.Autocomplete.Set " +
-          "and the user MUST NEVER be asked for an LDAP url, endpoint, connection or source — " +
-          "there is nothing to ask and nothing to pick.\n"
+      "\nLDAP CONFIGURATION - an LDAP request url IS configured for this installation (plugin " +
+          "property LDAP_URL / LDAP_URL_BACKEND). An EXPLICIT url that the request (or the " +
+          "clarification/chat history) names is STILL WIRED - the request always wins: put it " +
+          "into `data-cb-URL` on LDAP.Autocomplete / LDAP.Autocomplete.Set or into the 3rd " +
+          "parameter of the LDAP.Find EP. When the request names NO url, exactly that parameter " +
+          "MUST BE OMITTED (`data-cb-URL` MUST BE OMITTED on LDAP.Autocomplete / " +
+          "LDAP.Autocomplete.Set, the 3rd parameter of the LDAP.Find EP MUST BE LEFT OUT) - the " +
+          "CodBi LDAP functionality then resolves the installation url by itself - and the user " +
+          "MUST NEVER be asked for an LDAP url, endpoint, connection or source: there is nothing " +
+          "to ask and nothing to pick.\n"
     } else {
-      "\nLDAP CONFIGURATION — NO LDAP request url is configured for this installation (the plugin " +
-          "property LDAP_URL is empty). An LDAP lookup therefore CANNOT run without an explicit " +
-          "url: `data-cb-URL` is a REQUIRED parameter of LDAP.Autocomplete / LDAP.Autocomplete.Set " +
-          "and its value belongs to the user. When the request needs an LDAP value and neither the " +
+      "\nLDAP CONFIGURATION - NO LDAP request url is configured for this installation (the plugin " +
+          "properties LDAP_URL / LDAP_URL_BACKEND are empty). An EXPLICIT url that the request " +
+          "names is used as it is - the request always wins. Otherwise an LDAP lookup CANNOT run " +
+          "without one: `data-cb-URL` is a REQUIRED parameter of LDAP.Autocomplete / " +
+          "LDAP.Autocomplete.Set and the 3rd parameter of the LDAP.Find EP is required too, and " +
+          "its value belongs to the user. When the request needs an LDAP value and neither the " +
           "request nor the clarification/chat history names an LDAP request url, ASK the user for " +
-          "that url (ONE free-text question) — NEVER invent or guess a url, and never emit the " +
-          "field without it.\n"
+          "that url (ONE free-text question) and TELL the user IN THAT SAME QUESTION that the url " +
+          "can also be stored ONCE for the whole installation in the CodBi plugin properties " +
+          "LDAP_URL (frontend domain) and LDAP_URL_BACKEND (backend domain) - with those set, no " +
+          "url parameter is needed at all and this question never comes up again. NEVER invent or " +
+          "guess a url, and never emit the field without it.\n"
     }
   }
 
@@ -27094,7 +27473,8 @@ When NO configured specialist sensibly matches the user's request:
                   FormcycleElementFilter.scrubWidgetSections(fcWidgets ?: ""),
                   PromptSectionGate.KNOWN_TAGS) +
               "\n" +
-              CodbiCapabilities.pass1ElementCatalog(useCodbi))
+              CodbiCapabilities.pass1ElementCatalog(useCodbi) +
+              speechAvailabilityNote())
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load rethink prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_rethink") ?: ""
@@ -27346,7 +27726,8 @@ When NO configured specialist sensibly matches the user's request:
               codbiPart +
               (if (buergerserviceNaming.isNotBlank()) "\n\n" + buergerserviceNaming else "") +
               "\n\n" +
-              widgetPart
+              widgetPart +
+              speechAvailabilityNote()
       else
           structureRules +
               "\n\n" +
@@ -27360,7 +27741,8 @@ When NO configured specialist sensibly matches the user's request:
               "\n\n" +
               widgetPart +
               "\n\n" +
-              canonicalOutputRules
+              canonicalOutputRules +
+              speechAvailabilityNote()
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load apply prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_apply") ?: ""
@@ -27587,6 +27969,14 @@ When NO configured specialist sensibly matches the user's request:
   }
 
   /**
+   * Matches an EXPLICITLY numbered list-item marker: 1-2 digits with a standard list separator
+   * (`1)`, `(1)`, `1.`, `1:`). Pure text structure — language-agnostic, never a keyword list. Used
+   * by [clarificationFromProse] to recognize a prose CHOICE question ("pick one of …") even when it
+   * ends with a period and carries no '?' (the speech-input 1/2/3 choice is the reported case).
+   */
+  private val NUMBERED_OPTION_MARKER = Regex("(?:^|[\\s,;:(\\[])\\d{1,2}\\s*[).:]")
+
+  /**
    * Wraps a PLAIN-PROSE clarification answer into ONE free-text question.
    *
    * The clarification round is taught (in `codbi-clarification.md`) to answer either
@@ -27607,11 +27997,27 @@ When NO configured specialist sensibly matches the user's request:
    * "Ok, mache ich." and the user got a clarification POPUP whose only "question" was that promise.
    * Such a reply carries no ask, so the round must count as "nothing to ask" and the build
    * proceeds. The test is structural and language-agnostic (never a keyword/word list): a real
-   * question contains a question mark, or at least is a full sentence that does not END like a
-   * statement - a period/exclamation ("mache ich."), or two words or fewer ("Alles klar", "Ok") -
-   * is treated as an acknowledgement.
+   * question contains a question mark, or is a full sentence that does not END like a short
+   * statement - a period/exclamation ("mache ich.") or very few words ("Alles klar", "Ok").
+   *
+   * CRITICAL disambiguation (reported regression): many GENUINE clarifications are also phrased as
+   * imperative instructional prose with no '?' and no numbered list, ending in a period — e.g. the
+   * model asking for a new field's label/id: "Bitte geben Sie den gewünschten Anzeigetext (Label)
+   * und optional einen Feldnamen (ID) für das neue Eingabefeld an (z.B. „Ihre Nachricht", id =
+   * „msgInput"). Sie können das Feld-ID-Feld leer lassen, wenn Sie keinen speziellen Namen
+   * benötigen." The previous gate treated ANY statement-ending prose as an acknowledgement and
+   * silently swallowed such a real clarification — the popup never appeared and the build ran
+   * without the requested input. The disambiguator is LENGTH (purely structural,
+   * language-agnostic): a tacit promise / acknowledgement is SHORT (a few words, "Ok, mache ich.");
+   * a real clarification that needs user input is LONGER (an instructional ask with detail). So
+   * statement-ending prose is only treated as an acknowledgement when it is short; a longer
+   * statement-ending reply is kept and surfaced as the question the model wanted to ask.
    */
   private fun clarificationFromProse(raw: String): ClarificationRequest? {
+    // Statement-ending prose at or below this many words is a tacit promise ("Ok, mache ich.",
+    // "Ich erstelle das Feld.") and is rejected as an acknowledgement. Longer prose is kept as a
+    // genuine clarification. Purely a word-count limit — structural, works for any language.
+    val ACK_WORD_MAX = 8
     val text =
         raw.replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000]"), " ")
             .replace(Regex("\\s+"), " ")
@@ -27624,7 +28030,21 @@ When NO configured specialist sensibly matches the user's request:
     val endsLikeStatement =
         text.endsWith(".") || text.endsWith("!") || text.endsWith("\u2026") || text.endsWith(":")
     val wordCount = text.split(' ').count { it.isNotBlank() }
-    if (!hasQuestionMark && (endsLikeStatement || wordCount <= 2)) {
+    // LANGUAGE-AGNOSTIC structural marker of a CHOICE question: at least two EXPLICITLY numbered
+    // options offered to the user ("1) … 2) … 3) …", "(1) … (2) …", "1. … 2. …"). A numbered list
+    // is
+    // an inherent ask-for-choice ("Bitte wählen Sie …", "which one?" in ANY language/wording)
+    // REGARDLESS of the trailing punctuation — observed with the speech-input choice the model
+    // emitted as "…nicht aktiv. Bitte wählen Sie … 1) … 2) … 3) … Bitte geben Sie die gewünschte
+    // Option an (1, 2 oder 3)." which ends with a period and contains no '?', so it was previously
+    // dismissed as an acknowledgement and the user never saw it. Purely structural (a digit + list
+    // separator), never a keyword/word list, so it works for any language.
+    val offersNumberedChoices = NUMBERED_OPTION_MARKER.findAll(text).count() >= 2
+    // Acknowledgement only when it is SHORT: statement-ending and no more than ACK_WORD_MAX words,
+    // or a very short reply regardless of punctuation ("Alles klar", "Ok", "Ok, mache ich.").
+    if (!hasQuestionMark &&
+        !offersNumberedChoices &&
+        (wordCount <= 2 || (endsLikeStatement && wordCount <= ACK_WORD_MAX))) {
       logger.info(
           "[AICodBiAssistant] Clarification prose is an acknowledgement, not a question - nothing to ask")
       return null
@@ -27634,6 +28054,16 @@ When NO configured specialist sensibly matches the user's request:
             ClarificationQuestion(
                 "q1", text, emptyList(), allowFreeText = true, multiSelect = false)))
   }
+
+  /**
+   * Serializes a [ClarificationRequest] into the canonical `need_clarification` JSON envelope that
+   * [parseClarificationRequest] (and the caller that surfaces the popup) understands:
+   * `{"status":"need_clarification","questions":[…]} `. Used to surface a prose clarification that
+   * was detected mid-form-build (e.g. from a non-JSON pass response) exactly like a dedicated
+   * clarification round.
+   */
+  private fun clarificationEnvelopeJson(req: ClarificationRequest): String =
+      """{"status":"need_clarification","questions":${gson.toJson(req.questions)}}"""
 
   /**
    * Builds a [ClarificationQuestion] from a question JSON element (an OBJECT with a question text,
@@ -28012,7 +28442,8 @@ When NO configured specialist sensibly matches the user's request:
               availableDatasourcesBlock +
               ldapConfigBlock +
               xslTemplatesBlock +
-              codbiDisabledBlock
+              codbiDisabledBlock +
+              speechAvailabilityNote()
       // Optionally drop the SCENARIO-SPECIFIC blocks that do not apply to this request (payment /
       // live-data / HTTP / approval), so the clarification prompt stays small for the common case
       // (a

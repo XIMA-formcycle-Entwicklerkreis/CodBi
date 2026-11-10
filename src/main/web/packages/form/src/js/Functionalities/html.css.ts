@@ -7,7 +7,7 @@ import { ParameterTypes } from "codbi-common";
 // #endregion XDBC
 // #endregion Imports
 /**
- * Provides the {@link HTML_Select_Injection.functionality }.
+ * Provides the {@link HTML_CSS.functionality }.
  *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)

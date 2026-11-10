@@ -292,6 +292,17 @@ internal object CodBiElementAccess {
     return result.replace(Regex("\\s{2,}"), " ").trimEnd()
   }
 
+  /**
+   * Returns `true` when [username] is one of the users allowed to sync the API-Documentation
+   * (`APIDoc_UsersAllowedToSYNC`, matched case-insensitively — exactly like the per-user hidden
+   * element filter below). Used by the change log to offer the cross-form selector only to those
+   * users.
+   */
+  fun isSyncUser(username: String?): Boolean {
+    val normalizedUsername = username?.trim()?.lowercase() ?: return false
+    return normalizedUsername.isNotEmpty() && normalizedUsername in syncUsers
+  }
+
   /** Computes the per-request hidden set for [username]. */
   private fun hiddenElementsFor(username: String?): HiddenSet {
     val ids = LinkedHashSet<String>()

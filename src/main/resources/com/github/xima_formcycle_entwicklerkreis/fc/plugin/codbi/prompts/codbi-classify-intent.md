@@ -10,6 +10,7 @@ Examples (ILLUSTRATIVE ONLY — the user may phrase the same intent in ANY langu
 - "Send an email when the form is submitted" → workflow
 - "Add an upload field and send its content via email after submission" → both
 - "Gib in der Konsole ... aus" / "console output" / "log variable to console" → form
+- "Gib in der Konsole die Antwort des Spezialisten Cerebras zu 'Wie wird das Wetter morgen?' aus" / "log the answer of the Cerebras specialist for '<question>' to the console" → form (console output whose VALUE is an AI answer produced by the element placeholder AI.LLAMA.STD.QA; the quoted question is that placeholder's data, never a question to answer in a chat bubble)
 - "Übersetze das Formular ins Englische" / "translate the whole form into English" / "übersetze alle Felder ins Italienische" → form (translating the form's labels/texts is a form content change — never a workflow and never a chat-only answer)
 - "Lösche alles im Formular" / "remove everything in the form" / "empty the whole form" / "Lösche alle Elemente aus dem Formular" → both (emptying the whole form also clears its attached workflows — NEVER classify such a full form reset as plain "form", otherwise the workflow lanes are left behind)
 - "Erstelle einen Bereich" / "add a panel" → form
@@ -19,9 +20,10 @@ Examples (ILLUSTRATIVE ONLY — the user may phrase the same intent in ANY langu
 
 CRITICAL — AN AI ANSWER THAT HAPPENS INSIDE A FORM FIELD IS A FORM CHANGE, NOT A WORKFLOW.
 When the request asks to ADD/CREATE a form element (an input field, a question field, a text field) AND
-describes that the field itself gets its answer from an AI (CodBi functionality like
-AI.LLAMA.STD.QA / AI.LLAMA.CHAT, optionally naming a specialist model such as "von Cerebras beantworten
-lassen", "let Cerebras answer", "Antwort von einem KI-Spezialisten"), it is a FORM change: the AI
+describes that the field itself gets its answer from an AI (the element placeholder AI.LLAMA.STD.QA
+inside the field's value, or the CodBi functionality AI.LLAMA.CHAT, optionally naming a specialist
+model such as "von Cerebras beantworten lassen", "let Cerebras answer", "Antwort von einem
+KI-Spezialisten"), it is a FORM change: the AI
 answering happens WITHIN the field at runtime, there is NO workflow node, no email, no state change.
 This is exactly like "Add an upload field that extracts document text" → "form". Examples:
 - "Erstelle ein Eingabefeld welches die Frage wie das Wetter heute wird von Cerebras beantworten lässt" → form

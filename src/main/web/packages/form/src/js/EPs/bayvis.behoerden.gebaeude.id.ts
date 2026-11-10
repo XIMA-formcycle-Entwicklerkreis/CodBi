@@ -11,11 +11,12 @@ import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
 // #endregion Imports
 /**
  *
- * This **E**lement-**P**laceholder retrieves the IDs of authoritie's buildings by the
- * "bezeichnung" of the authority (case insensitive).
+ * This **E**lement-**P**laceholder retrieves the IDs of an authority's buildings from the NUMERIC
+ * AUTHORITY ID — never from the designation ("bezeichnung"); resolve a designation first with
+ * `BayVIS.Behoerden.ID` and chain this EP with it.
  *
  * Placeholder Parameter:
- *  - 1st: The ID of the authority to retrieve.
+ *  - 1st: The NUMERIC ID of the authority to retrieve (from `BayVIS.Behoerden.ID`).
  *
  *  - resolves to an {@link Array < string >} with the building IDs that're references to the specified authority..
  *

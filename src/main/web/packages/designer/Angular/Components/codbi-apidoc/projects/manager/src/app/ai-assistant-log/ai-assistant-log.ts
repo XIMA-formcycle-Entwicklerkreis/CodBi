@@ -10,6 +10,7 @@ import {
 } from "@angular/core";
 import type { OnDestroy, OnInit } from "@angular/core";
 import { CommonModule } from "@angular/common";
+import { FormsModule } from "@angular/forms";
 import { Button } from "primeng/button";
 import { Dialog } from "primeng/dialog";
 import { Message } from "primeng/message";
@@ -37,9 +38,12 @@ import type { ChartConfiguration } from "chart.js";
  * `codbi:ai-assistant-log:open` custom event; when the panel is shown it emits the `opened` output
  * so the embedding dialog can make sure it is visible.
  *
- * The panel shows only the entries of the form that is currently being edited in the designer:
- * the current form's technical name/key is resolved via [getCurrentFormKey] and sent as the
- * `X-Form-Key` header, and the backend filters the records accordingly.
+ * By default the panel shows only the entries of the form that is currently being edited in the
+ * designer: the current form's technical name/key is resolved via [getCurrentFormKey] and sent as
+ * the `X-Form-Key` header, and the backend filters the records accordingly. Users listed in
+ * `APIDoc_UsersAllowedToSYNC` additionally get a cross-form selector next to the Export button that
+ * lists every form with a change log (deleted forms included and flagged); picking another form
+ * loads exactly that form's entries.
  *
  * Tree layout per inference (top level = date + time of the inference):
  * - **Prompt**: unfold to see the complete prompt text that produced the inference.
@@ -63,12 +67,29 @@ import type { ChartConfiguration } from "chart.js";
  * cache means a reopen shows the log instantly without the "Loading change log…" delay or the DB
  * round-trip. Invalidate by clearing and re-loading on the manual Refresh action.
  */
-let logEntriesCache: { formKey: string; raw: Array<Record<string, unknown>> } | null = null;
+/** One selectable form of the cross-form selector (only shown to users allowed to sync). */
+export interface LogFormOption {
+  /** Technical form key used as the `X-Form-Key` of the log request. */
+  key: string;
+  /** Resolved display title of the form (falls back to the key when it no longer exists). */
+  name: string;
+  /** True when the form no longer exists (deleted meanwhile) — still selectable. */
+  deleted: boolean;
+  /** True for the form currently open in the designer. */
+  current: boolean;
+}
+
+let logEntriesCache: {
+  formKey: string;
+  raw: Array<Record<string, unknown>>;
+  forms?: LogFormOption[];
+  isSyncUser?: boolean;
+} | null = null;
 
 @Component({
   selector: "cb-ai-assistant-log",
   standalone: true,
-  imports: [CommonModule, Button, Dialog, ProgressSpinner, Message, LogTreeNode, TranslocoPipe],
+  imports: [CommonModule, Button, Dialog, ProgressSpinner, Message, LogTreeNode, TranslocoPipe, FormsModule],
   templateUrl: "./ai-assistant-log.html",
   styleUrl: "./ai-assistant-log.scss",
   encapsulation: ViewEncapsulation.None,
@@ -140,8 +161,25 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   private revealBlockedSql = false;
   /** How often an empty load result has been retried (see load). */
   private emptyLoadRetries = 0;
-  /** Technical name/key of the form whose change log is currently shown. */
+  /** Technical name/key of the form currently open in the designer. */
   currentFormKey = "";
+  /**
+   * Technical name/key of the form whose change log is currently DISPLAYED. Equals
+   * [currentFormKey] unless the user (allowed to sync) picked a foreign form in the cross-form
+   * selector.
+   */
+  selectedFormKey = "";
+  /** Whether the current user may sync the API-Documentation (shows the cross-form selector). */
+  isSyncUser = false;
+  /**
+   * All forms that have a change log, for the cross-form selector — the current form first, then
+   * existing forms alphabetically, then forms that were deleted meanwhile (flagged `deleted`).
+   */
+  formOptions: LogFormOption[] = [];
+  /** Last known selector option of the designer's CURRENT form, kept so it stays listed even when
+   *  the backend returns the list for a FOREIGN form (that list omits the current form when it has
+   *  no log entries of its own). */
+  private knownCurrentOption: LogFormOption | null = null;
   /** Total tokens used by all recorded inferences of the current form (input / output / total). */
   totalTokensIn = 0;
   totalTokensOut = 0;
@@ -469,6 +507,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     }
     this.highlightElements = elements ?? [];
     this.errorText = null;
+    // A fresh open always shows the CURRENT designer form first; a foreign form the user picked
+    // before is only re-used while the panel stays open (onFormSelectionChange keeps it).
+    this.selectedFormKey = "";
     this.cdr.markForCheck();
     this.load();
     this.opened.emit();
@@ -485,7 +526,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  load(): void {
+  /**
+   * Loads the change log. By default the CURRENT designer form is shown; passing [formKeyOverride]
+   * (the cross-form selector, only offered to users allowed to sync) shows that foreign — possibly
+   * deleted — form's log instead.
+   */
+  load(formKeyOverride: string | null = null): void {
     this.loading = true;
     this.errorText = null;
     this.cdr.markForCheck();
@@ -494,17 +540,24 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     // wait briefly for it so the log is scoped correctly (falls back to all forms if it never
     // becomes available).
     const fetchWhenReady = (attempt: number): void => {
-      const formKey = getCurrentFormKey();
-      if (!formKey && attempt < 20) {
+      const currentKey = getCurrentFormKey();
+      if (!currentKey && attempt < 20) {
         setTimeout(() => fetchWhenReady(attempt + 1), 150);
         return;
       }
-      this.currentFormKey = formKey;
+      this.currentFormKey = currentKey;
+      // The form whose log is shown: an explicitly selected foreign form, otherwise the current one.
+      const targetKey = formKeyOverride || this.selectedFormKey || currentKey;
+      this.selectedFormKey = targetKey;
       // If we already loaded this form's change log this session, reuse it instantly instead of
       // calling the DB again on every reopen (avoids the "Loading change log…" delay).
-      if (logEntriesCache && logEntriesCache.formKey === formKey && logEntriesCache.raw.length > 0) {
+      if (logEntriesCache && logEntriesCache.formKey === targetKey && logEntriesCache.raw.length > 0) {
         this.loading = false;
         this.errorText = null;
+        this.isSyncUser = logEntriesCache.isSyncUser === true;
+        this.rememberCurrentOption();
+        this.formOptions = logEntriesCache.forms ?? this.formOptions;
+        this.normalizeFormOptions();
         this.rawEntries = logEntriesCache.raw;
         this.logs = this.buildTree(this.applyFilter(logEntriesCache.raw));
         this.expandSearchMatches();
@@ -514,8 +567,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         return;
       }
       const headers: Record<string, string> = { "X-Action": "Log" };
-      if (formKey) {
-        headers["X-Form-Key"] = formKey;
+      if (targetKey) {
+        headers["X-Form-Key"] = targetKey;
       }
       getJQuery().ajax({
         url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
@@ -547,6 +600,28 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           this.currentUser = !Array.isArray(payload)
             ? String((payload?.["currentUser"] as string | undefined) ?? "")
             : "";
+          // Cross-form selector: only offered to users allowed to sync. `forms` lists every form
+          // that has a change log (deleted forms flagged), current form first.
+          this.isSyncUser = !Array.isArray(payload) && payload?.["isSyncUser"] === true;
+          const formsRaw = !Array.isArray(payload) ? (payload?.["forms"] as unknown[] | undefined) : undefined;
+          this.rememberCurrentOption();
+          if (Array.isArray(formsRaw)) {
+            this.formOptions = formsRaw
+              .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
+              .map((f) => ({
+                key: String(f["key"] ?? ""),
+                name: String(f["name"] ?? f["key"] ?? ""),
+                deleted: f["deleted"] === true,
+                current: false,
+              }))
+              .filter((f) => f.key.length > 0);
+          } else if (!this.isSyncUser) {
+            this.formOptions = [];
+          }
+          // The backend's "current" refers to the REQUESTED form (which is the selected foreign
+          // form while browsing another log). Recompute it against the designer's actual form so
+          // the true current form stays marked and listed first.
+          this.normalizeFormOptions();
           this.acknowledgedSensitive.clear();
           this.sensitiveCheckInfo.clear();
           for (const check of checks) {
@@ -579,7 +654,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           this.rawEntries = raw;
           // Remember the freshly loaded entries so the next reopen of the dialog (which re-creates
           // this component and re-runs load()) can show them instantly without a DB round-trip.
-          logEntriesCache = { formKey: this.currentFormKey, raw };
+          logEntriesCache = {
+            formKey: targetKey,
+            raw,
+            forms: this.formOptions,
+            isSyncUser: this.isSyncUser,
+          };
           this.logs = this.buildTree(this.applyFilter(raw));
           this.expandSearchMatches();
           this.applyHighlights();
@@ -606,7 +686,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           // the change log is not empty until the user hits Refresh.
           if (raw.length === 0 && this.emptyLoadRetries < 3) {
             this.emptyLoadRetries++;
-            setTimeout(() => this.load(), 500);
+            setTimeout(() => this.load(formKeyOverride), 500);
           } else {
             this.emptyLoadRetries = 0;
           }
@@ -630,7 +710,108 @@ export class AiAssistantLog implements OnInit, OnDestroy {
    *  the newest DB state. */
   refresh(): void {
     logEntriesCache = null;
-    this.load();
+    this.load(this.selectedFormKey || null);
+  }
+
+  /** True while the change log shows the CURRENT designer form. The per-entry "apply again"
+   *  buttons are only useful then — a foreign (or deleted) form's entries must never be applied to
+   *  the form the user is editing. */
+  get isShowingCurrentForm(): boolean {
+    return !this.selectedFormKey || !this.currentFormKey || this.selectedFormKey === this.currentFormKey;
+  }
+
+  /** Whether the inline cross-form dropdown list is open. */
+  formDropdownOpen = false;
+
+  /** Display label of the selected option; empty → the placeholder is shown. */
+  get selectedFormLabel(): string {
+    const match = this.formOptions.find((form) => form.key === this.selectedFormKey);
+
+    return match?.name ?? "";
+  }
+
+  /** Opens/closes the inline cross-form dropdown list. */
+  toggleFormDropdown(): void {
+    if (this.loading) {
+      return;
+    }
+    this.formDropdownOpen = !this.formDropdownOpen;
+    this.cdr.markForCheck();
+  }
+
+  /** Closes the inline cross-form dropdown list (backdrop click, after a selection). */
+  closeFormDropdown(): void {
+    if (!this.formDropdownOpen) {
+      return;
+    }
+    this.formDropdownOpen = false;
+    this.cdr.markForCheck();
+  }
+
+  /** Selects a form from the inline dropdown list and closes it. */
+  selectFormFromDropdown(formKey: string): void {
+    this.formDropdownOpen = false;
+    this.onFormSelectionChange(formKey);
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Switches the change log to another form. Only offered to users allowed to sync; the list's
+   * first entry is always the current designer form, and deleted forms stay listed (and selectable)
+   * so their log remains reachable.
+   */
+  onFormSelectionChange(formKey: string): void {
+    const target = (formKey ?? "").trim();
+    if (!target || target === this.selectedFormKey) {
+      return;
+    }
+    this.selectedFormKey = target;
+    this.searchText = "";
+    this.emptyLoadRetries = 0;
+    this.load(target);
+  }
+
+  /**
+   * Recomputes each option's `current` flag against the designer's actual current form and sorts
+   * the list: the current form first, then the existing forms alphabetically, then the deleted ones.
+   * (The backend marks the REQUESTED form as current, which is the selected foreign form while the
+   * user browses another form's log — that must not leak into the selector.)
+   */
+  private normalizeFormOptions(): void {
+    const current = this.currentFormKey;
+    const options = [...this.formOptions];
+    if (current && !options.some((form) => form.key === current)) {
+      // The backend list for a foreign form omits the current form when it has no log entries —
+      // re-add the remembered option so the user can always switch back.
+      options.push(this.knownCurrentOption ?? { key: current, name: current, deleted: false, current: true });
+    }
+    const currentMatch = options.find((form) => form.key === current);
+    if (currentMatch) {
+      this.knownCurrentOption = { ...currentMatch };
+    }
+    this.formOptions = options
+      .map((form) => ({ ...form, current: !!current && form.key === current }))
+      .sort((a, b) => {
+        if (a.current !== b.current) {
+          return a.current ? -1 : 1;
+        }
+        if (a.deleted !== b.deleted) {
+          return a.deleted ? 1 : -1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }
+
+  /** Remembers the selector option of the designer's current form before the options are replaced. */
+  private rememberCurrentOption(): void {
+    const current = this.currentFormKey;
+    if (!current) {
+      return;
+    }
+    const match = this.formOptions.find((form) => form.key === current);
+    if (match) {
+      this.knownCurrentOption = match;
+    }
   }
 
   /** Re-applies the search filter to the already loaded entries and expands to the matches. */
@@ -922,7 +1103,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = this.currentFormKey ? `codbi-ai-log-${this.currentFormKey}.json` : "codbi-ai-log.json";
+    const exportKey = this.selectedFormKey || this.currentFormKey;
+    a.download = exportKey ? `codbi-ai-log-${exportKey}.json` : "codbi-ai-log.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1093,6 +1275,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
    *  ([node.raw] = whole entry) and a per-element widget / per-path workflow child row ([node.applyRaw]
    *  plus [node.applyItemName] / [node.applyNodeName]). A `chat` / `reply` node never reaches this. */
   onApplyAgain(node: LogNode): void {
+    // Re-applying always targets the form the designer has open — never a foreign form's log.
+    if (!this.isShowingCurrentForm) {
+      return;
+    }
     if (node.raw) {
       this.applyAgain.emit(node.raw);
       return;

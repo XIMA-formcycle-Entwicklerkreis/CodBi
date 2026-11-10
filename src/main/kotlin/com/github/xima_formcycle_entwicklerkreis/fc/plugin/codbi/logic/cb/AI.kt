@@ -97,6 +97,22 @@ abstract class AI : CodBi(), IPluginServletAction {
     fun isLdapUrlConfigured(): Boolean = !ldapUrl.isNullOrBlank() || !ldapUrlBackend.isNullOrBlank()
 
     /**
+     * Whether the local Whisper speech-to-text module is **enabled** on this installation at the
+     * config level. Configured via the plugin property `Active_AI` (it must contain `whisper`,
+     * matching the check in the `Whisper` class). This reflects configuration ONLY — it does not
+     * mean the whisper-server process is currently started/healthy (for that, the runtime health
+     * check / `Whisper.activeWhisperPort` is the source of truth).
+     *
+     * The AI assistant reads this when deciding whether it can offer **local Whisper** speech input
+     * as an alternative to the browser's **Web Speech API** (`MEDIA.INPUT.SPEECH`): when this is
+     * `false`, local Whisper is simply not available on this server and must not be offered.
+     */
+    @Volatile @JvmStatic var whisperEnabled: Boolean = false
+
+    /** Convenience accessor mirroring [isLdapUrlConfigured]. */
+    @JvmStatic fun isWhisperEnabled(): Boolean = whisperEnabled
+
+    /**
      * Shared semaphore that limits concurrent **local** AI inferences across all modules (LLAMA,
      * Tesseract, Whisper). Configured via `AI_LLAMA_ENGINE_MaxConcurrent` (default 2).
      */

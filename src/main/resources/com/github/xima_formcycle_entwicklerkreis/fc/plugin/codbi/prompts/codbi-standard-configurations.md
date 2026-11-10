@@ -195,13 +195,13 @@ Marker class for panels inside an accordion that should NOT participate in the a
 ## Print.Removal
 
 ### CodBi_Print_Remove_Tagged
-CSS class for tagged print removal.
+Hides the tagged element IN PRINT (it stays visible in the interactive form). Standard class for "beim Drucken ausblenden" on a single element / for interactive controls.
 
 ### CodBi_Print_Remove_Parent
-CSS class for parent print removal.
+Hides the tagged element's PARENT container/section in print (the content stays visible in the interactive form).
 
 ### CodBi_Print_Remove_PrintOnly
-CSS class for print-only elements.
+PRINT-ONLY: hides the tagged element in the interactive form and shows it when printing. Standard class for "nur im Druck sichtbar" / "print-only" / "only visible when printed".
 
 ## BayVIS
 
@@ -247,6 +247,8 @@ EXCLUSION class (XCL prefix). When the FORM-LEVEL Holistic.Media.MultipleUpload 
 ## Speech Input Activation (HOLISTIC.MEDIA.INPUT.SPEECH)
 
 To ENABLE speech-to-text input on ALL text fields (a HOLISTIC standard configuration), do NOT place any CSS class on any element. Instead include {"id":"Holistic.Media.Input.Speech","targets":[]} in _codbiApplicability.applied (and likewise {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} for Whisper) — the server reads this and activates the standard configuration, which applies speech to every text field at render time.
+
+Use the per-element functionality only when the request is explicitly about ONE text field. That wiring is done with the FUNCTIONALITY id on that single field: set data-cb-func="Media.Input.Speech" (Web Speech API) or data-cb-func="Media.Input.Speech.Whisper" (local Whisper) on that field's properties — NOT the "Holistic."-prefixed standard-configuration id, which is NOT a registered functionality and therefore produces NO mic button. Use {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} in _codbiApplicability.applied only for a FORM-WIDE Whisper; for a single field use the data-cb-func="Media.Input.Speech.Whisper" functionality instead (the form-wide config's CSS selector excludes fields that already carry data-cb-func, so the two approaches are mutually exclusive per field).
 
 ## Multiple Upload Activation (HOLISTIC.MEDIA.MULTIPLEUPLOAD)
 

@@ -176,13 +176,14 @@
     "HTML.CSS": {
       "id": "HTML.CSS",
       "type": "functionality",
-      "summary": "Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).",
-      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "summary": "Injects a stylesheet with the given CSS into the document head or into a Destination region (with optional placeholder replacements). When a NEW element is generated only to carry the rules, use an XSpan whose Formcycle Hidden/Ausblenden property is CHECKED (\"ishidden\":\"1\"), data-cb-func=\"HTML.CSS\" + data-cb-css holding the ACTUAL rules, and a descriptive rtevalue naming what the CSS does and where.",
+      "tsdoc": "Provides the {@link HTML_CSS.functionality }.",
       "parameters": {
-        "CSS": "The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.",
-        "Darkmode": "The Darkmode-Replacements that will replace all placeholders ending with \"_DM\" in the.",
-        "Destination": "CSS-Class-Selector of the destination element (e.g., \u0027.tfHeadline\u0027). Use a dot-prefixed class selector based on the target element\u0027s name. Do NOT use an ID selector.",
-        "Replacements": "An Array \u003c string \u003e of two elements each that are separated by a \"|\"."
+        "CSS": "The CSS rules to inject (when used in a CodBi standard configuration) or the result of an Element-Placeholder retrieval (when used in plain attributes). Put the actual declarations here, e.g. h1 { color: red; }.",
+        "Darkmode": "The dark-mode replacements that replace all placeholders ending with \"_DM\" in the provided CSS.",
+        "Destination": "CSS-Class-Selector of the destination element (e.g. .tfHeadline / .hdrMainHeader). Dot-prefixed class selector based on the target element's name; do NOT use an ID selector. Omit it to inject into the document head (whole form).",
+        "Replacements": "An array of two-element strings separated by \"|\": the first part is the placeholder found in the CSS, the second the string it is replaced with.",
+        "CarrierXSpan": "When a NEW element is generated only to hold the rules: use an XSpan with \"ishidden\":\"1\" in its properties (Formcycle Hidden/Ausblenden checkbox CHECKED), data-cb-func=\"HTML.CSS\" + data-cb-css = the ACTUAL rules, and a descriptive rtevalue naming the CSS purpose and target (e.g. 'Wendet CSS an: Ueberschriften rot (h1 { color: red; }).'). NEVER put only a <style> block into rtevalue, NEVER leave it empty/generic ('HTML.CSS'), and NEVER use 'invisible' or a CSS class for the hiding."
       },
       "classDescriptions": {}
     },
@@ -467,14 +468,15 @@
     "OnChange.Conditional": {
       "id": "OnChange.Conditional",
       "type": "functionality",
-      "summary": "This functionality applies a certain functionality onto the object toProcess depending on whether.",
+      "summary": "Applies a functionality or attribute change to a target element while a comparison between a watched field's value and a date reference holds; re-evaluates on every change of the tagged field. USE THIS INSTEAD OF hiddenif* for ORDERING comparisons (>, >=, <, <=) on date/time/number values: after/before a date, older/younger than, more/less than a number, from/up to, appears/disappears immediately while typing (ANY language, by meaning). hiddenif* stays for discrete option/checkbox/empty state only.",
       "tsdoc": "Provides the {@link OnChange_Conditional.functionality }.",
       "parameters": {
-        "Candidate": "The Element where to get the value to be compared or a CSS-Selector.",
-        "DateFormat": "A optional string specifying the format the candidate is of.",
-        "Mode": "Defines the mode of comparison to apply onto the HTMLInputElement \u0027s value and the \"reference\" value.",
-        "Reference": "The value the HTMLInputElement \u0027s value shall be compared with.",
-        "Target": "The Element where to apply one of the specified functionalities depending on whether the."
+        "Mode": "GT (after/later/greater), GTEQ (on/after/at least), LT (before/earlier/less), LTEQ (on/before/at most), EQ (exactly), NEQ (not equal). The enum is GTEQ/LTEQ - GTE/LTE are INVALID.",
+        "Reference": "The threshold. It MUST resolve to a JavaScript Date, never a plain string: write the EP { Date.FromString > 01.06.2026 ; DD.MM.YYYY } (or { Date.Today }). A literal 01.06.2026 has no getTime() and breaks the comparison.",
+        "Candidate": "Dot-prefixed CLASS selector of the watched field (e.g. .tfKursbeginn - its own name when the tagged field is the watched one), resolved inside the tagged field's container. Never an #id selector.",
+        "Target": "Dot-prefixed CLASS selector of the element to change (e.g. .coSpaetbucherHinweis). Candidate and target MUST share the same container/fieldset.",
+        "DateFormat": "Format of the CANDIDATE's value (datatype dateDE -> DD.MM.YYYY, native date -> YYYY-MM-DD); omit for non-date values.",
+        "BranchAttributes": "TRUE/FALSE branches are attributes on the SAME tagged field: data-cb-_T_<param> applied when the comparison holds and data-cb-_F_<param> when it does not (the marker is stripped and the rest becomes data-cb-<param> on the target). Visibility toggle: data-cb-_T_func=HTML.SETAttribute + data-cb-_T_name=style + data-cb-_T_toset=display:block; data-cb-_F_func=HTML.SETAttribute + data-cb-_F_name=style + data-cb-_F_toset=display:none. Hide the target at load with its OWN HTML.SETAttribute + name=style + toset=display:none."
       },
       "classDescriptions": {}
     },
@@ -499,12 +501,13 @@
     "Print.Remove": {
       "id": "Print.Remove",
       "type": "functionality",
-      "summary": "Applicable on any element that should be invisible when the form is printed.",
-      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "summary": "Hides an element when the form is rendered for printing and leaves it visible in the interactive form. The target is the element matched by DocumentSelector, otherwise the ancestor reached via ParentalLevel, otherwise the tagged element. With Invert the behaviour is reversed (hidden in the form, shown when printed). It only sets style.display=none - the element is not removed from the DOM.",
+      "tsdoc": "Provides the {@link Print_Remove.functionality }.",
       "parameters": {
-        "DocumentSelector": "CSS-Class-Selector for the element to remove (e.g., \u0027.divPrintSection\u0027). Use dot-prefixed class selector based on the target element\u0027s name. Do NOT use an ID selector.",
-        "Invert": "Specifies whether this functionality shall be inverted, e.g.",
-        "ParentalLevel": "The number of elements to climb up the HTMLElement.parentElement -Tree to get to."
+        "DocumentSelector": "CSS selector of the element to hide when printing (e.g., .divPrintSection). Takes precedence over ParentalLevel. Use a dot-prefixed class selector based on the target element's name; do NOT use an ID selector.",
+        "Invert": "Invert the behaviour: hide the element in the interactive form and show it when printed (print-only content). When set and ParentalLevel is unset, ParentalLevel defaults to 1.",
+        "ParentalLevel": "Number of parentElement steps to climb from the tagged element to the element to hide when printing.",
+        "Behavior": "The element is only hidden via style.display = none; it is NOT removed from the DOM, so its value stays available and repeatable containers keep their structure. There is no date/min/max comparison and no MaxField parameter. PREFER THE STANDARD CLASSES: CodBi_Print_Remove_PrintOnly = PRINT-ONLY (hidden in the interactive form, shown when printed); CodBi_Print_Remove_Tagged = hidden in print (the element); CodBi_Print_Remove_Parent = hidden in print (parent/section). Interactive controls are hidden in print by default (Tagged), NOT PrintOnly. NEVER implement per-element print visibility with HTML.CSS/@media print/display:none helper classes."
       },
       "classDescriptions": {}
     },
@@ -527,6 +530,19 @@
       "summary": "Applicable for debugging; logs CodBi runtime data to the browser developer console.",
       "tsdoc": "Provides the {@link Sys_Log_Console.functionality }.",
       "parameters": {},
+      "classDescriptions": {}
+    },
+    "SV": {
+      "id": "SV",
+      "type": "functionality",
+      "summary": "Copies URL QUERY parameters into CodBi global variables at form load (the i-th Source fills the i-th Destination). Use when a URL parameter must be linked into a global variable for the form/workflow; every destination MUST also be declared in the top-level variables array. Apply on XContainer/XContainerInvisible/XFieldSet.",
+      "tsdoc": "Provides the {@link SV.functionality }.",
+      "parameters": {
+        "Destinations": "The name(s) of the global variable(s) to set - CSV, paired by index with Sources (equal count). Every destination must also be declared in the form's top-level variables array ({\"name\":\"<NAME>\",\"aliasname\":\"<NAME>\",\"serveronly\":false,\"value\":\"\"}); otherwise Formcycle never renders it and the workflow never receives it.",
+        "Sources": "The name(s) of the URL query parameter(s) to read - CSV, paired by index with Destinations (equal count); names are case-sensitive; a missing parameter yields an empty string.",
+        "Behavior": "Runs at form load, reads window.location.search and writes the value into the declared global-variable element (input.XVariable / data-name), dispatching input and change. Do NOT use the V EP (it only READS a variable), a hidden field, JSON.SET or a literal variable value for this. WORKED EXAMPLE - 'Verlinke den URL-Parameter Hoho als globale Variable.': variables += {\"name\":\"Hoho\",\"aliasname\":\"Hoho\",\"serveronly\":false,\"value\":\"\"}; create XContainerInvisible coUrlParams on the first page with data-cb-func=SV, data-cb-Destinations=Hoho, data-cb-Sources=Hoho.",
+        "Documentation": "ALWAYS add ONE plain XSpan child inside the SV container whose rtevalue states the mapping in the form's language. SINGULAR: <p>Dieses Element uebernimmt den URL-Parameter <strong>Hoho</strong> in die globale Variable <strong>Alpha</strong>.</p> (English: 'This element copies URL parameter Hoho into global variable Alpha.'). SEVERAL pairs: ONE combined, natural sentence - <p>Dieses Element uebernimmt die URL-Parameter <strong>Hoho</strong> und <strong>Jojo</strong> in die globalen Variablen <strong>Alpha</strong> und <strong>Beta</strong>.</p> (English: 'This element copies the URL parameters Hoho and Jojo into the global variables Alpha and Beta.'); for three or more use a comma list with 'und'/'and' before the last - NOT one separate sentence per pair. The XSpan's properties MUST contain \"ishidden\":\"1\" - the Formcycle Hidden/Ausblenden checkbox CHECKED; never rely on the surrounding invisible container and never use 'invisible' (not a Formcycle property) or a CSS class. The note is author-facing only and must not be omitted."
+      },
       "classDescriptions": {}
     },
     "Time.Frame": {
@@ -613,10 +629,10 @@
     "BayVIS.Behoerden.Gebaeude.ID": {
       "id": "BayVIS.Behoerden.Gebaeude.ID",
       "type": "ep",
-      "summary": "This Element-Placeholder retrieves the IDs of authoritie\u0027s buildings by the.",
-      "tsdoc": "This **E**lement-**P**laceholder retrieves the IDs of authoritie\u0027s buildings by the\n\"bezeichnung\" of the authority (case insensitive).\nPlaceholder Parameter:\n- 1st: The ID of the authority to retrieve.\n- resolves to an {@link Array \u003c string \u003e} with the building IDs that\u0027re references to the specified authority..",
+      "summary": "This Element-Placeholder retrieves the building IDs of ONE authority from its NUMERIC AUTHORITY ID.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the IDs of an authority\u0027s buildings from the NUMERIC\nAUTHORITY ID - never from the designation (\"bezeichnung\"); resolve a designation first with\n`BayVIS.Behoerden.ID` and chain this EP with it.\nPlaceholder Parameter:\n- 1st: The NUMERIC ID of the authority to retrieve (from `BayVIS.Behoerden.ID`).\n- resolves to an {@link Array \u003c string \u003e} with the building IDs that\u0027re references to the specified authority..\n- USE: only as the SECOND parameter of BayVIS.Behoerden.Details.Gebaeude (authority id ; building id).",
       "parameters": {
-        "1": "The ID of the authority to retrieve."
+        "1": "The NUMERIC ID of the authority to retrieve (from BayVIS.Behoerden.ID)."
       },
       "classDescriptions": {}
     },
@@ -669,7 +685,7 @@
       "tsdoc": "This Element-Placeholder turns a {@link String } into a {@link Date }.\nPlaceholder Parameter:\n- 1st:  The {@link String } to turn to a {@link Date}.\n- 2nd:  The optional format of the \"dateString\" (e.g. DD/MM/YYYY).\n- 3rd:  The operations to perform on the {@link Date } specified.\nDays, months and years may be either added or subtracted by adding each\narithmetic option as a separate parameter (e.g. Date.Arithmetic \u003e 01.01.1978 ; -1d ; +2m ; -10y ).\n@param params The parameters for that Element-Placeholder (provided by CodBi).",
       "parameters": {
         "1": "The String to turn to a Date.",
-        "2": "The optional format of the \"dateString\" (e.g.",
+        "2": "EITHER the input FORMAT (e.g. DD/MM/YYYY) OR the FIRST arithmetic operation - a value containing + or - is treated as arithmetic (the format is then skipped).",
         "3": "The operations to perform on the Date specified."
       },
       "classDescriptions": {}
@@ -688,43 +704,51 @@
     "Date.Holidays": {
       "id": "Date.Holidays",
       "type": "ep",
-      "summary": "The requested years.",
-      "tsdoc": "The type of requests needed to identify identical requests.",
-      "parameters": {},
+      "summary": "Retrieves the GERMAN public holidays of the requested BUNDESL\u00c4NDER and/or years as an ARRAY of holiday names.",
+      "tsdoc": "Retrieves GERMAN holidays (\"Feiertage\") for the requested states and years from API-Feiertage.de.\nPlaceholder Parameter (any order, case-insensitive; ONE value per `;` slot):\n- a German state abbreviation: bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th\n- a year as the THIS_YEAR token (optionally THIS_YEAR + N / THIS_YEAR - N) - a concrete year such as 2026 is NOT accepted\n- Friedensfest (Augsburg) or KATHOLISCH\n- returns an ARRAY of holiday names; there is NO property parameter (a call like `> list` does not exist)\n- This is the ONLY holiday EP: never invent an id such as Holiday.BavariaAndHesse or Feiertage - states and years are PARAMETERS.",
+      "parameters": {
+        "1": "A German state abbreviation (bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th) or THIS_YEAR.",
+        "2+": "More states, a year (THIS_YEAR +/- N), Friedensfest or KATHOLISCH - one value per `;` slot."
+      },
       "classDescriptions": {}
     },
     "Date.Today": {
       "id": "Date.Today",
       "type": "ep",
-      "summary": "Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.",
-      "tsdoc": "Provides the current {@link Date } along with arithmetic appliances.\nSupports arithmetic directly Ã¢â‚¬â€� no need to wrap in Date.Arithmetic.\nPlaceholder Parameter:\n- 1st: \"NOW\" to retrieve the current date, or an arithmetic operation like \"+1d\" (add days), \"-1m\" (subtract months), \"+1y\" (add years).\n- 2nd: Additional arithmetic operation (optional), e.g. \"-1d ; +2m ; -10y\".\n- 3rd and beyond: More arithmetic operations (optional).\nThe parameters are case insensitive.",
+      "summary": "Delivers TODAY as a DATE OBJECT (never a formatted string), optionally shifted by days/months/years - an object whose property or parameterless method is read with JSON.Path.",
+      "tsdoc": "Delivers TODAY as a DATE OBJECT (a Date instance) - never a formatted string.\nSupports arithmetic directly - no need to wrap in Date.Arithmetic.\nPlaceholder Parameter (optional, case-insensitive):\n- 1st: \"NOW\" for today's date, or an arithmetic operation like \"+1d\" (add days), \"-1m\" (subtract months), \"+1y\" (add years).\n- 2nd and beyond: further arithmetic operations, ONE per slot, e.g. \"-1d ; +2m ; -10y\".\n- NO parameter at all = today; an EMPTY arithmetic slot (`{ Date.Today > }`) is invalid.\nRETURN TYPE: a Date OBJECT - a member of today's date is read with JSON.Path (e.g. `{ JSON.Path > { Date.Today > NOW } ; getMonth() }`) and it must NEVER be passed into a STRING-parameter EP (Date.Weekends, Date.Holidays).",
       "parameters": {
-        "1": "\"NOW\" to retrieve the current date, or an arithmetic operation like \"+1d\" (add days), \"-1m\" (subtract months), \"+1y\" (add years).",
-        "2": "Additional arithmetic operation (optional), e.g."
+        "1": "\"NOW\" for today's date, or an arithmetic operation like \"+1d\" (add days), \"-1m\" (subtract months), \"+1y\" (add years) - applied to today.",
+        "2": "Optional further arithmetic operation(s), ONE token per slot, e.g. \"-1d ; +2m ; -10y\"."
       },
       "classDescriptions": {}
     },
     "Date.Weekends": {
       "id": "Date.Weekends",
       "type": "ep",
-      "summary": "This Element-Placeholder Registers the \"Date.Weekend\"-EP along with a necessary CSS-Injection in the Document.head .",
-      "tsdoc": "This **E**lement-**P**laceholder Registers the \"Date.Weekend\"-EP along with a necessary CSS-Injection in the {@link Document.head }.\nThe EP retrieves a {@link Array \u003c string \u003e} of all dates that\u0027re Weekends (Saturday \u0026 Sunday) between\ntwo optional {@link Date }s that may be specified.\nIf just one parameter is specified it will be treated as the Ending-{@link Date }.\nNo Parameter will generate a range of dates between today and today in a year.\nConfig Parameter:\n1.  Beginning of the range of dates to return unless it is the only parameter. In that case it specifies the end\nof the range, while the beginning is today.\n2.  The end of the range.",
-      "parameters": {},
+      "summary": "Retrieves the WEEKEND dates (Saturday and Sunday) of a date range as an ARRAY of dd.MM.yyyy STRINGS.",
+      "tsdoc": "Retrieves all WEEKEND dates (Saturday and Sunday) within a date range as an ARRAY of `dd.MM.yyyy` strings.\nPlaceholder Parameter (plain STRINGS in dd.MM.yyyy - NEVER Date objects):\n- 1st: the END of the range when it is the only parameter (the range then starts TODAY); otherwise the BEGIN.\n- 2nd (optional): the END of the range.\n- at least one dd.MM.yyyy string is required.\n- ARGUMENT TYPE: the EP validates the parameters against a date regex, so a DATE OBJECT is rejected - never nest { Date.Today }, { Date.FromString } or { Date.Arithmetic } into it.",
+      "parameters": {
+        "1": "A dd.MM.yyyy STRING - the END of the range when used alone, otherwise the BEGIN.",
+        "2": "Optional dd.MM.yyyy STRING - the END of the range."
+      },
       "classDescriptions": {}
     },
     "DOM.Query": {
       "id": "DOM.Query",
       "type": "ep",
-      "summary": "This Element-Placeholder queries an Element .",
-      "tsdoc": "This **E**lement-**P**laceholder queries an {@link Element }.\nPlaceholder Parameter:\nThe CSS-Selector targeting the desired {@link Element }.",
-      "parameters": {},
+      "summary": "Queries ONE rendered page element by CSS selector and returns it — the EP for acquiring DOM elements.",
+      "tsdoc": "Queries ONE rendered page element and returns it (the `Element`, or `null` when nothing matches).\nPlaceholder Parameter:\n- The CSS-Selector targeting the desired Element: the element id as `#xi-header-1`, its name as `.header1` (names are rendered as CSS classes), or any selector (`header`, `body`).\n- A widget type (`XHeader`, `XPage`, `XSpan`, `XContainer`, `XTextField`, ...) is a Formcycle className, NEVER an EP id - `{ XHeader > header1 }` does not exist; use `{ DOM.Query > #xi-header-1 }`.",
+      "parameters": {
+        "1": "The CSS-Selector targeting the desired element (#id, .name or a tag/selector)."
+      },
       "classDescriptions": {}
     },
     "F": {
       "id": "F",
       "type": "ep",
       "summary": "Finds the objects within an Array that have a specific property with a specific value.",
-      "tsdoc": "Finds the objects within an {@link Array } that have a specific **property** with a specific **value**.\nIf a single object is found, no {@link Array } will be returned, if no object is found an empty {@Array }.\nConfig Parameter:\n- 1st: The **name** of the property to look for.\n- 2nd: The **value** the property to look for has to have.\n- 3rd: The {@link Array } of objects to scan.",
+      "tsdoc": "Finds the objects within an {@link Array } that have a specific **property** with a specific **value**.\nALWAYS returns an ARRAY (one element, or empty when nothing matches) - take a single entry with { I > 0 ; ... }; the comparison is STRICT (===, case- and type-sensitive) and F must be the OUTERMOST EP of the value it fills.\nConfig Parameter:\n- 1st: The **name** of the property to look for.\n- 2nd: The **value** the property to look for has to have.\n- 3rd: The {@link Array } of objects to scan.",
       "parameters": {
         "1": "The name of the property to look for.",
         "2": "The value the property to look for has to have.",
@@ -735,31 +759,34 @@
     "I": {
       "id": "I",
       "type": "ep",
-      "summary": "This Element-Placeholder acquires a specific element.",
-      "tsdoc": "This **E**lement-**P**laceholder acquires a specific element\nwithin an {@link Array }.\nPlaceholder Parameter:\n- The index to retrieve.\n- The {@link Array } from which to retrieve the value from.",
-      "parameters": {},
+      "summary": "Takes ONE entry out of an ARRAY by its 0-based position.",
+      "tsdoc": "Takes ONE entry out of an ARRAY by its position.\nPlaceholder Parameter (fixed order):\n- 1st: the INDEX as an integer string, 0-based (0 = first entry, 1 = second; a number also works).\n- 2nd: the ARRAY from which to take the entry (an array-returning EP).\n- Use ONLY for array-returning EPs: { I > 0 ; { ... } } = the first match; a single-value EP (Details, V, JSON.Path, Date.Today) needs no I.\n- TOLERANCE: index 0 on a non-array returns the value unchanged; any other index on a non-array throws a CodBiError.",
+      "parameters": {
+        "1": "The index to retrieve (0-based, integer string or number).",
+        "2": "The ARRAY from which to take the entry."
+      },
       "classDescriptions": {}
     },
     "JSON.Path": {
       "id": "JSON.Path",
       "type": "ep",
-      "summary": "This Element-Placeholder retrieves an Object at a specific path out of the one given in the.",
-      "tsdoc": "This **E**lement-**P**laceholder retrieves an {@link Object } at a specific path out of the one given in the\nfirst parameter.\nPlaceholder Parameter:\n- 1st:  The {@link Object } to retrieve the requested one from.\n- 2nd:  The dotted path leading to the requested one.",
+      "summary": "Retrieves a MEMBER (a property or the result of a PARAMETERLESS METHOD) of an OBJECT along a dotted path - the EP for reading something OUT of an object that another EP produced.",
+      "tsdoc": "Retrieves the MEMBER at a dotted path out of the OBJECT given in the first parameter.\nPlaceholder Parameter (FIXED order - object first, path second):\n- 1st: the OBJECT to read from (a literal object or an EP placeholder that resolves to one, e.g. `{ Date.Today > NOW }`).\n- 2nd: the dotted PATH inside that object. A plain segment READS A PROPERTY (name, email, id); a segment written as name() - ROUND BRACKETS, NO SPACE - CALLS A PARAMETERLESS METHOD (getMonth(), getFullYear(), toISOString(), toString()); segments are separated by dots (address.city).\n- A path interrupted by undefined/null throws a CodBiError - never guess a member name.\nReported failure: `data-cb-Data = getMonth()` is neither a value nor an EP (there is no object to call the method on); CORRECT is `{ JSON.Path > { Date.Today > NOW } ; getMonth() }`.",
       "parameters": {
-        "1": "The Object to retrieve the requested one from.",
-        "2": "The dotted path leading to the requested one."
+        "1": "The OBJECT to read from (a literal object or an EP placeholder that resolves to one).",
+        "2": "The dotted path: a plain segment reads a property, name() calls a parameterless method; segments are separated by dots."
       },
       "classDescriptions": {}
     },
     "LDAP.Find": {
       "id": "LDAP.Find",
       "type": "ep",
-      "summary": "This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified.",
-      "tsdoc": "This Elementplaceholder connects via a default (**LDAP_URL** in CodBi Settings) or an optionally specified\nURL (optional **3rd parameter**) to a predefined Formcycle LDAP-Query requesting data from it.\nThe Query has to have following content in order to work with this Elementplaceholder:\n**(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**.\n**Furthermore Following currently supported LDAP-Attributes should be returned by the predefined Formcycle LDAP-Query**\n| LDAP Property | Corresponds To |\n| :------------ | :------------- |\n| givenName     | First Name     |\n| mail          | eMail Address  |\n| sn            | Last Name      |\n| title         | Title          |\n| department    | Department     |\n| telephoneNumber| Phonenumber   |\n| sAMAccountName| Account        |\n| cn            | Common Name    |\n| displayName   | Display Name   |\n### Config Parameter:\n- 1st:  The mode to use for the filter. Either **AND** or **OR** (case insensitive). Everything else will be interpreted as **AND**.\n- 2nd:  The LDAP conditions (like sn = Doe) separated by **|** (like sn = Doe | givenName = John).\n- 3rd:  The optional **URL** to a Formcycle-LDAP-Query (which\u0027s content is **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**) to use.",
+      "summary": "Searches the LDAP / Active Directory and returns the matching entries as an ARRAY; slot 1 is the COMBINING MODE (AND or OR), slot 2 holds ALL attribute = value conditions joined by |.",
+      "tsdoc": "Searches the LDAP / Active Directory and returns the matching entries as an ARRAY.\nPlaceholder Parameter (FIXED order):\n- 1st: the LOGICAL COMBINING MODE - EXACTLY `AND` or `OR` (case-insensitive). NEVER a word describing the query (filter, query, where, suche, conditions, mode) and NEVER a condition; an EMPTY slot means AND. Anything else falls back to AND and silently returns the wrong matches.\n- 2nd: the CONDITIONS - one `attribute = value` pair per condition, ALL of them in this ONE parameter, separated by `|` (e.g. givenName = Salvatore | sn = Callari).\n- 3rd (optional): the LDAP request url - omit it when the installation has one configured (LDAP_URL / LDAP_URL_BACKEND); a url that the request names explicitly is always wired here.\nMODE BY MEANING (ANY language): all conditions must hold (and / und / sowohl als auch / beide Bedingungen / match both) -> AND; any one is enough (or / oder / entweder oder / mindestens eine / either) -> OR; several pairs without a connector -> AND.\nReported failure: `{ LDAP.Find > filter ; givenName = Salvatore | sn = Callari }` is WRONG (filter is not a mode); CORRECT is `{ LDAP.Find > AND ; givenName = Salvatore | sn = Callari }`.",
       "parameters": {
-        "1": "The mode to use for the filter.",
-        "2": "The LDAP conditions (like sn = Doe) separated by | (like sn = Doe | givenName = John).",
-        "3": "The optional URL to a Formcycle-LDAP-Query (which\u0027s content is (?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))) to use."
+        "1": "The logical combining MODE - exactly AND or OR (case-insensitive); never filter/query/where and never a condition; an empty slot means AND.",
+        "2": "The conditions as attribute = value pairs, ALL in this one parameter, separated by | (e.g. givenName = Salvatore | sn = Callari).",
+        "3": "Optional LDAP request url - omit it when the installation has one configured; a url that the request names explicitly is always wired here."
       },
       "classDescriptions": {}
     },
@@ -777,7 +804,7 @@
       "summary": "An OpenPLZ -Request specialized into searching for localities.",
       "tsdoc": "An {@link OpenPLZ }-Request specialized into searching for localities.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s name.\n- 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s postal code.\n- 4th: An Optional number of pages to load.",
       "parameters": {
-        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
+        "1": "The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).",
         "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s name.",
         "3": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s postal code.",
         "4": "An Optional number of pages to load."
@@ -790,8 +817,8 @@
       "summary": "An OpenPLZ -Request specialized into retrieving organizational units.",
       "tsdoc": "An {@link OpenPLZ }-Request specialized into retrieving organizational units.\nThis {@link OpenPLZ } does not search for units but rather returns all available ones.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The **orgaUnit** to retrieve (e.g. **FederalStates**, **FederalProvinces** or **Cantons**).\n- 3rd: The optional key of the state, province or canton to get details of. This {@link OpenPLZ } has the ability\nto lookup **FederalStates**, **FederalProvinces** \u0026 **Cantons** by name, if the key provided is\nnot a number but a name. If this parameter is set the 4th must be provided also.\n- 4th: The optional detail to fetch about a certain state, province or canton identified by the\n**officialKey** (not optional if an official key is present). May be Municipalities or Districts.\n- 5th: An Optional number of pages to load.",
       "parameters": {
-        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
-        "2": "The orgaUnit to retrieve (e.g.",
+        "1": "The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).",
+        "2": "The ORGANISATIONAL UNIT to retrieve - Cantons, FederalStates or FederalProvinces (capitalized English; the whole Cantons list of a country is not a search).",
         "3": "The optional key of the state, province or canton to get details of.",
         "4": "The optional detail to fetch about a certain state, province or canton identified by the.",
         "5": "An Optional number of pages to load."
@@ -804,7 +831,7 @@
       "summary": "An OpenPLZ -Request specialized into searching for streets.",
       "tsdoc": "An {@link OpenPLZ }-Request specialized into searching for streets.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name.\n- 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code. If this is empty the\n**4th** parameter will be used for the search as the street\u0027s city-name.\n- 4th: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the **3rd**\nparameter is empty.\n- 5th: An Optional number of pages to load.",
       "parameters": {
-        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
+        "1": "The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).",
         "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name.",
         "3": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code.",
         "4": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the 3rd.",
@@ -818,7 +845,7 @@
       "summary": "An OpenPLZ -Request performing a full text-search.",
       "tsdoc": "An {@link OpenPLZ }-Request performing a full text-search.\nConfig Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g. 91522 NÃƒÂ¼rnbergerstrasse ).\n- 3rd: An Optional number of pages to load.",
       "parameters": {
-        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
+        "1": "The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).",
         "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g.",
         "3": "An Optional number of pages to load."
       },
@@ -830,8 +857,8 @@
       "summary": "Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.",
       "tsdoc": "Retrieves data from the **CodBi_OpenPLZ_Verwaltungseinheiten**-Servlet according to the parameter specified.\nThis is the base class for accessing the **[OpenPLZ REST API](https://www.openplzapi.org/de/)**, thus making all\nfeatures that the REST-Service provides accessible.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The **orgaUnit** to retrieve (e.g. **FederalStates**, **FederalProvinces** or **Cantons**).\n- 3rd: The optional key of the state, province or canton to get details of.\n- 4th: The optional detail to fetch about a certain state, province or canton identified by the\n**officialKey** (not optional if an official key is present). May be Municipalities or Districts.\n- 5th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 6th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 7th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 8th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 9th: An Optional number of pages to load.",
       "parameters": {
-        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
-        "2": "The orgaUnit to retrieve (e.g.",
+        "1": "The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).",
+        "2": "The ORGANISATIONAL UNIT to retrieve - Cantons, FederalStates or FederalProvinces (capitalized English; the whole Cantons list of a country is not a search).",
         "3": "The optional key of the state, province or canton to get details of.",
         "4": "The optional detail to fetch about a certain state, province or canton identified by the.",
         "5": "There may be up to four parameter passed along the request (e.g.",
@@ -861,6 +888,16 @@
       "parameters": {
         "1": "The Array to filter.",
         "2": "The optional name of a property to use to filter out elements of the given Array ."
+      },
+      "classDescriptions": {}
+    },
+    "URLParameter": {
+      "id": "URLParameter",
+      "type": "ep",
+      "summary": "Reads the VALUE of one URL query-string parameter of the page the form runs in (the ?name=value part of the address bar) as a STRING; empty when the parameter is absent.",
+      "tsdoc": "Acquires the value of the URL query-string parameter whose NAME is given in the first parameter (window.location.search via URLSearchParams).\nPlaceholder Parameter:\n- 1st: the NAME of the URL parameter to read - the raw name as written in the URL, unquoted and case-sensitive.\nReturns the value as a STRING, or an EMPTY string when the URL does not contain that parameter (it never throws).\nUSE for anything taken FROM the URL the visitor opened (tracking/lead id, campaign code, preselected value, token) - it is NOT Net.URL (which fetches a remote URL content) and NOT the SV functionality (which copies a URL parameter into a global variable).\nNever turn the parameter name into an EP id: { FRID > } and { URLParameter.FRID } are INVALID; CORRECT is { URLParameter > FRID }.",
+      "parameters": {
+        "1": "The name of the URL parameter to read - the raw name as written in the URL, unquoted, case-sensitive."
       },
       "classDescriptions": {}
     },
@@ -1103,6 +1140,7 @@
     "print.remove": "Print.Remove",
     "security.captcha.google": "Security.Captcha.Google",
     "sys.log.console": "Sys.Log.Console",
+    "sv": "SV",
     "time.frame": "Time.Frame",
     "ai.llama.std.qa": "AI.LLAMA.STD.QA",
     "bayvis.ansprechpartner.details": "BayVIS.Ansprechpartner.Details",

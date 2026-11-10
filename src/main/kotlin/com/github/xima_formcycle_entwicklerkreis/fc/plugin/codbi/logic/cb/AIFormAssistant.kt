@@ -125,6 +125,11 @@ class AIFormAssistant : IPluginServletAction {
     AI.ldapUrl = configData.properties.getProperty("LDAP_URL")?.trim()?.takeIf { it.isNotBlank() }
     AI.ldapUrlBackend =
         configData.properties.getProperty("LDAP_URL_BACKEND")?.trim()?.takeIf { it.isNotBlank() }
+    // Local Whisper speech-to-text availability — the assistant must know whether the on-premise
+    // Whisper module is enabled before it can offer it as an alternative to the Web Speech API (the
+    // check mirrors the one in the `Whisper` class: `Active_AI` must contain `whisper`).
+    AI.whisperEnabled =
+        (configData.properties.getProperty("Active_AI")?.lowercase() ?: "").contains("whisper")
   }
 
   /** Resolves the login name of the authenticated user, or `null` when it cannot be determined. */

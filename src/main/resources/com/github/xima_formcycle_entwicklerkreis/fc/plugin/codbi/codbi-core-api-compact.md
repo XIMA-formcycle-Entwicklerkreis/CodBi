@@ -148,11 +148,12 @@ when CodBi searches within the shared parent container.
   - AutoLoad: The optional boolean stating whether the Google translation-script shall be loaded.
   - Inline: The optional boolean stating whether the widget shall be shown inline within the tagged.
   - Lang: The optional string containing the ISO-639 language-code to use as the initial language of.
-- HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
-  - CSS: The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.
-  - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the.
-  - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
-  - Replacements: An Array < string > of two elements each that are separated by a "|".
+- HTML.CSS: Injects a stylesheet with the given CSS into the document head or into a Destination region (with optional placeholder replacements). USE for CSS rules/properties (colours, opacity, scaling, header styling). Put the ACTUAL rules in data-cb-css - not a description and not only a <style> block in rtevalue.
+  - CSS: The CSS rules to inject (when used in a CodBi standard configuration) or the result of an Element-Placeholder retrieval (when used in plain attributes), e.g. "h1 { color: red; }".
+  - CARRIER XSPAN: when a NEW element is generated ONLY to carry the rules, use an `XSpan` with `"ishidden":"1"` in its `properties` (Formcycle Hidden/Ausblenden checkbox CHECKED), `data-cb-func="HTML.CSS"` + `data-cb-css` = the ACTUAL rules, and a descriptive `rtevalue` naming the CSS purpose and target (e.g. "Wendet CSS an: Überschriften rot (h1 { color: red; })."). NEVER put only a `<style>` block into `rtevalue`, NEVER leave it empty or generic ("HTML.CSS"), and NEVER use `invisible` or a CSS class for the hiding.
+  - Darkmode: The dark-mode replacements that replace all placeholders ending with "_DM" in the provided CSS.
+  - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline' / '.hdrMainHeader'). Dot-prefixed class selector based on the target element's name; do NOT use an ID selector. Omit it to inject into the document head (whole form).
+  - Replacements: An array of two-element strings separated by "|": the first part is the placeholder found in the CSS, the second the string it is replaced with.
 - HTML.Input.Blacklist: The Functionality defines a blacklist of values that may not be the value of an HTMLInputElement.
   - MESSAGE WIRING: there is NO free-text message parameter — the field error is composed as Prefix + List + Postfix, and the List appears ONLY when ShowBlacklist=true (values joined by Separator, default ", "). When the user dictates a message that contains a placeholder for the forbidden values (e.g. "Die folgenden Tage sind nicht verfügbar XXX." / "The following days are not available: XXX"), set ShowBlacklist=true, Prefix to the text BEFORE the placeholder ("Die folgenden Tage sind nicht verfügbar ") and Postfix to the text AFTER it (".") — the placeholder position IS the list. Never keep the placeholder (XXX, ..., $LIST) as literal text and never invent a Message attribute (the functionality has no such parameter); omit Prefix/Postfix only when the user wants no surrounding text.
   - List: Contains a string - CSV of forbidden values.
@@ -229,7 +230,7 @@ when CodBi searches within the shared parent container.
   - DividerTarget: The VALUE of the option to select when the divider is picked - "wenn der Trenner ausgewählt wird, soll X ausgewählt sein" => DividerTarget = X. Without it, picking the divider restores the previous selection.
   - InitialElement: The VALUE of the option selected when the form loads - "X soll anfangs ausgewählt sein" => InitialElement = X. Omit it to keep the select's own default; never force it to the first option.
 - HTML.Select.Injection: Populates the tagged XSelect with one option per entry of the ELEMENT PLACEHOLDER (EP) given in Values - the EP is a VALUE, NEVER the functionality (data-cb-func always stays "HTML.Select.Injection"), and the Formcycle `options` array stays EMPTY []. The parameter is Values (data-cb-Values): data-cb-replacements, data-cb-property and data-cb-Data are NOT read by this functionality (they belong to HTML.Text.Mapper / Sys.Log.Console), so an EP placed there yields an EMPTY select.
-  - Values: REQUIRED - the entries, i.e. an EP returning the list: `{ OpenPLZ.Localities > de ; ^An }`, `{ BayVIS.Behoerden > bezeichnung }` (all BayVIS authorities), `{ OpenPLZ > ch ; Cantons }`.
+  - Values: REQUIRED - the entries, i.e. an EP returning the list: `{ OpenPLZ.Localities > de ; ^An }`, `{ BayVIS.Behoerden > bezeichnung }` (all BayVIS authorities), `{ OpenPLZ.OrganizationalUnits > ch ; Cantons }`.
   - ReClean: "TRUE" to clear the existing options of the select before populating - use it for a lookup-fed list.
   - ValueProperty: For EPs returning OBJECTS: the property used as the option VALUE (e.g. "name").
   - TextProperty: For EPs returning OBJECTS: the property used as the visible option TEXT (falls back to ValueProperty). Set it together with ValueProperty, otherwise the FIRST string property is used - OpenPLZ.Localities would then show the postalCode instead of the city name.
@@ -255,10 +256,10 @@ when CodBi searches within the shared parent container.
 - LDAP.Autocomplete.Set: Fills SEVERAL fields of one group from a SINGLE selected LDAP match. Apply it to the CONTAINER (XContainer / XContainerInvisible / XFieldSet) and tag the member inputs with the CodBi_LDAP_AC_* classes (Mail, FirstName, LastName, Title, Department, Telephone, Account, CommonName, DisplayName) — or give them data-cb-ldapProperty="<ldap attribute>".
   - Property: the LDAP attribute the TYPED value is matched against (e.g. "mail", "cn") — the key of the directory match.
   - CSSProposals: optional CSS style of the proposals select.
-  - URL: OPTIONAL (Formcycle does NOT let a form element bind an LDAP source, so there is nothing to list or pick) - the LDAP request url — DECIDED BY THE INSTALLATION (read the "LDAP CONFIGURATION" block): when it states that a url is configured, OMIT data-cb-URL (the configured url is used) and never ask for it; when it states that NO url is configured, data-cb-URL is REQUIRED and its value belongs to the user — use the url the user supplied, never an invented one.
+  - URL: OPTIONAL (Formcycle does NOT let a form element bind an LDAP source, so there is nothing to list or pick) - the LDAP request url — DECIDED BY THE INSTALLATION (read the "LDAP CONFIGURATION" block): a url the request NAMES explicitly is ALWAYS written into data-cb-URL (the request wins); when it states that a url is configured AND the request names no url, OMIT data-cb-URL (the configured url is used) and never ask for it; when it states that NO url is configured, data-cb-URL is REQUIRED and its value belongs to the user — use the url the user supplied, never an invented one.
 - LDAP.Autocomplete: Completes ONE XTextField (input type="text") from the LDAP and accepts only values present there — this is the wiring for ANY input field holding an LDAP attribute, ALSO when the request never says "autocomplete" (example: "Füge ein Eingabefeld für die E-Mail-Adresse von Mitarbeitern aus dem LDAP ein" → XTextField + data-cb-func="LDAP.Autocomplete" + data-cb-property="mail").
   - Property: the LDAP-Property that shall be autocompleted — the NAME OF THE LDAP ATTRIBUTE ("mail" for an e-mail address, "telephoneNumber", "sAMAccountName", "cn", "sn", "givenName"), never a form field name.
-  - URL: OPTIONAL (Formcycle does NOT let a form element bind an LDAP source, so there is nothing to list or pick) - the LDAP request url — DECIDED BY THE INSTALLATION (read the "LDAP CONFIGURATION" block): when a url is configured, OMIT data-cb-URL (the configured url is used) and never ask for it; when NO url is configured, data-cb-URL is REQUIRED and its value belongs to the user — use the url the user supplied (the clarify round asks for it), never an invented one.
+  - URL: OPTIONAL (Formcycle does NOT let a form element bind an LDAP source, so there is nothing to list or pick) - the LDAP request url — DECIDED BY THE INSTALLATION (read the "LDAP CONFIGURATION" block): a url the request NAMES explicitly is ALWAYS written into data-cb-URL (the request wins); when a url is configured AND the request names no url, OMIT data-cb-URL (the configured url is used) and never ask for it; when NO url is configured, data-cb-URL is REQUIRED and its value belongs to the user — use the url the user supplied (the clarify round asks for it), never an invented one.
   - CSSProposals: optional CSS style of the proposals select.
   - MsgNotInLDAP: optional message shown when the entered value is not found in the LDAP.
 - Matomo.Tracking: Applicable on any form to add Matomo/Piwik analytics event tracking.
@@ -287,12 +288,15 @@ when CodBi searches within the shared parent container.
   - Maximum: The number of files that may be uploaded (data-cb-Maximum). Omit it → the functionality's default of 2.
   - PostfixTooMany: The message that is displayed after the Maximum if too many files were selected (data-cb-PostfixTooMany).
   - PrefixTooMany: The message that is displayed before the Maximum if too many files were selected (data-cb-PrefixTooMany).
-- OnChange.Conditional: This functionality applies a certain functionality onto the object toProcess depending on whether.
-  - Candidate: The Element where to get the value to be compared or a CSS-Selector.
-  - DateFormat: A optional string specifying the format the candidate is of.
-  - Mode: Defines the mode of comparison to apply onto the HTMLInputElement 's value and the "reference" value.
-  - Reference: The value the HTMLInputElement 's value shall be compared with.
-  - Target: The Element where to apply one of the specified functionalities depending on whether the.
+- OnChange.Conditional: Applies a functionality (or changes attributes) on a TARGET element while a comparison between a field value and a reference holds, re-evaluating on every `change` of the tagged field. USE IT — never Formcycle `hiddenif*` — when an element must appear/disappear or change a property based on an ORDERING comparison (>, >=, <, <=) of a DATE/TIME/NUMBER value ("after/before <date>", "older/younger than", "more/less than <number>", "from … on", "up to …", "updates immediately while typing", ANY language). The tagged element IS the watched field (the trigger). Apply `data-cb-func="OnChange.Conditional"` plus:
+  - Mode: "GT" (after/later/greater), "GTEQ" (on/after/at least), "LT" (before/earlier/less), "LTEQ" (on/before/at most), "EQ" (exactly), "NEQ" (not equal). The enum is GTEQ/LTEQ — "GTE"/"LTE" are INVALID.
+  - Reference: the threshold; it MUST be a JavaScript DATE, never a plain string — write the EP `{ Date.FromString > 01.06.2026 ; DD.MM.YYYY }` (or `{ Date.Today }`). A literal "01.06.2026" has no getTime() and breaks the comparison.
+  - Candidate: dot-prefixed CLASS selector of the watched field (e.g. ".tfKursbeginn" — its own name when the tagged field is the watched one). Never an #id selector.
+  - Target: dot-prefixed CLASS selector of the element to change (e.g. ".coSpaetbucherHinweis"), resolved inside the tagged field's container — candidate and target MUST share the container/fieldset.
+  - DateFormat: the format of the CANDIDATE's value (datatype "dateDE" → "DD.MM.YYYY", native date → "YYYY-MM-DD"); omit for non-date values.
+  - TRUE/FALSE branches are attributes ON THE SAME TAGGED FIELD: `data-cb-_T_<param>` applied when the comparison holds and `data-cb-_F_<param>` when it does not (the `_T_`/`_F_` marker is stripped and the rest becomes a normal `data-cb-<param>` on the target). To toggle visibility use `HTML.SETAttribute`: `data-cb-_T_func="HTML.SETAttribute"`, `data-cb-_T_name="style"`, `data-cb-_T_toset="display:block"`; `data-cb-_F_func="HTML.SETAttribute"`, `data-cb-_F_name="style"`, `data-cb-_F_toset="display:none"`.
+  - INITIAL STATE: the functionality runs only on `change`; hide the target at load with its OWN `data-cb-func="HTML.SETAttribute"` + `data-cb-name="style"` + `data-cb-toset="display:none"` (never `ishidden`, which is permanent).
+  - WORKED EXAMPLE: "required date field tfKursbeginn (dateDE) + hint container coSpaetbucherHinweis; hint hidden at start, shown when the date is AFTER 01.06.2026". On tfKursbeginn: data-cb-func="OnChange.Conditional", data-cb-Mode="GT", data-cb-Reference="{ Date.FromString > 01.06.2026 ; DD.MM.YYYY }", data-cb-Candidate=".tfKursbeginn", data-cb-Target=".coSpaetbucherHinweis", data-cb-DateFormat="DD.MM.YYYY", plus the four `_T_`/`_F_` HTML.SETAttribute pairs above. On coSpaetbucherHinweis: data-cb-func="HTML.SETAttribute", data-cb-name="style", data-cb-toset="display:none"; both elements are children of the same XFieldSet/container.
 - OpenPLZ.Autocomplete: Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
   - AllowedValues: Configures 'AllowedValues' for this functionality.
   - AllowEmpty: If set to 'true', an empty input value won't trigger an error message.
@@ -304,10 +308,11 @@ when CodBi searches within the shared parent container.
   - FocusOnAutocomplete: CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., '.tfStreet'). On the STREET field: set to the building number field if one exists (e.g., '.tfBuildingNumber'). Do NOT use an ID selector.
   - MsgNotKnown: Message to show when the entered value is not found in the OpenPLZ database.
   - TargetData: Defines what type of data is being autocompleted: 'Localities' (city/town), 'PostalCodes' (ZIP/PLZ), or 'Streets'. Pick the one that matches the tagged field's purpose.
-- Print.Remove: Applicable on any element that should be invisible when the form is printed.
-  - DocumentSelector: CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
-  - Invert: Specifies whether this functionality shall be inverted, e.g.
-  - ParentalLevel: The number of elements to climb up the HTMLElement.parentElement -Tree to get to.
+- Print.Remove: Hides an element when the form is rendered for printing and leaves it visible in the interactive form. The target is the element matched by DocumentSelector, otherwise the ancestor reached via ParentalLevel, otherwise the tagged element. With Invert the behaviour is reversed (hidden in the form, shown when printed). It only sets style.display="none" - the element is NOT removed from the DOM, so its value stays available and repeatable containers keep their structure. There is no date/min/max comparison and no MaxField parameter.
+  - PREFER THE STANDARD CLASSES: `CodBi_Print_Remove_PrintOnly` = PRINT-ONLY (hidden in the interactive form, shown when printed); `CodBi_Print_Remove_Tagged` = hidden in print (the element itself); `CodBi_Print_Remove_Parent` = hidden in print (its parent container/section). Interactive controls are hidden in print by default (Tagged), NOT PrintOnly. NEVER implement per-element print visibility with HTML.CSS/@media print/display:none helper classes.
+  - DocumentSelector: CSS selector of the element to hide when printing (e.g., '.divPrintSection'). Takes precedence over ParentalLevel. Use a dot-prefixed class selector based on the target element's name; do NOT use an ID selector.
+  - Invert: Invert the behaviour: hide the element in the interactive form and show it when printed (print-only content). When set and ParentalLevel is unset, ParentalLevel defaults to "1".
+  - ParentalLevel: Number of parentElement steps to climb from the tagged element to the element to hide when printing.
 - Security.Captcha.Google: This functionality needs a site key that can be obtained at https://developers.google.com/recaptcha and.
   - DataCallback: The optional global callback method for when the captcha provides a result.
   - DataCallbackCode: Optional code to be executed when the captcha provides a result.
@@ -315,6 +320,11 @@ when CodBi searches within the shared parent container.
   - SiteKey: The sitekey received from https://developers.google.com/recaptcha.
 - Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console.
   - Parameters: none.
+- SV: Copies the values of URL QUERY parameters into CodBi global variables at form load (the i-th Source fills the i-th Destination). USE WHEN a URL parameter must be linked into a global variable so the form/workflow can use it ("URL-Parameter X als globale Variable", "link URL parameter X as a global variable", "read the query parameter into a global variable", "Formularvariable aus URL-Parameter"). Apply on an XContainer/XContainerInvisible/XFieldSet (create ONE invisible container `coUrlParams` when none exists). The destination(s) MUST also be declared in the form's TOP-LEVEL "variables" array (`{"name":"<NAME>","aliasname":"<NAME>","serveronly":false,"value":""}`) — Formcycle only forwards declared variables, so an undeclared destination is logged as an error and never reaches the workflow. Distinguish from the V EP, which only READS a variable.
+  - Destinations: The name(s) of the global variable(s) to set — CSV, paired by index with Sources (equal count).
+  - Sources: The name(s) of the URL query parameter(s) to read — CSV, paired by index with Destinations; names are case-sensitive; a missing parameter yields "".
+  - Documentation: ALWAYS add ONE plain `XSpan` child inside the SV container whose `rtevalue` states the mapping in the form's language. SINGULAR: `<p>Dieses Element übernimmt den URL-Parameter <strong>Hoho</strong> in die globale Variable <strong>Alpha</strong>.</p>` / "This element copies URL parameter Hoho into global variable Alpha." SEVERAL pairs: ONE combined, natural sentence - `<p>Dieses Element übernimmt die URL-Parameter <strong>Hoho</strong> und <strong>Jojo</strong> in die globalen Variablen <strong>Alpha</strong> und <strong>Beta</strong>.</p>` / "This element copies the URL parameters Hoho and Jojo into the global variables Alpha and Beta."; for three or more use a comma list with "und"/"and" before the last - NOT one separate sentence per pair. The XSpan's `properties` MUST contain `"ishidden":"1"` - the Formcycle Hidden/Ausblenden checkbox CHECKED; never rely on the surrounding invisible container and never use `invisible` or a CSS class. The note is author-facing only and must not be omitted.
+  - WORKED EXAMPLE — "Verlinke den URL-Parameter Hoho als globale Variable.": variables += {"name":"Hoho","aliasname":"Hoho","serveronly":false,"value":""}; create XContainerInvisible `coUrlParams` on the first page with attributes data-cb-func="SV", data-cb-Destinations="Hoho", data-cb-Sources="Hoho", and a child `XSpan` `spUrlParamNote` (`"ishidden":"1"`, `"rtevalue":"<p>Dieses Element übernimmt den URL-Parameter <strong>Hoho</strong> in die globale Variable <strong>Hoho</strong>.</p>"`) in `coUrlParams`'s elements.
 - Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element. FALLBACK ONLY: the CSS-class pair CodBi_TimeFrame_<N>_Begin + CodBi_TimeFrame_<N>_End already applies this functionality — with a free pair, apply the pair and NOTHING else (no data-cb-func, no data-cb-maxfield); use this functionality only when EVERY frame pair is already taken.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
   - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
@@ -325,15 +335,16 @@ when CodBi searches within the shared parent container.
 
 - RULE: an EP is a VALUE, never an element and never the functionality - write the EP expression inside the parameter the consuming element documents (HTML.Select.Injection: Values; HTML.Text.Mapper: Replacements; Sys.Log.Console: Data; otherwise the field value) - a parameter name of a DIFFERENT functionality is silently ignored; the functionality parameter keeps the FUNCTIONALITY id (e.g. HTML.Select.Injection + Values = { BayVIS.Behoerden > bezeichnung }).
 
-- AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
+- AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question. It answers FREE questions and needs NO uploaded document (analyzing an uploaded file is the AI.LLAMA.STANDARD.QA functionality).
   - Param[1]: The question to ask the AI.
   - Param[2]: UseInternet — `"true"` to enable Brave Search internet access. Default: `"false"`.
   - Param[3]: Location — `"true"` to enable geolocation access. Default: `"false"`.
   - Param[4]: Language — Language for the AI response (e.g. `"German"`, `"English"`). Appends `"Answer in {language}."` to the question.
   - Param[5]: ResponseLanguage — Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to respond in this language, skipping auto-detection.
-  - Param[6]: Specialist — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`.
+  - Param[6]: Specialist — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`. Use ONLY a name from the CONFIGURED AI SPECIALISTS block; `data-cb-Specialist` is the attribute of an AI functionality and is NEVER used for this EP.
   - Param[7]: FilterResults — `"true"` to enable PII filtering on Brave Search queries.
   - Param[8]: JsonParse — `"true"` to parse the AI response as JSON.
+  - Example: `{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }` — keep every unused slot with `;`. With a named specialist: `{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true ; ; ; ; Cerebras }` (question; UseInternet; Location; Language; ResponseLanguage; Specialist), e.g. as Sys.Log.Console data-cb-Data to log the answer to the browser console.
 - BayVIS.Ansprechpartner.Details: Retrieves ONE contact's complete record as a single OBJECT - the source for HTML.Text.Mapper.
   - Param[1]: The numeric contact ID, or a chain returning IDs: { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } (the ID EP returns an ARRAY, so I > 0 picks the first match).
   - Param[2]: OPTIONAL - a single property name (e.g. "email"); OMIT it to receive the WHOLE record object. Its properties are vorname, nachname, email, zimmer, apEmail, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, ... - put this object into HTML.Text.Mapper's data-cb-replacements and name the [(property)] placeholders after THESE names (a single phone is not a property - compose it from the apTelefon* parts).
@@ -341,80 +352,117 @@ when CodBi searches within the shared parent container.
   - Param[1]: The first and last name separated by a space (order- and case-insensitive), e.g. "Salvatore Callari".
 - BayVIS.Ansprechpartner: Retrieves the BayVIS CONTACT directory, or one property of it.
   - Param[1]: A property of the directory, e.g. "bezeichnung".
-- BayVIS.Behoerden.Details.Gebaeude: This Element-Placeholder retrieves the details of an authority's building specified by the provided ID from the.
-  - Param[1]: The ID of the authority to retrieve.
-  - Param[2]: The building's ID.
-  - Param[3]: A property of the directory, like e.g.
-- BayVIS.Behoerden.Details: This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
-  - Param[1]: The ID of the authority to retrieve.
-  - Param[2]: An optional property of the directory, like e.g.
-- BayVIS.Behoerden.Gebaeude.ID: This Element-Placeholder retrieves the IDs of authoritie's buildings by the.
-  - Param[1]: The ID of the authority to retrieve.
-- BayVIS.Behoerden.ID: This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
-  - Param[1]: The Name of the authority to retrieve.
-- BayVIS.Behoerden: This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.
-  - Param[1]: An property of the directory, for example "bezeichnung".
+- BayVIS.Behoerden.Details.Gebaeude: Retrieves ONE building of an authority (the only EP with postal addresses) - the source for HTML.Text.Mapper address templates. It takes TWO id parameters that are NOT interchangeable: 1st = AUTHORITY id, 2nd = BUILDING id; a call with ONE parameter, or with a building id in the authority slot, is INVALID. Both slots are resolved from the SAME authority designation, each with its OWN `{ I > 0 ; ... }` wrapper.
+  - Param[1]: The NUMERIC authority id: `{ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }`.
+  - Param[2]: The NUMERIC building id: `{ I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } } }`.
+  - Param[3]: OPTIONAL - a property (bezeichnung, hausanschriftPLZ, hausanschriftOrt, hausanschriftStrasse, postanschriftPLZ, postanschriftOrt, postanschriftStrasse, logo); omit it to receive the whole building object.
+  - Example (authority "Amt 44" - the designation, digits included): `{ BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } } } }`.
+  - WRONG (reported failure): `{ BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > 44 } } }` - one parameter only, a BUILDING id in the AUTHORITY slot, and "44" cut out of the designation.
+- BayVIS.Behoerden.Details: Retrieves the METADATA of ONE authority (no phone, no postal address). ORDER IS FIXED: the authority ID is ALWAYS slot 1, the property ALWAYS slot 2 — never swap them because the request happens to name the property first.
+  - Param[1]: The NUMERIC authority id (never a designation): `{ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }`.
+  - Param[2]: OPTIONAL - a property (bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen).
+  - Example: `{ BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email }` ("die Mail-Adresse des Amt für Digitales").
+  - WRONG (reported failure): `{ BayVIS.Behoerden.Details > email ; { BayVIS.Behoerden.ID > Amt für Digitales } }` — swapped slots: the property sits in the numeric-id slot, so the call returns nothing.
+- BayVIS.Behoerden.Gebaeude.ID: Retrieves the BUILDING ids of ONE authority from its NUMERIC AUTHORITY id as an ARRAY - it never accepts a designation and yields no authority id; use it ONLY for the 2nd parameter of BayVIS.Behoerden.Details.Gebaeude.
+  - Param[1]: The NUMERIC authority id (from BayVIS.Behoerden.ID): `{ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }`.
+  - Example: `{ I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } } }`.
+- BayVIS.Behoerden.ID: Resolves the NUMERIC authority ids of a designation ("bezeichnung", case insensitive) as an ARRAY.
+  - Param[1]: The authority DESIGNATION exactly as written, digits included ("Amt 44", "Amt für Digitales", ANY language) - a designation is NEVER an id and its digits are never an id.
+  - Example: `{ I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } }`.
+- BayVIS.Behoerden: Retrieves ONE COLUMN of the WHOLE BayVIS authority directory (or the whole directory) as an ARRAY. It returns that column for EVERY authority and can NEVER select ONE named authority — a single named authority's field is BayVIS.Behoerden.Details with a property parameter.
+  - Param[1]: A property of the directory, e.g. "bezeichnung", "email", "id", "behoerdenart", "behoerdengruppe", "sortierreihenfolge".
+  - Use it ONLY for a LIST/selection of all authorities (e.g. HTML.Select.Injection Values = `{ BayVIS.Behoerden > bezeichnung }`).
+  - WRONG (reported failure): `{ BayVIS.Behoerden > email }` for "die Mail-Adresse des Amt für Digitales" — returns the e-mail of EVERY authority and ignores the named one.
+  - CORRECT: `{ BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email }`.
 - Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
   - Param[1]: The CSV-String to convert.
 - Data.Join: Joins the properties of multiple object s into one.
   - Param[1]: The first object to join.
   - Param[2]: The second object to join (optional).
   - Param[3]: The third object to join (optional).
-- Date.Arithmetic: This Element-Placeholder turns a String into a Date .
-  - Param[1]: The String to turn to a Date.
-  - Param[2]: The optional format of the "dateString" (e.g.
-  - Param[3]: The operations to perform on the Date specified.
-- Date.FromString: This Element-Placeholder turns a String into a Date .
-  - Param[1]: The String to turn to a Date.
-  - Param[2]: An optional dateformat string like YYYY/MM/DD, for example.
-- Date.Holidays: The requested years.
-  - Parameters: none.
-- Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
-  - Param[1]: "NOW" to retrieve the current date, or an arithmetic operation like "+1d" (add days), "-1m" (subtract months), "+1y" (add years).
-  - Param[2]: Additional arithmetic operation (optional), e.g.
-- Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
-  - Parameters: none.
-- DOM.Query: This Element-Placeholder queries an Element .
-  - Parameters: none.
-- F: Finds the objects within an Array that have a specific property with a specific value.
-  - Param[1]: The name of the property to look for.
-  - Param[2]: The value the property to look for has to have.
-  - Param[3]: The Array of objects to scan.
-- I: This Element-Placeholder acquires a specific element.
-  - Parameters: none.
-- JSON.Path: This Element-Placeholder retrieves an Object at a specific path out of the one given in the.
-  - Param[1]: The Object to retrieve the requested one from.
-  - Param[2]: The dotted path leading to the requested one.
-- LDAP.Find: This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified.
-  - Param[1]: The mode to use for the filter.
-  - Param[2]: The LDAP conditions (like sn = Doe) separated by | (like sn = Doe | givenName = John).
-  - Param[3]: The optional URL to a Formcycle-LDAP-Query (which's content is (?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))) to use.
+- Date.Arithmetic: Parses a date STRING and SHIFTS it by days/months/years in one step; returns a DATE OBJECT (never a string).
+  - Param[1]: The date STRING to parse.
+  - Param[2]: EITHER the input FORMAT (e.g. `DD/MM/YYYY`) OR the FIRST arithmetic operation - a value containing `+` or `-` is treated as arithmetic, the format is then skipped (default format applies).
+  - Param[3]+: Further arithmetic operations, one per `;` slot: `<+|-><n><d|m|y>` (`+1d`, `-2m`, `+10y`).
+  - Example: `{ Date.Arithmetic > 01.12.2026 ; +3d }`; with a custom format `{ Date.Arithmetic > 01/12/2026 ; DD/MM/YYYY ; +1m }`.
+  - RETURN TYPE: a DATE OBJECT - never feed it into a string-parameter EP (`Date.Weekends`, `Date.Holidays`); for today's date use `{ Date.Today > +3d }`.
+- Date.FromString: Turns a date STRING into a date (comparable/shiftable/formattable); returns an ARRAY holding ONE DATE OBJECT.
+  - Param[1]: The date STRING to parse (raw, unquoted).
+  - Param[2]: OPTIONAL input format (e.g. `DD/MM/YYYY`, `YYYY-MM-DD`); when omitted `DD.MM.YYYY` is assumed.
+  - Example: `{ Date.FromString > 01.12.1978 }`; `{ Date.FromString > 12/01/2026 ; DD/MM/YYYY }`.
+  - RETURN TYPE: `Array<Date|null>` - take the date with `{ I > 0 ; { Date.FromString > … } }`; never pass it into a string-parameter EP.
+- Date.Holidays: Retrieves the GERMAN public holidays of the requested BUNDESLÄNDER and/or years from API-Feiertage.de as an ARRAY of holiday names. It is the ONLY holiday EP: there is no state-specific EP, no `Feiertage` EP and no `Holiday.<State>` id — states and years are PARAMETERS.
+  - Parameters (any order, case-insensitive; ONE value per `;` slot): a German state abbreviation — bw (Baden-Württemberg), by (Bayern), be (Berlin), bb (Brandenburg), hb (Bremen), hh (Hamburg), he (Hessen), mv (Mecklenburg-Vorpommern), ni (Niedersachsen), nw (Nordrhein-Westfalen), rp (Rheinland-Pfalz), sl (Saarland), sn (Sachsen), st (Sachsen-Anhalt), sh (Schleswig-Holstein), th (Thüringen) — a year as `THIS_YEAR` (optionally `THIS_YEAR + N` / `THIS_YEAR - N`), `Friedensfest` (Augsburg) or `KATHOLISCH`.
+  - ONE PARAMETER PER STATE / PER YEAR: 'Feiertage von Bayern und Hessen dieses Jahr' → `{ Date.Holidays > by ; he ; THIS_YEAR }`; 'Feiertage dieses und nächstes Jahr' → `{ Date.Holidays > THIS_YEAR ; THIS_YEAR + 1 }`. A concrete year (e.g. 2026) is NOT accepted — only the `THIS_YEAR` tokens.
+  - There is NO property parameter (a call like `> list` does not exist) and no plain-string result: the EP returns an ARRAY, so render it with HTML.Select.Injection (Values), HTML.Text.Injector after Sorted/Unique, or JSON.Path.
+  - WRONG (reported failure): `{ Holiday.BavariaAndHesse > list }` — an invented EP id composed from the request's words plus a non-existent property.
+- Date.Today: Delivers TODAY as a DATE OBJECT (not a string), optionally shifted by days/months/years - an OBJECT that a property or a PARAMETERLESS METHOD can be read off with JSON.Path.
+  - Param[1]: "NOW" to retrieve the current date, or an arithmetic operation like "+1d" (add days), "-1m" (subtract months), "+1y" (add years). No parameter at all = today; an EMPTY slot (`{ Date.Today > }`) is invalid.
+  - Param[2]: Additional arithmetic operation (optional), e.g. "-1d ; +2m ; -10y" - one token per `;` slot.
+  - RETURN TYPE: a DATE OBJECT. Never feed it into a STRING-parameter EP (`Date.Weekends`, `Date.Holidays`) and never append a method name to the EP - a member of today's date is read with JSON.Path.
+  - Example: `{ Date.Today }` (today), `{ Date.Today > +1d }` (tomorrow), `{ JSON.Path > { Date.Today > NOW } ; getMonth() }` (the current month number).
+  - WRONG (reported failure): `data-cb-Data = getMonth()` for "getMonth() von dem heutigen Tag" - `getMonth()` is neither a value nor an EP; there is no object to call it on. CORRECT: `{ JSON.Path > { Date.Today > NOW } ; getMonth() }`.
+- Date.Weekends: Retrieves the WEEKEND dates (Saturday & Sunday) of a date range as an ARRAY of `dd.MM.yyyy` STRINGS.
+  - Param[1]: A `dd.MM.yyyy` STRING. With ONE parameter it is the END of the range (the range starts TODAY); with TWO parameters it is the START of the range.
+  - Param[2] (optional): the END of the range as a `dd.MM.yyyy` STRING (param 1 = START, param 2 = END; the START must be the EARLIER date — a reversed pair yields an EMPTY list).
+  - ARGUMENT TYPE: every parameter is a plain STRING in `dd.MM.yyyy` (validated by the EP's date regex). A DATE OBJECT is NOT accepted — never nest `{ Date.Today }`, `{ Date.FromString > … }` or `{ Date.Arithmetic > … }` into it.
+  - Example: `{ Date.Weekends > 01.12.2026 }` (weekends from today to 01.12.2026); `{ Date.Weekends > 01.12.2026 ; 31.12.2026 }` (December 2026).
+  - WRONG (reported failure): `{ Date.Weekends > { Date.Today > } ; { Date.FromString > 01.12.2026 ; dd.MM.yyyy } }` — two Date OBJECTS instead of `dd.MM.yyyy` strings, plus a `Date.Today` with an empty arithmetic parameter.
+- DOM.Query: Queries ONE rendered page element and returns it — the EP for acquiring DOM ELEMENTS.
+  - Param[1]: A CSS SELECTOR string (validated as a CSS selector): the element's `id` as `#xi-header-1`, its `name` as `.header1` (names are rendered as CSS classes), or any selector (`header`, `body`).
+  - Returns the `Element` itself (or `null` when nothing matches); use it directly (e.g. as Sys.Log.Console data-cb-Data) — never wrap the element in another EP id.
+  - NEVER a widget type as the EP id: `XHeader`, `XPage`, `XSpan`, `XContainer`, `XTextField`, `XSelect`, … are Formcycle `className` values, not EPs.
+  - Example: `{ DOM.Query > #xi-header-1 }`; WRONG (reported failure): `{ XHeader > header1 }`.
+- F: Narrows an ARRAY to the entries whose property has ONE EXACT value. ALWAYS returns an ARRAY (one element, or EMPTY when nothing matches) and must be the OUTERMOST EP of the value it fills.
+  - Param[1]: The property NAME to look for.
+  - Param[2]: The value to match — compared STRICTLY (`===`): case-sensitive and type-sensitive, so pass it exactly as the data holds it (a number stays a number, an exact casing stays exact).
+  - Param[3]: The ARRAY to scan (an EP returning an array, e.g. `{ OpenPLZ.Localities > de ; ^A }`).
+  - Order is fixed: property `;` value `;` array. For a single result chain the index EP: `{ I > 0 ; { F > … } }`.
+  - NEVER wrap F in `JSON.Path` / `Sorted` / `Unique` — sort/deduplicate INSIDE Param[3]: `{ F > postalCode ; 91522 ; { Sorted > { OpenPLZ.Localities > de ; ^A } ; name } }`.
+- I: Takes ONE entry out of an ARRAY by its 0-based position ("pick one of the list").
+  - Param[1]: The INDEX as an integer STRING (0-based: `0` = first entry, `1` = second; a number also works).
+  - Param[2]: The ARRAY-returning EP/nested expression, e.g. `{ BayVIS.Behoerden.ID > Amt für Digitales }` or `{ OpenPLZ.Localities > de ; ^A }`.
+  - Use it ONLY when the inner EP returns an ARRAY ("den ersten Treffer", "the first match"): `{ I > 0 ; <array EP> }`. A single-value EP (a Details EP, `V`, `JSON.Path`, `Date.Today`, `Date.Holidays > …`) needs NO `I`.
+  - TOLERANCE: index `0` on a NON-array returns that value unchanged; any OTHER index on a non-array THROWS ("The second parameter of I must be an array …").
+  - Example: `{ I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } }`.
+- JSON.Path: Retrieves a MEMBER (property or the result of a PARAMETERLESS METHOD) of an OBJECT along a dotted path - the EP for reading something OUT of an object that another EP produced.
+  - Param[1]: The OBJECT to read from (a literal object or an EP placeholder that resolves to one, e.g. `{ Date.Today > NOW }`).
+  - Param[2]: The dotted PATH inside that object. A plain segment reads a PROPERTY (`name`, `email`, `id`); a segment with ROUND BRACKETS and NO SPACE calls a PARAMETERLESS METHOD (`getMonth()`, `getFullYear()`, `toISOString()`, `toString()`); segments are separated by dots (`address.city`).
+  - A path interrupted by `undefined`/`null` throws a CodBiError - never guess a member name.
+  - Example: `{ JSON.Path > { Date.FromString > 01.12.1978 } ; toString() }`, `{ JSON.Path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }`.
+  - WRONG (reported failure): `data-cb-Data = getMonth()` - a bare method call is not a value and not an EP. CORRECT: `{ JSON.Path > { Date.Today > NOW } ; getMonth() }` (object first, path second; `getMonth()` is 0-based - 0 = January).
+- LDAP.Find: Searches the LDAP / Active Directory and returns the matching entries as an ARRAY.
+  - Param[1]: The LOGICAL COMBINING MODE - EXACTLY `AND` or `OR` (case-insensitive). NEVER a word describing the query (filter, query, where, suche, conditions, mode) and NEVER a condition; an empty slot means AND.
+  - Param[2]: The CONDITIONS - ONE `attribute = value` pair per condition, ALL of them in this ONE parameter, separated by `|` (e.g. givenName = Salvatore | sn = Callari).
+  - Param[3]: OPTIONAL LDAP request url - omit it when the installation has one configured (read the "LDAP CONFIGURATION" block); an explicit url named by the request is always wired here.
+  - MODE BY MEANING (ANY language): all conditions must hold ("and", "und", "sowohl ... als auch", "beide Bedingungen", "match both") -> AND; any one is enough ("or", "oder", "entweder ... oder", "mindestens eine", "either") -> OR; several pairs without a connector -> AND.
+  - WRONG (reported failure): `{ LDAP.Find > filter ; givenName = Salvatore | sn = Callari }` - "filter" is not a mode. CORRECT: `{ LDAP.Find > AND ; givenName = Salvatore | sn = Callari }`.
 - Net.URL: This Element-Placeholder retrieves the content of a URL.
   - Parameters: none.
 - OpenPLZ.Localities: An OpenPLZ -Request specialized into searching for localities.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[1]: The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).
   - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's name.
   - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's postal code.
   - Param[4]: An Optional number of pages to load.
 - OpenPLZ.OrganizationalUnits: An OpenPLZ -Request specialized into retrieving organizational units.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
-  - Param[2]: The orgaUnit to retrieve (e.g.
+  - Param[1]: The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).
+  - Param[2]: The ORGANISATIONAL UNIT to retrieve - Cantons, FederalStates or FederalProvinces (capitalized English; the whole Cantons list of a country is not a search).
   - Param[3]: The optional key of the state, province or canton to get details of.
   - Param[4]: The optional detail to fetch about a certain state, province or canton identified by the.
   - Param[5]: An Optional number of pages to load.
 - OpenPLZ.Streets: An OpenPLZ -Request specialized into searching for streets.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[1]: The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).
   - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's name.
   - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's postal code.
   - Param[4]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city's name used if the 3rd.
   - Param[5]: An Optional number of pages to load.
 - OpenPLZ.TextSearch: An OpenPLZ -Request performing a full text-search.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[1]: The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).
   - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g.
   - Param[3]: An Optional number of pages to load.
 - OpenPLZ: Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
-  - Param[2]: The orgaUnit to retrieve (e.g.
+  - Param[1]: The COUNTRY as its 2-letter CODE - de, at, ch, li or en (never a country name; an empty slot falls back to the installation OpenPLZ_Country).
+  - Param[2]: The ORGANISATIONAL UNIT to retrieve - Cantons, FederalStates or FederalProvinces (capitalized English; the whole Cantons list of a country is not a search).
   - Param[3]: The optional key of the state, province or canton to get details of.
   - Param[4]: The optional detail to fetch about a certain state, province or canton identified by the.
   - Param[5]: There may be up to four parameter passed along the request (e.g.
@@ -428,6 +476,9 @@ when CodBi searches within the shared parent container.
 - Unique: An Elementplaceholder filters the Array passed as the 1st parameter from duplicates.
   - Param[1]: The Array to filter.
   - Param[2]: The optional name of a property to use to filter out elements of the given Array .
+- URLParameter: Reads the VALUE of ONE URL query-string parameter of the page the form is running in (the "?name=value" part of the address bar) as a STRING; empty when the parameter is absent (it never throws).
+  - Param[1]: The NAME of the URL parameter to read - the raw name as written in the URL, unquoted, case-sensitive.
+  - USE for anything taken FROM the visitor's URL (tracking/lead id, campaign code, preselected value, token - ANY language): e.g. `{ URLParameter > FRID }`. NOT `Net.URL` (which FETCHES a remote URL's content) and NOT the `SV` functionality (which COPIES a URL parameter into a global variable) - for reading the value itself this EP is the only correct id.
 - V: This Element-Placeholder acquires a global variable's value.
   - Param[1]: The name of the global variable.
   - Param[2]: REPORT if a CodBiError shall be thrown when the global variable isn't.

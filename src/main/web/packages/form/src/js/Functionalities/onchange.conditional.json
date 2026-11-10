@@ -1,38 +1,38 @@
 {
   "Description": "/classes/Functionalities_onchange.conditional.OnChange_Conditional.html#functionality",
   "Summary": {
-    "en": "Applies a functionality to an element only while a comparison between two fields is satisfied.",
-    "de": "Wendet eine Funktionalität nur auf ein Element an, solange ein Vergleich zwischen zwei Feldern erfüllt ist.",
-    "it": "Applica una funzionalità a un elemento solo quando è soddisfatto un confronto tra due campi."
+    "en": "Applies a functionality (or attribute changes) to a target element while a comparison between a watched field's value and a date reference holds; re-evaluates on every change. Use it instead of hiddenif for ordering comparisons (after/before, older/younger, more/less than) on date/time/number values.",
+    "de": "Wendet eine Funktionalität (oder Attributänderungen) auf ein Zielelement an, solange ein Vergleich zwischen dem Wert eines beobachteten Felds und einer Datumsreferenz erfüllt ist; wird bei jeder Änderung neu ausgewertet. Statt hiddenif für Ordnungsvergleiche (nach/vor, älter/jünger, mehr/weniger als) bei Datums-/Zeit-/Zahlenwerten verwenden.",
+    "it": "Applica una funzionalità (o modifiche agli attributi) a un elemento di destinazione finché è soddisfatto un confronto tra il valore di un campo osservato e un riferimento data; viene rivalutato a ogni modifica. Usarlo al posto di hiddenif per confronti di ordine (dopo/prima, più vecchio/giovane, più/meno di) su valori di data/ora/numero."
   },
   "Parameter": {
-    "Reference": "The value the tagged input's value shall be compared with.",
-    "Mode": "Defines the mode of comparison to apply onto the tagged input's value and the reference value. Available modes are GTE (greater than or equal), GT (greater than), LTE (lower than or equal), LT (lower than), EQ (equal) & NEQ (not equal).",
-    "Target": "The element where to apply one of the specified functionalities depending on whether the given condition is fulfilled or not, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory.",
-    "DateFormat": "An optional string specifying the format the candidate is of. If not undefined it triggers the transformation of the tagged field's value into a Date prior to comparing it with the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the Date constructor.",
-    "Candidate": "The element where to get the value to be compared, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory."
+    "Reference": "The threshold the watched value is compared with. It MUST resolve to a JavaScript Date, never a plain string: write the Date.FromString element placeholder, e.g. { Date.FromString > 01.06.2026 ; DD.MM.YYYY } (or { Date.Today }). A literal 01.06.2026 has no getTime() and breaks the comparison.",
+    "Mode": "GT (after/later/greater), GTEQ (on/after/at least), LT (before/earlier/less), LTEQ (on/before/at most), EQ (exactly) or NEQ (not equal). The enum values are GTEQ/LTEQ - GTE/LTE are invalid.",
+    "Target": "The element whose attributes are changed - a dot-prefixed CLASS selector (e.g. .coSpaetbucherHinweis). Candidate and target MUST share the same container/fieldset; never use an #id selector.",
+    "DateFormat": "The format of the CANDIDATE's value (datatype dateDE -> DD.MM.YYYY, native date -> YYYY-MM-DD). Omit it for non-date values.",
+    "Candidate": "The element whose value is watched - a dot-prefixed CLASS selector (e.g. .tfKursbeginn, its own name when the tagged field is the watched one); never an #id selector."
   },
   "parameters": {
     "Reference": {
       "type": "string",
-      "default": "The value the tagged input's value shall be compared with."
+      "default": "A JavaScript Date (use { Date.FromString > <date> ; <format> } or { Date.Today }); a literal date string breaks the comparison."
     },
     "Mode": {
       "type": "enum",
       "options": ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"],
-      "default": "Defines the mode of comparison to apply onto the tagged input's value and the reference value. Available modes are GTE (greater than or equal), GT (greater than), LTE (lower than or equal), LT (lower than), EQ (equal) & NEQ (not equal)."
+      "default": "GT (after/later/greater), GTEQ (on/after/at least), LT (before/earlier/less), LTEQ (on/before/at most), EQ (exactly), NEQ (not equal)."
     },
     "Target": {
       "type": "string",
-      "default": "The element where to apply one of the specified functionalities depending on whether the given condition is fulfilled or not, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory."
+      "default": "Dot-prefixed CLASS selector of the element to change, resolved in the watched field's container (never an #id selector)."
     },
     "DateFormat": {
       "type": "string",
-      "default": "An optional string specifying the format the candidate is of. If not undefined it triggers the transformation of the tagged field's value into a Date prior to comparing it with the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the Date constructor."
+      "default": "Format of the candidate's value (dateDE -> DD.MM.YYYY, native date -> YYYY-MM-DD); omit for non-date values."
     },
     "Candidate": {
       "type": "string",
-      "default": "The element where to get the value to be compared, or a CSS-Selector. To work in a repetitive container a CSS-Selector is mandatory."
+      "default": "Dot-prefixed CLASS selector of the watched field (never an #id selector)."
     }
   }
 }

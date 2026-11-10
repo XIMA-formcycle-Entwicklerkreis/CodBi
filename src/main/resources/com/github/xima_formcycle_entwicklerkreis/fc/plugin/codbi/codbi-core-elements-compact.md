@@ -61,6 +61,7 @@ USE WHEN the whole form/page must be machine-translated by Google ("Google-Über
 ### HTML.CSS
 Injects CSS rules into the page or into a region of it.
 USE WHEN CSS rules/properties are requested ("CSS-Regeln", opacity/Durchsichtigkeit, scale/Skalierung, colours, header styling).
+When a NEW element is needed only to carry the CSS, use an `XSpan` with `"ishidden":"1"` in its properties (Formcycle Hidden/Ausblenden checkbox CHECKED), `data-cb-func="HTML.CSS"` + `data-cb-css` = the ACTUAL rules, and a descriptive `rtevalue` naming what the CSS does/labels the target (never only a `<style>` block, never empty or generic "HTML.CSS").
 
 ### HTML.Input.Blacklist
 Rejects a FIXED list of values on an input; with a datepicker those dates are additionally blocked in the picker.
@@ -157,16 +158,16 @@ Lets one upload accept several files.
 USE WHEN several files must be uploadable ("mehrere Dateien", "multiple files").
 
 ### OnChange.Conditional
-Applies another functionality to an element only while a condition on other fields holds.
-USE WHEN a check or effect must depend on another field's value ("nur wenn … dann prüfen", "validate only if …").
+Applies a functionality / attribute change to a target element while a comparison between a watched field's value and a date reference holds (Mode GT/GTEQ/LT/LTEQ/EQ/NEQ, Reference as a Date EP).
+USE WHEN an element must appear/disappear or change a property because a DATE/TIME/NUMBER value is greater/less/equal to a threshold, updating immediately while the user edits ("after/before <date>", "older/younger than", "more/less than <number>", "sobald … nach dem … liegt", "updates immediately while typing"). Use it INSTEAD OF hiddenif* for ordering comparisons; hiddenif* stays for discrete option/checkbox/empty state.
 
 ### OpenPLZ.Autocomplete
 German address autocomplete (postal code, locality, street) against OpenPLZ.
 USE WHEN a German address group must be autocompleted ("Adresse mit PLZ-Autovervollständigung").
 
 ### Print.Remove
-Hides the element when the form is printed.
-USE WHEN content must not appear on the printout ("beim Drucken ausblenden").
+Hides the tagged element (or the DocumentSelector/ParentalLevel target) when the form is printed; with Invert it hides the element in the interactive form and shows it in print. It only sets style.display="none" - the element is not removed from the DOM.
+USE WHEN content must not appear on the printout ("beim Drucken ausblenden") or must appear only on the printout (Invert / "nur im Druck anzeigen").
 
 ### Security.Captcha.Google
 Embeds a Google reCAPTCHA check in the form.
@@ -175,6 +176,13 @@ USE WHEN the form needs a Google captcha ("reCAPTCHA", "Spam-Schutz").
 ### Sys.Log.Console
 Logs CodBi runtime data to the browser developer console.
 USE WHEN debugging output is requested ("Log-Ausgabe in die Konsole").
+ALWAYS create a NEW hidden XSpan (`"className":"XSpan"`, `"ishidden":"1"` — the Formcycle Hidden/Ausblenden checkbox CHECKED) with a descriptive `rtevalue` in the form's language stating something is output to the console AND what is output (e.g. "Gibt alle im BayVIS registrierten Ämter in der Konsole aus.") and `data-cb-func="Sys.Log.Console"` + `data-cb-Data`. NEVER use a container (XContainer/XContainerInvisible) and NEVER an invented class for this.
+When the logged content is an EP result, `data-cb-Data` is the EP placeholder ITSELF with NO "SYS.Log.Console > " prefix — e.g. `data-cb-Data="{ BayVIS.Behoerden > bezeichnung }"` (never `"SYS.Log.Console > { BayVIS.Behoerden > bezeichnung }"`); the "SYS.Log.Console > " prefix is ONLY for free descriptive text.
+
+### SV
+Copies URL query parameters into CodBi global variables at form load (Destinations ← Sources, paired by index). The destination must be declared in the top-level "variables" array; apply it on an XContainer/XContainerInvisible/XFieldSet.
+USE WHEN a URL parameter must be linked into a global variable for the form/workflow ("URL-Parameter X als globale Variable", "link URL parameter X as a global variable", "read the query parameter into a global variable", "Formularvariable aus URL-Parameter"). NOT the V EP (which only reads a variable).
+ALWAYS add a plain documentation XSpan child inside the SV container stating the mapping in the form's language. SINGULAR: "Dieses Element übernimmt den URL-Parameter X in die globale Variable Y." / "This element copies URL parameter X into global variable Y." SEVERAL pairs: write ONE combined, natural sentence — "Dieses Element übernimmt die URL-Parameter A und B in die globalen Variablen X und Y." / "This element copies the URL parameters A and B into the global variables X and Y." (three or more: comma-separated with "und"/"and" before the last) — NOT one separate sentence per pair. The XSpan's `properties` MUST contain `"ishidden":"1"` (the Formcycle Hidden/Ausblenden checkbox CHECKED); do not rely on the surrounding invisible container, and never use `invisible` or a CSS class for this.
 
 ### Time.Frame
 Keeps two time fields in a begin/end (min/max) order.
@@ -185,8 +193,8 @@ USE WHEN a time RANGE is requested ("von/bis Uhrzeit", "start and end time").
 An ELEMENT PLACEHOLDER is NEVER the element you build and NEVER the functionality: the EP expression is a VALUE written INSIDE the parameter the consuming element documents for it (HTML.Select.Injection: Values; HTML.Text.Mapper: Replacements; Sys.Log.Console: Data; otherwise the field value) - a parameter name of a DIFFERENT functionality is silently ignored. Request these entries only to learn the exact EP id and its parameters, then wire them into the element that consumes them.
 
 ### AI.LLAMA.STD.QA
-Returns the AI answer to a question about an uploaded document.
-USE WHEN a value must hold the answer of a document question.
+Returns the AI answer to a FREE question (a knowledge/web question such as "Wie wird das Wetter morgen?") — the generic AI-answer EP. It needs NO uploaded document; analyzing an uploaded file is the AI.LLAMA.STANDARD.QA functionality, never this EP.
+USE WHEN a value or another element's parameter must hold the AI's answer to a question ("KI-Antwort", "let the AI answer", "logge die KI-Antwort zu ... in die Konsole aus", "answer this question for me"). It supports internet search AND a NAMED AI SPECIALIST ("mit Cerebras", "von Cerebras beantworten lassen", "let Cerebras answer") — a specialist is a valid setting of this EP, so a request that names one is NOT unclear: request the full EP entry in the detail step and wire it. Do NOT confuse it with the uploaded-document functionality and NEVER ask the user for the answer, for a document or for a specialist that is already named — the EP produces the answer at runtime.
 
 ### BayVIS.Ansprechpartner.Details
 Returns ONE person's complete record OBJECT (vorname, nachname, email and the apTelefon* parts).
@@ -201,24 +209,24 @@ Reads the BayVIS contact directory, or one property of it, per parameter.
 USE WHEN a list of contacts or a single property of the directory is needed.
 
 ### BayVIS.Behoerden.Details.Gebaeude
-Retrieves the details of an authority's building (the only EP with postal addresses).
-USE WHEN an authority's address is needed.
+Retrieves a building of an authority (the only EP with postal addresses); it requires TWO parameters — authority ID ; building ID — so a call with ONE parameter, or with a building id in the authority slot, is invalid.
+USE WHEN an authority's address is needed ("in welchem Gebäude sitzt Amt X"): slot 1 = { I > 0 ; { BayVIS.Behoerden.ID > <designation> } }, slot 2 = { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } } }.
 
 ### BayVIS.Behoerden.Details
-Retrieves the details of an authority by ID.
-USE WHEN authority metadata (designation, type, e-mail) is needed — it has NO phone and NO address.
+Retrieves the metadata of ONE authority (resolved from its designation via BayVIS.Behoerden.ID) with an optional property parameter; the ORDER IS FIXED — authority ID first, property second, never swapped.
+USE WHEN a SINGLE NAMED authority's field is needed (e-mail, designation, type, group, id, logo) — that is THIS EP, never the directory column; it has NO phone and NO address.
 
 ### BayVIS.Behoerden.Gebaeude.ID
-Resolves the building IDs of authorities.
-USE WHEN a house-number/building ID chain is needed.
+Turns the NUMERIC AUTHORITY ID into that authority's building IDs (an ARRAY); it never accepts a designation and yields no authority ID.
+USE WHEN the building-ID slot of BayVIS.Behoerden.Details.Gebaeude is needed — a designation such as "Amt 44" is a NAME and its digits are never an ID.
 
 ### BayVIS.Behoerden.ID
-Resolves authority IDs from a designation (case insensitive).
+Resolves authority IDs from an authority's designation (case insensitive), digits included ("Amt 44" is a designation, not an ID).
 USE WHEN an authority name must be turned into an ID.
 
 ### BayVIS.Behoerden
-Reads the BayVIS authority directory (or one property of it, e.g. bezeichnung = the office name) and returns it as a list/value.
-USE WHEN a list of authorities or one property of the directory is needed as a VALUE - e.g. as the `Values` entry of HTML.Select.Injection ("{ BayVIS.Behoerden > bezeichnung }", with ReClean on); it is an ELEMENT PLACEHOLDER and belongs in a value parameter, NEVER in the functionality (func) parameter. BayVIS data is NEVER a Formcycle datasource: never set a `datasource` for it and never ask for one.
+Reads the WHOLE BayVIS authority directory, or ONE COLUMN of it (e.g. bezeichnung = the office name), as a list; it returns that column for EVERY authority and can never select ONE named authority (whose field comes from BayVIS.Behoerden.Details).
+USE WHEN a list of authorities or one column of the directory is needed as a VALUE - e.g. as the `Values` entry of HTML.Select.Injection ("{ BayVIS.Behoerden > bezeichnung }", with ReClean on); it is an ELEMENT PLACEHOLDER and belongs in a value parameter, NEVER in the functionality (func) parameter. BayVIS data is NEVER a Formcycle datasource: never set a `datasource` for it and never ask for one.
 
 ### Data.CSV
 Turns a CSV string into an array.
@@ -229,68 +237,68 @@ Joins the properties of several objects into one.
 USE WHEN values genuinely come from DIFFERENT detail objects — not for a single object.
 
 ### Date.Arithmetic
-Adds or subtracts a period to/from a date.
-USE WHEN a date must be shifted ("in 3 Tagen", "3 days after the date in field X").
+Moves a date by days/months/years in one step (parses a date string, then applies the shift).
+USE WHEN a date must be shifted ("in 3 Tagen", "3 days after …", "3 Tage nach dem …", "das Datum … plus/minus …", "a week before …").
 
 ### Date.FromString
-Parses a string into a date.
-USE WHEN a text value must be treated as a date.
+Turns a date STRING into a date (usable for date arithmetic/comparison/formatting).
+USE WHEN a typed/text date must be treated as a date ("01.12.2026 als Datum", "parse this date", "das Datum aus dem Text", "turn … into a date").
 
 ### Date.Holidays
-Returns the public holidays of the requested year(s).
-USE WHEN holiday dates must be considered ("Feiertage").
+Returns the GERMAN public holidays of one or more BUNDESLÄNDER and/or years as a list — the ONLY holiday EP (no state-specific variant, no id composed from a request's words).
+USE WHEN public holidays are needed ("Feiertage", "holidays"): one parameter per STATE (bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th) plus the year as THIS_YEAR — e.g. { Date.Holidays > by ; he ; THIS_YEAR }.
 
 ### Date.Today
-Returns today's date, optionally with arithmetic applied.
-USE WHEN the current date is needed ("heute", "today").
+Returns TODAY as a date OBJECT (optionally shifted by days/months/years) — an object that properties or parameterless methods can be read off, NOT a formatted string.
+USE WHEN today's date is needed ("heute", "today", "current date") — also when a property or method OF today's date is wanted ("getMonth() von heute", "das Jahr von heute").
 
 ### Date.Weekends
-Registers the weekend EP (plus the CSS injection it needs).
-USE WHEN weekend dates must be computed ("Wochenenden").
+Returns the WEEKEND dates (Saturday/Sunday) of a date range as a list of dd.MM.yyyy STRINGS — parameters are plain dd.MM.yyyy strings, NEVER date objects; a bounded range is { Date.Weekends > 01.12.2026 ; 31.12.2026 } (start `;` end).
+USE WHEN weekend dates of a range are needed ("Wochenenden", "Samstage und Sonntage", "weekends"): ONE parameter = from TODAY up to that date — { Date.Weekends > 01.12.2026 }; TWO parameters = START `;` END.
 
 ### DOM.Query
-Queries an element from the DOM.
-USE WHEN a value must be read from the page/DOM.
+Queries a RENDERED page element by CSS SELECTOR and returns that element — the EP for acquiring DOM elements; the parameter is a CSS selector (`#<element id>`, `.<element name>`, `header`), NEVER a widget type.
+USE WHEN a DOM element must be read/logged ("das Header-Element", "the header element", "den Container", "das Element mit dem Text …").
 
 ### F
-Finds the objects within an array that carry a given property value.
-USE WHEN a list must be narrowed to the matching entry ("den Eintrag mit … finden").
+Narrows a LIST to the entries whose property has one exact value (returns a list).
+USE WHEN a list must be reduced to the matching entry/entries ("den Eintrag mit … finden", "das Objekt, dessen … gleich … ist", "filter by …", "only the one where …").
 
 ### I
-Acquires one element of an array by index.
-USE WHEN a single entry of a list is needed.
+Takes ONE entry out of a list by its 0-based position (index).
+USE WHEN the value-producing EP returns an ARRAY and only one entry is wanted ("den ersten Treffer", "the first match", "den ersten Eintrag", "einen der …", "pick one of …").
 
 ### JSON.Path
-Retrieves the value at a JSON path of the given object.
-USE WHEN a nested JSON value must be read.
+Reads a property — or CALLS a PARAMETERLESS METHOD — of an object that another EP produced, along a dotted path; a segment written `name()` calls the method, `name` reads the property.
+USE WHEN a property or a parameterless METHOD of an object must be read out of it ("getMonth()", "toString()", "die Eigenschaft … von …", "extract <property>") — not the object itself.
 
 ### LDAP.Find
-Searches an LDAP directory using the default or a given connection.
-USE WHEN LDAP data must be fetched for further use.
+Searches the LDAP / Active Directory and returns the matching entries; its FIRST parameter is the COMBINING MODE — exactly `AND` or `OR` — and the second holds all `attribute = value` conditions.
+USE WHEN values must be fetched FROM the directory ("aus dem LDAP", "from the AD", "Mitarbeiter Salvatore Callari", an LDAP filter): every condition goes into ONE parameter separated by `|`, the combining mode into its own.
 
 ### Net.URL
 Retrieves the content of a URL.
 USE WHEN a remote resource must be read.
 
 ### OpenPLZ.Localities
-OpenPLZ request specialised in searching localities.
-USE WHEN localities/cities must be searched.
+Searches LOCALITIES / cities / towns / places of a country in OpenPLZ.
+USE WHEN localities must be searched or suggested ("Ortsvorschläge", "Städte", "cities", "localities") — the country as its 2-letter CODE (de, at, ch, li, en) plus name/postal-code patterns.
 
 ### OpenPLZ.OrganizationalUnits
-OpenPLZ request specialised in retrieving organisational units.
-USE WHEN organisational units must be retrieved.
+Returns ALL organisational units of ONE KIND for a country — cantons, federal states, provinces, municipalities, districts — as a list, without searching for a name.
+USE WHEN such a unit list is wanted ("alle Kantone der Schweiz", "die Bundesländer", "the cantons of Switzerland", "Provinzen", "Gemeinden", ANY language): the country as its 2-letter CODE plus the unit token Cantons / FederalStates / FederalProvinces.
 
 ### OpenPLZ.Streets
-OpenPLZ request specialised in searching streets.
-USE WHEN streets must be searched.
+Searches STREETS of a country in OpenPLZ.
+USE WHEN streets must be searched ("Straßen in <PLZ>", "streets in <postal code>").
 
 ### OpenPLZ.TextSearch
-OpenPLZ request performing a full-text search.
-USE WHEN a free-text OpenPLZ search is needed.
+Performs an OpenPLZ full-text search.
+USE WHEN a free-text OpenPLZ search is needed ("Volltextsuche …", "search for …").
 
 ### OpenPLZ
-Retrieves data from the OpenPLZ administrative-units servlet per parameter.
-USE WHEN administrative-unit data must be read directly.
+The GENERIC OpenPLZ servlet call for a request that itself names explicit query values (country code, orga unit, official key, detail, search parameters) — NOT the EP for "all cantons/states of a country" (that is OpenPLZ.OrganizationalUnits).
+USE WHEN such an explicit OpenPLZ lookup is wanted.
 
 ### Sorted
 Sorts the array passed as the first parameter.
@@ -299,6 +307,10 @@ USE WHEN a list must be ordered.
 ### Unique
 Filters duplicates out of the array passed as the first parameter.
 USE WHEN a list must be de-duplicated.
+
+### URLParameter
+Reads the VALUE of ONE URL query-string parameter of the page the form is running in ("?name=value" from the address bar) as a string — empty when the URL does not contain it.
+USE WHEN a value must be taken FROM the URL the visitor opened ("den Parameter FRID in der URL", "URL-Parameter", "query parameter", "aus der Adresse", "from the address bar", ANY language) — the parameter NAME goes into the EP; storing such a parameter in a global variable is the SV functionality, not this EP.
 
 ### V
 Reads the value of a global variable.
@@ -339,8 +351,8 @@ Applies speech-to-text to every text field of the form.
 USE WHEN dictation should be available form-wide (browser speech).
 
 ### Holistic.Media.Input.Speech.Whisper
-Applies Whisper speech-to-text to every text field of the form.
-USE WHEN dictation should be available form-wide (server/Whisper).
+Applies Whisper speech-to-text to every text field of the form (a form-wide standard configuration, activated via {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} in _codbiApplicability.applied).
+USE WHEN dictation should be available form-wide (server/Whisper). For WHISPER ON A SINGLE FIELD use the functionality id data-cb-func="Media.Input.Speech.Whisper" instead — the "Holistic."-prefixed id is NOT a registered functionality and produces no mic button when placed as data-cb-func.
 
 ### LDAP.Autofill
 Registers the standard configurations for LDAP autocompletion on inputs.

@@ -48,6 +48,18 @@ object AiAssistantLog {
   /** Maximum number of log entries returned by [loadLogs]. */
   private const val DEFAULT_LIMIT = 200
 
+  /**
+   * One selectable form in the change log's cross-form selector: the technical `formKey` used to
+   * query its entries, the resolved display [name], whether the form no longer exists ([deleted])
+   * and whether it is the form currently open in the designer ([current]).
+   */
+  private data class LogFormOption(
+      val key: String,
+      val name: String,
+      val deleted: Boolean,
+      val current: Boolean
+  )
+
   /** Empty log response: no entries and zeroed totals (used when no DB / an error occurs). */
   private const val EMPTY_LOG_RESPONSE =
       """{"entries":[],"totals":{"tokensIn":0,"tokensOut":0,"costByCurrency":{}},"sensitiveElements":[],"sensitiveChecks":[]}"""
@@ -229,7 +241,19 @@ object AiAssistantLog {
       emf: EntityManagerFactory?,
       formKey: String? = null,
       limit: Int = DEFAULT_LIMIT,
-      username: String? = null
+      username: String? = null,
+      /**
+       * Whether the requesting user is allowed to sync the API-Documentation. Only those users get
+       * the cross-form selector (`forms`), which lists every form that has a change log — including
+       * forms that were deleted meanwhile.
+       */
+      isSyncUser: Boolean = false,
+      /**
+       * The live form list as returned by the assistant's `fetchAllForms` (`[{id,key,name,…}]`),
+       * used to resolve the display names and the deleted state of the change-log forms. Ignored
+       * unless [isSyncUser] is `true`.
+       */
+      allFormsJson: String? = null
   ): String {
     if (emf == null) return EMPTY_LOG_RESPONSE
     return try {
@@ -490,6 +514,14 @@ object AiAssistantLog {
         // sensitive
         // check to the right user immediately (without waiting for a reload).
         root.addProperty("currentUser", username ?: "")
+        // Whether the requesting user may sync the API-Documentation. Only those users get the
+        // cross-form selector below; everybody else keeps seeing exactly the requested form's log.
+        root.addProperty("isSyncUser", isSyncUser)
+        if (isSyncUser) {
+          // Every form that has a change log — incl. forms that were deleted meanwhile (flagged
+          // `deleted`). The requested/current form is always included and listed first.
+          root.add("forms", loadLogFormList(em, allFormsJson, filter))
+        }
         gson.toJson(root)
       } finally {
         em.close()
@@ -498,6 +530,91 @@ object AiAssistantLog {
       logger.warn("[AiAssistantLog] Failed to load inference log: {}", e.message)
       EMPTY_LOG_RESPONSE
     }
+  }
+
+  /**
+   * Builds the list of forms that have at least one change-log entry — the options of the change
+   * log's cross-form selector, which is only offered to users allowed to sync.
+   *
+   * Every distinct `formKey` in `codbi_ai_assistant_log` is listed. The key is resolved to the
+   * form's display TITLE via the live form list [allFormsJson] (the assistant's `fetchAllForms`). A
+   * key that no longer resolves to an existing form is flagged `deleted = true`, so the change log
+   * of a form that was removed meanwhile stays reachable. Legacy name-based keys are matched
+   * against the live forms' titles as a fallback.
+   *
+   * [currentFormKey] (the form the designer currently edits / the log was requested for) is always
+   * included and sorted first; the remaining forms follow alphabetically, existing forms before
+   * deleted ones.
+   */
+  private fun loadLogFormList(
+      em: EntityManager,
+      allFormsJson: String?,
+      currentFormKey: String?
+  ): JsonArray {
+    // Live forms: key → title, plus lower-cased title → key for legacy name-based form keys.
+    val liveByKey = LinkedHashMap<String, String>()
+    val liveByName = HashMap<String, String>()
+    runCatching {
+          val parsed = allFormsJson?.takeIf { it.isNotBlank() }?.let { JsonParser.parseString(it) }
+          val forms = parsed?.takeIf { it.isJsonArray }?.asJsonArray ?: return@runCatching
+          for (el in forms) {
+            val obj = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+            val key = obj.get("key")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+            val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+            if (key.isNotEmpty()) {
+              liveByKey[key] = name.ifEmpty { key }
+              if (name.isNotEmpty()) liveByName[name.lowercase()] = key
+            }
+          }
+        }
+        .onFailure { logger.debug("[AiAssistantLog] Could not parse form list: {}", it.message) }
+
+    // The distinct form keys present in the log table.
+    val keys = LinkedHashSet<String>()
+    runCatching {
+          val jpql =
+              "SELECT DISTINCT l.formKey FROM CodbiAiAssistantLog l WHERE l.formKey IS NOT NULL"
+          @Suppress("UNCHECKED_CAST") val rows = em.createQuery(jpql).resultList as List<Any?>
+          rows.mapNotNullTo(keys) { (it as? String)?.trim()?.takeIf { k -> k.isNotEmpty() } }
+        }
+        .onFailure {
+          logger.warn("[AiAssistantLog] Failed to list change-log forms: {}", it.message)
+        }
+
+    // Always offer the form currently being edited, even before it has any log entry.
+    val normalizedCurrent = currentFormKey?.trim()?.takeIf { it.isNotEmpty() }
+    normalizedCurrent?.let { keys.add(it) }
+
+    // When the live form list could not be loaded, do NOT flag everything as deleted — the deleted
+    // state is only trustworthy when the actual form list is available.
+    val haveLiveForms = liveByKey.isNotEmpty()
+    val options =
+        keys.map { key ->
+          val liveKey = if (liveByKey.containsKey(key)) key else liveByName[key.lowercase()]
+          LogFormOption(
+              key = key,
+              name = liveKey?.let { liveByKey[it] } ?: key,
+              deleted = haveLiveForms && liveKey == null,
+              current = key == normalizedCurrent)
+        }
+
+    val sorted =
+        options.sortedWith(
+            compareBy<LogFormOption>(
+                { if (it.current) 0 else 1 },
+                { if (it.deleted) 1 else 0 },
+                { it.name.lowercase() }))
+
+    val arr = JsonArray()
+    for (option in sorted) {
+      val obj = JsonObject()
+      obj.addProperty("key", option.key)
+      obj.addProperty("name", option.name)
+      obj.addProperty("deleted", option.deleted)
+      obj.addProperty("current", option.current)
+      arr.add(obj)
+    }
+    return arr
   }
 
   /**

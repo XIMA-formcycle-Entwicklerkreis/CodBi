@@ -56,9 +56,18 @@ class LdapUrlConfigurationTest {
     assertTrue(
         block.contains("MUST NEVER be asked for an LDAP url"),
         "asking must be forbidden when a url is configured")
+    assertTrue(
+        block.contains("the request always wins"),
+        "an explicitly named url must still be wired although a url is configured")
+    assertTrue(
+        block.contains("the 3rd parameter of the LDAP.Find EP MUST BE LEFT OUT"),
+        "the LDAP.Find url slot must be omitted when a url is configured")
     assertFalse(
         block.contains("ASK the user for that url"),
         "the url must not be asked for when it is configured")
+    assertFalse(
+        block.contains("CodBi plugin properties"),
+        "the plugin-property hint belongs to the asking case only")
   }
 
   @Test
@@ -71,8 +80,22 @@ class LdapUrlConfigurationTest {
         block.contains("`data-cb-URL` is a REQUIRED parameter"),
         "without a url the parameter is required")
     assertTrue(
+        block.contains("the request always wins"),
+        "an explicitly named url must be used as it is, without a question")
+    assertTrue(
         block.contains("ASK the user for that url"),
         "the clarify round must ask for the url instead of building a dead field")
+    assertTrue(
+        block.contains("TELL the user IN THAT SAME QUESTION"),
+        "the asking question must carry the installation-wide hint")
+    assertTrue(
+        block.contains("CodBi plugin properties") &&
+            block.contains("LDAP_URL (frontend domain)") &&
+            block.contains("LDAP_URL_BACKEND (backend domain)"),
+        "the hint must name both plugin properties")
+    assertTrue(
+        block.contains("3rd parameter of the LDAP.Find EP is required"),
+        "the LDAP.Find url slot must be required when no url is configured")
     assertTrue(block.contains("NEVER invent or guess a url"), "an invented url is never acceptable")
   }
 
@@ -130,6 +153,9 @@ class LdapUrlConfigurationTest {
     assertTrue(
         api.contains("is REQUIRED and its value belongs to the user"),
         "the pass-2 reference must state the mandatory case")
+    assertTrue(
+        api.contains("the request wins"),
+        "the pass-2 reference must let an explicitly named url win over the installation url")
   }
 
   @Test
@@ -144,5 +170,8 @@ class LdapUrlConfigurationTest {
     assertTrue(
         clarify.contains("when a url IS configured, never ask"),
         "the configured case must stay question-free")
+    assertTrue(
+        clarify.contains("CodBi plugin properties LDAP_URL"),
+        "the clarify rule must tell the user about the installation-wide plugin properties")
   }
 }

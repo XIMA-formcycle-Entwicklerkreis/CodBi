@@ -167,4 +167,52 @@ describe("OnChange_Conditional.functionality", () => {
 
     expect(target.getAttribute("data-cb-data-different")).toBe("yes");
   });
+
+  it("applies the false branch for an empty candidate instead of throwing", async () => {
+    const { OnChange_Conditional } = await import("../../src/js/Functionalities/onchange.conditional.js");
+    const { input, candidate, target } = createConditionalSetup({
+      trueAttrs: { class: "shown" },
+      falseAttrs: { class: "hidden" },
+    });
+
+    OnChange_Conditional.functionality(
+      {
+        mode: "GT",
+        reference: new Date("2025-01-01"),
+        target: ".target-el",
+        candidate: ".candidate-input",
+        dateformat: "DD.MM.YYYY",
+      },
+      input,
+    );
+
+    candidate.value = "";
+    $(input).trigger("change");
+
+    expect(target.getAttribute("data-cb-class")).toBe("hidden");
+  });
+
+  it("accepts a literal reference string parsed with DateFormat", async () => {
+    const { OnChange_Conditional } = await import("../../src/js/Functionalities/onchange.conditional.js");
+    const { input, candidate, target } = createConditionalSetup({
+      trueAttrs: { title: "after" },
+      falseAttrs: { title: "before" },
+    });
+
+    OnChange_Conditional.functionality(
+      {
+        mode: "GT",
+        reference: "01.01.2025",
+        target: ".target-el",
+        candidate: ".candidate-input",
+        dateformat: "DD.MM.YYYY",
+      },
+      input,
+    );
+
+    candidate.value = "15.06.2025";
+    $(input).trigger("change");
+
+    expect(target.getAttribute("data-cb-title")).toBe("after");
+  });
 });

@@ -65,6 +65,52 @@
             (onClick)="exportLog()"
             [disabled]="loading || logs.length === 0"
             title="Export the change-log entries as JSON" />
+        @if (isSyncUser && formOptions.length > 0) {
+            <!-- INLINE dropdown instead of `<p-select>`: PrimeNG appends its overlay to <body> and its
+                 position inside this transformed assistant dialog was unreliable (the options ended
+                 up at the trigger's bottom-right corner and, once forced, across the whole window
+                 while hiding the trigger). This panel is a plain absolutely positioned list inside
+                 the component: it always starts at the trigger's LEFT edge, directly BELOW it and
+                 exactly as wide as the trigger. -->
+            <div class="cb-log-form-select" [class.cb-log-form-select--open]="formDropdownOpen">
+                <button
+                    type="button"
+                    class="cb-log-form-select__trigger"
+                    [disabled]="loading"
+                    [attr.aria-expanded]="formDropdownOpen"
+                    aria-haspopup="listbox"
+                    (click)="toggleFormDropdown()"
+                    title="Show the change log of another form — deleted forms stay listed and are marked as deleted">
+                    <span class="cb-log-form-select__label" [class.cb-log-form-select__label--muted]="!selectedFormLabel">
+                        {{ selectedFormLabel || 'Select a form' }}
+                    </span>
+                    <i class="pi pi-chevron-down cb-log-form-select__chevron"></i>
+                </button>
+                @if (formDropdownOpen) {
+                    <div class="cb-log-form-select__backdrop" (click)="closeFormDropdown()"></div>
+                    <ul class="cb-log-form-select__panel" role="listbox">
+                        @for (form of formOptions; track form.key) {
+                            <li
+                                class="cb-log-form-select__option"
+                                role="option"
+                                [class.cb-log-form-select__option--selected]="form.key === selectedFormKey"
+                                [attr.aria-selected]="form.key === selectedFormKey"
+                                (click)="selectFormFromDropdown(form.key)">
+                                <span class="cb-log-form-option" [class.cb-log-form-option--deleted]="form.deleted">
+                                    <span class="cb-log-form-option__name">{{ form.name }}</span>
+                                    @if (form.current) {
+                                        <span class="cb-log-form-option__tag cb-log-form-option__tag--current">current</span>
+                                    }
+                                    @if (form.deleted) {
+                                        <span class="cb-log-form-option__tag cb-log-form-option__tag--deleted">deleted</span>
+                                    }
+                                </span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
     </div>
 
     <div class="cb-log-summary">
@@ -131,6 +177,7 @@
                     [applyWithoutChildrenLabel]="applyWithoutChildrenLabel"
                     [applyWithoutChildrenTitle]="applyWithoutChildrenTitle"
                     [applyAgainBusy]="applyAgainBusy"
+                    [applyAllowed]="isShowingCurrentForm"
                     (sensitiveChecked)="onSensitiveChecked($event)"
                     (promptOpen)="onPromptOpen($event)"
                     (chatReplyOpen)="onChatReplyOpen($event)"

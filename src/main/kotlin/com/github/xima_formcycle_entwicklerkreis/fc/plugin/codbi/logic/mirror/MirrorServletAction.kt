@@ -3,6 +3,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror
 import com.alibaba.fastjson.JSONArray
 import com.alibaba.fastjson.JSONObject
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.InstalledFormcycleElements
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.workflow.XmlImportOptions
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.MIRROR_SERVLET_ACTION_NAME
 import de.xima.fc.form.common.models.XForm
 import de.xima.fc.form.common.models.XFormRenderConfig
@@ -59,6 +60,26 @@ class MirrorServletAction : IPluginServletAction {
         params.requestParameters["form"]?.firstOrNull() ?: "")
     return try {
       when (action) {
+        // Option lists of the CodBi XML auto-import node (upload elements, form files, previous
+        // nodes, fillable fields). Served here as well so the node's designer view can use this
+        // already-registered action name instead of relying on a second registration.
+        in XmlImportOptions.ACTIONS -> {
+          val projectId =
+              (params.requestParameters["project"]?.firstOrNull()
+                      ?: params.requestParameters["form"]?.firstOrNull()
+                      ?: params.requestParameters["projectId"]?.firstOrNull()
+                      ?: params.requestParameters["formId"]?.firstOrNull())
+                  ?.trim()
+                  ?.replace(Regex("^project[-_]?", RegexOption.IGNORE_CASE), "")
+                  ?.toLongOrNull()
+          val json = XmlImportOptions.build(action, userContext, projectId) ?: "[]"
+          logger.debug(
+              "[MirrorServletAction] action='{}' project={} -> {} chars",
+              action,
+              projectId,
+              json.length)
+          jsonResponse(json)
+        }
         "elements" -> {
           val json = elementsJson(userContext, params)
           logger.debug("[MirrorServletAction] action='elements' -> {} chars", json.length)

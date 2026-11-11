@@ -82,6 +82,10 @@ export interface LogFormOption {
 let logEntriesCache: {
   formKey: string;
   raw: Array<Record<string, unknown>>;
+  /** Overall number of recorded inferences for the cached form (from the backend `total`). */
+  total?: number;
+  /** Whether the cached form still has older entries to load (backend `hasMore`). */
+  hasMore?: boolean;
   forms?: LogFormOption[];
   isSyncUser?: boolean;
 } | null = null;
@@ -184,6 +188,20 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   totalTokensIn = 0;
   totalTokensOut = 0;
   totalTokens = 0;
+  /**
+   * Overall number of recorded AI inferences for the displayed form (backend `total`). Independent
+   * of the loaded page: the caption uses it so it shows the TRUE inference count even though an
+   * infinite-scroll page only holds [pageSize] entries.
+   */
+  totalInferences = 0;
+  /** Whether the displayed form still has older entries that can be loaded via infinite scroll. */
+  hasMoreInferences = false;
+  /** Page size used by the change log's infinite scroll (matches the backend default / cap). */
+  private readonly pageSize = 200;
+  /** True while a "load older" request for the next page is in flight. */
+  loadingOlder = false;
+  /** Distance (px) from the bottom of the scroll container that triggers loading the next page. */
+  private static readonly SCROLL_THRESHOLD = 120;
   /** Total estimated cost of all recorded inferences of the current form, per currency (models may be priced differently). */
   costByCurrency = new Map<string, number>();
   /**
@@ -559,6 +577,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         this.formOptions = logEntriesCache.forms ?? this.formOptions;
         this.normalizeFormOptions();
         this.rawEntries = logEntriesCache.raw;
+        this.totalInferences = logEntriesCache.total ?? logEntriesCache.raw.length;
+        this.hasMoreInferences = logEntriesCache.hasMore === true;
         this.logs = this.buildTree(this.applyFilter(logEntriesCache.raw));
         this.expandSearchMatches();
         this.applyHighlights();
@@ -570,6 +590,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       if (targetKey) {
         headers["X-Form-Key"] = targetKey;
       }
+      // Infinite scroll pagination: always request the first page (newest entries) on (re)load;
+      // older pages are appended by loadOlder() with X-Log-Offset set to the loaded count.
+      headers["X-Log-Limit"] = String(this.pageSize);
+      headers["X-Log-Offset"] = "0";
       getJQuery().ajax({
         url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
         type: "GET",
@@ -652,11 +676,20 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             Object.entries(costObj).map(([currency, cost]) => [currency, Number(cost) || 0]),
           );
           this.rawEntries = raw;
+          // Infinite-scroll metadata from the page-independent backend aggregate: `total` is the
+          // TRUE number of recorded inferences for the form (not just this page's loaded count), and
+          // `hasMore` tells us whether older entries can still be appended.
+          this.totalInferences =
+            Number(!Array.isArray(payload) ? (payload?.["total"] ?? raw.length) : raw.length) || raw.length;
+          this.hasMoreInferences = !Array.isArray(payload) && payload?.["hasMore"] === true;
+          this.loadingOlder = false;
           // Remember the freshly loaded entries so the next reopen of the dialog (which re-creates
           // this component and re-runs load()) can show them instantly without a DB round-trip.
           logEntriesCache = {
             formKey: targetKey,
             raw,
+            total: this.totalInferences,
+            hasMore: this.hasMoreInferences,
             forms: this.formOptions,
             isSyncUser: this.isSyncUser,
           };
@@ -711,6 +744,76 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   refresh(): void {
     logEntriesCache = null;
     this.load(this.selectedFormKey || null);
+  }
+
+  /**
+   * Scroll handler for the change-log tree. When the user scrolls close to the bottom and the
+   * backend reports that older entries exist, the next page is appended (infinite scroll).
+   */
+  onTreeScroll(event: Event): void {
+    const el = event.target as HTMLElement | null;
+    if (!el) return;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (remaining <= AiAssistantLog.SCROLL_THRESHOLD) {
+      this.loadOlder();
+    }
+  }
+
+  /**
+   * Appends the next page of OLDER entries to the change log (infinite scroll). No-op while a
+   * request is already in flight or the backend reports there is nothing more to load.
+   */
+  loadOlder(): void {
+    if (this.loading || this.loadingOlder || !this.hasMoreInferences || !this.selectedFormKey) {
+      return;
+    }
+    this.loadingOlder = true;
+    this.cdr.markForCheck();
+    const headers: Record<string, string> = {
+      "X-Action": "Log",
+      "X-Form-Key": this.selectedFormKey,
+      "X-Log-Limit": String(this.pageSize),
+      "X-Log-Offset": String(this.rawEntries.length),
+    };
+    getJQuery().ajax({
+      url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+      type: "GET",
+      headers,
+      success: (response: unknown) => {
+        this.loadingOlder = false;
+        const payload = response as Record<string, unknown> | Array<Record<string, unknown>> | null;
+        const page = Array.isArray(payload)
+          ? payload
+          : ((payload?.["entries"] as Array<Record<string, unknown>> | undefined) ?? []);
+        // Avoid duplicate entries when the page boundary overlaps (e.g. a new inference was recorded
+        // between two requests). Merge by stable `id` and append the rest at the end.
+        const known = new Set<string>(this.rawEntries.map((e) => String(e["id"] ?? "")));
+        const fresh = page.filter((e) => !known.has(String(e["id"] ?? "")));
+        this.rawEntries = [...this.rawEntries, ...fresh];
+        this.hasMoreInferences = !Array.isArray(payload) && payload?.["hasMore"] === true;
+        if (!Array.isArray(payload)) {
+          const t = Number(payload?.["total"] ?? this.rawEntries.length);
+          if (Number.isFinite(t) && t > 0) this.totalInferences = t;
+        }
+        // Mirror the appended entries into the shared cache so a reopen keeps the full loaded set.
+        if (logEntriesCache && logEntriesCache.formKey === this.selectedFormKey) {
+          logEntriesCache.raw = this.rawEntries;
+          logEntriesCache.hasMore = this.hasMoreInferences;
+          logEntriesCache.total = this.totalInferences;
+        }
+        this.logs = this.buildTree(this.applyFilter(this.rawEntries));
+        this.expandSearchMatches();
+        this.applyHighlights();
+        this.markSensitiveNodes();
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        // A failed "load older" must not block the whole log — simply stop auto-loading and let
+        // the user scroll again / refresh to retry.
+        this.loadingOlder = false;
+        this.cdr.markForCheck();
+      },
+    });
   }
 
   /** True while the change log shows the CURRENT designer form. The per-entry "apply again"
@@ -1180,10 +1283,13 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     return `(${first} \u2013 ${last})`;
   }
 
-  /** Toolbar counter: "N Inferences" plus the covered date range. */
+  /** Toolbar counter: "N Inferences" plus the covered date range. When infinite scroll has only
+   *  loaded a page of the true total, the caption reports the TRUE total (backend `total`) so the
+   *  counter is not stuck at the 200-entry page size. */
   get countLabel(): string {
     const range = this.inferenceRange;
-    return `${this.logs.length} Inferences${range ? ` ${range}` : ""}`;
+    const shown = this.totalInferences > this.logs.length ? this.totalInferences : this.logs.length;
+    return `${shown} Inferences${range ? ` ${range}` : ""}`;
   }
 
   /** Total input/output tokens used by all recorded inferences of the current form. */

@@ -1,0 +1,53 @@
+{
+  "Description": "/classes/EPs_bayvis.behoerden.gebaeude.ansprechpartner.BayVIS_Behoerden_Gebaeude_Ansprechpartner.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The NUMERIC authority id: { I > 0 ; { BayVIS.Behoerden.ID > <designation> } }.",
+          "de": "Die NUMERISCHE ID der Behörde: { I > 0 ; { BayVIS.Behoerden.ID > <Bezeichnung> } }."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The NUMERIC building id: { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <authority id> } }.",
+          "de": "Die NUMERISCHE ID des Gebäudes: { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <Behörden-ID> } }."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The NUMERIC contact id: { I > 0 ; { BayVIS.Ansprechpartner.ID > <Firstname Lastname> } }.",
+          "de": "Die NUMERISCHE ID des Ansprechpartners: { I > 0 ; { BayVIS.Ansprechpartner.ID > <Vorname Nachname> } }."
+        }
+      },
+      {
+        "index": 4,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract, e.g. \"email\".",
+          "de": "Die zu entnehmende Eigenschaft, z. B. \"email\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves one contact that is assigned to a building of an authority.",
+    "de": "Dieser Element-Placeholder holt einen Ansprechpartner, der einem Gebäude einer Behörde zugeordnet ist."
+  }
+}

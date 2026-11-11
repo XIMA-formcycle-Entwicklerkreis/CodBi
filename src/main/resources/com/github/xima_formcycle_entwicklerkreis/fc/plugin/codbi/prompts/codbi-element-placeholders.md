@@ -144,6 +144,16 @@ WHEN THE USER ASKS TO STORE A VALUE AS A GLOBAL VARIABLE ("als globale Variable 
 5. NEVER put a bare name into a BayVIS Directory/Details EP's parameter directly — use the correct ID → Details chain (see BayVIS EPs below).
 6. CRITICAL — V resolves ONLY a form GLOBAL VARIABLE (a name from the top-level "variables" array, or a variable you CREATE only on an explicit "globale Variable"/"global variable" request). NEVER pass a PERSON'S/EMPLOYEE'S literal NAME (or an authority's name) to V — e.g. "{ BayVIS.Ansprechpartner.Details > { V > Salvatore Callari } }" is WRONG: "Salvatore Callari" is the person's NAME, not a variable, so V stays unresolved. A person/authority NAMED DIRECTLY in the request ("Salvatore Callari", "der Mitarbeiter Salvatore Callari", a contact name) is resolved via the name → ID → Details chain WITHOUT V: "{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }" (the .ID EP returns an ARRAY, so { I > 0 ; ... } picks the FIRST match and Details loads that person's object). Use V only as the ID-lookup input when the user EXPLICITLY asked to store the person in a global variable — then V carries the VARIABLE name (whose value holds the person name / numeric ID), e.g. "{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > { V > SALVATORE_CALLARI_CONTACT } } } }".
 
+## VP (plugin / server configuration) — NOT the same as V!
+
+VP resolves a value set in the CodBi PLUGIN CONFIGURATION on the SERVER — the value behind a plugin property whose NAME starts with `GV_` (stored at runtime in `window.codbiSettings.gv`, keyed by the part after the `GV_` prefix). Example: plugin property `GV_JOJO` → `{ VP > JOJO }`.
+
+DECISION (LANGUAGE-AGNOSTIC, BY MEANING IN ANY LANGUAGE — NEVER BY A KEYWORD ALONE):
+- USE **VP** — NEVER **V** — whenever the requested value is a "Plugin-Variable", "Plugin-Einstellung", "Plugin-Property", "plugin setting", "Konfigurationswert der Installation", "GV_...-Wert", or ANY phrase containing "Plugin" (in ANY language). A phrase containing "Plugin" ALWAYS means VP.
+- USE **V** only for an ordinary form GLOBAL VARIABLE — a "Variable" / "globale Variable" / "Formularvariable" / "form variable" / workflow variable DECLARED ON THE FORM (in its top-level "variables" array).
+- CRITICAL AMBIGUITY (the reported "Plugin-Variable JOJO" failure): even when a form global variable with the SAME name exists (e.g. "JOJO" is present in the form's "variables" array), a request that calls the value a "Plugin-Variable" / "Plugin-Property" / anything containing "Plugin" means VP — emit `{ VP > JOJO }` — NEVER `{ V > JOJO }`. Only a request that names it an ordinary "globale Variable"/"Variable" of the form (with NO "Plugin") means V.
+- 1st parameter: the key (the part after `GV_`); optional 2nd: "REPORT" to throw when the key is not in `window.codbiSettings.gv`, otherwise an EMPTY string is returned.
+
 ## I
 
 Takes ONE entry out of an ARRAY by its position — the "pick one of the list" EP. TWO parameters in this exact order: Param[1] = the INDEX as an integer STRING (0-based: `0` = first entry, `1` = second; a number also works), Param[2] = the ARRAY-returning EP/nested expression.

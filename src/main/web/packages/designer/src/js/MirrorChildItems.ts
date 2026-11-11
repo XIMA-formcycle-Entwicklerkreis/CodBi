@@ -50,8 +50,29 @@ interface IMirrorItemLike {
   getItemContentCell?(): JQuery | undefined;
   /** Recomputes `properties.parentid` from the closest ancestor item container. */
   refreshAndSetParentId?(): void;
+  /**
+   * The item's row wrapper (`div.xm-form-row`). The designer stores a row as a DOM wrapper and
+   * derives the persisted `rowid` from it (`Item.getPersist()` reads the wrapper's `id`), so
+   * rebuilding a mirrored ROW means putting its copies into ONE such wrapper. `getRow()` creates
+   * and returns the wrapper on demand.
+   */
+  getRow?(): JQuery | undefined;
+  /** Recomputes the flex widths (`computedwidth`) of every item in this item's row. */
+  refreshRow?(): void;
   draw?(): Promise<void>;
 }
+
+/**
+ * Version of the CHILD ITEM MATERIALIZATION layout.
+ *
+ * It is part of the materialized signature ({@link MIRROR_MATERIALIZED_SIGNATURE_PROPERTY}), so
+ * bumping it re-materializes every Mirror exactly once after an upgrade. `rowlayout2` introduced
+ * keeping the source `rowid` on the copies (and grouping them into `.xm-form-row`s). Copies created
+ * by older builds had NO `rowid`, so a mirrored row could never be reconstructed in the designer —
+ * the fields always stacked vertically there while the published form (which renders the source
+ * LIVE, row grouping included) showed them side by side.
+ */
+const MIRROR_LAYOUT_VERSION = "rowlayout2";
 
 /** Minimal structural view of the designer internals we rely on. */
 interface IDesignerLike {
@@ -486,9 +507,19 @@ function generatedChildIds(designer: IDesignerLike, mirrorId: string): string[] 
 
 /** Removes all child items previously generated for [mirrorId]. */
 function removeGeneratedChildren(designer: IDesignerLike, mirrorId: string): void {
+  // Row wrappers created by `groupCopiedRows` become empty once their copies are detached. They
+  // must be dropped as well — otherwise every re-sync would leave an empty `.xm-form-row` behind in
+  // the Mirror wrapper. Only rows that actually held one of OUR copies are considered, so a row of
+  // the target form is never touched.
+  const emptiedRows = new Set<HTMLElement>();
   for (const id of generatedChildIds(designer, mirrorId)) {
     try {
       const item = designer.items?.[id];
+      const container = item?.getContainer?.();
+      const parent = container?.[0]?.parentElement;
+      if (parent?.classList?.contains("xm-form-row")) {
+        emptiedRows.add(parent);
+      }
       item?.remove?.();
       // `Item.remove()` marks the container `removed="true"` (kept in the DOM for the undo stack)
       // rather than destroying it. If the removed-but-present containers are left inside the Mirror's
@@ -496,10 +527,19 @@ function removeGeneratedChildren(designer: IDesignerLike, mirrorId: string): voi
       // up relocating the fresh copies OUTSIDE the Mirror. Detaching the container here is safe: the
       // item is already logically removed (it is no longer added back when we re-create), and the
       // undo stack only ever needs the item reference, not its in-DOM position.
-      const container = item?.getContainer?.();
       container?.detach?.();
     } catch (x) {
       console.error("[CodBi] Mirror: could not remove generated child", id, x);
+    }
+  }
+  for (const row of emptiedRows) {
+    try {
+      // Keep the wrapper while another (non-generated) item still lives in it.
+      if (!row.querySelector(".xm-item-container:not([removed='true'])")) {
+        row.remove();
+      }
+    } catch {
+      /* an already detached row needs no cleanup */
     }
   }
 }
@@ -537,6 +577,82 @@ function placeInsideParent(parent: IMirrorItemLike, item: IMirrorItemLike): bool
   } catch (x) {
     console.error("[CodBi] Mirror: could not place the child item into the parent", x);
     return false;
+  }
+}
+
+/**
+ * Rebuilds the SOURCE's row layout on the designer canvas.
+ *
+ * FORMCYCLE renders the fields of one source row together because they carry the SAME `rowid` (the
+ * server renderer wraps them in a `div.xm-form-row`; the designer does the same through its own
+ * drop/merge logic). Items created here through the item factory and appended directly to the
+ * Mirror wrapper each occupy a line of their own, because the designer never runs that merge for
+ * them — that is why a mirrored fieldset showed its fields stacked in the designer while the
+ * published form (rendered live from the source) showed them in a row.
+ *
+ * This groups the copies that shared one (namespaced) source `rowid` into a single
+ * `.xm-form-row`, using the designer's own API: `getRow()` creates/wraps the row, the remaining
+ * copies are moved into it and `refreshRow()` derives their widths from `flex`.
+ */
+function groupCopiedRows(
+  designer: IDesignerLike,
+  nodes: readonly IMirrorNode[],
+  itemByRef: Map<string, IMirrorItemLike>,
+  rowPrefix: string,
+): void {
+  // A rowid is only meaningful for DIRECT SIBLINGS in the SAME source container (the same rule the
+  // renderer uses), so group by (source parent reference, namespaced rowid). The SOURCE hierarchy is
+  // used rather than the item's (not yet refreshed) `parentid`, so the grouping cannot accidentally
+  // merge equally-named rows of two different copied containers.
+  const groups = new Map<string, IMirrorItemLike[]>();
+  for (const node of nodes) {
+    const sourceRow = String(node.properties?.rowid ?? "").trim();
+    if (!sourceRow) {
+      continue;
+    }
+    const item = itemByRef.get(node.ref);
+    if (!item) {
+      continue;
+    }
+    const key = `${node.parentRef ?? ""}\u0000${rowPrefix}${sourceRow}`;
+    const group = groups.get(key);
+    if (group) {
+      group.push(item);
+    } else {
+      groups.set(key, [item]);
+    }
+  }
+  let grouped = 0;
+  for (const group of groups.values()) {
+    // A lone carrier is not a row: the designer unwraps single-child rows again.
+    if (group.length < 2) {
+      continue;
+    }
+    const first = group[0];
+    let row: JQuery | undefined;
+    try {
+      row = first.getRow?.();
+    } catch {
+      row = undefined;
+    }
+    if (!row || row.length === 0) {
+      continue;
+    }
+    for (const item of group.slice(1)) {
+      const container = item.getContainer?.();
+      if (container && container.length > 0) {
+        row.append(container);
+      }
+    }
+    try {
+      first.refreshRow?.();
+    } catch (x) {
+      console.warn("[CodBi] Mirror: could not refresh the copied row layout", x);
+    }
+    grouped += 1;
+  }
+  if (grouped > 0) {
+    notifyDesignerChanged(designer);
   }
 }
 
@@ -624,13 +740,35 @@ function remapCopiedReferences(
   }
 }
 
-/** Copies a source node's properties, dropping the ones the designer assigns itself. */
-function propertiesForNode(node: IMirrorNode, mirrorId: string, namePrefix: string): TItemProperties {
+/**
+ * Copies a source node's properties, dropping only the identity the designer assigns itself
+ * (`id`, `parentid`).
+ *
+ * The source `rowid` is KEPT — it is what makes FORMCYCLE render the copies of ONE source row side
+ * by side again. It is namespaced with [rowPrefix] so a mirrored row can never merge with a row of
+ * the TARGET form (the same guard `ForeignElementCopy` uses for foreign copies). Dropping it was
+ * why a mirrored fieldset's fields stacked in the designer while the published form (which renders
+ * the source live) showed them in a row.
+ */
+function propertiesForNode(
+  node: IMirrorNode,
+  mirrorId: string,
+  namePrefix: string,
+  rowPrefix: string,
+): TItemProperties {
   const properties: TItemProperties = {};
   for (const [key, value] of Object.entries(node.properties ?? {})) {
-    if (key !== "id" && key !== "parentid" && key !== "rowid") {
-      properties[key] = value;
+    if (key === "id" || key === "parentid") {
+      continue;
     }
+    if (key === "rowid") {
+      const row = String(value ?? "").trim();
+      if (row) {
+        properties.rowid = `${rowPrefix}${row}`;
+      }
+      continue;
+    }
+    properties[key] = value;
   }
   if (node.name) {
     // Namespace the field name with the Mirror's name, identical to the live render — this is the
@@ -657,6 +795,11 @@ function propertiesForNode(node: IMirrorNode, mirrorId: string, namePrefix: stri
       }
       return { ...(entry as TItemProperties), name: `${namePrefix}${name}` };
     });
+  }
+  // The designer's row width calculation sums `flex` of the row's carriers; a missing value would
+  // turn every width in the row into NaN. Give a copy the designer's own default in that case.
+  if (!(Number(properties.flex) > 0)) {
+    properties.flex = "1";
   }
   properties[MIRROR_OWNER_PROPERTY] = mirrorId;
   // The generated items exist so the fields appear in the placeholder dialog. At RUNTIME the Mirror
@@ -784,7 +927,10 @@ async function syncMirrorChildrenWorker(
   setMirrorPlaceholderVisible(mirror, false);
 
   const tree = await mirrorElementTree(form, element, elementKey);
-  const fullSignature = `${signature}${tree.version}|${tree.revision}`;
+  // The materialization LAYOUT version is part of the signature: an upgrade that changes how the
+  // copies are created (`rowlayout2` = keep + group the source `rowid`) must re-materialize a Mirror
+  // ONCE, otherwise its old rowid-less copies would keep stacking in the designer forever.
+  const fullSignature = `${signature}${tree.version}|${tree.revision}|${MIRROR_LAYOUT_VERSION}`;
   // Same source, already materialized — either in this session (in-memory map) or in a PREVIOUS
   // session whose full page reload cleared the in-memory map (the persisted signature, which names
   // the source element, not just the form). Nothing to do — avoid the destructive remove + recreate.
@@ -832,16 +978,18 @@ async function syncMirrorChildrenWorker(
   }
 
   // The Mirror's own NAME is the namespace for the mirrored field names (must match the live
-  // render's name prefix so `[%namespacedName%]` resolves).
+  // render's name prefix so `[%namespacedName%]` resolves). The same prefix namespaces the copied
+  // ROW ids, so a mirrored row keeps its grouping without ever merging with a target-form row.
   const mirrorName = String(propertiesOf(mirror)?.name ?? "") || mirrorId;
   const namePrefix = `${mirrorName}_`;
+  const rowPrefix = namePrefix;
 
   // Source ref -> created item, so children can be nested under their copied parent.
   const itemByRef = new Map<string, IMirrorItemLike>();
   let created = 0;
   for (const node of tree.items) {
     const className = node.className || "XTextField";
-    const properties = propertiesForNode(node, mirrorId, namePrefix);
+    const properties = propertiesForNode(node, mirrorId, namePrefix, rowPrefix);
     const parentItem = (node.parentRef ? itemByRef.get(node.parentRef) : undefined) ?? mirror;
     const parentId = parentItem?.getId?.() ?? mirrorId;
     try {
@@ -865,6 +1013,11 @@ async function syncMirrorChildrenWorker(
       console.error("[CodBi] Mirror: could not create node", node.ref, className, x);
     }
   }
+
+  // Rebuild the SOURCE's rows: the copies of one source row are moved into one `.xm-form-row`.
+  // The server renderer does this on its own from the `rowid` (frontend + a designer reload), but
+  // the designer never merges items that were created through its item factory.
+  groupCopiedRows(designer, tree.items, itemByRef, rowPrefix);
 
   // The copies received NEW ids from the designer, so the condition references copied from the
   // source (`hiddenif`, `readonlyif`, …) must be re-pointed at the copies — they still name the

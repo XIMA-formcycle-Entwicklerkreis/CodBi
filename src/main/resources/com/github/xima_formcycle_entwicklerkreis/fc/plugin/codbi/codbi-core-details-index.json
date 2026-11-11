@@ -656,6 +656,230 @@
       },
       "classDescriptions": {}
     },
+    "BayVIS.Ansprechpartner.Leistungen": {
+      "id": "BayVIS.Ansprechpartner.Leistungen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the services that are assigned to ONE contact as an ARRAY.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the services that are assigned to ONE contact from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The NUMERIC contact id (from `BayVIS.Ansprechpartner.ID`), never a name.\n- 2nd: OPTIONAL - a property of every service (id, bezeichnung, url, lebenslagen, synonyme).\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to an {@link Array \u003c string \u003e} of services or of the requested property values.",
+      "parameters": {
+        "1": "The NUMERIC contact id (from BayVIS.Ansprechpartner.ID), never a name.",
+        "2": "OPTIONAL - a property of every service (id, bezeichnung, url, lebenslagen, synonyme).",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.AbgegebeneLeistungen": {
+      "id": "BayVIS.Behoerden.AbgegebeneLeistungen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the services that ONE authority has handed over to another authority.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the services that ONE authority has handed over to another authority from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The NUMERIC authority id (from `BayVIS.Behoerden.ID`), never a designation.\n- 2nd: OPTIONAL - a property of every service (e.g. \"bezeichnung\").\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to an {@link Array \u003c string \u003e} of services or of the requested property values.",
+      "parameters": {
+        "1": "The NUMERIC authority id (from BayVIS.Behoerden.ID), never a designation.",
+        "2": "OPTIONAL - a property of every service (e.g. \"bezeichnung\").",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.Ansprechpartner": {
+      "id": "BayVIS.Behoerden.Ansprechpartner",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the contacts that are assigned to ONE authority.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the contacts that are assigned to ONE authority from the corresponding CodBi-Plugin servlet - the per-authority list, never the whole contact directory (that is `BayVIS.Ansprechpartner`).\nPlaceholder Parameter:\n- 1st: The NUMERIC authority id (from `BayVIS.Behoerden.ID`), never a designation.\n- 2nd: OPTIONAL - a property of every contact (e.g. \"nachname\", \"email\").\n- resolves to an {@link Array \u003c string \u003e} of contacts or of the requested property values.",
+      "parameters": {
+        "1": "The NUMERIC authority id (from BayVIS.Behoerden.ID), never a designation.",
+        "2": "OPTIONAL - a property of every contact (e.g. \"nachname\", \"email\")."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.Gebaeude.Ansprechpartner": {
+      "id": "BayVIS.Behoerden.Gebaeude.Ansprechpartner",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves ONE contact that is assigned to a building of an authority.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves ONE contact that is assigned to a BUILDING of an authority from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter (the three ids are NOT interchangeable):\n- 1st: The NUMERIC authority id (from `BayVIS.Behoerden.ID`).\n- 2nd: The NUMERIC building id (from `BayVIS.Behoerden.Gebaeude.ID`).\n- 3rd: The NUMERIC contact id (from `BayVIS.Ansprechpartner.ID`).\n- 4th: OPTIONAL - a property (e.g. \"email\").\n- resolves to the contact record or to the requested property value.",
+      "parameters": {
+        "1": "The NUMERIC authority id (from BayVIS.Behoerden.ID).",
+        "2": "The NUMERIC building id (from BayVIS.Behoerden.Gebaeude.ID).",
+        "3": "The NUMERIC contact id (from BayVIS.Ansprechpartner.ID).",
+        "4": "OPTIONAL - a property (e.g. \"email\")."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.Leistungen": {
+      "id": "BayVIS.Behoerden.Leistungen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the services that are assigned to ONE authority.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the services that are assigned to ONE authority from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The NUMERIC authority id (from `BayVIS.Behoerden.ID`), never a designation.\n- 2nd: OPTIONAL - a property of every service (e.g. \"bezeichnung\").\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to an {@link Array \u003c string \u003e} of services or of the requested property values.",
+      "parameters": {
+        "1": "The NUMERIC authority id (from BayVIS.Behoerden.ID), never a designation.",
+        "2": "OPTIONAL - a property of every service (e.g. \"bezeichnung\").",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Dienststellen": {
+      "id": "BayVIS.Dienststellen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the offices (Dienststellen, incl. the branch offices) of the own authority.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the offices (Dienststellen, incl. the Außenstellen) of the own authority from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: OPTIONAL - a property of every office (e.g. \"bezeichnung\").\n- 2nd: OPTIONAL - \"true\" for the complete records (logo, descriptions, authority/building assignments), \"false\" for the short form (default).\n- resolves to an {@link Array \u003c string \u003e} of offices or of the requested property values.",
+      "parameters": {
+        "1": "OPTIONAL - a property of every office (e.g. \"bezeichnung\").",
+        "2": "OPTIONAL - \"true\" for the complete records, \"false\" for the short form (default)."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Dienststellen.Details": {
+      "id": "BayVIS.Dienststellen.Details",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the office(s) of ONE 7-digit office key.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the office(s) - the main office and the Außenstellen - of ONE 7-digit office key (`dienststellenschluessel`) from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The 7-digit office key, e.g. \"0308106\".\n- 2nd: OPTIONAL - a property (e.g. \"bezeichnung\").\n- resolves to the office record(s) or to the requested property value(s).",
+      "parameters": {
+        "1": "The 7-digit office key (dienststellenschluessel), e.g. \"0308106\".",
+        "2": "OPTIONAL - a property (e.g. \"bezeichnung\")."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Dienststellen.Formulare": {
+      "id": "BayVIS.Dienststellen.Formulare",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the forms (Formulare) of ONE office.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the forms of ONE office from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The 7-digit office key (`dienststellenschluessel`).\n- 2nd: OPTIONAL - a property of every form (e.g. \"bezeichnung\").\n- resolves to an {@link Array \u003c string \u003e} of forms or of the requested property values.",
+      "parameters": {
+        "1": "The 7-digit office key (dienststellenschluessel).",
+        "2": "OPTIONAL - a property of every form (e.g. \"bezeichnung\")."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Dienststellen.Lebenslagen": {
+      "id": "BayVIS.Dienststellen.Lebenslagen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the life situations that are assigned to ONE office.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the life situations that are assigned to ONE office from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The 7-digit office key (`dienststellenschluessel`).\n- 2nd: OPTIONAL - a property of every life situation (e.g. \"bezeichnung\").\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to an {@link Array \u003c string \u003e} of life situations or of the requested property values.",
+      "parameters": {
+        "1": "The 7-digit office key (dienststellenschluessel).",
+        "2": "OPTIONAL - a property of every life situation (e.g. \"bezeichnung\").",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Dienststellen.Leistungen": {
+      "id": "BayVIS.Dienststellen.Leistungen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the services of ONE office.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the services of ONE office from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The 7-digit office key (`dienststellenschluessel`).\n- 2nd: OPTIONAL - a property of every service (e.g. \"bezeichnung\").\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to an {@link Array \u003c string \u003e} of services or of the requested property values.",
+      "parameters": {
+        "1": "The 7-digit office key (dienststellenschluessel).",
+        "2": "OPTIONAL - a property of every service (e.g. \"bezeichnung\").",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Dienststellen.Leistungsbeschreibungen": {
+      "id": "BayVIS.Dienststellen.Leistungsbeschreibungen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the service descriptions of ONE office.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the service descriptions of ONE office from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The 7-digit office key (`dienststellenschluessel`).\n- 2nd: OPTIONAL - a property of every description (e.g. \"bezeichnung\").\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to an {@link Array \u003c string \u003e} of service descriptions or of the requested property values.",
+      "parameters": {
+        "1": "The 7-digit office key (dienststellenschluessel).",
+        "2": "OPTIONAL - a property of every description (e.g. \"bezeichnung\").",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Dienststellen.Onlineverfahren": {
+      "id": "BayVIS.Dienststellen.Onlineverfahren",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the online procedures (Onlineverfahren) of ONE office.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the online procedures of ONE office from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The 7-digit office key (`dienststellenschluessel`).\n- 2nd: OPTIONAL - a property of every procedure (e.g. \"bezeichnung\").\n- resolves to an {@link Array \u003c string \u003e} of online procedures or of the requested property values.",
+      "parameters": {
+        "1": "The 7-digit office key (dienststellenschluessel).",
+        "2": "OPTIONAL - a property of every procedure (e.g. \"bezeichnung\")."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Lebenslagen": {
+      "id": "BayVIS.Lebenslagen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves every life situation published in the BayernPortal.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves every life situation (Lebenslage) published in the BayernPortal from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: OPTIONAL - a property (id, bezeichnung, url, synonyme); omit it to receive the whole records.\n- 2nd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to an {@link Array \u003c string \u003e} of life situations or of the requested property values.",
+      "parameters": {
+        "1": "OPTIONAL - a property (id, bezeichnung, url, synonyme); omit it to receive the whole records.",
+        "2": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Lebenslagen.Details": {
+      "id": "BayVIS.Lebenslagen.Details",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves ONE life situation by its numeric id.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves ONE life situation by its NUMERIC id from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The NUMERIC life situation id (from `BayVIS.Lebenslagen`), never a name.\n- 2nd: OPTIONAL - a property (id, bezeichnung, url, synonyme).\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to the life situation record or to the requested property value.",
+      "parameters": {
+        "1": "The NUMERIC life situation id (from BayVIS.Lebenslagen), never a name.",
+        "2": "OPTIONAL - a property (id, bezeichnung, url, synonyme).",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Leistungen": {
+      "id": "BayVIS.Leistungen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves every service published in the BayernPortal.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves every service (Leistung) published in the BayernPortal from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: OPTIONAL - a property of every service (id, bezeichnung, url, lebenslagen, synonyme); omit it to receive the whole records.\n- 2nd: OPTIONAL - an 8-digit `gemeindekennziffer` to localize the answer, e.g. \"09162000\" for Munich.\n- resolves to an {@link Array \u003c string \u003e} of services or of the requested property values.",
+      "parameters": {
+        "1": "OPTIONAL - a property of every service (id, bezeichnung, url, lebenslagen, synonyme); omit it to receive the whole records.",
+        "2": "OPTIONAL - an 8-digit gemeindekennziffer to localize the answer, e.g. \"09162000\" for Munich."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Leistungen.Details": {
+      "id": "BayVIS.Leistungen.Details",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves ONE service of the BayernPortal by its numeric id.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves ONE service (Leistung) of the BayernPortal by its NUMERIC id from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The NUMERIC service id (from `BayVIS.Leistungen`), never a name.\n- 2nd: OPTIONAL - a property (id, bezeichnung, url, lebenslagen, synonyme).\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to the service record or to the requested property value.",
+      "parameters": {
+        "1": "The NUMERIC service id (from BayVIS.Leistungen), never a name.",
+        "2": "OPTIONAL - a property (id, bezeichnung, url, lebenslagen, synonyme).",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Leistungsbeschreibungen": {
+      "id": "BayVIS.Leistungsbeschreibungen",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the details of EVERY service - every Leistungsbeschreibung published in the BayernPortal.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves every service description (Leistungsbeschreibung, incl. the linked sub-objects) published in the BayernPortal from the corresponding CodBi-Plugin servlet.\nThis is the ONE call that returns the DETAILS of EVERY Leistung: the resource is NOT paged (unlike `/behoerden`), so the whole list arrives in a single response. The \"Zuständigkeiten\" block (competent authorities and their contacts) is deliberately NOT part of it - use `BayVIS.Leistungsbeschreibungen.Ansprechpartner` or `BayVIS.Behoerden.Ansprechpartner` for those.\nPlaceholder Parameter:\n- 1st: OPTIONAL - a property of every description; omit it to receive the whole records.\n- 2nd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- 3rd: OPTIONAL - \"true\" to include the regional supplements matching the gemeindekennziffer (the portal defaults to \"false\" on THIS resource).\n- 4th: OPTIONAL - \"true\" to also receive the internal ids of the linked sub-objects (links, documents, forms, legal bases, online procedures).\n- resolves to an {@link Array \u003c string \u003e} of service descriptions or of the requested property values.",
+      "parameters": {
+        "1": "OPTIONAL - a property of every description; omit it to receive the whole records.",
+        "2": "OPTIONAL - an 8-digit gemeindekennziffer.",
+        "3": "OPTIONAL - \"true\" to include the regional supplements matching the gemeindekennziffer (the portal defaults to \"false\" on THIS resource).",
+        "4": "OPTIONAL - \"true\" to also receive the internal ids of the linked sub-objects (links, documents, forms, legal bases, online procedures)."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Leistungsbeschreibungen.Details": {
+      "id": "BayVIS.Leistungsbeschreibungen.Details",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves ONE service description by the numeric service id.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves ONE service description - with the regional supplements and the competent authorities - by the NUMERIC service id from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The NUMERIC service id (from `BayVIS.Leistungen`).\n- 2nd: OPTIONAL - a property; omit it to receive the whole description object.\n- 3rd: OPTIONAL - an 8-digit `gemeindekennziffer`.\n- resolves to the description object or to the requested property value.",
+      "parameters": {
+        "1": "The NUMERIC service id (from BayVIS.Leistungen).",
+        "2": "OPTIONAL - a property; omit it to receive the whole description object.",
+        "3": "OPTIONAL - an 8-digit gemeindekennziffer."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Leistungsbeschreibungen.Ansprechpartner": {
+      "id": "BayVIS.Leistungsbeschreibungen.Ansprechpartner",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the contacts that are defined for ONE service (Leistung).",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the contacts (**Ansprechpartner**) that are defined for ONE service (**Leistung**) - the \"Zuständigkeiten\" block of its Leistungsbeschreibung.\nThe BayernPortal has NO per-service contact resource: it delivers the contacts INSIDE `/leistungsbeschreibungen/{leistung-id}` and steers which ones are returned through `behoerdenAnsprechpartnerZuordnungen`. This EP requests exactly that document and flattens every contact record it contains.\nPlaceholder Parameter:\n- 1st: The NUMERIC service id (from `BayVIS.Leistungen`), never a designation.\n- 2nd: OPTIONAL - the selection mode: DIREKT (default, only the contacts directly assigned to the service), DIREKTBEVORZUGT, ALLE or NEIN.\n- 3rd: OPTIONAL but STRONGLY RECOMMENDED - an 8-digit `gemeindekennziffer`; without it the portal delivers no competent authorities at all.\n- 4th: OPTIONAL - a property to extract from every contact.\n- resolves to an {@link Array \u003c string \u003e} of contact records or of the requested property values.",
+      "parameters": {
+        "1": "The NUMERIC service id (from BayVIS.Leistungen), never a designation.",
+        "2": "OPTIONAL - the selection mode: DIREKT (default, only the contacts directly assigned to the service), DIREKTBEVORZUGT, ALLE or NEIN.",
+        "3": "OPTIONAL but STRONGLY RECOMMENDED - an 8-digit gemeindekennziffer; without it the portal delivers no competent authorities at all.",
+        "4": "OPTIONAL - a property to extract from every contact."
+      },
+      "classDescriptions": {}
+    },
     "Data.CSV": {
       "id": "Data.CSV",
       "type": "ep",
@@ -904,22 +1128,22 @@
     "V": {
       "id": "V",
       "type": "ep",
-      "summary": "This Element-Placeholder acquires a global variable\u0027s value.",
-      "tsdoc": "This **E**lement-**P**laceholder acquires a global variable\u0027s value.\nPlaceholder Parameter:\n-1st: The name of the global variable.\n-2nd: **REPORT** if a {@link CodBiError } shall be thrown when the global variable isn\u0027t\nexistent. Otherwise an empty {@link string } will be acquired.",
+      "summary": "Reads the value of a FORM GLOBAL VARIABLE declared on the form (the form's variables list, input.XVariable / data-name elements, or a value the SV functionality or another EP wrote into a global variable). Never the CodBi PLUGIN configuration - that is VP.",
+      "tsdoc": "This **E**lement-**P**laceholder acquires a global variable's value.\nPlaceholder Parameter:\n-1st: The name of the global variable.\n-2nd: **REPORT** if a {@link CodBiError } shall be thrown when the global variable isn't\nexistent. Otherwise an empty {@link string } will be acquired.\nUSE (in ANY language) only when the requested value is a FORM/workflow global variable - \"globale Variable\", \"Formularvariable\", \"globale Variablen\", \"form variable\". For a value from the CodBi PLUGIN configuration (\"Plugin-Variable\", \"Plugin-Einstellung\", \"plugin setting\", \"GV_...\") use the VP Element-Placeholder instead, NEVER this V EP. Example: `{ V > JOJO }` for a form global variable named JOJO.",
       "parameters": {
-        "1": "The name of the global variable.",
-        "2": "REPORT if a CodBiError shall be thrown when the global variable isn\u0027t."
+        "1": "The NAME of the global variable (as declared on the form).",
+        "2": "REPORT if a CodBiError shall be thrown when the global variable isn't existent; otherwise an empty string."
       },
       "classDescriptions": {}
     },
     "VP": {
       "id": "VP",
       "type": "ep",
-      "summary": "This Element-Placeholder acquires a value from window.codbiSettings.gv.",
-      "tsdoc": "This **E**lement-**P**laceholder acquires a value from {@link window.codbiSettings.gv }\nthat was injected via a plugin property prefixed with **GV_**.\nPlaceholder Parameter:\n-1st: The key (the part after the **GV_** prefix in the plugin property name).\n-2nd: **REPORT** if a {@link CodBiError } shall be thrown when the key isn\u0027t\npresent in {@link window.codbiSettings.gv }. Otherwise an empty {@link string } will be acquired.",
+      "summary": "Reads a value from the CodBi PLUGIN CONFIGURATION on the server - the value behind a plugin property whose name starts with GV_ (stored at runtime in window.codbiSettings.gv). USE when the value is NOT a global variable declared on the form.",
+      "tsdoc": "This **E**lement-**P**laceholder acquires a value from {@link window.codbiSettings.gv }\nthat was injected via a plugin property prefixed with **GV_**.\nPlaceholder Parameter:\n-1st: The key (the part after the **GV_** prefix in the plugin property name).\n-2nd: **REPORT** if a {@link CodBiError } shall be thrown when the key isn't\npresent in {@link window.codbiSettings.gv }. Otherwise an empty {@link string } will be acquired.\nUSE (in ANY language) when the value comes from the plugin/server configuration and is NOT a global variable declared on the form: \"Plugin-Variable\", \"Plugin-Einstellung\", \"Plugin-Property\", \"plugin setting\", \"GV_...\", \"Konfigurationswert der Installation\". CRITICAL - a phrase containing \"Plugin\" ALWAYS means VP, NEVER the V global-variable EP. Example: for plugin property `GV_JOJO` output `{ VP > JOJO }`, never `{ V > JOJO }`.",
       "parameters": {
-        "1": "The key (the part after the GV_ prefix in the plugin property name).",
-        "2": "REPORT if a CodBiError shall be thrown when the key isn\u0027t."
+        "1": "The KEY - the part of the plugin property name AFTER the GV_ prefix (e.g. for plugin property GV_JOJO the key is JOJO).",
+        "2": "REPORT if a CodBiError shall be thrown when the key isn't present in window.codbiSettings.gv; otherwise an empty string."
       },
       "classDescriptions": {}
     },
@@ -1151,6 +1375,25 @@
     "bayvis.behoerden.gebaeude.id": "BayVIS.Behoerden.Gebaeude.ID",
     "bayvis.behoerden.id": "BayVIS.Behoerden.ID",
     "bayvis.behoerden": "BayVIS.Behoerden",
+    "bayvis.ansprechpartner.leistungen": "BayVIS.Ansprechpartner.Leistungen",
+    "bayvis.behoerden.abgegebeneleistungen": "BayVIS.Behoerden.AbgegebeneLeistungen",
+    "bayvis.behoerden.ansprechpartner": "BayVIS.Behoerden.Ansprechpartner",
+    "bayvis.behoerden.gebaeude.ansprechpartner": "BayVIS.Behoerden.Gebaeude.Ansprechpartner",
+    "bayvis.behoerden.leistungen": "BayVIS.Behoerden.Leistungen",
+    "bayvis.dienststellen.details": "BayVIS.Dienststellen.Details",
+    "bayvis.dienststellen.formulare": "BayVIS.Dienststellen.Formulare",
+    "bayvis.dienststellen.lebenslagen": "BayVIS.Dienststellen.Lebenslagen",
+    "bayvis.dienststellen.leistungen": "BayVIS.Dienststellen.Leistungen",
+    "bayvis.dienststellen.leistungsbeschreibungen": "BayVIS.Dienststellen.Leistungsbeschreibungen",
+    "bayvis.dienststellen.onlineverfahren": "BayVIS.Dienststellen.Onlineverfahren",
+    "bayvis.dienststellen": "BayVIS.Dienststellen",
+    "bayvis.lebenslagen.details": "BayVIS.Lebenslagen.Details",
+    "bayvis.lebenslagen": "BayVIS.Lebenslagen",
+    "bayvis.leistungen.details": "BayVIS.Leistungen.Details",
+    "bayvis.leistungen": "BayVIS.Leistungen",
+    "bayvis.leistungsbeschreibungen.details": "BayVIS.Leistungsbeschreibungen.Details",
+    "bayvis.leistungsbeschreibungen.ansprechpartner": "BayVIS.Leistungsbeschreibungen.Ansprechpartner",
+    "bayvis.leistungsbeschreibungen": "BayVIS.Leistungsbeschreibungen",
     "data.csv": "Data.CSV",
     "data.join": "Data.Join",
     "date.arithmetic": "Date.Arithmetic",

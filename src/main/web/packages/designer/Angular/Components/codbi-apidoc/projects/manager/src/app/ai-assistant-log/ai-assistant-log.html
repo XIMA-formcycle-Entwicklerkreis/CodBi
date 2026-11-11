@@ -168,7 +168,7 @@
     }
 
     @if (!loading) {
-        <div class="cb-log-tree">
+        <div class="cb-log-tree" (scroll)="onTreeScroll($event)">
             @for (node of logs; track trackById($index, node)) {
                 <cb-log-node
                     [node]="node"
@@ -182,6 +182,11 @@
                     (promptOpen)="onPromptOpen($event)"
                     (chatReplyOpen)="onChatReplyOpen($event)"
                     (applyAgain)="onApplyAgain($event)" />
+            }
+            @if (loadingOlder) {
+                <div class="cb-log-loading-older" title="Loading older entries&#x2026;">
+                    <p-progressspinner [style]="{ width: '24px', height: '24px' }" strokeWidth="6" />
+                </div>
             }
         </div>
     }

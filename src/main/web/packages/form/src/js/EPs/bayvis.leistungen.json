@@ -1,0 +1,42 @@
+{
+  "Description": "/classes/EPs_bayvis.leistungen.BayVIS_Leistungen.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property or DOTTED path to extract from every service, e.g. \"bezeichnung.value\" (the name - \"bezeichnung\" alone is an object { leittext, position, sichtbar, value }), \"id\", \"url\", \"lebenslagen.lebenslage\", \"synonyme.synonym.value\". Omit it to receive the whole records.",
+          "de": "Die Eigenschaft bzw. der PUNKTIERTE Pfad, der aus jeder Leistung entnommen wird, z. B. \"bezeichnung.value\" (der Name - \"bezeichnung\" allein ist ein Objekt { leittext, position, sichtbar, value }), \"id\", \"url\", \"lebenslagen.lebenslage\", \"synonyme.synonym.value\". Ohne Angabe werden die vollständigen Datensätze geliefert."
+        },
+        "options": [
+          "id",
+          "bezeichnung.value",
+          "url",
+          "letzteAenderung",
+          "lebenslagen.lebenslage",
+          "lebenslagen.lebenslage.bezeichnung",
+          "synonyme.synonym.value"
+        ]
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An 8-digit official municipality key (gemeindekennziffer) to localize the answer, e.g. \"09162000\" for Munich.",
+          "de": "Ein 8-stelliger Amtlicher Gemeindeschlüssel (gemeindekennziffer) zur Lokalisierung der Antwort, z. B. \"09162000\" für München."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves every service (Leistung) published in the BayernPortal.",
+    "de": "Dieser Element-Placeholder holt alle im BayernPortal veröffentlichten Leistungen."
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "Description": "/classes/EPs_bayvis.dienststellen.details.BayVIS_Dienststellen_Details.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The 7-digit office key (dienststellenschluessel), e.g. \"0308106\".",
+          "de": "Der 7-stellige Dienststellenschlüssel, z. B. \"0308106\"."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract, e.g. \"bezeichnung\".",
+          "de": "Die zu entnehmende Eigenschaft, z. B. \"bezeichnung\"."
+        },
+        "options": ["dienststellenschluessel", "bezeichnung"]
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the office(s) of one 7-digit office key (the main office and its branch offices).",
+    "de": "Dieser Element-Placeholder holt die Dienststelle(n) zu einem 7-stelligen Dienststellenschlüssel (Hauptdienststelle und Außenstellen)."
+  }
+}

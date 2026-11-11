@@ -1,0 +1,44 @@
+{
+  "Description": "/classes/EPs_bayvis.leistungen.details.BayVIS_Leistungen_Details.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The NUMERIC service id (from BayVIS.Leistungen > id).",
+          "de": "Die NUMERISCHE ID der Leistung (aus BayVIS.Leistungen > id)."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract, e.g. \"bezeichnung\". Omit it to receive the whole record.",
+          "de": "Die zu entnehmende Eigenschaft, z. B. \"bezeichnung\". Ohne Angabe wird der vollständige Datensatz geliefert."
+        },
+        "options": ["id", "bezeichnung", "url", "lebenslagen", "synonyme"]
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An 8-digit official municipality key (gemeindekennziffer).",
+          "de": "Ein 8-stelliger Amtlicher Gemeindeschlüssel (gemeindekennziffer)."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves one service (Leistung) of the BayernPortal by its id.",
+    "de": "Dieser Element-Placeholder holt eine bestimmte Leistung des BayernPortals anhand ihrer ID."
+  }
+}

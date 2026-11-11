@@ -1,0 +1,43 @@
+{
+  "Description": "/classes/EPs_bayvis.dienststellen.leistungsbeschreibungen.BayVIS_Dienststellen_Leistungsbeschreibungen.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The 7-digit office key (dienststellenschluessel).",
+          "de": "Der 7-stellige Dienststellenschlüssel."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract from every description, e.g. \"bezeichnung\".",
+          "de": "Die aus jeder Leistungsbeschreibung zu entnehmende Eigenschaft, z. B. \"bezeichnung\"."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An 8-digit official municipality key (gemeindekennziffer).",
+          "de": "Ein 8-stelliger Amtlicher Gemeindeschlüssel (gemeindekennziffer)."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the service descriptions (Leistungsbeschreibungen) of one office.",
+    "de": "Dieser Element-Placeholder holt die Leistungsbeschreibungen einer Dienststelle."
+  }
+}

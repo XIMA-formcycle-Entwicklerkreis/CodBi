@@ -1,0 +1,33 @@
+{
+  "Description": "/classes/EPs_bayvis.behoerden.ansprechpartner.BayVIS_Behoerden_Ansprechpartner.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The NUMERIC authority id — resolve a designation first with { I > 0 ; { BayVIS.Behoerden.ID > <designation> } }.",
+          "de": "Die NUMERISCHE ID der Behörde — eine Bezeichnung zuerst mit { I > 0 ; { BayVIS.Behoerden.ID > <Bezeichnung> } } auflösen."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract from every contact, e.g. \"nachname\" or \"email\".",
+          "de": "Die aus jedem Ansprechpartner zu entnehmende Eigenschaft, z. B. \"nachname\" oder \"email\"."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the contacts (Ansprechpartner) that are assigned to one authority.",
+    "de": "Dieser Element-Placeholder holt die Ansprechpartner, die einer Behörde zugeordnet sind."
+  }
+}

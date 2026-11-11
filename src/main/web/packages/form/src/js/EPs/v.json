@@ -27,7 +27,7 @@
     "source": "tsdoc"
   },
   "Summary": {
-    "en": "This Element-Placeholder acquires a global variable\u0027s value.",
-    "de": "Dieser Element-Placeholder liefert den Wert einer globalen Variablen."
+    "en": "Reads the value of a FORM GLOBAL VARIABLE declared on the form - NOT the CodBi PLUGIN CONFIGURATION (a GV_-prefixed plugin property / \"Plugin-Variable\" is read by the VP Element-Placeholder instead).",
+    "de": "Liefert den Wert einer GLOBALEN VARIABLE des Formulars - nicht die CodBi-PLUGIN-KONFIGURATION (eine Plugin-Eigenschaft mit GV_-Präfix / \"Plugin-Variable\" liest stattdessen der VP Element-Placeholder)."
   }
 }

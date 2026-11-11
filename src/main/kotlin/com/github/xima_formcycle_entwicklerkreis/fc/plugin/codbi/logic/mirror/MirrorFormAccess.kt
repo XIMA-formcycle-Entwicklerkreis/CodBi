@@ -260,8 +260,9 @@ object MirrorFormAccess {
       val className: String,
       /**
        * The source field's persisted `properties` (label, options, placeholder, required, …). The
-       * child item is created from these so it looks and behaves like the source field — only the
-       * `name` is kept native and the `id`/`parentid`/`rowid` are (re)assigned by the designer.
+       * child item is created from these so it looks and behaves like the source field — the `name`
+       * is kept native, `id`/`parentid` are assigned by the designer and the `rowid` is namespaced
+       * (so a copied row keeps its grouping without merging with the target form's rows).
        */
       val properties: JSONObject
   )

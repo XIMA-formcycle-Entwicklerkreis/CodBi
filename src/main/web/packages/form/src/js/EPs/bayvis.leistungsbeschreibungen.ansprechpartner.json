@@ -1,0 +1,54 @@
+{
+  "Description": "/classes/EPs_bayvis.leistungsbeschreibungen.ansprechpartner.BayVIS_Leistungsbeschreibungen_Ansprechpartner.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The NUMERIC service id (from BayVIS.Leistungen), never a designation.",
+          "de": "Die NUMERISCHE ID der Leistung (aus BayVIS.Leistungen), niemals eine Bezeichnung."
+        }
+      },
+      {
+        "index": 2,
+        "type": "enum",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The contact selection mode: DIREKT (default, only the contacts directly assigned to the service), DIREKTBEVORZUGT (directly assigned preferred, else all employees of the authority in that building), ALLE (all employees in the building) or NEIN (no contacts).",
+          "de": "Die Auswahlart: DIREKT (Standard, nur die der Leistung direkt zugeordneten Ansprechpartner), DIREKTBEVORZUGT (direkt zugeordnete bevorzugt, sonst alle Mitarbeiter der Behörde im Gebäude), ALLE (alle Mitarbeiter im Gebäude) oder NEIN (keine Ansprechpartner)."
+        },
+        "options": ["DIREKT", "DIREKTBEVORZUGT", "ALLE", "NEIN"]
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An 8-digit official municipality key (gemeindekennziffer), e.g. \"09162000\" for Munich. Strongly recommended: without a valid key the portal delivers no competent authorities at all, so the result stays empty.",
+          "de": "Ein 8-stelliger Amtlicher Gemeindeschlüssel (gemeindekennziffer), z. B. \"09162000\" für München. Dringend empfohlen: ohne gültigen Schlüssel liefert das Portal keine zuständigen Behörden, das Ergebnis bleibt leer."
+        }
+      },
+      {
+        "index": 4,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract from every contact, e.g. \"email\", \"vorname\", \"nachname\". Omit it to receive the whole contact records.",
+          "de": "Die aus jedem Ansprechpartner zu entnehmende Eigenschaft, z. B. \"email\", \"vorname\", \"nachname\". Ohne Angabe werden die vollständigen Datensätze geliefert."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the contacts (Ansprechpartner) that are defined for one service (Leistung), taken from the Zuständigkeiten block of its Leistungsbeschreibung.",
+    "de": "Dieser Element-Placeholder holt die Ansprechpartner, die einer Leistung zugeordnet sind (aus dem Bereich Zuständigkeiten der Leistungsbeschreibung)."
+  }
+}

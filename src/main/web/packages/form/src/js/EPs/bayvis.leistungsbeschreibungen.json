@@ -1,0 +1,55 @@
+{
+  "Description": "/classes/EPs_bayvis.leistungsbeschreibungen.BayVIS_Leistungsbeschreibungen.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract from every description, e.g. \"bezeichnung\". Omit it to receive the whole records.",
+          "de": "Die aus jeder Leistungsbeschreibung zu entnehmende Eigenschaft, z. B. \"bezeichnung\". Ohne Angabe werden die vollständigen Datensätze geliefert."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An 8-digit official municipality key (gemeindekennziffer).",
+          "de": "Ein 8-stelliger Amtlicher Gemeindeschlüssel (gemeindekennziffer)."
+        }
+      },
+      {
+        "index": 3,
+        "type": "enum",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "\"true\" to include the regional supplements matching the gemeindekennziffer. The portal defaults to \"false\" on this resource (the single-record EP defaults to \"true\").",
+          "de": "\"true\", um die zur gemeindekennziffer passenden regionalen Ergänzungen mitzuliefern. Das Portal verwendet bei dieser Ressource standardmäßig \"false\" (der Einzelabruf standardmäßig \"true\")."
+        },
+        "options": ["true", "false"]
+      },
+      {
+        "index": 4,
+        "type": "enum",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "\"true\" to also receive the internal ids of the linked sub-objects (links, documents, forms, legal bases, online procedures).",
+          "de": "\"true\", um zusätzlich die internen IDs der verknüpften Teil-Objekte (Links, Unterlagen, Formulare, Rechtsgrundlagen, Online-Verfahren) zu erhalten."
+        },
+        "options": ["true", "false"]
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves every service description (Leistungsbeschreibung, incl. regional supplements) published in the BayernPortal.",
+    "de": "Dieser Element-Placeholder holt alle im BayernPortal veröffentlichten Leistungsbeschreibungen (mit regionalen Ergänzungen)."
+  }
+}

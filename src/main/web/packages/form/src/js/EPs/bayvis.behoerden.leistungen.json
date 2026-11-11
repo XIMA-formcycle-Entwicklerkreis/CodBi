@@ -1,0 +1,44 @@
+{
+  "Description": "/classes/EPs_bayvis.behoerden.leistungen.BayVIS_Behoerden_Leistungen.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The NUMERIC authority id — resolve a designation first with { I > 0 ; { BayVIS.Behoerden.ID > <designation> } }.",
+          "de": "Die NUMERISCHE ID der Behörde — eine Bezeichnung zuerst mit { I > 0 ; { BayVIS.Behoerden.ID > <Bezeichnung> } } auflösen."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract from every service, e.g. \"bezeichnung\".",
+          "de": "Die aus jeder Leistung zu entnehmende Eigenschaft, z. B. \"bezeichnung\"."
+        },
+        "options": ["id", "bezeichnung", "url", "lebenslagen", "synonyme"]
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An 8-digit official municipality key (gemeindekennziffer).",
+          "de": "Ein 8-stelliger Amtlicher Gemeindeschlüssel (gemeindekennziffer)."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the services (Leistungen) that are assigned to one authority.",
+    "de": "Dieser Element-Placeholder holt die Leistungen, die einer Behörde zugeordnet sind."
+  }
+}

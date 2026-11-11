@@ -45,8 +45,8 @@ object AiAssistantLog {
   private val SKIP_ATTRS =
       setOf("name", "elements", "buttons", "cssclasses", "cssclasseswrapper", "action")
 
-  /** Maximum number of log entries returned by [loadLogs]. */
-  private const val DEFAULT_LIMIT = 200
+  /** Maximum number of log entries returned per page by [loadLogs] (the change log's page size). */
+  const val DEFAULT_LOG_LIMIT = 200
 
   /**
    * One selectable form in the change log's cross-form selector: the technical `formKey` used to
@@ -62,7 +62,7 @@ object AiAssistantLog {
 
   /** Empty log response: no entries and zeroed totals (used when no DB / an error occurs). */
   private const val EMPTY_LOG_RESPONSE =
-      """{"entries":[],"totals":{"tokensIn":0,"tokensOut":0,"costByCurrency":{}},"sensitiveElements":[],"sensitiveChecks":[]}"""
+      """{"entries":[],"total":0,"loaded":0,"hasMore":false,"offset":0,"limit":0,"totals":{"tokensIn":0,"tokensOut":0,"costByCurrency":{}},"sensitiveElements":[],"sensitiveChecks":[]}"""
 
   // region Write
 
@@ -230,17 +230,24 @@ object AiAssistantLog {
   /**
    * Loads the most recent inference records ordered newest-first. When [formKey] is non-blank only
    * the entries of that form are returned (used by the designer change-log dialog to show the log
-   * of the form currently being edited). Returns a JSON object string `{ "entries": [...],
-   * "totals": { "tokensIn", "tokensOut", "costByCurrency": { "<currency>": cost } } }`. Each entry
-   * has the shape `{ "id", "ts", "formKey", "prompt", "intent", "modelId", "form": {...},
-   * "workflow": [...] }`. The totals are derived server-side from the summed input/output tokens
-   * per model × the configured price per 1,000,000 tokens (grouped by currency), so the total cost
-   * does not depend on summing stored per-entry costs.
+   * of the form currently being edited). Returns a JSON object string `{ "entries": [...], "total":
+   * <all-matching-count>, "loaded": <entries-in-this-page>, "hasMore": <bool>, "offset":
+   * <requested-offset>, "limit": <requested-limit>, "totals": { "tokensIn", "tokensOut",
+   * "costByCurrency": { "<currency>": cost } } }`. Each entry has the shape `{ "id", "ts",
+   * "formKey", "prompt", "intent", "modelId", "form": {...}, "workflow": [...] }`. [offset] pages
+   * further back into older entries (infinite scroll): the response returns the [limit] newest
+   * entries starting at [offset], while `total` is the OVERALL number of matching entries (used by
+   * the caption so it shows the true inference count even when the current page is capped). The
+   * token/cost `totals` are derived server-side over ALL matching entries (not just the current
+   * page) from the summed input/output tokens per model × the configured price per 1,000,000 tokens
+   * (grouped by currency), so the total cost does not depend on the requested page and stays stable
+   * while paging.
    */
   fun loadLogs(
       emf: EntityManagerFactory?,
       formKey: String? = null,
-      limit: Int = DEFAULT_LIMIT,
+      limit: Int = DEFAULT_LOG_LIMIT,
+      offset: Int = 0,
       username: String? = null,
       /**
        * Whether the requesting user is allowed to sync the API-Documentation. Only those users get
@@ -260,29 +267,69 @@ object AiAssistantLog {
       val em = emf.createEntityManager()
       try {
         val filter = formKey?.trim()?.takeIf { it.isNotEmpty() }
+        val hasFilter = filter != null
+        // Total number of matching entries — independent of the page, so the caption can show the
+        // true inference count even when only a window of [limit] entries is loaded.
+        val totalQuery =
+            em.createQuery(
+                if (hasFilter) {
+                  "SELECT COUNT(l) FROM CodbiAiAssistantLog l WHERE l.formKey = :formKey"
+                } else {
+                  "SELECT COUNT(l) FROM CodbiAiAssistantLog l"
+                },
+                // COUNT() returns the boxed java.lang.Long, so we must use the boxed type here;
+                // Long::class.java would resolve to the primitive long.class and break the
+                // TypedQuery.
+                Long::class.javaObjectType)
+        if (hasFilter) totalQuery.setParameter("formKey", filter)
+        val totalCount = (totalQuery.singleResult as? Number)?.toLong() ?: 0L
+        // Summed input/output tokens per model over ALL matching entries, used to derive the
+        // total cost per currency — page-independent, so the totals never change while scrolling.
+        val aggQuery =
+            em.createQuery(
+                if (hasFilter) {
+                  "SELECT l.modelId, COALESCE(SUM(l.tokensIn), 0), COALESCE(SUM(l.tokensOut), 0) " +
+                      "FROM CodbiAiAssistantLog l WHERE l.formKey = :formKey GROUP BY l.modelId"
+                } else {
+                  "SELECT l.modelId, COALESCE(SUM(l.tokensIn), 0), COALESCE(SUM(l.tokensOut), 0) " +
+                      "FROM CodbiAiAssistantLog l GROUP BY l.modelId"
+                })
+        if (hasFilter) aggQuery.setParameter("formKey", filter)
+        @Suppress("UNCHECKED_CAST")
+        val aggRows = (aggQuery.resultList as? List<*>) ?: emptyList<Any>()
+        val tokensByModel = mutableMapOf<String, Pair<Long, Long>>()
+        for (row in aggRows) {
+          val cols = row as? Array<*> ?: continue
+          val model = cols.getOrNull(0) as? String ?: ""
+          val inTokens = (cols.getOrNull(1) as? Number)?.toLong() ?: 0L
+          val outTokens = (cols.getOrNull(2) as? Number)?.toLong() ?: 0L
+          tokensByModel[model] =
+              (tokensByModel[model]?.first ?: 0L) + inTokens to
+                  (tokensByModel[model]?.second ?: 0L) + outTokens
+        }
         val jpql =
-            if (filter == null) {
-              "SELECT l FROM CodbiAiAssistantLog l ORDER BY l.id DESC"
-            } else {
+            if (hasFilter) {
               "SELECT l FROM CodbiAiAssistantLog l WHERE l.formKey = :formKey ORDER BY l.id DESC"
+            } else {
+              "SELECT l FROM CodbiAiAssistantLog l ORDER BY l.id DESC"
             }
         val query = em.createQuery(jpql, CodbiAiAssistantLog::class.java)
-        if (filter != null) query.setParameter("formKey", filter)
-        query.maxResults = limit.coerceIn(1, 500)
+        if (hasFilter) query.setParameter("formKey", filter)
+        val safeLimit = limit.coerceIn(1, 500)
+        val safeOffset = offset.coerceAtLeast(0)
+        query.firstResult = safeOffset
+        query.maxResults = safeLimit
         val rows = query.resultList as List<CodbiAiAssistantLog>
-        val out = JsonArray()
         var totalTokensIn = 0L
         var totalTokensOut = 0L
-        // Summed tokens per model — used to derive the total cost from the configured price.
-        val tokensByModel = mutableMapOf<String, Pair<Long, Long>>()
+        val out = JsonArray()
+        // Full (page-independent) token totals derived from the aggregate query over ALL matching
+        // entries — the reported `totals` stay stable while paging up and down the log.
+        for ((_, tokens) in tokensByModel) {
+          totalTokensIn += tokens.first
+          totalTokensOut += tokens.second
+        }
         for (entry in rows) {
-          val tokensIn = entry.tokensIn ?: 0L
-          val tokensOut = entry.tokensOut ?: 0L
-          totalTokensIn += tokensIn
-          totalTokensOut += tokensOut
-          val model = entry.modelId ?: ""
-          val prev = tokensByModel[model]
-          tokensByModel[model] = (prev?.first ?: 0L) + tokensIn to (prev?.second ?: 0L) + tokensOut
           val e = JsonObject()
           e.addProperty("id", entry.id?.toString() ?: "")
           e.addProperty("ts", entry.ts?.toString() ?: "")
@@ -499,6 +546,15 @@ object AiAssistantLog {
         totals.add("costByCurrency", costObj)
         val root = JsonObject()
         root.add("entries", out)
+        // Pagination metadata: `total` is the OVERALL number of matching inferences (independent of
+        // the page), so a caption can show the true inference count even when only a window of
+        // [limit] entries is loaded. `loaded` is how many entries this page actually returned and
+        // `hasMore` tells the frontend whether older entries still exist (infinite scroll).
+        root.addProperty("total", totalCount)
+        root.addProperty("loaded", out.size())
+        root.addProperty("hasMore", safeOffset + out.size() < totalCount)
+        root.addProperty("offset", safeOffset)
+        root.addProperty("limit", safeLimit)
         root.add("totals", totals)
         // The current set of configured sensitive elements (AI_Log_SensitiveElements). The frontend
         // uses this to mark every node that matches a sensitive element with an always-on red

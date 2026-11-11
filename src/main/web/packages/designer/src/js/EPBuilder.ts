@@ -554,6 +554,11 @@ const BUILDER_CSS = `
 .codbi-epb__resulthead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:1px 2px 2px;color:#a85a00;font-weight:700}
 .codbi-epb__resultclose{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:1px solid darkorange;border-radius:4px;background:#fff;color:#a85a00;cursor:pointer;font:inherit;line-height:1}
 .codbi-epb__resultclose:hover{background:darkorange;color:#fff}
+.codbi-epb__resultactions{display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.codbi-epb__resultcopy{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:1px solid darkorange;border-radius:4px;background:#fff;color:#a85a00;cursor:pointer;font:inherit;line-height:1}
+.codbi-epb__resultcopy:hover:not(:disabled){background:darkorange;color:#fff}
+.codbi-epb__resultcopy:disabled{cursor:default;opacity:.45;border-color:#e4cfae;color:#c2a17a}
+.codbi-epb__resultcopy--done{border-color:#2e7d32;color:#2e7d32;font-weight:700}
 .codbi-epb__result{max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:11px;background:#fffdf9;border:1px solid darkorange;border-radius:4px;padding:4px 6px;color:#3a2200;scrollbar-color:#ff9f40 transparent;scrollbar-width:thin}
 .codbi-epb__result::-webkit-scrollbar{width:10px;height:10px}
 .codbi-epb__result::-webkit-scrollbar-track{background:transparent}
@@ -676,6 +681,92 @@ async function copyToClipboard(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Creates the icon of the result panel's copy button: two overlapping sheets, drawn as SVG so it
+ * does not depend on the host's font/glyph coverage.
+ *
+ * @param doc The document the icon belongs to.
+ *
+ * @returns The SVG element. */
+function createCopyIcon(doc: Document): SVGSVGElement {
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = doc.createElementNS(namespace, "svg");
+
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "10");
+  svg.setAttribute("height", "10");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  for (const [left, top] of [
+    [5, 1],
+    [2, 5],
+  ]) {
+    const sheet = doc.createElementNS(namespace, "rect");
+
+    sheet.setAttribute("x", String(left));
+    sheet.setAttribute("y", String(top));
+    sheet.setAttribute("width", "9");
+    sheet.setAttribute("height", "9");
+    sheet.setAttribute("rx", "1.5");
+    sheet.setAttribute("fill", "none");
+    sheet.setAttribute("stroke", "currentColor");
+    sheet.setAttribute("stroke-width", "1.6");
+    svg.append(sheet);
+  }
+
+  return svg;
+}
+
+/**
+ * Creates the "copy result" button for an EP retrieval result panel. Clicking it copies the text the
+ * panel currently shows and confirms the copy briefly (check mark + green border) before reverting.
+ *
+ * The button re-reads the text through **getText** on every click, so it never copies a stale value —
+ * the panel itself is re-rendered whenever a retrieval starts or finishes.
+ *
+ * @param doc The document the button belongs to.
+ * @param getText Supplies the text to copy when the button is clicked.
+ * @param disabled Whether the button starts disabled (e.g. while retrieving or without a result).
+ *
+ * @returns The copy button. */
+export function createResultCopyButton(doc: Document, getText: () => string, disabled = false): HTMLButtonElement {
+  const button = doc.createElement("button");
+
+  const reset = (): void => {
+    button.replaceChildren(createCopyIcon(doc));
+    button.title = i18n("epBuilder.copyResult");
+    button.setAttribute("aria-label", i18n("epBuilder.copyResult"));
+    button.classList.remove("codbi-epb__resultcopy--done");
+  };
+
+  button.type = "button";
+  button.className = "codbi-epb__resultcopy";
+  button.disabled = disabled;
+  reset();
+  button.addEventListener("click", () => {
+    void copyToClipboard(getText()).then((copied) => {
+      if (!copied) {
+        button.title = i18n("epBuilder.copyFailed");
+        button.setAttribute("aria-label", i18n("epBuilder.copyFailed"));
+
+        return;
+      }
+
+      button.replaceChildren(doc.createTextNode("✓"));
+      button.classList.add("codbi-epb__resultcopy--done");
+      button.title = i18n("epBuilder.copied");
+      button.setAttribute("aria-label", i18n("epBuilder.copied"));
+      window.setTimeout(() => {
+        reset();
+        button.disabled = getText().trim() === "";
+      }, 1200);
+    });
+  });
+
+  return button;
 }
 
 /**
@@ -953,12 +1044,32 @@ function pickLanguage(value: string | { [lang: string]: string } | undefined): s
 }
 
 /**
- * Formats an EP retrieval result for display.
+ * Maximum number of characters the result panel RENDERS. A payload such as the complete BayVIS
+ * service directory is far larger, so the panel only shows a preview — the panel's copy button always
+ * copies the FULL text (see {@link formatResultText }).
+ */
+const RESULT_PREVIEW_LIMIT = 4000;
+
+/**
+ * Formats an EP retrieval result for display, cut at {@link RESULT_PREVIEW_LIMIT }.
  *
  * @param value The retrieved value.
  *
- * @returns A human readable string. */
-function formatResult(value: unknown): string {
+ * @returns A human readable string (possibly truncated, ending with an ellipsis). */
+export function formatResult(value: unknown): string {
+  const full = formatResultText(value);
+
+  return full.length > RESULT_PREVIEW_LIMIT ? `${full.slice(0, RESULT_PREVIEW_LIMIT)}\n…` : full;
+}
+
+/**
+ * Formats an EP retrieval result WITHOUT truncation — this is what the copy button puts on the
+ * clipboard, so a preview cut in the panel never limits what the user can copy.
+ *
+ * @param value The retrieved value.
+ *
+ * @returns The complete human readable string. */
+export function formatResultText(value: unknown): string {
   if (value === undefined) {
     return "undefined";
   }
@@ -968,9 +1079,9 @@ function formatResult(value: unknown): string {
   }
 
   try {
-    const json = JSON.stringify(value, null, 2);
+    const json: unknown = JSON.stringify(value, null, 2);
 
-    return json.length > 4000 ? `${json.slice(0, 4000)}\n…` : json;
+    return typeof json === "string" ? json : String(value);
   } catch {
     return String(value);
   }
@@ -1154,8 +1265,10 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
   const collapsed = new Set<EPNode>();
   /** EP nodes whose retrieval result panel is open. */
   const openResults = new Set<EPNode>();
-  /** The last retrieval result per EP node. */
+  /** The last retrieval result per EP node — truncated for display (see {@link RESULT_PREVIEW_LIMIT }). */
   const results = new Map<EPNode, string>();
+  /** The UNTRUNCATED retrieval result per EP node (what the copy button copies). */
+  const fullResults = new Map<EPNode, string>();
   /** The EP id whose documentation is currently shown in the diagram's docs pane. */
   let diagramSelection: string | undefined;
   /** Fraction of the diagram area used by the (left) diagram column (0..1). */
@@ -1744,9 +1857,24 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
     close.setAttribute("aria-label", i18n("epBuilder.closeResult"));
     close.addEventListener("click", () => {
       openResults.delete(node);
+      // Drop the (possibly huge) payload so a closed panel does not keep it in memory.
+      results.delete(node);
+      fullResults.delete(node);
       render();
     });
-    head.append(label, close);
+    // The result text IS the payload the user wants (a JSON/text EP answer), so the panel offers a
+    // copy button; it is disabled while retrieving or when there is nothing to copy.
+    const resultText = results.get(node) ?? "";
+    const copy = createResultCopyButton(
+      doc,
+      // The panel may show only a preview; the button must copy the complete result.
+      () => fullResults.get(node) ?? results.get(node) ?? "",
+      resultText.trim() === "" || resultText === i18n("epBuilder.retrieving"),
+    );
+    const actions = doc.createElement("div");
+    actions.className = "codbi-epb__resultactions";
+    actions.append(copy, close);
+    head.append(label, actions);
 
     const pre = doc.createElement("div");
     pre.className = "codbi-epb__result";
@@ -1778,6 +1906,7 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
 
       if (!codbi?.resolveEP) {
         results.set(node, i18n("epBuilder.retrieveUnavailable"));
+        fullResults.set(node, i18n("epBuilder.retrieveUnavailable"));
         render();
 
         return;
@@ -1803,13 +1932,16 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
         ]);
 
         console.warn("[CodBi EP-builder] resolved", { requested, resolved: resolved.value });
+        fullResults.set(node, formatResultText(resolved.value));
         results.set(node, formatResult(resolved.value));
       } finally {
         cleanupVariables();
       }
     } catch (error) {
       console.warn("[CodBi EP-builder] retrieval failed", { requested, error });
-      results.set(node, `${i18n("epBuilder.retrieveError")}: ${String(error)}${runtimeDiag}`);
+      const message = `${i18n("epBuilder.retrieveError")}: ${String(error)}${runtimeDiag}`;
+      results.set(node, message);
+      fullResults.set(node, message);
     }
 
     render();

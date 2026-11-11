@@ -8,11 +8,18 @@ import { AE } from "xdbc/src/DBC/AE";
 import { CodBiError } from "../global-scope";
 // #endregion Imports
 /**
- * This **E**lement-**P**laceholder acquires a value from {@link window.codbiSettings.gv }
- * that was injected via a plugin property prefixed with **GV_**.
+ * This **E**lement-**P**laceholder acquires a value set in the CodBi **PLUGIN CONFIGURATION** on the
+ * server - the value behind a **plugin property whose name starts with {@code GV_ }** (injected at runtime
+ * into {@link window.codbiSettings.gv }, keyed by the part after the prefix).
+ *
+ * It is NOT the {@link V } Element-Placeholder: {@link V } reads a **global variable of the form** (declared
+ * on the form), whereas **VP** reads the **plugin/server configuration**. USE **VP** (in ANY language) whenever
+ * the requested value is a "Plugin-Variable", "Plugin-Einstellung", "Plugin-Property", "plugin setting" or a
+ * {@code GV_ }-prefixed configuration value - never {@link V }: a phrase containing "Plugin" always means **VP**.
  *
  * Placeholder Parameter:
- *  -1st: The key (the part after the **GV_** prefix in the plugin property name).
+ *  -1st: The key (the part after the **GV_** prefix in the plugin property name), e.g. for the
+ *        plugin property {@code GV_JOJO } the key is {@code JOJO }.
  *  -2nd: **REPORT** if a {@link CodBiError } shall be thrown when the key isn't
  *        present in {@link window.codbiSettings.gv }. Otherwise an empty {@link string } will be acquired.
  *

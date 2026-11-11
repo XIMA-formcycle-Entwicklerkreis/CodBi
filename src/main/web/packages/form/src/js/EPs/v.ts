@@ -8,7 +8,15 @@ import { AE } from "xdbc/src/DBC/AE";
 import { CodBiError } from "../global-scope";
 // #endregion Imports
 /**
- * This **E**lement-**P**laceholder acquires a global variable's value.
+ * This **E**lement-**P**laceholder acquires the value of a FORM **GLOBAL VARIABLE** - a variable
+ * DECLARED ON THE FORM itself (the form's variables list, the {@code input.XVariable } / {@code data-name }
+ * elements, or a value the **SV** functionality or another EP wrote into a global variable).
+ *
+ * It is NOT the **VP** Element-Placeholder: **VP** reads the CodBi **PLUGIN CONFIGURATION** on the server
+ * (a {@code GV_ }-prefixed plugin property, i.e. a "Plugin-Variable" / "Plugin-Einstellung" / plugin setting).
+ * **V** reads a form global variable only - never the plugin configuration, and never a value fetched from
+ * the visitor's URL (that is **URLParameter**). USE **V** (in ANY language) when the requested value is a
+ * form/workflow global variable.
  *
  * Placeholder Parameter:
  *  -1st: The name of the global variable.

@@ -228,6 +228,82 @@ USE WHEN an authority name must be turned into an ID.
 Reads the WHOLE BayVIS authority directory, or ONE COLUMN of it (e.g. bezeichnung = the office name), as a list; it returns that column for EVERY authority and can never select ONE named authority (whose field comes from BayVIS.Behoerden.Details).
 USE WHEN a list of authorities or one column of the directory is needed as a VALUE - e.g. as the `Values` entry of HTML.Select.Injection ("{ BayVIS.Behoerden > bezeichnung }", with ReClean on); it is an ELEMENT PLACEHOLDER and belongs in a value parameter, NEVER in the functionality (func) parameter. BayVIS data is NEVER a Formcycle datasource: never set a `datasource` for it and never ask for one.
 
+### BayVIS.Ansprechpartner.Leistungen
+Returns the services (Leistungen) that are assigned to ONE contact as an ARRAY; the contact is addressed by its NUMERIC id, never by a name.
+USE WHEN the services of a person are needed ("welche Leistungen bearbeitet <Person>") - chain the id ({ I > 0 ; { BayVIS.Ansprechpartner.ID > <Firstname Lastname> } }) into it and request it together with no other BayVIS EP.
+
+### BayVIS.Behoerden.AbgegebeneLeistungen
+Returns the services (Leistungen) that ONE authority has handed over to another authority as an ARRAY; the authority is addressed by its NUMERIC id.
+USE WHEN handed-over / abgegebene Leistungen of an authority are wanted ("welche Leistungen hat Amt X abgegeben") - the authority id comes from { I > 0 ; { BayVIS.Behoerden.ID > <designation> } }.
+
+### BayVIS.Behoerden.Ansprechpartner
+Returns the contacts (Ansprechpartner) that are assigned to ONE authority as an ARRAY - the per-authority list, NOT the whole contact directory (that is BayVIS.Ansprechpartner).
+USE WHEN the contacts of a named authority are needed ("welche Ansprechpartner hat Amt X") - pass the NUMERIC authority id ({ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }) and an optional property (e.g. "nachname", "email").
+
+### BayVIS.Behoerden.Gebaeude.Ansprechpartner
+Returns ONE contact that is assigned to a specific BUILDING of an authority; it needs THREE numeric ids that are NOT interchangeable: authority id, building id, contact id.
+USE WHEN the contact of one building of one authority is needed - slots: { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <authority id> } } ; { I > 0 ; { BayVIS.Ansprechpartner.ID > <Firstname Lastname> } }, plus an optional property.
+
+### BayVIS.Behoerden.Leistungen
+Returns the services (Leistungen) that are assigned to ONE authority as an ARRAY; the authority is addressed by its NUMERIC id.
+USE WHEN the services of a named authority are needed ("welche Leistungen sind Amt X zugeordnet") - { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } fills the id, an optional property (e.g. "bezeichnung") the second parameter.
+
+### BayVIS.Dienststellen
+Returns the offices (Dienststellen, incl. the Außenstellen) of the OWN authority as an ARRAY, with an optional property and an optional full=true.
+USE WHEN the own offices/branch offices must be listed ("alle Dienststellen", "unsere Außenstellen") - e.g. as the Values entry of HTML.Select.Injection with "{ BayVIS.Dienststellen > bezeichnung }".
+
+### BayVIS.Dienststellen.Details
+Returns the office(s) of ONE 7-digit office key (dienststellenschluessel) - the main office AND its branch offices that share the key.
+USE WHEN one known office key must be resolved ("Dienststelle 0308106") - pass the 7-digit key, then an optional property.
+
+### BayVIS.Dienststellen.Formulare
+Returns the forms (Formulare) of ONE office as an ARRAY; the office is addressed by its 7-digit office key.
+USE WHEN the forms of an office are needed ("welche Formulare bietet die Dienststelle") - optional second parameter = a property of every form.
+
+### BayVIS.Dienststellen.Lebenslagen
+Returns the life situations (Lebenslagen) that are assigned to ONE office as an ARRAY; the office is addressed by its 7-digit office key.
+USE WHEN the life situations of an office are needed - optional second parameter = a property, optional third = an 8-digit gemeindekennziffer.
+
+### BayVIS.Dienststellen.Leistungen
+Returns the services (Leistungen) of ONE office as an ARRAY; the office is addressed by its 7-digit office key.
+USE WHEN the services of an office are needed ("Leistungen der Dienststelle X") - optional second parameter = a property, optional third = an 8-digit gemeindekennziffer.
+
+### BayVIS.Dienststellen.Leistungsbeschreibungen
+Returns the service descriptions (Leistungsbeschreibungen) of ONE office as an ARRAY; the office is addressed by its 7-digit office key.
+USE WHEN the service descriptions of an office are needed - optional second parameter = a property, optional third = an 8-digit gemeindekennziffer.
+
+### BayVIS.Dienststellen.Onlineverfahren
+Returns the online procedures (Onlineverfahren) of ONE office as an ARRAY; the office is addressed by its 7-digit office key.
+USE WHEN the online procedures of an office are needed ("welche Verfahren can man online erledigen") - optional second parameter = a property.
+
+### BayVIS.Lebenslagen
+Returns every life situation (Lebenslage) published in the BayernPortal as an ARRAY, or ONE property of it.
+USE WHEN a list of life situations is needed ("alle Lebenslagen") - e.g. "{ BayVIS.Lebenslagen > bezeichnung }" as the Values entry of HTML.Select.Injection; optional second parameter = an 8-digit gemeindekennziffer.
+
+### BayVIS.Lebenslagen.Details
+Returns ONE life situation by its NUMERIC id, with an optional property.
+USE WHEN a single, known life situation must be resolved - do NOT use the directory EP for it; optional third parameter = an 8-digit gemeindekennziffer.
+
+### BayVIS.Leistungen
+Returns every service (Leistung) published in the BayernPortal as an ARRAY, or ONE property/DOTTED PATH of it. The editorial fields are WRAPPED: the name is `bezeichnung.value` (not `bezeichnung`, which is an object {leittext, position, sichtbar, value}), the life situations are `lebenslagen.lebenslage`, the synonyms `synonyme.synonym.value`.
+USE WHEN a list of services is needed ("alle Leistungen", "Leistungen im BayernPortal") - e.g. `{ BayVIS.Leistungen > bezeichnung.value }` for the names (HTML.Select.Injection Values) ; optional second parameter = an 8-digit gemeindekennziffer (e.g. "09162000"). NEVER `> bezeichnung` when TEXT is wanted.
+
+### BayVIS.Leistungen.Details
+Returns ONE service by its NUMERIC id (with regional/localized data when a gemeindekennziffer is given), with an optional property.
+USE WHEN a single, known service must be resolved - parameters: service id ; optional property ; optional 8-digit gemeindekennziffer.
+
+### BayVIS.Leistungsbeschreibungen
+Returns the DETAILS of EVERY service - every Leistungsbeschreibung (full text, weiterführende Links, erforderliche Unterlagen, Formulare, Rechtsgrundlagen, Online-Verfahren) - published in the BayernPortal as an ARRAY, or ONE property of it. This resource is NOT paged, so ONE call returns them all; the "Zuständigkeiten" block (competent authorities and their contacts) is deliberately NOT included.
+USE WHEN the details of ALL services are needed ("alle Leistungen mit Details", "alle Leistungsbeschreibungen") - parameters: optional property ; optional 8-digit gemeindekennziffer ; optional "true" for the regional supplements (portal default here is FALSE) ; optional "true" for the internal ids of the sub-objects. For contacts of ONE service use BayVIS.Leistungsbeschreibungen.Ansprechpartner.
+
+### BayVIS.Leistungsbeschreibungen.Details
+Returns ONE service description - with the regional supplements and the competent authorities - by the NUMERIC service id, with an optional property.
+USE WHEN the full description of one known service is needed - parameters: service id ; optional property ; optional 8-digit gemeindekennziffer.
+
+### BayVIS.Leistungsbeschreibungen.Ansprechpartner
+Returns the contacts (Ansprechpartner) that are defined for ONE service (Leistung) as an ARRAY - the API has NO per-service contact resource, the contacts are delivered INSIDE the Leistungsbeschreibung ("Zuständigkeiten" block) and this EP flattens every contact record found there.
+USE WHEN the contacts of a Leistung are needed ("welche Ansprechpartner sind für die Leistung X zuständig", "zuständige Stellen der Leistung") - parameters: NUMERIC service id ; selection mode (default DIREKT = only the contacts DIRECTLY assigned to the service, also DIREKTBEVORZUGT / ALLE / NEIN) ; 8-digit gemeindekennziffer (STRONGLY RECOMMENDED - without it the portal delivers no competent authorities at all) ; optional contact property.
+
 ### Data.CSV
 Turns a CSV string into an array.
 USE WHEN CSV text must become an array.
@@ -313,12 +389,12 @@ Reads the VALUE of ONE URL query-string parameter of the page the form is runnin
 USE WHEN a value must be taken FROM the URL the visitor opened ("den Parameter FRID in der URL", "URL-Parameter", "query parameter", "aus der Adresse", "from the address bar", ANY language) — the parameter NAME goes into the EP; storing such a parameter in a global variable is the SV functionality, not this EP.
 
 ### V
-Reads the value of a global variable.
-USE WHEN a global variable's value is referenced.
+Reads the value of a GLOBAL VARIABLE of the form (a field/variable DECLARED on the form, e.g. in the form's variables list or a value produced by the SV functionality / another EP).
+USE WHEN the value to output is a FORM GLOBAL VARIABLE, in ANY language the user names it a "globale Variable", "Formularvariable", "form variable", "globale Variablen" (i.e. something declared/stored ON the form itself).
 
 ### VP
-Reads a value from `window.codbiSettings.gv`.
-USE WHEN a plugin-setting value must be read.
+Reads a value set in the CodBi PLUGIN CONFIGURATION on the server, the value behind a plugin property whose key starts with `GV_` (stored in `window.codbiSettings.gv`).
+USE WHEN the value comes from the form/server CONFIGURATION and is NOT a global variable declared on the form - in ANY language a "Plugin-Variable", "Plugin-Einstellung", "Plugin-Property", "plugin setting", "Konfigurationswert der Installation", "GV_...-Wert". CRITICAL: a phrase containing "Plugin" ALWAYS means VP and NEVER the V global-variable EP; only a plain "Variable" / "globale Variable" / form/workflow variable means V.
 
 ## Standard Configurations
 

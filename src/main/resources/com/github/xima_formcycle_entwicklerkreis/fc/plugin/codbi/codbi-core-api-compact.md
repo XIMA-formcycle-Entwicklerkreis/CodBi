@@ -374,6 +374,89 @@ when CodBi searches within the shared parent container.
   - Use it ONLY for a LIST/selection of all authorities (e.g. HTML.Select.Injection Values = `{ BayVIS.Behoerden > bezeichnung }`).
   - WRONG (reported failure): `{ BayVIS.Behoerden > email }` for "die Mail-Adresse des Amt für Digitales" — returns the e-mail of EVERY authority and ignores the named one.
   - CORRECT: `{ BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; email }`.
+- BayVIS.Ansprechpartner.Leistungen: Retrieves the services that are assigned to ONE contact as an ARRAY. The contact is addressed by its NUMERIC id, NEVER by a name.
+  - Param[1]: The NUMERIC contact id: `{ I > 0 ; { BayVIS.Ansprechpartner.ID > <Firstname Lastname> } }`.
+  - Param[2]: OPTIONAL - a property of every service (id, bezeichnung, url, lebenslagen, synonyme); omit it to receive the whole records.
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+  - Example: `{ BayVIS.Ansprechpartner.Leistungen > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } ; bezeichnung }`.
+- BayVIS.Behoerden.AbgegebeneLeistungen: Retrieves the services that ONE authority has handed over to another authority as an ARRAY. The authority is addressed by its NUMERIC id.
+  - Param[1]: The NUMERIC authority id: `{ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }`.
+  - Param[2]: OPTIONAL - a property of every service (e.g. "bezeichnung"); omit it to receive the whole records.
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+  - Example: `{ BayVIS.Behoerden.AbgegebeneLeistungen > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } ; bezeichnung }`.
+- BayVIS.Behoerden.Ansprechpartner: Retrieves the contacts that are assigned to ONE authority as an ARRAY — the PER-AUTHORITY list, never the whole contact directory (that is BayVIS.Ansprechpartner).
+  - Param[1]: The NUMERIC authority id: `{ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }`.
+  - Param[2]: OPTIONAL - a property of every contact (e.g. "nachname", "email"); omit it to receive the whole records.
+  - Example: `{ BayVIS.Behoerden.Ansprechpartner > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } ; email }`.
+- BayVIS.Behoerden.Gebaeude.Ansprechpartner: Retrieves ONE contact that is assigned to a BUILDING of an authority. THREE numeric ids are required and NOT interchangeable: 1st = authority id, 2nd = building id, 3rd = contact id.
+  - Param[1]: The NUMERIC authority id: `{ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }`.
+  - Param[2]: The NUMERIC building id: `{ I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > <designation> } } } }`.
+  - Param[3]: The NUMERIC contact id: `{ I > 0 ; { BayVIS.Ansprechpartner.ID > <Firstname Lastname> } }`.
+  - Param[4]: OPTIONAL - a property (e.g. "email"); omit it to receive the whole record.
+- BayVIS.Behoerden.Leistungen: Retrieves the services that are assigned to ONE authority as an ARRAY. The authority is addressed by its NUMERIC id.
+  - Param[1]: The NUMERIC authority id: `{ I > 0 ; { BayVIS.Behoerden.ID > <designation> } }`.
+  - Param[2]: OPTIONAL - a property of every service (e.g. "bezeichnung"); omit it to receive the whole records.
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+  - Example: `{ BayVIS.Behoerden.Leistungen > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } ; bezeichnung }`.
+- BayVIS.Dienststellen: Retrieves the offices (Dienststellen, incl. the Außenstellen) of the OWN authority as an ARRAY. The short form is returned by default; `"true"` as the second parameter requests the complete records.
+  - Param[1]: OPTIONAL - a property of every office (e.g. "bezeichnung"); omit it to receive the whole records.
+  - Param[2]: OPTIONAL - `"true"` for the complete records (logo, descriptions, authority/building assignments), `"false"` for the short form.
+  - Example: `{ BayVIS.Dienststellen > bezeichnung }` as HTML.Select.Injection Values.
+- BayVIS.Dienststellen.Details: Retrieves the office(s) of ONE 7-digit office key (`dienststellenschluessel`) — the main office AND the Außenstellen that share that key.
+  - Param[1]: The 7-digit office key, e.g. "0308106".
+  - Param[2]: OPTIONAL - a property (e.g. "bezeichnung").
+- BayVIS.Dienststellen.Formulare: Retrieves the forms of ONE office as an ARRAY.
+  - Param[1]: The 7-digit office key.
+  - Param[2]: OPTIONAL - a property of every form (e.g. "bezeichnung").
+- BayVIS.Dienststellen.Lebenslagen: Retrieves the life situations that are assigned to ONE office as an ARRAY.
+  - Param[1]: The 7-digit office key.
+  - Param[2]: OPTIONAL - a property of every life situation (e.g. "bezeichnung").
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+- BayVIS.Dienststellen.Leistungen: Retrieves the services of ONE office as an ARRAY.
+  - Param[1]: The 7-digit office key.
+  - Param[2]: OPTIONAL - a property of every service (e.g. "bezeichnung").
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+- BayVIS.Dienststellen.Leistungsbeschreibungen: Retrieves the service descriptions of ONE office as an ARRAY.
+  - Param[1]: The 7-digit office key.
+  - Param[2]: OPTIONAL - a property of every description (e.g. "bezeichnung").
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+- BayVIS.Dienststellen.Onlineverfahren: Retrieves the online procedures of ONE office as an ARRAY.
+  - Param[1]: The 7-digit office key.
+  - Param[2]: OPTIONAL - a property of every procedure (e.g. "bezeichnung").
+- BayVIS.Lebenslagen: Retrieves every life situation published in the BayernPortal as an ARRAY, or ONE property of it.
+  - Param[1]: OPTIONAL - a property (id, bezeichnung, url, synonyme); omit it to receive the whole records. Use it for a LIST, e.g. HTML.Select.Injection Values = `{ BayVIS.Lebenslagen > bezeichnung }`.
+  - Param[2]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+- BayVIS.Lebenslagen.Details: Retrieves ONE life situation by its NUMERIC id.
+  - Param[1]: The NUMERIC life situation id (from `BayVIS.Lebenslagen > id`) — never a name.
+  - Param[2]: OPTIONAL - a property (id, bezeichnung, url, synonyme).
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+- BayVIS.Leistungen: Retrieves every service published in the BayernPortal as an ARRAY (`id`, `url`, `letzteAenderung`, `bezeichnung`, `lebenslagen`, `synonyme`), or ONE property (or DOTTED PATH) of it.
+  - CRITICAL - THE EDITORIAL FIELDS ARE WRAPPED, so a service record is `{ "id": 3627, "url": "...", "letzteAenderung": "...", "bezeichnung": { "leittext": "Bezeichnung", "position": 1, "sichtbar": true, "value": "Abendgymnasium; Anmeldung" }, "lebenslagen": { "lebenslage": [{ "id": "10000302", "bezeichnung": "Schulpflicht und Schularten" }] }, "synonyme": { "synonym": [{ "value": "zweite bildungsweg" }] } }`. The NAME is `bezeichnung.value` — `bezeichnung` alone yields an OBJECT per service, which renders as `[object Object]` in a text/select. The same wrapper shape applies to `BayVIS.Lebenslagen`, `BayVIS.Leistungsbeschreibungen` and `BayVIS.Dienststellen` (`bezeichnung.value`).
+  - Param[1]: OPTIONAL - the property or DOTTED path, e.g. `bezeichnung.value` (the name), `id`, `url`, `letzteAenderung`, `lebenslagen.lebenslage`, `lebenslagen.lebenslage.bezeichnung`, `synonyme.synonym.value`; omit it to receive the whole records. A dotted path is read member by member, and an array on the way is mapped over its entries.
+  - Param[2]: OPTIONAL - an 8-digit `gemeindekennziffer` to localize the answer, e.g. "09162000" for Munich.
+  - Example: `{ BayVIS.Leistungen > bezeichnung.value }` (all service names — the canonical list for HTML.Select.Injection Values) or `{ BayVIS.Leistungen > bezeichnung.value ; 09162000 }`.
+  - WRONG: `{ BayVIS.Leistungen > bezeichnung }` for a list of NAMES — returns one `{leittext, position, sichtbar, value}` object per service instead of the text.
+- BayVIS.Leistungen.Details: Retrieves ONE service by its NUMERIC id, with an optional property and an optional `gemeindekennziffer` (regional data).
+  - Param[1]: The NUMERIC service id (from `BayVIS.Leistungen > id`) — never a name.
+  - Param[2]: OPTIONAL - a property (id, bezeichnung, url, lebenslagen, synonyme).
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+- BayVIS.Leistungsbeschreibungen: Retrieves the DETAILS of EVERY service — every Leistungsbeschreibung (full text, weiterführende Links, erforderliche Unterlagen, Formulare, Rechtsgrundlagen, Online-Verfahren) — as an ARRAY, or ONE property of it. The resource is NOT paged, so ONE call returns them all; the "Zuständigkeiten" block (competent authorities + their contacts) is deliberately NOT part of it (that is BayVIS.Leistungsbeschreibungen.Ansprechpartner or BayVIS.Behoerden.Ansprechpartner).
+  - Param[1]: OPTIONAL - the property to extract; omit it to receive the whole records.
+  - Param[2]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+  - Param[3]: OPTIONAL - `"true"` to include the regional supplements matching the gemeindekennziffer. NOTE the portal default on THIS resource is `"false"` (the single-record EP defaults to `"true"`).
+  - Param[4]: OPTIONAL - `"true"` to also receive the internal ids of the linked sub-objects.
+  - Example: `{ BayVIS.Leistungsbeschreibungen > bezeichnung }` (all service names) or `{ BayVIS.Leistungsbeschreibungen > ; 09162000 ; true }` (all details, localized, with regional supplements).
+- BayVIS.Leistungsbeschreibungen.Details: Retrieves ONE service description — with the regional supplements and the competent authorities — by the NUMERIC service id.
+  - Param[1]: The NUMERIC service id (from `BayVIS.Leistungen > id`).
+  - Param[2]: OPTIONAL - the property to extract; omit it to receive the whole description object.
+  - Param[3]: OPTIONAL - an 8-digit `gemeindekennziffer`.
+- BayVIS.Leistungsbeschreibungen.Ansprechpartner: Retrieves the contacts that are defined for ONE service (Leistung) as an ARRAY. The API has NO per-service contact resource — the contacts are delivered INSIDE `/leistungsbeschreibungen/{leistung-id}` (the "Zuständigkeiten" block) and are steered by `behoerdenAnsprechpartnerZuordnungen`; this EP requests that document and flattens every contact record it contains.
+  - Param[1]: The NUMERIC service id (from `BayVIS.Leistungen > id`) — never a designation.
+  - Param[2]: OPTIONAL - the selection mode: `DIREKT` (default — only the contacts DIRECTLY assigned to the service), `DIREKTBEVORZUGT` (directly assigned preferred; where none exists in a building, all employees of that authority/unit in the building), `ALLE` (all employees in the building of the responsible authority) or `NEIN` (no contacts).
+  - Param[3]: OPTIONAL but STRONGLY RECOMMENDED - an 8-digit `gemeindekennziffer` (e.g. "09162000"): without a valid key the portal delivers NO competent authorities and no regional supplements, so the result stays empty.
+  - Param[4]: OPTIONAL - a property of every contact (e.g. "email", "vorname", "nachname"); omit it to receive the whole records.
+  - Example: `{ BayVIS.Leistungsbeschreibungen.Ansprechpartner > 12345 ; DIREKT ; 09162000 ; email }`.
+  - WRONG: omitting the gemeindekennziffer AND expecting contacts — the portal then returns no competent authorities at all; and `{ BayVIS.Behoerden.Ansprechpartner > ... }` is the contacts of an AUTHORITY, not of a Leistung.
 - Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
   - Param[1]: The CSV-String to convert.
 - Data.Join: Joins the properties of multiple object s into one.
@@ -479,12 +562,14 @@ when CodBi searches within the shared parent container.
 - URLParameter: Reads the VALUE of ONE URL query-string parameter of the page the form is running in (the "?name=value" part of the address bar) as a STRING; empty when the parameter is absent (it never throws).
   - Param[1]: The NAME of the URL parameter to read - the raw name as written in the URL, unquoted, case-sensitive.
   - USE for anything taken FROM the visitor's URL (tracking/lead id, campaign code, preselected value, token - ANY language): e.g. `{ URLParameter > FRID }`. NOT `Net.URL` (which FETCHES a remote URL's content) and NOT the `SV` functionality (which COPIES a URL parameter into a global variable) - for reading the value itself this EP is the only correct id.
-- V: This Element-Placeholder acquires a global variable's value.
-  - Param[1]: The name of the global variable.
-  - Param[2]: REPORT if a CodBiError shall be thrown when the global variable isn't.
-- VP: This Element-Placeholder acquires a value from window.codbiSettings.gv.
-  - Param[1]: The key (the part after the GV_ prefix in the plugin property name).
-  - Param[2]: REPORT if a CodBiError shall be thrown when the key isn't.
+- V: Reads the value of the FORM GLOBAL VARIABLE named in Param[1]. A global variable is a field/variable DECLARED ON THE FORM itself (the form's variables list, the input.XVariable / data-name elements, or a value the SV functionality or another EP wrote into a global variable). USE (in ANY language) only when the requested value is a FORM/workflow global variable - "globale Variable", "Formularvariable", "globale Variablen", "form variable". It NEVER reads the CodBi PLUGIN configuration.
+  - Param[1]: The NAME of the global variable (as declared on the form).
+  - Param[2]: REPORT if a CodBiError shall be thrown when the global variable isn't existent; otherwise an empty string.
+  - Example: `{ V > JOJO }` for a form global variable named JOJO. NOT for a "Plugin-Variable".
+- VP: Reads a value from the CodBi PLUGIN CONFIGURATION on the server - the value behind a plugin property whose name starts with `GV_` (stored at runtime in `window.codbiSettings.gv`). USE (in ANY language) when the value comes from the plugin/server configuration and is NOT a global variable declared on the form: "Plugin-Variable", "Plugin-Einstellung", "Plugin-Property", "plugin setting", "GV_...", "Konfigurationswert der Installation". CRITICAL - a phrase containing "Plugin" ALWAYS means VP, NEVER the V global-variable EP; a request that says "Plugin-Variable JOJO" must become `{ VP > JOJO }` (key = the name after the GV_ prefix), never `{ V > JOJO }`.
+  - Param[1]: The KEY - the part of the plugin property name AFTER the `GV_` prefix (e.g. for plugin property `GV_JOJO` the key is `JOJO`).
+  - Param[2]: REPORT if a CodBiError shall be thrown when the key isn't present in window.codbiSettings.gv; otherwise an empty string.
+  - Example: `{ VP > JOJO }` for the plugin property `GV_JOJO`. NOT `V` and NOT `URLParameter` (a URL query parameter) and NOT `SV` (writes into a global variable).
 
 ## Standard Configuration Classes
 

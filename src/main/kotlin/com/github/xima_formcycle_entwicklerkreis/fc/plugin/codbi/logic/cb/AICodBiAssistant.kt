@@ -921,6 +921,17 @@ class AICodBiAssistant : IPluginServletAction {
     // Optional X-Form-Key header: when present, only the log entries of that form are returned.
     val formKey =
         params.headerMap.entries.find { it.key.equals("X-Form-Key", ignoreCase = true) }?.value
+    // Optional pagination headers for the change log: X-Log-Limit (page size) and X-Log-Offset
+    // (skip that many newest entries), used by the change log's infinite scroll to load older
+    // entries. Any missing / invalid value falls back to the defaults.
+    fun headerInt(name: String): Int? =
+        params.headerMap.entries
+            .find { it.key.equals(name, ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.toIntOrNull()
+    val logLimit = headerInt("X-Log-Limit")
+    val logOffset = headerInt("X-Log-Offset")
     val username = currentUsername(params)
     // The cross-form selector (all forms with a change log, incl. deleted ones) is only offered to
     // users allowed to sync the API-Documentation.
@@ -939,6 +950,8 @@ class AICodBiAssistant : IPluginServletAction {
         AiAssistantLog.loadLogs(
             emf,
             formKey = formKey,
+            limit = logLimit ?: AiAssistantLog.DEFAULT_LOG_LIMIT,
+            offset = logOffset ?: 0,
             username = username,
             isSyncUser = syncUser,
             allFormsJson = allForms))
@@ -5671,7 +5684,7 @@ class AICodBiAssistant : IPluginServletAction {
       // cause is diagnosable if it recurs.
       val restored =
           try {
-            restoreStrippedFields(sanitizedFormJson, persistJson, prompt)
+            restoreStrippedFields(sanitizedFormJson, persistJson, prompt, useCodbi)
           } catch (e: Exception) {
             logger.warn(
                 "[AICodBiAssistant] Field-restore/normalization failed ({}: {}) — using the sanitized AI form unchanged",
@@ -5717,12 +5730,17 @@ class AICodBiAssistant : IPluginServletAction {
       // formatting. There is deliberately NO equivalent net for the OpenPLZ.AC.SET address classes:
       // deciding whether a request is about an address/locality is the AI's job, not a keyword
       // match's.
-      val peopleForm = applyPeopleClassesToForm(dedupedForm, prompt)
+      val peopleForm = applyPeopleClassesToForm(dedupedForm, prompt, useCodbi)
+      // Financial standard classes (CodBi_Currency) on the FINISHED form: same re-emission problem
+      // and same datatype-driven safety net as the People one, so a money/currency field the model
+      // created keeps its currency class even when pass-2 dropped it. See
+      // [applyFinancialClassesToForm].
+      val financialForm = applyFinancialClassesToForm(peopleForm, useCodbi)
       // Deterministic COPY of elements from ANOTHER form (`_copyElements`). The AI named only the
       // source references; the server clones the complete foreign subtree (children, options,
       // attributes, CodBi wiring) here, after every other normalization, so the copy stays faithful
       // to the source. No-op when the marker is absent or the user context is unavailable.
-      val copiedForm = ForeignElementCopy.apply(peopleForm, userContext)
+      val copiedForm = ForeignElementCopy.apply(financialForm, userContext)
       // Lever 6: the model no longer lists footprint-bearing CodBi FUNCTIONS in "applied" (dropped
       // to save output tokens — the bulky {"id",targets} entries). Reconstruct those from the
       // before/after form diff (which `data-cb-func` values appeared on elements that did not carry
@@ -7048,11 +7066,12 @@ class AICodBiAssistant : IPluginServletAction {
    * WHICH class a field needs is the AI's decision — the prompts (always-sent build instruction,
    * pass-2 structure rules, standard-configuration reference) mandate a `CodBi_People_*` class on
    * every person field. This net only mirrors a decision the MODEL itself already made in a
-   * STRUCTURED property: the field's `datatype`. `email`/`phone`/`plzDE` are unambiguous,
-   * language-independent facts about a field, whereas a field NAME or LABEL cannot be classified
-   * reliably across the languages and phrasings users write in ("Wort" contains "ort", "Report"
-   * contains "ort", "E-Mail-Adresse" contains "adresse", …) — that kind of guessing is exactly what
-   * stamped `CodBi_OpenPLZ_AC_SET_Locality` onto a capitalisation field and has been removed.
+   * STRUCTURED property: the field's `datatype`. `email`/`phone`/`plzDE`/`onlyLetterNumber`
+   * (alphanumeric) are unambiguous, language-independent facts about a field, whereas a field NAME
+   * or LABEL cannot be classified reliably across the languages and phrasings users write in
+   * ("Wort" contains "ort", "Report" contains "ort", "E-Mail-Adresse" contains "adresse", …) — that
+   * kind of guessing is exactly what stamped `CodBi_OpenPLZ_AC_SET_Locality` onto a capitalisation
+   * field and has been removed.
    *
    * So: an e-mail/phone/PLZ field the model marked with its datatype keeps its People class even
    * when pass-2 re-emitted the widget without it, and everything else is left exactly as the AI
@@ -7062,7 +7081,15 @@ class AICodBiAssistant : IPluginServletAction {
    * additive. Skipped entirely when the request explicitly asks for Cleave formatting
    * ([PEOPLE_CLEAVE_REQUEST]).
    */
-  private fun applyPeopleClassesToForm(formJson: String, prompt: String): String {
+  private fun applyPeopleClassesToForm(
+      formJson: String,
+      prompt: String,
+      useCodbi: Boolean
+  ): String {
+    // The CodBi_People_* classes and their People standard are CodBi functionality. When the form
+    // assistant's CodBi switch is OFF, person fields must stay plain Formcycle XTextFields — never
+    // stamp a People class onto them.
+    if (!useCodbi) return formJson
     if (PEOPLE_CLEAVE_REQUEST.containsMatchIn(prompt)) {
       logger.info(
           "[AICodBiAssistant] People standard net skipped — the request explicitly asks for Cleave formatting")
@@ -7088,6 +7115,13 @@ class AICodBiAssistant : IPluginServletAction {
               datatype.equals("email", true) -> "CodBi_People_Mail"
               datatype.equals("phone", true) -> "CodBi_People_Phone"
               datatype.equals("plzDE", true) -> "CodBi_People_PLZ"
+              // Formcycle's native "onlyLetterNumber" datatype means alphanumeric — the structured,
+              // language-independent signal for "a field that only accepts letters and numbers".
+              // The prompts mandate CodBi_People_Alphanumeric for such alphanumeric codes/IDs, so
+              // mirror it here the same way as email/phone/plzDE (see the KDoc above and
+              // codbi-standard-configurations.md: "ONLY for alphanumeric codes/IDs. Do NOT apply to
+              // names, streets, localities, or postal codes").
+              datatype.equals("onlyLetterNumber", true) -> "CodBi_People_Alphanumeric"
               else -> null
             }
         if (cls == null) continue
@@ -7106,6 +7140,73 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn(
           "[AICodBiAssistant] People standard net on the finished form failed: {}", e.message)
+      formJson
+    }
+  }
+
+  /**
+   * Deterministic safety net for the Financial standard configuration classes.
+   *
+   * WHICH field needs `CodBi_Currency` is the AI's decision — the always-sent
+   * standard-configuration reference mandates the class on any XTextField with a monetary value.
+   * This net only mirrors a decision the MODEL itself already made in a STRUCTURED property: the
+   * field's `datatype`. `money` / `formattedNumber` are the Formcycle datatypes the Financial
+   * standard (`CodBi_Currency`) is documented for (see Financial.json), and they unambiguously mark
+   * a currency/monetary amount. Field NAME or LABEL wording is never read: "Geldbetrag" vs "Betrag"
+   * vs "Kosten" etc. cannot be classified reliably across the languages and phrasings users write
+   * in — the same reasoning that governs [applyPeopleClassesToForm].
+   *
+   * So: a currency/monetary field the model created with its money datatype keeps its
+   * `CodBi_Currency` class even when pass-2 re-emitted the widget without it (the net re-applies it
+   * on the finished form). Fields with any other datatype — and AI answer/receiver fields that must
+   * never carry a financial formatting class — are left exactly as the AI built them.
+   *
+   * Skipped entirely when the form assistant's CodBi switch ([useCodbi]) is OFF: `CodBi_Currency`
+   * and its Financial standard are CodBi functionality and must never be stamped onto a plain
+   * Formcycle currency field.
+   */
+  private fun applyFinancialClassesToForm(formJson: String, useCodbi: Boolean): String {
+    // The CodBi_Currency class and its Financial standard are CodBi functionality. When the form
+    // assistant's CodBi switch is OFF, a money/currency field must stay a plain Formcycle
+    // XTextField
+    // — never stamp the class onto it.
+    if (!useCodbi) return formJson
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return formJson
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        if (item.get("className")?.asString != "XTextField") continue
+        val props = item.getAsJsonObject("properties") ?: continue
+        val name = props.get("name")?.asString ?: continue
+        // Never tag an AI functionality answer / receiver field (e.g. the field that receives the
+        // document-QA answer) with a currency class — such a field has nothing to do with money.
+        if (isAiAnswerField(props)) continue
+        // The datatype is the ONLY signal this net may read (see the KDoc above).
+        val datatype = props.get("datatype")?.asString ?: ""
+        val cls =
+            when {
+              datatype.equals("money", true) || datatype.equals("formattedNumber", true) ->
+                  "CodBi_Currency"
+              else -> null
+            }
+        if (cls == null) continue
+        val cssClasses =
+            if (props.get("cssclasses")?.isJsonArray == true) props.getAsJsonArray("cssclasses")
+            else JsonArray().also { props.add("cssclasses", it) }
+        // Never stack a SECOND Financial-class wiring onto one field.
+        if (cssClasses.any { it.isJsonPrimitive && it.asString.startsWith("CodBi_Currency") }) {
+          continue
+        }
+        cssClasses.add(cls)
+        logger.info(
+            "[AICodBiAssistant] Applied Financial standard class '{}' to field '{}'", cls, name)
+      }
+      root.toString()
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Financial standard net on the finished form failed: {}", e.message)
       formJson
     }
   }
@@ -9519,7 +9620,12 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  private fun restoreStrippedFields(aiResult: String, original: String, prompt: String): String {
+  private fun restoreStrippedFields(
+      aiResult: String,
+      original: String,
+      prompt: String,
+      useCodbi: Boolean
+  ): String {
     val aiObj = JsonParser.parseString(aiResult).asJsonObject
     // Belt-and-suspenders (the caller already stripped nulls): gson maps a JSON `null` to JsonNull,
     // whose getAsString()/getAsJsonArray() THROW — strip any remaining null before reading
@@ -10376,6 +10482,15 @@ class AICodBiAssistant : IPluginServletAction {
     // on an XContainer/XContainerInvisible they are inert. Remove any such leftover (e.g. when the
     // container was previously a panel and the prompt moved the panel to a new outer wrapper).
     stripContainerPanelClasses(resultItems)
+    // Deterministic safety net (CodBi only): when the AI generated a section with related fields
+    // (e.g. an address) but left them WITHOUT a shared rowid, each field falls onto its own line.
+    // Assign a shared rowid to the documented related-field pairs (street + house number, postal
+    // code + locality, first + last name, e-mail + phone) when they are direct siblings in the
+    // same container and do not already share a valid rowid. This MUST run before
+    // [normalizeRowIds] so the freshly assigned rowids pass through its per-container cap check.
+    if (useCodbi) {
+      assignRowIdsToRelatedFieldPairs(resultItems)
+    }
     // Deterministic safety net: a `rowid` groups fields into ONE row. The AI sometimes copies the
     // rowid of a neighbouring field (very often the default "0" of the applicant name pair) onto
     // unrelated fields, which makes Formcycle render ALL of them in a single row placed in the
@@ -11210,6 +11325,127 @@ class AICodBiAssistant : IPluginServletAction {
     var i = 1
     while (used.contains("row-$i")) i++
     return "row-$i"
+  }
+
+  /**
+   * Deterministic layout safety net: a shared `rowid` renders its fields in ONE row (the row is
+   * placed in the container of the first carrier). The AI frequently generates an address section
+   * in which the street name and the building number — and the postal code and the locality — are
+   * separate fields WITHOUT a common rowid, so each falls onto its own line. This net assigns a
+   * shared rowid to the documented RELATED-FIELD GROUPS (street + house number, postal code +
+   * locality, first + last name, e-mail + phone) so that related pair always sits on one row.
+   *
+   * Unlike the People/Financial class nets — which read the structured [datatype] property — a pair
+   * like street + house number has NO structured signal, so this net has to match the field NAME /
+   * LABEL wording. To keep that name-guessing safe (see the warning in [applyPeopleClassesToForm]),
+   * a group is created ONLY when BOTH members are direct siblings in the SAME container (same
+   * [parentid]), are adjacent, and each member matches a strictly distinct vocabulary. A group is
+   * never forced over an existing, already-valid shared rowid, and [normalizeRowIds] still applies
+   * its per-container cap afterwards.
+   */
+  private fun assignRowIdsToRelatedFieldPairs(resultItems: JsonArray) {
+    // Field words a member must contain to count as the FIRST part of a pair type.
+    val firstWords =
+        listOf(
+            listOf("strasse", "straße", "str.", "street", "route", "rue", "road", "strada"),
+            listOf("plz", "postleitzahl", "postal", "zip", "cp"),
+            listOf("vorname", "firstname", "first name", "givenname", "prename", "forename"),
+            listOf("email", "e-mail", "mail"))
+    // Field words a member must contain to count as the SECOND part of the same pair type
+    // (index-aligned with [firstWords]).
+    val secondWords =
+        listOf(
+            listOf(
+                "hausnummer",
+                "hausnr",
+                "housenumber",
+                "house number",
+                "house no",
+                "nr",
+                "numero",
+                "number"),
+            listOf("ort", "city", "stadt", "locality", "place", "gemeinde", "town"),
+            listOf("nachname", "lastname", "last name", "surname", "familyname"),
+            listOf("telefon", "phone", "mobile", "handy", "mobil"))
+    // Existing rowids in the WHOLE form so freshly assigned ones never collide with an existing row
+    // (also fed into [normalizeRowIds] afterwards).
+    val usedRowIds = HashSet<String>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val row = props.get("rowid")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+      if (row.isNotEmpty()) usedRowIds.add(row)
+    }
+    // Index direct-child XTextField items per parent so we only ever group true siblings.
+    val itemsByParent = LinkedHashMap<String, MutableList<JsonObject>>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XTextField") continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      // Never group an AI functionality answer/receiver field into an address pair.
+      if (isAiAnswerField(props)) continue
+      val parent = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      itemsByParent.getOrPut(parent) { mutableListOf() }.add(item)
+    }
+    var grouped = 0
+    for ((_, siblings) in itemsByParent) {
+      for (p in firstWords.indices) {
+        // Both members must be adjacent direct siblings in the same container. Accept the pair in
+        // either order (the model may emit house-number-then-street).
+        for (i in 0 until siblings.size - 1) {
+          val a = siblings[i].getAsJsonObject("properties")
+          val b = siblings[i + 1].getAsJsonObject("properties")
+          val aText = fieldText(a)
+          val bText = fieldText(b)
+          val aFirst = firstWords[p].any { aText.contains(it, ignoreCase = true) }
+          val bSecond = secondWords[p].any { bText.contains(it, ignoreCase = true) }
+          val aSecond = secondWords[p].any { aText.contains(it, ignoreCase = true) }
+          val bFirst = firstWords[p].any { bText.contains(it, ignoreCase = true) }
+          val forward = aFirst && bSecond
+          val reverse = aSecond && bFirst
+          if (!forward && !reverse) continue
+          // Do not force a pair over an existing, already-valid shared rowid.
+          val aRow = a.get("rowid")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: ""
+          val bRow = b.get("rowid")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: ""
+          if (aRow.isNotEmpty() && aRow == bRow) {
+            usedRowIds.add(aRow)
+            continue
+          }
+          // Assign ONE fresh rowid to both members.
+          val fresh = freshRowId(usedRowIds)
+          usedRowIds.add(fresh)
+          a.addProperty("rowid", fresh)
+          b.addProperty("rowid", fresh)
+          grouped++
+          logger.info(
+              "[AICodBiAssistant] Grouped related fields '{}' + '{}' onto one row ({})",
+              a.get("name")?.asString ?: "<unknown>",
+              b.get("name")?.asString ?: "<unknown>",
+              fresh)
+          // Consume the pair so it is never matched by a later pair type.
+          siblings.removeAt(i)
+          siblings.removeAt(i)
+          break
+        }
+      }
+    }
+    if (grouped > 0) {
+      logger.info(
+          "[AICodBiAssistant] Related-field row grouping: {} field pair(s) placed on one row",
+          grouped)
+    }
+  }
+
+  /**
+   * Reads the label first, then the name, of an XTextField's properties for vocabulary matching.
+   */
+  private fun fieldText(props: JsonObject): String {
+    for (k in listOf("label", "title", "text", "name")) {
+      val v = props.get(k)?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      if (v.isNotBlank()) return v
+    }
+    return ""
   }
 
   /**

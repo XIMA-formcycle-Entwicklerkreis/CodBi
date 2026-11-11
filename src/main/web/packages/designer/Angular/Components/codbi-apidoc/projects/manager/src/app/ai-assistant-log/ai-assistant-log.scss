@@ -464,6 +464,21 @@ cb-ai-assistant-log {
     background: transparent;
 }
 
+/* Inline "loading older entries" indicator shown while infinite scroll appends the next page. It
+   sits inside the scrollable tree, so it simply appears at the bottom of the dangling entries. */
+.cb-log-loading-older {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.6rem 0 0.4rem;
+    color: #888;
+    font-size: 0.8em;
+}
+.cb-log-loading-older .p-progressspinner-circle {
+    stroke: #ff8c00 !important;
+    stroke-dasharray: 120, 150;
+}
+
 /* --- Tree nodes --- */
 .cb-log-node {
     margin: 0;

@@ -1,0 +1,35 @@
+{
+  "Description": "/classes/EPs_bayvis.dienststellen.BayVIS_Dienststellen.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract from every office, e.g. \"bezeichnung\". Omit it to receive the whole records.",
+          "de": "Die aus jeder Dienststelle zu entnehmende Eigenschaft, z. B. \"bezeichnung\". Ohne Angabe werden die vollständigen Datensätze geliefert."
+        },
+        "options": ["dienststellenschluessel", "bezeichnung"]
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "\"true\" to receive the complete records (logo, descriptions, authority/building assignments) instead of the short form.",
+          "de": "\"true\" für die vollständigen Datensätze (Logo, Beschreibungen, Behörden-/Gebäudezuordnungen) anstelle der Kurzform."
+        },
+        "options": ["true", "false"]
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder retrieves the offices (Dienststellen, incl. branch offices) of the own authority from the BayernPortal.",
+    "de": "Dieser Element-Placeholder holt die Dienststellen (inkl. Außenstellen) der eigenen Behörde aus dem BayernPortal."
+  }
+}

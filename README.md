@@ -164,11 +164,27 @@ EPs (Element Placeholders) can be used in any functionality parameter to dynamic
 | | `LDAP.Find` | LDAP directory queries |
 | **BayVIS** | `BayVIS.Ansprechpartner` | Authority (**BayernPortal**) directory contacts |
 | | `BayVIS.Ansprechpartner.ID` | Contact by ID |
+| | `BayVIS.Ansprechpartner.Details` | Contact details |
+| | `BayVIS.Ansprechpartner.Leistungen` | Services assigned to a contact |
 | | `BayVIS.Behoerden` | Authorities/agencies |
 | | `BayVIS.Behoerden.ID` | Authority by ID |
 | | `BayVIS.Behoerden.Details` | Authority details |
 | | `BayVIS.Behoerden.Details.Gebaeude` | Building details |
 | | `BayVIS.Behoerden.Gebaeude.ID` | Building by ID |
+| | `BayVIS.Behoerden.Leistungen` | Services assigned to an authority |
+| | `BayVIS.Behoerden.AbgegebeneLeistungen` | Services handed over to another authority |
+| | `BayVIS.Behoerden.Ansprechpartner` | Contacts assigned to an authority |
+| | `BayVIS.Behoerden.Gebaeude.Ansprechpartner` | Contact assigned to a building of an authority |
+| | `BayVIS.Leistungen` / `.Details` | Services (Leistungen), collection and single record |
+| | `BayVIS.Leistungsbeschreibungen` / `.Details` | Service descriptions, collection and single record |
+| | `BayVIS.Leistungsbeschreibungen.Ansprechpartner` | Contacts defined for a service (Zuständigkeiten) |
+| | `BayVIS.Lebenslagen` / `.Details` | Life situations, collection and single record |
+| | `BayVIS.Dienststellen` / `.Details` | Offices (incl. branch offices), collection and single record |
+| | `BayVIS.Dienststellen.Leistungen` | Services of an office |
+| | `BayVIS.Dienststellen.Formulare` | Forms of an office |
+| | `BayVIS.Dienststellen.Onlineverfahren` | Online procedures of an office |
+| | `BayVIS.Dienststellen.Leistungsbeschreibungen` | Service descriptions of an office |
+| | `BayVIS.Dienststellen.Lebenslagen` | Life situations of an office |
 
 ### 🔎 Field References in Parameters
 

@@ -10,7 +10,8 @@ import {
  * The BayVIS resource helper is shared by 19 element placeholders, so its three heuristics must be
  * pinned down:
  * 1. envelope unwrapping must reach the record without knowing the (undocumented) key names,
- * 2. contact collection must find nested contacts and must NOT mistake an authority for a contact,
+ * 2. contact collection must find nested contacts, INCLUDING the authority/building records the
+ *    portal actually embeds in a Leistungsbeschreibung's "Zuständigkeiten" block,
  * 3. property extraction must map over a collection.
  *
  * Reported case that motivated `collectContacts`: "all Ansprechpartner that are defined for a
@@ -68,11 +69,46 @@ describe("BayVIS resource helper", () => {
     expect(contacts[0].apTelefonDurchwahl).toBe("1234");
   });
 
-  it("never mistakes an authority or a building for a contact", () => {
-    const contacts = collectContacts(payload);
+  it("never mistakes a bare `email` record for a contact", () => {
+    // CAREFUL: the real portal authority record always carries `bwwlink`/`website` (plus `email`).
+    // A record with ONLY `email` (e.g. an editorial entry) must still NOT be collected.
+    const contacts = collectContacts({ behoerde: [{ id: 42, email: "amt44@example.org" }] });
 
-    expect(contacts.map((contact) => contact.id)).not.toContain(42);
-    expect(contacts.map((contact) => contact.id)).not.toContain(7);
+    expect(contacts).toEqual([]);
+  });
+
+  it("collects the authority records of a real Zuständigkeiten block", () => {
+    // Live shape of `leistungsbeschreibungen/{id}` with `gemeindekennziffer`: the zustaendig[]
+    // authorities carry `bwwlink`/`website`/`email` and nest `anschriften.gebaeude[]`.
+    const zustaendig = {
+      leistungsbeschreibung: {
+        id: 100,
+        zustaendigkeiten: {
+          zustaendig: [
+            {
+              anschriften: {
+                gebaeude: [{ telefon: "+49 89 2306-0", fax: "+49 89 2306-2808" }],
+              },
+              bezeichnung: "Bayerisches Staatsministerium der Finanzen und für Heimat",
+              bwwlink: "https://www.bayernportal.de/dokumente/behoerde/36665710206",
+              email: "poststelle@stmfh.bayern.de",
+              website: "http://www.stmfh.bayern.de",
+            },
+          ],
+        },
+      },
+    };
+    const contacts = collectContacts(zustaendig);
+
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]).toMatchObject({
+      bezeichnung: "Bayerisches Staatsministerium der Finanzen und für Heimat",
+      email: "poststelle@stmfh.bayern.de",
+      bwwlink: "https://www.bayernportal.de/dokumente/behoerde/36665710206",
+    });
+    // Nested building stays inside the matched authority record (not duplicated as a second contact).
+    const anschriften = contacts[0].anschriften as { gebaeude: Array<{ telefon?: string }> };
+    expect(anschriften.gebaeude[0]?.telefon).toBe("+49 89 2306-0");
   });
 
   it("de-duplicates contacts by id", () => {
@@ -83,10 +119,6 @@ describe("BayVIS resource helper", () => {
     const contacts = collectContacts(duplicated);
 
     expect(contacts).toHaveLength(2);
-  });
-
-  it("returns an empty array when the payload has no contacts", () => {
-    expect(collectContacts({ behoerde: [{ id: 42, email: "amt44@example.org" }] })).toEqual([]);
   });
 
   it("maps a property over the collected contacts", () => {

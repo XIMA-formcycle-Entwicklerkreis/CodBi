@@ -280,11 +280,21 @@ export function pickProperty(payload: unknown, property?: string): unknown {
 }
 
 /**
- * Property names that only a CONTACT record carries. An authority carries `email`, a contact carries
- * `apEmail`/`apTelefon*`, and only a person has `vorname`/`nachname`/`anrede` — so an authority or a
- * building can never be mistaken for a contact.
+ * Property names that identify a CONTACT record of the BayernPortal.
+ *
+ * The `Leistungsbeschreibung`'s "Zuständigkeiten" block embeds contacts at three levels:
+ *  - a PERSON carries `apEmail`/`apTelefon*` and has `vorname`/`nachname`/`anrede` (plus the
+ *    optional `funktion`/`stellenbezeichnung`);
+ *  - an AUTHORITY (`zustaendig[]`) carries `bwwlink` and usually `website` (and `email`);
+ *  - a BUILDING (`gebaeude[]`) carries `hausanschrift`/`postanschrift` and `telefon`/`fax`.
+ *
+ * The portal has NO per-leistung person records (that endpoint never returns persons, only the
+ * authority/building contact data), so an authority or a building inside "Zuständigkeiten" is a
+ * legitimate contact to surface. A bare `email` alone is deliberately NOT a marker: it appears on
+ * non-contact editorial records and would make the collector over-match.
  */
 const CONTACT_MARKERS = [
+  // person
   "vorname",
   "nachname",
   "anrede",
@@ -295,6 +305,14 @@ const CONTACT_MARKERS = [
   "apTelefonDurchwahl",
   "funktion",
   "stellenbezeichnung",
+  // authority (zustaendig[])
+  "bwwlink",
+  "website",
+  // building (gebaeude[])
+  "hausanschrift",
+  "postanschrift",
+  "telefon",
+  "fax",
 ];
 
 /** States whether the given value is a BayVIS contact record. */
@@ -328,6 +346,11 @@ function contactKey(record: Record<string, unknown>): string {
  * subtree of a Leistungsbeschreibung (authority → building → contacts), and the public documentation
  * does not name those properties. Walking the tree for CONTACT-shaped records therefore yields
  * exactly the contacts without hard-coding a property path that may be renamed.
+ *
+ * The portal never embeds PERSON records in that subtree — it only delivers the responsible
+ * AUTHORITY (`zustaendig[]` with `bwwlink`/`website`/`email`) and its BUILDING (`gebaeude[]` with
+ * `telefon`/`fax`). Both are surfaced as contacts (a matched authority carries its nested building
+ * address/phone, so buildings inside a matched authority are not duplicated separately).
  *
  * @param payload The (unwrapped) payload.
  * @return The contact records, in document order, without duplicates.

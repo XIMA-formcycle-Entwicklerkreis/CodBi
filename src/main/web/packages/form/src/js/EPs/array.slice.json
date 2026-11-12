@@ -1,0 +1,43 @@
+{
+  "Description": "/classes/EPs_array_slice.Array_Slice.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "array",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The Array from which the part is taken.",
+          "de": "Das Array, aus dem der Teil genommen wird."
+        }
+      },
+      {
+        "index": 2,
+        "type": "number",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The beginning index (inclusive). When negative, treated as array.length + begin.",
+          "de": "Der Anfangsindex (inklusive). Bei negativem Wert als array.length + begin behandelt."
+        }
+      },
+      {
+        "index": 3,
+        "type": "number",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The optional end index (exclusive). When negative, treated as array.length + end. When omitted, the slice runs to the end of the Array.",
+          "de": "Der optionale Endindex (exklusive). Bei negativem Wert als array.length + end behandelt. Wenn nicht angegeben, läuft der Abschnitt bis zum Ende des Arrays."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "Returns a part of an Array defined by a beginning index and an optional end index.",
+    "de": "Gibt einen Teil eines Arrays zurück, der durch einen Anfangsindex und einen optionalen Endindex definiert ist."
+  }
+}

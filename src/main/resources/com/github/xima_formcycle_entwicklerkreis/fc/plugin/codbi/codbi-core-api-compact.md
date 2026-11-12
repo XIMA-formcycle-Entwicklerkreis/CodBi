@@ -457,6 +457,12 @@ when CodBi searches within the shared parent container.
   - Param[4]: OPTIONAL - a property of every contact (e.g. "email", "vorname", "nachname"); omit it to receive the whole records.
   - Example: `{ BayVIS.Leistungsbeschreibungen.Ansprechpartner > 12345 ; DIREKT ; 09162000 ; email }`.
   - WRONG: omitting the gemeindekennziffer AND expecting contacts — the portal then returns no competent authorities at all; and `{ BayVIS.Behoerden.Ansprechpartner > ... }` is the contacts of an AUTHORITY, not of a Leistung.
+- Array.Slice: Returns a PART of an Array - from a BEGINNING index (inclusive) to an OPTIONAL END index (exclusive); when only the beginning is given the part runs from that index to the END of the Array. USE for a RANGE of a list ("nur die ersten 5", "the first five", "ab dem 2. Eintrag", "from entry 3 to 7", ANY language).
+  - Param[1]: The Array from which the part is taken.
+  - Param[2]: The BEGINNING index (inclusive; 0-based; negative = from the end).
+  - Param[3]: OPTIONAL - the END index (exclusive; negative = from the end; omitted = to the end of the Array): `{ Array.Slice > <array> ; 0 ; 2 }` = first two entries, `{ Array.Slice > <array> ; 3 }` = from the 4th entry to the end.
+- Array.Wrap: Wraps a SINGLE value into an Array holding exactly ONE element; an already-array value is returned unchanged. USE when a single value/object must be treated AS a one-entry list ("in ein Array verpacken", "wrap into an array", "as a list with one entry", ANY language).
+  - Param[1]: The value to wrap into an Array.
 - Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
   - Param[1]: The CSV-String to convert.
 - Data.Join: Joins the properties of multiple object s into one.
@@ -553,6 +559,9 @@ when CodBi searches within the shared parent container.
   - Param[7]: There may be up to four parameter passed along the request (e.g.
   - Param[8]: There may be up to four parameter passed along the request (e.g.
   - Param[9]: An Optional number of pages to load.
+- Sort.Numeric: Sorts an Array of OBJECTS ASCENDING by a NUMERIC property (unlike `Sorted`, which sorts by the TEXT value) and returns the WHOLE sorted Array. USE for a NUMBER-ordered list ("nach sortierreihenfolge sortieren", "sort by <numeric field>", "in Zahlenreihenfolge", ANY language). It STILL returns an Array - take the first entry with `{ I > 0 ; ... }`: `{ I > 0 ; { Sort.Numeric > <array> ; sortierreihenfolge } }`.
+  - Param[1]: The Array of objects to sort.
+  - Param[2]: OPTIONAL - the name of the NUMERIC property to sort by (ascending; a missing/NaN value sorts as 0), e.g. sortierreihenfolge.
 - Sorted: An Elementplaceholder sorts the Array passed as the 1st parameter in.
   - Param[1]: The Array to sort.
   - Param[2]: The optional name of a property to use to sort elements of the given Array .

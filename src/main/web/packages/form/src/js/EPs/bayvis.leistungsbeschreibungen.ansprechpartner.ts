@@ -26,6 +26,12 @@ import { retrieveBayVISResource } from "../commons/bayvis-resource.js";
  *
  *  - returns an {@link Array } of the contact records, or the values of the requested property.
  *
+ * The portal has NO person-level Ansprechpartner for a Leistung: the returned "Zuständigkeiten" only
+ * ever embeds the responsible AUTHORITY (with `bezeichnung`, `email`, `website`) and its BUILDING
+ * (with `telefon`/`fax`/address). Those embedded authority/building records ARE the contacts this EP
+ * returns. A Leistung without a "Zuständigkeiten" block (like many test ids) therefore yields an
+ * empty array even with a valid `gemeindekennziffer` — the data simply does not exist on the portal.
+ *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
  * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */

@@ -1927,7 +1927,13 @@ export function openEPBuilder(options: EPBuilderOptions): EPBuilderController {
         const resolved = await Promise.race([
           codbi.resolveEP({ value: requested }),
           new Promise<never>((_, reject) => {
-            window.setTimeout(() => reject(new Error("timeout")), 10000);
+            // The BayVIS collection endpoints (e.g. `BayVIS.Leistungsbeschreibungen`, which returns
+            // EVERY service description with its full text and regional supplements) are by far the
+            // largest payloads of the whole BayernPortal API. The proxy allows up to 60s to read such
+            // a payload from the portal, plus the browser round-trip on top — so the designer's cap
+            // must sit above both (90s) or it would preempt an in-flight, still-succeeding response.
+            // It still fails fast enough on a genuinely hung EP.
+            window.setTimeout(() => reject(new Error("timeout")), 90000);
           }),
         ]);
 

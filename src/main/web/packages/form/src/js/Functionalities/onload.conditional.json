@@ -1,0 +1,33 @@
+{
+  "Description": "/classes/Functionalities_onload.conditional.OnLoad_Conditional.html#functionality",
+  "Summary": {
+    "en": "Applies a functionality (or attribute changes) to a target element ONCE AT LOAD while a NUMERIC comparison between an element-placeholder value and a reference holds. Registers no event listener: it reads the value the element placeholders resolved at render time, compares it as a number, and applies the matching _T_/_F_ branch immediately. Use it for a load-time more/less-than visibility toggle driven by an EP result (e.g. an array .length), avoiding a change event.",
+    "de": "Wendet eine Funktionalität (oder Attributänderungen) auf ein Zielelement EINMAL BEIM LADEN an, solange ein NUMERISCHER Vergleich zwischen einem Element-Platzhalterwert und einer Referenz erfüllt ist. Registriert keinen Event-Listener: Er liest den zum Renderzeitpunkt aufgelösten Platzhalterwert, vergleicht ihn als Zahl und wendet den passenden _T_/_F_-Zweig sofort an. Für einen Ladezeit-Sichtbarkeitswechsel (mehr/weniger als) auf Basis eines EP-Ergebnisses (z.B. einer Array-.length) ohne change-Event.",
+    "it": "Applica una funzionalità (o modifiche agli attributi) a un elemento di destinazione UNA SOLA VOLTA AL CARICAMENTO finché è soddisfatto un confronto NUMERICO tra un valore di elemento-placeholder e un riferimento. Non registra alcun listener di eventi: legge il valore risolto al momento del rendering, lo confronta come numero e applica subito il ramo _T_/_F_ corrispondente. Da usare per un toggle di visibilità al caricamento (più/meno di) guidato da un risultato di EP (es. una .length di array) senza dover aspettare un evento change."
+  },
+  "Parameter": {
+    "Candidate": "The value to compare. Use an element placeholder that resolves to a NUMBER or numeric string, e.g. { JSON.Path > { bayvis.leistungsansprechpartner > 25439 } ; length } (the EP is resolved into this parameter at load), or a numeric literal. An empty value never fulfils the condition.",
+    "Reference": "The numeric threshold the candidate is compared with, e.g. 1. May itself be an element placeholder that resolves to a number; a literal is parsed with Number().",
+    "Mode": "GT (greater than), GTEQ (at least / greater than or equal), LT (less than), LTEQ (at most / less than or equal), EQ (exactly) or NEQ (not equal). The enum values are GTEQ/LTEQ - GTE/LTE are invalid.",
+    "Target": "The element whose attributes are changed - a dot-prefixed CLASS selector (e.g. .coMehrfachZuordnungHinweis), resolved inside the tagged element's container; never an #id selector."
+  },
+  "parameters": {
+    "Candidate": {
+      "type": "string",
+      "default": "The value to compare, supplied as an element placeholder that resolves to a NUMBER or numeric string (e.g. { JSON.Path > <EP> ; length }) or as a numeric literal."
+    },
+    "Reference": {
+      "type": "string",
+      "default": "The numeric threshold the candidate is compared with (e.g. 1); may itself be an element placeholder; a literal is parsed with Number()."
+    },
+    "Mode": {
+      "type": "enum",
+      "options": ["GTEQ", "GT", "LTEQ", "LT", "EQ", "NEQ"],
+      "default": "GT (greater than), GTEQ (at least), LT (less than), LTEQ (at most), EQ (exactly), NEQ (not equal)."
+    },
+    "Target": {
+      "type": "string",
+      "default": "Dot-prefixed CLASS selector of the element to change, resolved in the tagged element's container (never an #id selector)."
+    }
+  }
+}

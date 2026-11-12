@@ -15,7 +15,7 @@ import java.net.URI
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.ConcurrentHashMap
+import java.util.LinkedHashMap
 
 /**
  * Single nano-server proxy for **every** BayernPortal (BayVIS) REST v3 resource that the dedicated
@@ -38,7 +38,10 @@ import java.util.concurrent.ConcurrentHashMap
  * |`behoerden.leistungen`                 |`/behoerden/{id}/leistungen`                          |
  * |`behoerden.abgegebene-leistungen`      |`/behoerden/{id}/abgegebene-leistungen`               |
  * |`behoerden.ansprechpartner`            |`/behoerden/{id}/ansprechpartner`                     |
+ * |`behoerden.gebaeude`                   |`/behoerden/{id}/gebaeude/{id2}`                      |
  * |`behoerden.gebaeude.ansprechpartner`   |`/behoerden/{id}/gebaeude/{id2}/ansprechpartner/{id3}`|
+ * |`ansprechpartner`                      |`/ansprechpartner`                                    |
+ * |`ansprechpartner.details`              |`/ansprechpartner/{id}`                               |
  * |`ansprechpartner.leistungen`           |`/ansprechpartner/{id}/leistungen`                    |
  * |`dienststellen`                        |`/dienststellen`                                      |
  * |`dienststellen.details`                |`/dienststellen/{id}`                                 |
@@ -65,6 +68,10 @@ import java.util.concurrent.ConcurrentHashMap
  * - BayVIS_Benutzername: The username to use to log into the BayVIS-API.
  * - BayVIS_Passwort: The password to use to log into the BayVIS-API.
  * - BayVIS_UpdateCycle: Hours after which a cached result is re-requested.
+ * - BayVIS_CacheSize: Maximum number of cached responses the bounded LRU cache may hold before the
+ *   least-recently-used entries are evicted (default [DEFAULT_CACHE_SIZE], i.e. 256). Big enough to
+ *   hold every whitelisted collection (the largest, `/leistungsbeschreibungen`, is multi-MB) plus
+ *   many id-keyed detail records at once.
  * - BayVIS_EP_Ressourcen: Optional base URL of the REST v3 API (default
  *   `https://www.bayernportal-webservices.bayern.de/rest/allgemein/v3`).
  */
@@ -92,8 +99,11 @@ class CodBiBayVISAuskunftRessourcenAction : IPluginServletAction {
             "behoerden.leistungen" to "/behoerden/{id}/leistungen",
             "behoerden.abgegebene-leistungen" to "/behoerden/{id}/abgegebene-leistungen",
             "behoerden.ansprechpartner" to "/behoerden/{id}/ansprechpartner",
+            "behoerden.gebaeude" to "/behoerden/{id}/gebaeude/{id2}",
             "behoerden.gebaeude.ansprechpartner" to
                 "/behoerden/{id}/gebaeude/{id2}/ansprechpartner/{id3}",
+            "ansprechpartner" to "/ansprechpartner",
+            "ansprechpartner.details" to "/ansprechpartner/{id}",
             "ansprechpartner.leistungen" to "/ansprechpartner/{id}/leistungen",
             "dienststellen" to "/dienststellen",
             "dienststellen.details" to "/dienststellen/{id}",
@@ -119,6 +129,16 @@ class CodBiBayVISAuskunftRessourcenAction : IPluginServletAction {
 
     /** An official 8-digit municipality key (`gemeindekennziffer`), e.g. "09162000". */
     private val GEMEINDEKENNZIFFER: Regex = Regex("^\\d{8}$")
+
+    /**
+     * Default maximum number of cached resource responses the bounded LRU cache may hold before the
+     * least-recently-used entries are evicted. Generous enough to hold every whitelisted collection
+     * (the largest: `/leistungsbeschreibungen`) plus many id-keyed detail records at once.
+     */
+    const val DEFAULT_CACHE_SIZE: Int = 256
+
+    /** Plugin property that sets the cache ceiling (defaults to [DEFAULT_CACHE_SIZE]). */
+    const val CACHE_SIZE_PROPERTY: String = "BayVIS_CacheSize"
   }
 
   /** Stores the username to use to log into the BayVIS-API. */
@@ -133,12 +153,27 @@ class CodBiBayVISAuskunftRessourcenAction : IPluginServletAction {
    */
   protected var hrsTillUpdate: Int = 18
 
-  /** Stores the time the BayVIS-API was lastly contacted per cache key. */
-  protected val lastContact: MutableMap<String, Long> = ConcurrentHashMap()
-  /** Buffers the BayVIS-Request results by cache key to minimize re-requests. */
-  protected val buffer: MutableMap<String, String> = ConcurrentHashMap()
-  /** Guards refresh decisions to avoid concurrent update races. */
+  /** Maximum number of entries [cache] may hold before the least-recently-used ones are evicted. */
+  protected var maxCacheEntries: Int = DEFAULT_CACHE_SIZE
+
+  /**
+   * Bounded, access-ordered request cache keyed by `service|url`. Holds at most [maxCacheEntries]
+   * responses; once the ceiling is reached the least-recently-used (oldest) entry is dropped, so
+   * the memory footprint can never grow past the cap even though the largest single payload
+   * (`/leistungsbeschreibungen`) is multi-MB. All access is guarded by [cacheLock].
+   */
+  private val cache: LinkedHashMap<String, CacheEntry> =
+      object : LinkedHashMap<String, CacheEntry>(DEFAULT_CACHE_SIZE + 1, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, CacheEntry>?
+        ): Boolean = size > maxCacheEntries
+      }
+
+  /** Guards cache reads/writes/evictions to keep the non-thread-safe LRU consistent. */
   private val cacheLock = Any()
+
+  /** One cached resource response: the payload a form reads and when it was last fetched. */
+  private class CacheEntry(val payload: String, val fetchedAt: Long)
 
   /**
    * Percent-encodes a value for use as a URL path segment (spaces become %20, not '+'; other
@@ -248,55 +283,63 @@ class CodBiBayVISAuskunftRessourcenAction : IPluginServletAction {
   }
 
   /**
-   * Retrieves the requested resource from the BayVIS-API, storing the result into the [buffer] and
-   * updating the [lastContact].
+   * Retrieves the requested resource from the BayVIS-API and returns the result WITHOUT touching
+   * the bounded cache — the caller ([execute]) decides whether to store it and how to advance
+   * freshness.
    *
-   * @param key The cache key of the request.
    * @param url The absolute URL to call.
    * @param service The service label used in error messages.
    * @return A [Pair] of [Int] & [String] stating the statuscode and the request's result.
    */
-  protected fun retrieveData(key: String, url: String, service: String): Pair<Int, String?> {
+  protected fun retrieveData(url: String, service: String): Pair<Int, String> {
     var statusCode: Int
 
-    try {
-      val target: URL = URI(url).toURL()
-      val connection = target.openConnection() as HttpURLConnection
-      // Never let a hanging/blocked endpoint stall the plugin start-up.
-      connection.connectTimeout = 10_000
-      connection.readTimeout = 20_000
+    val result: String =
+        try {
+          val target: URL = URI(url).toURL()
+          val connection = target.openConnection() as HttpURLConnection
+          // Never let a hanging/blocked endpoint stall the plugin start-up. The connect timeout
+          // stays
+          // short (a blocked/unreleased server IP surfaces there); the READ timeout must be
+          // generous
+          // because the collection endpoints (e.g. `/leistungsbeschreibungen`, which returns EVERY
+          // service description with its full text and regional supplements) can take well over 20s
+          // to produce and stream — a 20s read cap made those large payloads fail with "timed out"
+          // even though the portal was working fine.
+          connection.connectTimeout = 10_000
+          connection.readTimeout = 60_000
 
-      connection.setRequestMethod("GET")
-      connection.setRequestProperty(
-          "Authorization",
-          "Basic " +
-              java.util.Base64.getEncoder()
-                  .encodeToString(("$username:$password").toByteArray(StandardCharsets.UTF_8)))
-      // JSON keeps the client-side parsing deterministic (no XML envelope names to guess).
-      connection.setRequestProperty("Accept", "application/json")
+          connection.setRequestMethod("GET")
+          connection.setRequestProperty(
+              "Authorization",
+              "Basic " +
+                  java.util.Base64.getEncoder()
+                      .encodeToString(("$username:$password").toByteArray(StandardCharsets.UTF_8)))
+          // JSON keeps the client-side parsing deterministic (no XML envelope names to guess).
+          connection.setRequestProperty("Accept", "application/json")
 
-      statusCode = connection.getResponseCode()
-      buffer[key] =
-          if (statusCode in 200..299) {
-            lastContact[key] = System.currentTimeMillis()
+          statusCode = connection.getResponseCode()
 
-            readBody(connection.inputStream.bufferedReader(StandardCharsets.UTF_8))
-          } else {
-            val errorResult =
-                connection.errorStream?.bufferedReader(StandardCharsets.UTF_8)?.use {
-                  it.readText()
-                }
+          val body: String =
+              if (statusCode in 200..299) {
+                readBody(connection.inputStream.bufferedReader(StandardCharsets.UTF_8))
+              } else {
+                val errorResult =
+                    connection.errorStream?.bufferedReader(StandardCharsets.UTF_8)?.use {
+                      it.readText()
+                    }
 
-            BayVISAuskunftErrors.describe(service, url, statusCode, errorResult)
-          }
+                BayVISAuskunftErrors.describe(service, url, statusCode, errorResult)
+              }
 
-      connection.disconnect()
-    } catch (e: IOException) {
-      buffer[key] = BayVISAuskunftErrors.connectionFailure(url, e)
-      statusCode = 500
-    }
+          connection.disconnect()
+          body
+        } catch (e: IOException) {
+          statusCode = 500
+          BayVISAuskunftErrors.connectionFailure(url, e)
+        }
 
-    return Pair(statusCode, buffer[key])
+    return Pair(statusCode, result)
   }
 
   /** Reads a response body with the reader, closing it afterwards. */
@@ -317,13 +360,15 @@ class CodBiBayVISAuskunftRessourcenAction : IPluginServletAction {
       hrsTillUpdate = configData.properties.getProperty("BayVIS_UpdateCycle").toInt()
     }
 
+    configData.properties.getProperty(CACHE_SIZE_PROPERTY)?.let { maxCacheEntries = it.toInt() }
+
     return null
   }
 
   /** Returns "CodBi_BayVIS_Auskunft_Ressourcen" */
   override fun getName(): String = NAME
 
-  /** Sets the [username], [password] & optionally [baseUrl]. */
+  /** Sets the [username], [password], [maxCacheEntries] & optionally [baseUrl]. */
   override fun initialize(configData: IPluginInitializeData) {
     this.username = configData.properties.getProperty("BayVIS_Benutzername")
     this.password = configData.properties.getProperty("BayVIS_Passwort")
@@ -332,23 +377,73 @@ class CodBiBayVISAuskunftRessourcenAction : IPluginServletAction {
       hrsTillUpdate = configData.properties.getProperty("BayVIS_UpdateCycle").toInt()
     }
 
+    configData.properties.getProperty(CACHE_SIZE_PROPERTY)?.let { maxCacheEntries = it.toInt() }
+
     val newURL: String? = configData.properties.getProperty("BayVIS_EP_Ressourcen")
 
     if (!newURL.isNullOrBlank()) {
       this.baseUrl = newURL
     }
     // Never let a malformed endpoint abort the plugin start (see BayVISAuskunftStartup). Only the
-    // URL itself is validated here: no resource is fetched at start-up, because every resource
-    // (except the two collections) needs an id that is only known at form runtime.
+    // URL itself is validated here; the actual collection pre-fetch (when credentials are present)
+    // happens below via prefetchCollections — both are failure-tolerant and can never abort ignite.
     BayVISAuskunftStartup.startupCheck("Ressourcen", baseUrl, configData.client) {
       java.net.URI("${baseUrl.trimEnd('/')}/dienststellen").toURL()
       200
     }
+    // When BayVIS credentials are configured, warm the shared cache with every id-free collection
+    // so
+    // the first form use of a collection-serving BayVIS element placeholder is served from the
+    // cache
+    // instead of a fresh, slow portal call.
+    if (username != null && password != null) {
+      prefetchCollections(configData.client)
+    }
   }
 
   /**
-   * Retrieves the whitelisted resource from the BayVIS-API if it isn't already [buffer]ed or the
-   * [hrsTillUpdate] have passed.
+   * Pre-fetches the id-free BayVIS collections (the [RESOURCES] whose path template has no `{id}`
+   * placeholder: `/ansprechpartner`, `/leistungen`, `/leistungsbeschreibungen`, `/lebenslagen`,
+   * `/dienststellen`) into the bounded LRU [cache], warming the shared cache for every BayVIS
+   * element placeholder that reads one of those collections.
+   *
+   * This must NEVER throw — it runs on the plugin start path, so every failing fetch is recorded as
+   * a WARNING (server log + FORMCYCLE protocol entry) via [BayVISAuskunftStartup.startupCheck] and
+   * the plugin still ignites. Id-keyed resources are skipped on purpose: their id (and any
+   * gemeindekennziffer-filtered variation) is only known at form runtime, so it cannot be
+   * pre-fetched here without knowing the municipality key in advance.
+   *
+   * Successful fetches are stored under the same `service|url` key [execute] reads, so a later
+   * unparameterized request for that resource is a cache hit; a failed fetch is NOT cached, so the
+   * next call still retries the portal (mirroring the freshness semantics of [execute]).
+   *
+   * @param client The FORMCYCLE client of the plugin instance, forwarded to
+   *   [BayVISAuskunftStartup.startupCheck].
+   */
+  protected fun prefetchCollections(client: Any?) {
+    val base = baseUrl.trimEnd('/')
+
+    for ((service, template) in RESOURCES) {
+      // Only the directory/collection endpoints can be reached without a runtime id.
+      if (template.contains("{id}")) continue
+
+      val url: String = "$base$template"
+
+      BayVISAuskunftStartup.startupCheck("Ressourcen.$service", url, client) {
+        val (status, result) = retrieveData(url, service)
+        if (status in 200..299) {
+          synchronized(cacheLock) {
+            cache["$service|$url"] = CacheEntry(result, System.currentTimeMillis())
+          }
+        }
+        status
+      }
+    }
+  }
+
+  /**
+   * Retrieves the whitelisted resource from the BayVIS-API if it isn't already held by the bounded
+   * LRU [cache] or the [hrsTillUpdate] have passed since it was last fetched.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
     val service = p0.headerMap["Service"]?.trim().orEmpty()
@@ -369,20 +464,41 @@ class CodBiBayVISAuskunftRessourcenAction : IPluginServletAction {
     val url: String = builtUrl
 
     val key = "$service|$url"
+
+    // Reading an entry on a fresh hit also refreshes its LRU recency, so frequently-used resources
+    // stay cached while truly old (least-recently-used) entries are evicted once the cap is
+    // reached.
+    var cachedFetchedAt: Long = 0L
     var needsFetch = false
 
     synchronized(cacheLock) {
-      val fetchedAt = lastContact[key] ?: 0L
-      val stale = System.currentTimeMillis() - fetchedAt >= hrsTillUpdate.toLong() * 3_600_000L
+      val entry = cache[key]
+      cachedFetchedAt = entry?.fetchedAt ?: 0L
+      val stale =
+          System.currentTimeMillis() - cachedFetchedAt >= hrsTillUpdate.toLong() * 3_600_000L
 
-      if (buffer[key] == null || stale) needsFetch = true
+      needsFetch = entry == null || stale
     }
 
-    if (needsFetch) retrieveData(key, url, service)
+    if (needsFetch) {
+      // Perform the (potentially long) portal call OUTSIDE the lock — holding cacheLock across a
+      // multi-MB, up-to-60s response would block every other resource request on the servlet.
+      val (status, result) = retrieveData(url, service)
+
+      synchronized(cacheLock) {
+        // Cache the result (errors included, so repeated failures do not hammer the portal), but
+        // only advance the freshness timestamp on a successful retrieval — a failure must not push
+        // the next retry out past the refetch window. Storing also triggers LRU eviction if the cap
+        // is exceeded.
+        cache[key] =
+            CacheEntry(
+                result, if (status in 200..299) System.currentTimeMillis() else cachedFetchedAt)
+      }
+    }
 
     val servletResponse = ServletResponse(EResponseType.HTML)
     servletResponse.encoding = StandardCharsets.UTF_8.name()
-    servletResponse.value = buffer[key]
+    servletResponse.value = synchronized(cacheLock) { cache[key]?.payload.orEmpty() }
 
     return PluginServletActionRetVal(servletResponse)
   }

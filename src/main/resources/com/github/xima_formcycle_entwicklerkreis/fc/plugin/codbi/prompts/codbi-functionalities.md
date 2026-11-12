@@ -463,6 +463,24 @@ WORKED EXAMPLE — required date field `tfKursbeginn` (datatype dateDE) + hint c
 ```
 Both elements are children of the SAME XFieldSet/container. List `OnChange.Conditional` (and the target's `HTML.SETAttribute`) in `_codbiApplicability.considered` and in the details-request `elements` — never `codbiVerdict:"none"`.
 
+## OnLoad.Conditional
+
+USE THIS when an element must appear/disappear (or change a property) AT LOAD because a NUMBER computed from an ELEMENT-PLACEHOLDER (EP) result is greater/less/equal to a threshold — e.g. show a panel only when a BayVIS list returns MORE THAN ONE element. Unlike `OnChange.Conditional` it registers NO `change` event listener (it does not react to user edits) and compares NUMBERS (not Dates). This is the correct mechanism for a load-time "more/less than <number>" driven by an EP value (like an array `.length`) that is already known when the page renders.
+
+The tagged element owns the comparison parameters (candidate/reference/mode); the `_T_`/`_F_` branches are attributes on the SAME tagged element and are applied to the target. Apply:
+- `data-cb-func="OnLoad.Conditional"`
+- `data-cb-Candidate` = the value to compare, supplied as an element placeholder that resolves to a NUMBER or numeric string, e.g. `{ JSON.Path > { bayvis.leistungsansprechpartner > 25439 } ; length }` (the EP is resolved into this parameter by the renderer at load), or a numeric literal.
+- `data-cb-Reference` = the numeric threshold, e.g. `1`; may itself be an element placeholder; a literal is parsed with `Number()`.
+- `data-cb-Mode` = `GT` (greater than), `GTEQ` (at least), `LT` (less than), `LTEQ` (at most), `EQ`, `NEQ`. The enum values are `GTEQ`/`LTEQ` — `GTE`/`LTE` are INVALID.
+- `data-cb-Target` = dot-prefixed CLASS selector of the element whose attributes are changed, resolved inside the tagged element's container; never an `#id`.
+- TRUE/FALSE branches on the SAME tagged element: `data-cb-_T_<param>` / `data-cb-_F_<param>` (marker stripped; the rest becomes `data-cb-<param>` on the target). For visibility: `data-cb-_T_func="HTML.SETAttribute"`, `data-cb-_T_name="style"`, `data-cb-_T_toset="display:block"`; `data-cb-_F_func="HTML.SETAttribute"`, `data-cb-_F_name="style"`, `data-cb-_F_toset="display:none"`. No separate load-time hide is needed — the branch applies immediately at load (omit the false branch to leave the target as authored).
+
+WORKED EXAMPLE — show container `coMehrfachZuordnungHinweis` ("Mehrfachzuordnung: mehrere Ansprechpartner vorhanden") at load only when `bayvis.leistungsansprechpartner` returns MORE THAN ONE element, hide it otherwise:
+```json
+{"className":"XContainer","properties":{"name":"coMehrfachZuordnungHinweis","id":"xi-co-mehrfach-zuordnung-hinweis","label":"Mehrfachzuordnung-Hinweis","cssclasses":["coMehrfachZuordnungHinweis"],"elements":["zuordnungHinweis"]},"attributes":[{"text":"data-cb-func","value":"OnLoad.Conditional"},{"text":"data-cb-Candidate","value":"{ JSON.Path > { bayvis.leistungsansprechpartner > 25439 } ; length }"},{"text":"data-cb-Reference","value":"1"},{"text":"data-cb-Mode","value":"GT"},{"text":"data-cb-Target","value":".coMehrfachZuordnungHinweis"},{"text":"data-cb-_T_func","value":"HTML.SETAttribute"},{"text":"data-cb-_T_name","value":"style"},{"text":"data-cb-_T_toset","value":"display:block"},{"text":"data-cb-_F_func","value":"HTML.SETAttribute"},{"text":"data-cb-_F_name","value":"style"},{"text":"data-cb-_F_toset","value":"display:none"}]}
+```
+List `OnLoad.Conditional` (and the target's `HTML.SETAttribute`) in `_codbiApplicability.considered` and in the details-request `elements` — never `codbiVerdict:"none"`.
+
 ## OpenPLZ.Autocomplete
 
 Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number).

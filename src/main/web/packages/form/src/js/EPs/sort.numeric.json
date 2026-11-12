@@ -1,0 +1,33 @@
+{
+  "Description": "/classes/EPs_sort_numeric.Sort_Numeric.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "array",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The Array of objects to sort.",
+          "de": "Das Array aus Objekten, das sortiert werden soll."
+        }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The name of the numeric property to sort by (ascending), e.g. sortierreihenfolge.",
+          "de": "Der Name der numerischen Eigenschaft, nach der aufsteigend sortiert werden soll, z. B. sortierreihenfolge."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "Sorts an Array of objects ascending by a numeric property and returns the whole sorted Array.",
+    "de": "Sortiert ein Array aus Objekten aufsteigend nach einer numerischen Eigenschaft und gibt das gesamte sortierte Array zurück."
+  }
+}

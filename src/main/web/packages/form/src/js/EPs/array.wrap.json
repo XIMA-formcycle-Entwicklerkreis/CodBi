@@ -1,0 +1,23 @@
+{
+  "Description": "/classes/EPs_array_wrap.Array_Wrap.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The value to wrap into an Array. Arrays are returned unchanged.",
+          "de": "Der Wert, der in ein Array gewickelt werden soll. Arrays werden unverändert zurückgegeben."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "Wraps a value into a single-element Array; arrays are returned as is.",
+    "de": "Wickelt einen Wert in ein ein-elementiges Array; bereits vorhandene Arrays werden unverändert zurückgegeben."
+  }
+}

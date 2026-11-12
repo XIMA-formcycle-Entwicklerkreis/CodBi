@@ -161,6 +161,10 @@ USE WHEN several files must be uploadable ("mehrere Dateien", "multiple files").
 Applies a functionality / attribute change to a target element while a comparison between a watched field's value and a date reference holds (Mode GT/GTEQ/LT/LTEQ/EQ/NEQ, Reference as a Date EP).
 USE WHEN an element must appear/disappear or change a property because a DATE/TIME/NUMBER value is greater/less/equal to a threshold, updating immediately while the user edits ("after/before <date>", "older/younger than", "more/less than <number>", "sobald … nach dem … liegt", "updates immediately while typing"). Use it INSTEAD OF hiddenif* for ordering comparisons; hiddenif* stays for discrete option/checkbox/empty state.
 
+### OnLoad.Conditional
+Applies a functionality / attribute change to a target element ONCE AT LOAD while a NUMERIC comparison between an ELEMENT-PLACEHOLDER value and a number reference holds (Mode GT/GTEQ/LT/LTEQ/EQ/NEQ). Registers NO event listener: it reads the value the element placeholders resolved at render time and applies the _T_/_F_ branch immediately.
+USE WHEN an element must appear/disappear or change a property at LOAD because a NUMBER computed from an EP result is greater/less/equal to a threshold — e.g. show a panel only when `bayvis.leistungsansprechpartner` returns MORE THAN ONE element: `data-cb-Candidate="{ JSON.Path > { bayvis.leistungsansprechpartner > 25439 } ; length }"`, `data-cb-Reference="1"`, `data-cb-Mode="GT"`. Unlike OnChange.Conditional it does NOT react to a later `change` event and compares NUMBERS (not Dates), so it is the right tool for a load-time "more/less than <number>" on an EP value instead of a field value.
+
 ### OpenPLZ.Autocomplete
 German address autocomplete (postal code, locality, street) against OpenPLZ.
 USE WHEN a German address group must be autocompleted ("Adresse mit PLZ-Autovervollständigung").
@@ -304,6 +308,14 @@ USE WHEN the full description of one known service is needed - parameters: servi
 Returns the contacts (Ansprechpartner) that are defined for ONE service (Leistung) as an ARRAY - the API has NO per-service contact resource, the contacts are delivered INSIDE the Leistungsbeschreibung ("Zuständigkeiten" block) and this EP flattens every contact record found there.
 USE WHEN the contacts of a Leistung are needed ("welche Ansprechpartner sind für die Leistung X zuständig", "zuständige Stellen der Leistung") - parameters: NUMERIC service id ; selection mode (default DIREKT = only the contacts DIRECTLY assigned to the service, also DIREKTBEVORZUGT / ALLE / NEIN) ; 8-digit gemeindekennziffer (STRONGLY RECOMMENDED - without it the portal delivers no competent authorities at all) ; optional contact property.
 
+### Array.Wrap
+Wraps a SINGLE value into an array holding exactly ONE element; an array is passed through unchanged.
+USE WHEN a single value/object must be treated as a one-entry list ("in ein Array verpacken", "wrap into an array", "as a list with one entry", ANY language) - e.g. before an EP/functionality that requires an array.
+
+### Array.Slice
+Returns a PART of an array from a BEGINNING index (inclusive) to an OPTIONAL END index (exclusive); with only the beginning given the part runs to the end of the array.
+USE WHEN a range of a list is wanted ("nur die ersten 5", "the first five", "ab dem 2. Eintrag", "from entry 3 to 7", ANY language).
+
 ### Data.CSV
 Turns a CSV string into an array.
 USE WHEN CSV text must become an array.
@@ -375,6 +387,10 @@ USE WHEN a free-text OpenPLZ search is needed ("Volltextsuche …", "search for 
 ### OpenPLZ
 The GENERIC OpenPLZ servlet call for a request that itself names explicit query values (country code, orga unit, official key, detail, search parameters) — NOT the EP for "all cantons/states of a country" (that is OpenPLZ.OrganizationalUnits).
 USE WHEN such an explicit OpenPLZ lookup is wanted.
+
+### Sort.Numeric
+Sorts an array of OBJECTS ASCENDING by a NUMERIC property (unlike the plain `Sorted`, which sorts by the TEXT value) and returns the WHOLE sorted array.
+USE WHEN a list must be ordered by a NUMBER field ("nach sortierreihenfolge sortieren", "sort by <numeric field>", "in Zahlenreihenfolge", ANY language). It STILL returns an array - take the first entry with `{ I > 0 ; ... }`.
 
 ### Sorted
 Sorts the array passed as the first parameter.

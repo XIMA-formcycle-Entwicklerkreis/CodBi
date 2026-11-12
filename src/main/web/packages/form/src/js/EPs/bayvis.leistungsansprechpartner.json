@@ -1,0 +1,43 @@
+{
+  "Description": "/classes/EPs_bayvis.leistungsansprechpartner.BayVIS_Leistungsansprechpartner.html",
+  "Signature": {
+    "params": [
+      {
+        "index": 1,
+        "type": "any",
+        "optional": false,
+        "variadic": false,
+        "description": {
+          "en": "The SELECTOR of the service (Leistung): either its NUMERIC id (from BayVIS.Ansprechpartner.Leistungen) or a regular expression that is tested against the bezeichnung of the assigned services.",
+          "de": "Der SELECTOR der Leistung: entweder deren NUMERISCHE ID (aus BayVIS.Ansprechpartner.Leistungen) oder ein regulärer Ausdruck, der gegen die Bezeichnung der zugeordneten Leistungen geprüft wird."
+        }
+      },
+      {
+        "index": 2,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "An 8-digit official municipality key (gemeindekennziffer), e.g. \"09162000\" for Munich.",
+          "de": "Ein 8-stelliger Amtlicher Gemeindeschlüssel (gemeindekennziffer), z. B. \"09162000\" für München."
+        }
+      },
+      {
+        "index": 3,
+        "type": "any",
+        "optional": true,
+        "variadic": false,
+        "description": {
+          "en": "The property to extract from every matching Ansprechpartner, e.g. \"email\", \"vorname\", \"nachname\", \"telefonOrtsvorwahl\", \"postanschriftPLZ\". Omit it to receive the whole (enriched) contact records.",
+          "de": "Die aus jedem zutreffenden Ansprechpartner zu entnehmende Eigenschaft, z. B. \"email\", \"vorname\", \"nachname\", \"telefonOrtsvorwahl\", \"postanschriftPLZ\". Ohne Angabe werden die vollständigen (angereicherten) Datensätze geliefert."
+        }
+      }
+    ],
+    "returnType": "any",
+    "source": "tsdoc"
+  },
+  "Summary": {
+    "en": "This Element-Placeholder performs a REVERSE lookup: it returns the details (e-mail, name, phone, authority address, ...) of every Ansprechpartner that has the given service (Leistung) assigned, selected by its numeric id or a regular expression on its bezeichnung. Every returned contact is enriched with the three telephone parts (telefonOrtsvorwahl, telefonAnlage, telefonDurchwahl) and the three postal-address parts of its Behörde (postanschriftStrasse, postanschriftPLZ, postanschriftOrt) as separate fields.",
+    "de": "Dieser Element-Placeholder führt eine REVERSE-Suche durch: Er liefert die Details (E-Mail, Name, Telefon, Behördenadresse, ...) aller Ansprechpartner, denen die angegebene Leistung zugeordnet ist – ausgewählt über deren numerische ID oder einen regulären Ausdruck auf der Bezeichnung. Jeder gelieferte Ansprechpartner wird um die drei Telefonbestandteile (telefonOrtsvorwahl, telefonAnlage, telefonDurchwahl) und die drei Postanschrift-Bestandteile seiner Behörde (postanschriftStrasse, postanschriftPLZ, postanschriftOrt) als getrennte Felder angereichert."
+  }
+}

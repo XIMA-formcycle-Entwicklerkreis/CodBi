@@ -158,7 +158,7 @@ DECISION (LANGUAGE-AGNOSTIC, BY MEANING IN ANY LANGUAGE — NEVER BY A KEYWORD A
 
 Takes ONE entry out of an ARRAY by its position — the "pick one of the list" EP. TWO parameters in this exact order: Param[1] = the INDEX as an integer STRING (0-based: `0` = first entry, `1` = second; a number also works), Param[2] = the ARRAY-returning EP/nested expression.
 
-WHEN TO USE IT (language-agnostic): only when the inner EP yields an ARRAY and exactly ONE entry is needed — "den ersten Treffer", "the first match", "den ersten Eintrag", "einen der …", "pick one of …". The canonical idiom after an array-returning EP (`BayVIS.Behoerden.ID`, `BayVIS.Ansprechpartner.ID`, `BayVIS.Behoerden.Gebaeude.ID`, `Date.FromString`, `F`, `OpenPLZ.*`, `Sorted`, `Unique`) is `{ I > 0 ; <array EP> }`. Example: `{ I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } }` = the first matching authority ID; `{ I > 1 ; { OpenPLZ.Localities > de ; ^A } }` = the SECOND match.
+WHEN TO USE IT (language-agnostic): only when the inner EP yields an ARRAY and exactly ONE entry is needed — "den ersten Treffer", "the first match", "den ersten Eintrag", "einen der …", "pick one of …". The canonical idiom after an array-returning EP (`BayVIS.Behoerden.ID`, `BayVIS.Ansprechpartner.ID`, `BayVIS.Behoerden.Gebaeude.ID`, `Date.FromString`, `F`, `OpenPLZ.*`, `Sorted`, `Sort.Numeric`, `Array.Slice`, `Array.Wrap`, `Unique`) is `{ I > 0 ; <array EP> }`. Example: `{ I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } }` = the first matching authority ID; `{ I > 1 ; { OpenPLZ.Localities > de ; ^A } }` = the SECOND match.
 
 DO NOT use `I` on an EP that already returns a SINGLE value/object — a Details EP fed by one id (`{ BayVIS.Ansprechpartner.Details > { V > <NAME> } }`), a `V`, `JSON.Path`, `Date.Today`, `Date.Holidays > …` and similar need no `I`; wrapping them adds a slot for nothing. The EP tolerates exactly one case: index `0` applied to a NON-array returns that value unchanged (so `{ I > 0 ; <single value> }` is harmless), while any OTHER index on a non-array THROWS a CodBiError ("The second parameter of I must be an array …") — never rely on that, use `I` only for arrays.
 
@@ -175,6 +175,22 @@ EXACT MATCH — the comparison is strict (`===`): case-sensitive AND type-sensit
 ## Sorted
 
 Sorts an array by a property name.
+
+## Sort.Numeric
+
+Sorts an ARRAY of OBJECTS ASCENDING by a NUMERIC property — the "sort by a number" EP. The plain `Sorted` sorts by the STRING/text value of a property (so `10` would sort before `9`); `Sort.Numeric` compares the property's NUMBER (`9` before `10`). This is the EP for "nach <Zahlfeld> sortieren", "sort by <numeric field>", "nach sortierreihenfolge sortieren", "in Zahlenreihenfolge", "in ascending numeric order", ANY language — e.g. "die Ansprechpartner nach sortierreihenfolge sortiert" / "the contacts sorted by sortierreihenfolge".
+
+PARAMETER ORDER IS FIXED (see the invocation-syntax rule — NEVER fill slots in the order the request mentions them): Param[1] = the ARRAY of objects to sort; Param[2] OPTIONAL = the NAME of the NUMERIC property to sort by (e.g. `sortierreihenfolge`). RETURN TYPE: the WHOLE array sorted ASCENDING by that property (a copy — the original array is NOT mutated); a missing/NaN property value sorts as `0`.
+
+CRITICAL — IT STILL RETURNS AN ARRAY, NOT A SINGLE ENTRY: after sorting, the FIRST entry (e.g. the smallest `sortierreihenfolge`) is picked with the index EP — `{ I > 0 ; { Sort.Numeric > <array> ; sortierreihenfolge } }`. Example for the BayVIS reverse-lookup (contacts sorted by their sort order, first one taken as a single entry): `{ I > 0 ; { Sort.Numeric > { bayvis.leistungsansprechpartner > <gemeindekennziffer> } ; sortierreihenfolge } }`.
+
+## Array.Wrap
+
+Wraps a SINGLE value into an ARRAY holding exactly ONE element — the "make it a list" EP. Use it whenever a value (often a SINGLE object from a Details EP, or a single string/number) must be treated AS a one-entry array — when chaining into an EP or functionality that REQUIRES an array ("in ein Array verpacken", "wrap into an array", "als ein-elementiges Array", "as a list with one entry", ANY language). Parameters: Param[1] = the value to wrap. If that value ALREADY IS an array, it is returned UNCHANGED (no extra nesting). Example: `{ Array.Wrap > { BayVIS.Ansprechpartner.Details > Salvatore Callari } }` → an array with that one contact object as its single element.
+
+## Array.Slice
+
+Returns a PART of an ARRAY, defined by a BEGINNING index and an OPTIONAL END index — the "take a slice of the list" EP. Use it when only a range of an array is wanted ("die ersten 5", "the first five", "ab dem 2. Eintrag", "from entry 2 on", "von Eintrag 3 bis Eintrag 7", "entries 3 through 7", ANY language). PARAMETER ORDER IS FIXED: Param[1] = the ARRAY; Param[2] = the BEGINNING index (INCLUSIVE, 0-based); Param[3] OPTIONAL = the END index (EXCLUSIVE). When only the beginning is given (no end), the slice runs from that index to the END of the array. Negative indices are allowed and mean "from the end" (`-1` = last entry, `-3` = third-from-last). RETURN TYPE: a (new) array with the selected part — `{ Array.Slice > <array> ; 0 ; 2 }` = the first two entries, `{ Array.Slice > <array> ; 3 }` = from entry index 3 (the 4th) to the end. Do NOT use Array.Slice on a single value/object — it needs an array (wrap first with `Array.Wrap` if needed).
 
 ## Unique
 

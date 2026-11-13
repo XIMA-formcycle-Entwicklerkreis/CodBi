@@ -13,17 +13,17 @@ import {
 } from "@de-xima/fc-form-designer";
 import {
   Constants,
-  formElementMatchesRequirements,
   type IFormElementRequirement,
-  normalizeSupportedFormelementtype,
   type TSupportedFormelementtypeSpec,
+  formElementMatchesRequirements,
+  normalizeSupportedFormelementtype,
 } from "codbi-common";
+import { removeFuncAttributeQuiet, setItemAttributeValue } from "./CodbiElementMarkers.js";
 import { attachCsvValueTooltip, openCsvGridEditor } from "./CsvGridEditor.js";
-import { setItemAttributeValue } from "./CodbiElementMarkers.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { containedElementItem, syncSelectedFunctionalityChild } from "./FunctionalityChildItems.js";
-import { i18n as i18nTyped, localizedFunctionalitySummary, localizedParameterDescription } from "./i18n.js";
 import { ensureCodbiBranding } from "./MirrorSelect.js";
+import { i18n as i18nTyped, localizedFunctionalitySummary, localizedParameterDescription } from "./i18n.js";
 // #endregion Imports
 
 /**
@@ -180,21 +180,36 @@ export function listFunctionalities(): string[] {
 }
 
 /**
+ * The minimal shape of one `window.CodbiPluginData.detFunctionalities[*]` entry (the descriptor JSON of
+ * a functionality, merged by `CodbiFormDesignerResourcePlugin.getDetails()`).
+ */
+export interface IFunctionalityEntry {
+  /** The legacy name → description parameter map. */
+  Parameter?: Record<string, string>;
+  /** The structured parameter metadata (`type`, `options`, `default`, descriptions, …). */
+  parameters?: Record<string, IFunctionalityParameterSpec>;
+  /** The short (localized) description of the functionality. */
+  Summary?: string | Record<string, string>;
+  /** The plain widget class names the functionality supports (legacy applicability channel). */
+  formElements?: string[];
+  /** The conditional TRUE/FALSE branches declared by the functionality (see {@link functionalityBranches}). */
+  branches?: Record<string, IFunctionalityBranchSpec>;
+}
+
+/**
  * Resolves the `detFunctionalities` entry for a functionality id **case-insensitively**. The
  * registry keys use the original casing (e.g. `Date.Min`), while the selection is stored lowercased.
  *
  * Uses the cached key index (see {@link functionalityKeyIndexFor}) so repeated lookups during a render
  * stay O(1) instead of scanning the whole registry per row.
  */
-export function resolveFunctionalityEntry(
-  id: string,
-): { Parameter?: Record<string, string>; formElements?: string[] } | undefined {
+export function resolveFunctionalityEntry(id: string): IFunctionalityEntry | undefined {
   try {
     const entries = (window.CodbiPluginData?.detFunctionalities ?? {}) as Record<string, unknown>;
     const key = functionalityKeyIndexFor(entries).get(id.toLowerCase());
 
     if (key !== undefined) {
-      return entries[key] as { Parameter?: Record<string, string>; formElements?: string[] };
+      return entries[key] as IFunctionalityEntry;
     }
   } catch {
     /* ignore */
@@ -335,6 +350,234 @@ export function findParameterSpec(
     }
   }
   return undefined;
+}
+
+/**
+ * The declaration of ONE conditional branch of a functionality (the `branches` channel of the
+ * descriptor JSON). A branch stores the functionality that runs in that case plus ITS parameters as
+ * prefixed attributes on the TAGGED element — e.g. `data-cb-_T_func="HTML.SETAttribute"`,
+ * `data-cb-_T_Name="style"`, `data-cb-_T_ToSet="display:block"` for the TRUE branch of
+ * `OnLoad.Conditional` / `OnChange.Conditional`. The runtime strips the marker, so `data-cb-_T_func`
+ * becomes `data-cb-func` on the TARGET element.
+ */
+export interface IFunctionalityBranchSpec {
+  /** The attribute prefix the branch is stored with (`_T_` → `data-cb-_T_func`). Defaults per key. */
+  prefix?: string;
+  /** The branch's label (localized map or plain string), shown above its selector. */
+  label?: string | Record<string, string>;
+  /** An explanation shown as the branch selector's tooltip (localized map or plain string). */
+  description?: string | Record<string, string>;
+}
+
+/** A RESOLVED conditional branch: its key, attribute prefix and localized texts. */
+export interface IFunctionalityBranch {
+  /** The branch key as declared (lowercased), e.g. `true` / `false`. */
+  key: string;
+  /** The attribute prefix, e.g. `_T_`. Every parameter lands as `data-cb-<prefix><parameter>`. */
+  prefix: string;
+  /** The localized label (falls back to the upper-cased key). */
+  label: string;
+  /** The localized tooltip (empty when the descriptor declares none). */
+  description: string;
+}
+
+/** Fallback prefixes for the conventional branch keys (`true` → `_T_`, `false` → `_F_`). */
+const DEFAULT_BRANCH_PREFIXES: Record<string, string> = { true: "_T_", false: "_F_" };
+
+/**
+ * The conditional branches declared by a functionality (`detFunctionalities[*].branches`), in
+ * declaration order. An EMPTY array means the functionality declares no branches (the common case),
+ * so no branch editor is rendered. The descriptor only lists the branch keys and (optionally) their
+ * prefix and localized texts; everything else is generic, so ANY functionality can declare branches
+ * without a code change — the designer renders the TRUE/FALSE branch editors automatically.
+ *
+ * @param id The functionality id (matched case-insensitively). */
+export function functionalityBranches(id: string): IFunctionalityBranch[] {
+  const raw = resolveFunctionalityEntry(id)?.branches;
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    return [];
+  }
+  const branches: IFunctionalityBranch[] = [];
+  for (const [key, spec] of Object.entries(raw)) {
+    const branchKey = String(key ?? "")
+      .trim()
+      .toLowerCase();
+    if (branchKey === "") {
+      continue;
+    }
+    // A branch without an explicit prefix falls back to the conventional `_T_`/`_F_` (or a generic
+    // `_<KEY>_` for an unknown branch name), so a descriptor can declare just `"true": {}`.
+    const prefix = String(
+      (spec as IFunctionalityBranchSpec | undefined)?.prefix ??
+        DEFAULT_BRANCH_PREFIXES[branchKey] ??
+        `_${branchKey.charAt(0).toUpperCase()}_`,
+    ).trim();
+    if (prefix === "") {
+      continue;
+    }
+    const branchSpec = spec as IFunctionalityBranchSpec | undefined;
+    branches.push({
+      key: branchKey,
+      prefix,
+      label: localizedFunctionalitySummary(branchSpec?.label) || branchKey.toUpperCase(),
+      description: localizedFunctionalitySummary(branchSpec?.description),
+    });
+  }
+  return branches;
+}
+
+/** The `data-cb-<prefix>func` attribute naming the functionality of a branch (e.g. `data-cb-_T_func`). */
+export function branchFuncAttribute(prefix: string): string {
+  return `data-cb-${prefix}func`;
+}
+
+/**
+ * The attribute names to REMOVE from the element when a branch switches from the functionality
+ * `removedId` to `nextId`: every parameter of the former branch functionality that the NEW one does
+ * not declare itself (shared parameter names are kept). Comparison is case-insensitive, mirroring
+ * {@link paramsToRemoveForRemovedFunctionality}.
+ *
+ * @param prefix    The branch's attribute prefix (e.g. `_T_`).
+ * @param removedId The functionality previously named by `data-cb-<prefix>func` (empty = none).
+ * @param nextId    The functionality now named by `data-cb-<prefix>func` (empty = branch cleared).
+ *
+ * @returns The full prefixed attribute names to remove (e.g. `data-cb-_T_Name`). */
+export function branchParamsToRemove(prefix: string, removedId: string, nextId: string): string[] {
+  if (removedId === "") {
+    return [];
+  }
+  const kept = new Set(
+    Object.keys(functionalityParameters(nextId))
+      .map((name) => name.toLowerCase())
+      .filter((name) => name.length > 0),
+  );
+  return Object.keys(functionalityParameters(removedId))
+    .filter((name) => !kept.has(name.toLowerCase()))
+    .map((name) => `data-cb-${prefix}${name}`);
+}
+
+/**
+ * The key under which a branch's FILTER query is remembered between re-renders of the parameter table
+ * (selecting a branch functionality re-renders the whole table, which would otherwise reset the box).
+ */
+export function branchQueryKey(ownerId: string, prefix: string): string {
+  return `${ownerId.toLowerCase()}|${prefix}`;
+}
+
+/** Options of {@link buildBranchFunctionalityPicker}. */
+export interface IBranchPickerOptions {
+  /** The document the controls are created in. */
+  document: Document;
+  /** The functionality DECLARING the branch (never offered as a branch functionality — no recursion). */
+  ownerId: string;
+  /** The resolved branch (its prefix makes the radio group unique). */
+  branch: IFunctionalityBranch;
+  /** The currently stored branch functionality id (empty = none). */
+  selectedId: string;
+  /** The remembered filter query (see {@link branchQueryKey}). */
+  query: string;
+  /** The label of the "no functionality" row. */
+  noneLabel: string;
+  /** The filter box's placeholder. */
+  filterPlaceholder: string;
+  /** Called on every keystroke in the filter box so the caller can remember the query. */
+  onQueryChange: (query: string) => void;
+  /** Called when the user picks a functionality (empty string = the "none" row). */
+  onSelect: (id: string) => void;
+  /** The localized short description of a functionality, shown as the row's tooltip. */
+  summaryOf?: (id: string) => string;
+}
+
+/**
+ * Builds the SINGLE-SELECT functionality picker of one conditional branch. It deliberately reuses the
+ * exact classes and layout of the regular (multi-select) functionality listing, so a branch looks and
+ * behaves like the regular picker: the same translucent darkorange-bordered box, the same inline filter
+ * box and the same checkbox-styled rows (radios instead of checkboxes, since a branch holds exactly one
+ * functionality). A permanent "no functionality" row clears the branch at any time and is never hidden
+ * by the filter.
+ *
+ * @param options The picker's configuration (owner, current selection, callbacks).
+ *
+ * @returns The picker element (the filter box plus the option rows). */
+export function buildBranchFunctionalityPicker(options: IBranchPickerOptions): HTMLDivElement {
+  const doc = options.document;
+  const pick = doc.createElement("div");
+  pick.className = "codbi-func-config__branch-pick codbi-func-config__funclist";
+  pick.style.cssText = "max-height:150px;overflow:auto;padding:4px;";
+
+  const filterRow = doc.createElement("div");
+  filterRow.className = "codbi-func-config__filterrow";
+  const filter = doc.createElement("input");
+  filter.type = "text";
+  filter.className = "codbi-func-config__filter";
+  filter.placeholder = options.filterPlaceholder;
+  filter.value = options.query;
+  filter.style.cssText = "flex:1 1 auto;min-width:0;box-sizing:border-box;margin:0;";
+  filterRow.appendChild(filter);
+
+  const optionsHost = doc.createElement("div");
+  optionsHost.className = "codbi-func-config__options";
+  // One radio group per branch, so the TRUE and FALSE pickers (and two conditionals on one element)
+  // never interfere.
+  const radioName = `codbi-branch-${options.branch.prefix}-${options.ownerId}`;
+  const rows: HTMLLabelElement[] = [];
+
+  const rowFor = (id: string): HTMLLabelElement => {
+    const row = doc.createElement("label");
+    row.className = "codbi-func-config__option";
+    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 4px;cursor:pointer;";
+    row.dataset.codbiBranchFunc = id;
+    const label = id === "" ? options.noneLabel : id;
+    // Hovering a row shows the functionality's short, localized description (the id is the fallback).
+    const tooltip = id === "" ? options.noneLabel : options.summaryOf?.(id) || id;
+    row.title = tooltip;
+    const radio = doc.createElement("input");
+    radio.type = "radio";
+    radio.name = radioName;
+    radio.value = id;
+    // The "none" row is checked while the branch holds no functionality (empty selected id).
+    radio.checked = id === options.selectedId;
+    radio.addEventListener("change", () => {
+      if (radio.checked) {
+        options.onSelect(id);
+      }
+    });
+    const text = doc.createElement("span");
+    text.textContent = label;
+    text.title = tooltip;
+    row.append(radio, text);
+    rows.push(row);
+    return row;
+  };
+
+  // The "no functionality" row comes FIRST and is always visible (even while filtering), so a branch
+  // can be cleared without typing anything.
+  const fragment = doc.createDocumentFragment();
+  fragment.appendChild(rowFor(""));
+  for (const id of listFunctionalities()) {
+    if (id.toLowerCase() === options.ownerId.toLowerCase()) {
+      continue;
+    }
+    fragment.appendChild(rowFor(id));
+  }
+  optionsHost.appendChild(fragment);
+
+  /** Hides every option row whose id does not contain the query (the "none" row always stays). */
+  const applyFilter = (): void => {
+    const query = filter.value.trim().toLowerCase();
+    for (const row of rows) {
+      const id = String(row.dataset.codbiBranchFunc ?? "").toLowerCase();
+      row.style.display = id === "" || query === "" || id.includes(query) ? "" : "none";
+    }
+  };
+  filter.addEventListener("input", () => {
+    options.onQueryChange(filter.value);
+    applyFilter();
+  });
+  applyFilter();
+
+  pick.append(filterRow, optionsHost);
+  return pick;
 }
 
 /**
@@ -636,6 +879,12 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
   private readonly funcList: HTMLDivElement;
   /** The current filter query for the functionality picker. */
   private funcQuery = "";
+  /**
+   * The remembered FILTER query of every conditional branch picker, keyed by
+   * {@link branchQueryKey} (`ownerId|prefix`). Selecting a branch functionality re-renders the whole
+   * parameter table; without this the branch's filter box would be reset to empty each time.
+   */
+  private readonly branchQueries = new Map<string, string>();
 
   constructor(config: TEditorCfg<IFunctionalityConfigDescriptor>) {
     super(config, "", "text");
@@ -838,15 +1087,18 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     this.elementSelect.value = this.elementRef;
   }
 
-  /** Renders the parameter table of every selected functionality. */
+  /** Renders the parameter table (and the TRUE/FALSE branch editors) of every selected functionality. */
   private renderParams(): void {
     const fragment = document.createDocumentFragment();
     let any = false;
     for (const id of this.selected) {
       const params = functionalityParameters(id);
       const types = functionalityParameterTypes(id);
+      const branches = functionalityBranches(id);
       const names = Object.keys(params);
-      if (names.length === 0) {
+      // A functionality may declare NO own parameters but BRANCHES (e.g. a conditional whose whole
+      // configuration lives in its `_T_`/`_F_` branches), so it must still render a group.
+      if (names.length === 0 && branches.length === 0) {
         continue;
       }
       any = true;
@@ -869,6 +1121,16 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
           console.error("[CodBi] Functionality: could not render parameter", id, name, x);
         }
       }
+      // The conditional TRUE/FALSE branches of the functionality (e.g. OnLoad.Conditional): each one is
+      // an ordinary functionality picker plus the parameter rows of the picked functionality, stored as
+      // `data-cb-_T_*` / `data-cb-_F_*` attributes of the contained element.
+      for (const branch of branches) {
+        try {
+          fragment.appendChild(this.buildBranchSection(id, branch));
+        } catch (x) {
+          console.error("[CodBi] Functionality: could not render branch", id, branch.key, x);
+        }
+      }
     }
     if (!any) {
       const none = document.createElement("div");
@@ -879,8 +1141,98 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     this.paramsHost.replaceChildren(fragment);
   }
 
-  /** Builds one parameter row: name + (checkbox | text input) + EP button. */
-  private buildParamRow(name: string, description: string, spec?: IFunctionalityParameterSpec): HTMLElement {
+  /**
+   * Builds the editor of ONE conditional branch (`_T_` / `_F_`) of a functionality: a selector naming
+   * the functionality that runs in that branch plus the value rows of ITS parameters. The values are
+   * written as prefixed attributes (`data-cb-_T_<param>`), exactly what the conditional reads at
+   * runtime; `data-cb-_T_func` names the branch functionality itself.
+   *
+   * @param ownerId The functionality declaring the branch (never offered as a branch functionality,
+   *                which would make it run itself).
+   * @param branch  The resolved branch (prefix + localized label/description). */
+  private buildBranchSection(ownerId: string, branch: IFunctionalityBranch): HTMLElement {
+    const section = document.createElement("div");
+    section.className = "codbi-func-config__branch";
+    const header = document.createElement("div");
+    header.className = "codbi-func-config__branch-header";
+    header.textContent = branch.label;
+    if (branch.description) {
+      header.title = branch.description;
+    }
+    // The branch functionality picker LOOKS AND BEHAVES like the regular functionality listing: the same
+    // darkorange-bordered translucent box, the same inline filter box and the same styled rows (radios
+    // instead of checkboxes — a branch holds exactly one functionality).
+    const selectedId = this.currentAttributeValue(branchFuncAttribute(branch.prefix));
+    const queryKey = branchQueryKey(ownerId, branch.prefix);
+    section.append(
+      header,
+      buildBranchFunctionalityPicker({
+        document: window.document,
+        ownerId,
+        branch,
+        selectedId,
+        query: this.branchQueries.get(queryKey) ?? "",
+        noneLabel: i18n("designer.widget.functionality.branchNone"),
+        filterPlaceholder: i18n("designer.widget.functionality.filterFuncs"),
+        summaryOf: (id) => functionalitySummary(id),
+        onQueryChange: (query) => {
+          this.branchQueries.set(queryKey, query);
+        },
+        onSelect: (id) => this.changeBranchFunctionality(branch.prefix, id),
+      }),
+    );
+    if (selectedId === "") {
+      const hint = document.createElement("div");
+      hint.className = "codbi-func-config__branch-hint";
+      hint.textContent = i18n("designer.widget.functionality.branchHint");
+      section.appendChild(hint);
+      return section;
+    }
+    const params = functionalityParameters(selectedId);
+    const types = functionalityParameterTypes(selectedId);
+    for (const name of Object.keys(params)) {
+      try {
+        section.appendChild(this.buildParamRow(name, params[name], findParameterSpec(types, name), branch.prefix));
+      } catch (x) {
+        console.error("[CodBi] Functionality: could not render branch parameter", ownerId, branch.key, name, x);
+      }
+    }
+    return section;
+  }
+
+  /**
+   * Persists the functionality chosen for one branch: writes `data-cb-<prefix>func` onto the contained
+   * element, drops the attributes of the FORMER branch functionality (unless the new one declares the
+   * same parameter) and re-renders the parameter table so the new branch's rows appear immediately.
+   */
+  private changeBranchFunctionality(prefix: string, nextId: string): void {
+    const attrName = branchFuncAttribute(prefix);
+    const child = containedElementItem();
+    if (child) {
+      const previousId = currentAttributeValueForItem(child as IItemLike | undefined, attrName);
+      for (const stale of branchParamsToRemove(prefix, previousId, nextId)) {
+        removeFuncAttributeQuiet(child as never, stale);
+      }
+      if (nextId === "") {
+        removeFuncAttributeQuiet(child as never, attrName);
+      } else {
+        setItemAttributeValue(child as never, attrName, nextId);
+      }
+    }
+    this.renderParams();
+  }
+
+  /**
+   * Builds one parameter row: name + (checkbox | text input) + EP button.
+   *
+   * @param attributePrefix The branch marker stored in front of the parameter name (`_T_` / `_F_` for a
+   *                        conditional branch, `""` for the regular parameters of the functionality). */
+  private buildParamRow(
+    name: string,
+    description: string,
+    spec?: IFunctionalityParameterSpec,
+    attributePrefix = "",
+  ): HTMLElement {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:6px;margin:2px 0;";
 
@@ -890,10 +1242,11 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     label.textContent = name;
 
     // The parameter key is stored BARE (e.g. `Unit`), but it lives in the contained element's config
-    // attribute table as `data-cb-<key>` (e.g. `data-cb-Unit`). Both the read and the write below must
+    // attribute table as `data-cb-<key>` (e.g. `data-cb-Unit`) — or, for a conditional branch, as
+    // `data-cb-<branch-prefix><key>` (e.g. `data-cb-_T_Name`). Both the read and the write below must
     // use the FULL prefixed attribute name so the value lands in (and is read from) the persisted
     // attribute, otherwise the config panel and the badge/runtime would target different attributes.
-    const attrName = `data-cb-${name}`;
+    const attrName = `data-cb-${attributePrefix}${name}`;
     const currentValue = this.currentAttributeValue(attrName);
     // The structured type wins; the legacy `{Type}`-in-description hint stays as a fallback.
     const type = spec?.type ?? parameterType(description);
@@ -924,7 +1277,11 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
         // Uses the FULL `data-cb-<key>` attribute name (see `attrName` above) so it matches the
         // persisted attribute table entry.
         setItemAttributeValue(child as never, attrName, value);
-        setItemAttributeValue(child as never, CB_FUNC_ATTRIBUTE, this.selected.join(","));
+        // Only a REGULAR parameter re-asserts the functionality tag. A branch parameter must not touch
+        // `data-cb-func` — the branch functionality is named by its own `data-cb-<prefix>func`.
+        if (attributePrefix === "") {
+          setItemAttributeValue(child as never, CB_FUNC_ATTRIBUTE, this.selected.join(","));
+        }
       }
     };
 

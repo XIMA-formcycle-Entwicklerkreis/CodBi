@@ -34,5 +34,33 @@
       "type": "string",
       "default": "Dot-prefixed CLASS selector of the watched field (never an #id selector)."
     }
+  },
+  "branches": {
+    "true": {
+      "prefix": "_T_",
+      "label": {
+        "en": "TRUE branch (applied when the comparison holds)",
+        "de": "WENN-Zweig (angewendet, wenn der Vergleich zutrifft)",
+        "it": "Ramo VERO (applicato quando il confronto è soddisfatto)"
+      },
+      "description": {
+        "en": "Pick the functionality that is applied to the Target when the comparison holds. Its parameters are written as data-cb-_T_<param> attributes on this element (data-cb-_T_func is stripped to data-cb-func on the target). Leave empty to do nothing in this case.",
+        "de": "Wähle die Funktionalität, die auf das Ziel angewendet wird, wenn der Vergleich zutrifft. Ihre Parameter werden als data-cb-_T_<Param>-Attribute auf diesem Element gespeichert (data-cb-_T_func wird auf dem Ziel zu data-cb-func). Leer lassen, um in diesem Fall nichts zu tun.",
+        "it": "Scegli la funzionalità applicata al target quando il confronto è soddisfatto. I suoi parametri vengono salvati come attributi data-cb-_T_<param> su questo elemento (data-cb-_T_func diventa data-cb-func sul target). Lascia vuoto per non fare nulla in questo caso."
+      }
+    },
+    "false": {
+      "prefix": "_F_",
+      "label": {
+        "en": "FALSE branch (applied when the comparison fails)",
+        "de": "SONST-Zweig (angewendet, wenn der Vergleich nicht zutrifft)",
+        "it": "Ramo FALSO (applicato quando il confronto non è soddisfatto)"
+      },
+      "description": {
+        "en": "Pick the functionality that is applied to the Target when the comparison does NOT hold. Its parameters are written as data-cb-_F_<param> attributes on this element. Leave empty to leave the target as authored.",
+        "de": "Wähle die Funktionalität, die auf das Ziel angewendet wird, wenn der Vergleich NICHT zutrifft. Ihre Parameter werden als data-cb-_F_<Param>-Attribute auf diesem Element gespeichert. Leer lassen, um das Ziel unverändert zu lassen.",
+        "it": "Scegli la funzionalità applicata al target quando il confronto NON è soddisfatto. I suoi parametri vengono salvati come attributi data-cb-_F_<param> su questo elemento. Lascia vuoto per lasciare il target com'è."
+      }
+    }
   }
 }

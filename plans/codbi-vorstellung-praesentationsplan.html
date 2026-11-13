@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodBi – Interaktiver Vorstellung-Plan (mit Checkboxen)</title>
+<style>
+  :root {
+    --blue: #2b6cb0;
+    --blue-dark: #1a4b7a;
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --line: #e2e8f0;
+    --muted: #718096;
+    --text: #1a202c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  header {
+    background: linear-gradient(135deg, var(--blue), var(--blue-dark));
+    color: #fff;
+    padding: 24px 28px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  }
+  header h1 { margin: 0 0 6px; font-size: 1.5rem; }
+  header p { margin: 0; opacity: .9; font-size: .95rem; }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    align-items: center;
+  }
+  .toolbar button {
+    background: rgba(255,255,255,.16);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.5);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: .85rem;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,.28); }
+  .progress {
+    font-size: .85rem;
+    background: rgba(255,255,255,.16);
+    border-radius: 999px;
+    padding: 4px 12px;
+    margin-left: auto;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 20px 80px; }
+
+  /* Hauptabschnitt-Boxen */
+  .section {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 18px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .section > h2 {
+    margin: 0 0 10px;
+    font-size: 1.15rem;
+    color: var(--blue-dark);
+    border-bottom: 2px solid var(--blue);
+    padding-bottom: 6px;
+  }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { margin: 0; }
+
+  /* Einstufige Punkte */
+  .item {
+    position: relative;
+    padding: 8px 10px 8px 40px;
+    border-radius: 6px;
+    transition: opacity .25s ease, background .2s ease;
+    border-left: 3px solid transparent;
+  }
+  .item:hover { background: #edf2f7; }
+
+  /* Verschachtelte Ebenen (2., 3., 4. …) */
+  .level-2 { padding-left: 56px; }
+  .level-3 { padding-left: 72px; }
+  .level-4 { padding-left: 88px; }
+  .level-5 { padding-left: 104px; }
+
+  /* Gruppe/Unterüberschrift (ohne eigene Checkbox-Texthöhe) */
+  .group {
+    font-weight: 700;
+    margin: 10px 0 4px;
+    color: var(--blue-dark);
+  }
+
+  /* Die eigentliche Checkbox: unsichtbar, aber klickbar über Label */
+  .item input[type="checkbox"] {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--blue);
+  }
+  .level-2 input[type="checkbox"] { left: 30px; }
+  .level-3 input[type="checkbox"] { left: 46px; }
+  .level-4 input[type="checkbox"] { left: 62px; }
+  .level-5 input[type="checkbox"] { left: 78px; }
+
+  .item .text { cursor: pointer; display: block; }
+  .item .text:hover { color: var(--blue); }
+
+  /* Haken gesetzt → ausgeblendet */
+  .item.done { opacity: 0.2 !important; }
+
+  .note {
+    font-size: .85rem;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* Tabelle */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: .88rem;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 8px 10px;
+    vertical-align: top;
+    text-align: left;
+  }
+  th { background: #edf2f7; color: var(--blue-dark); }
+  td .text { font-weight: 500; }
+  tbody tr {
+    transition: opacity .25s ease;
+  }
+  tbody tr.done { opacity: .2; }
+  tbody tr td { position: relative; }
+  tbody tr.done td { color: var(--muted); }
+
+  .cb-row {
+    position: relative;
+    padding-left: 28px;
+  }
+  .cb-row input[type="checkbox"] {
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--blue);
+  }
+
+  code {
+    background: #edf2f7;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: .85em;
+  }
+
+  .legend {
+    background: var(--card);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 18px;
+    font-size: .88rem;
+    color: var(--muted);
+  }
+  .legend b { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>CodBi vorstellen – Interaktiver Präsentationsplan</h1>
+  <p>Klicke die Punkte an, die du bereits gezeigt hast. Erledigte Punkte werden abgeblendet (opacity 0,2) und bleiben es, bis du den Haken wieder entfernst. Fortschritt wird lokal gespeichert.</p>
+  <div class="toolbar">
+    <button type="button" id="check-all">Alle als erledigt</button>
+    <button type="button" id="uncheck-all">Alle zurücksetzen</button>
+    <span class="progress" id="progress">0 / 0</span>
+  </div>
+</header>
+
+<main>
+
+  <div class="legend">
+    <b>So benutzt du diese Checkliste:</b> Ein Klick auf die Checkbox oder den Text eines Punktes setzt/entfernt den Haken.
+    Angehakte Punkte verschwinden fast vollständig (nur noch <b>20 % Sichtbarkeit</b>). Wenn du einen Punkt versehentlich angehakt hast,
+    klickst du ihn einfach erneut an, um den Haken zu entfernen und ihn wieder voll sichtbar zu machen.
+    Dein Fortschritt bleibt auch nach dem Schließen/Neuladen der Seite erhalten.
+  </div>
+
+  <!-- 0. Vorbereitung -->
+  <section class="section" id="sec-0">
+    <h2>0. Vorbereitung</h2>
+    <ul>
+      <li class="item" data-label="Demo-Umgebung aufsetzen"><input type="checkbox" id="c-0-1"><label class="text" for="c-0-1"><b>Demo-Umgebung aufsetzen</b></label></li>
+      <li class="item level-2" data-label="CodBi-Plug-in installieren"><input type="checkbox" id="c-0-2"><label class="text" for="c-0-2">CodBi-Plug-in installieren (formcycle Admin → System → Plugins) – <span class="note">Weil ohne installiertes Plug-in keine Bausteine im Designer erscheinen.</span></label></li>
+      <li class="item level-2" data-label="Onboarding-Formular bereitstellen"><input type="checkbox" id="c-0-3"><label class="text" for="c-0-3">Onboarding-Formular bereitstellen: CodBi OnBoarding – <span class="note">Weil die Zuhörer es nach dem Vortrag selbst ausprobieren können sollen.</span></label></li>
+      <li class="item level-2" data-label="Beispiel-Formular öffnen, Live-Betrieb"><input type="checkbox" id="c-0-4"><label class="text" for="c-0-4">Beispiel-Formular im Designer öffnen, Live-Betrieb sicherstellen – <span class="note">Weil tote Screenshots keine Überzeugungskraft haben; eine laufende Demo wirkt stärker.</span></label></li>
+
+      <li class="item" data-label="Zielgruppe klären"><input type="checkbox" id="c-0-5"><label class="text" for="c-0-5"><b>Zielgruppe klären</b></label></li>
+      <li class="item level-2" data-label="Entwickler → technische Details"><input type="checkbox" id="c-0-6"><label class="text" for="c-0-6">Entwickler → technische Details (Attribute, Klassen, TypeScript-Template) – <span class="note">Weil Entwickler Wiederverwendbarkeit und Erweiterbarkeit verstehen müssen.</span></label></li>
+      <li class="item level-2" data-label="Fachebene → Anwendungsfälle"><input type="checkbox" id="c-0-7"><label class="text" for="c-0-7">Formularverantwortliche/Fachebene → Anwendungsfälle, Bedienbarkeit, Low-Code – <span class="note">Weil sie entscheiden, welche Formulare damit gebaut werden.</span></label></li>
+      <li class="item level-2" data-label="Management/DSGVO → Kosten, Sicherheit"><input type="checkbox" id="c-0-8"><label class="text" for="c-0-8">Management/DSGVO → Kosten, Sicherheit, Konformität, ROI – <span class="note">Weil diese Aspekte die Freigabe/den Budgetentscheid treffen.</span></label></li>
+
+      <li class="item" data-label="Rahmen"><input type="checkbox" id="c-0-9"><label class="text" for="c-0-9"><b>Rahmen</b></label></li>
+      <li class="item level-2" data-label="Dauer festlegen"><input type="checkbox" id="c-0-10"><label class="text" for="c-0-10">Dauer festlegen (30/45/60 min) – <span class="note">Weil zu lange Vorträge die Aufmerksamkeit verlieren; Planung hilft, den Fokus zu halten.</span></label></li>
+      <li class="item level-2" data-label="Agenda ausgeben"><input type="checkbox" id="c-0-11"><label class="text" for="c-0-11">Agenda ausgeben – <span class="note">Weil die Zuhörer den roten Faden erkennen und wissen, was sie erwartet.</span></label></li>
+      <li class="item level-2" data-label="Pro Baustein kurz live zeigen"><input type="checkbox" id="c-0-12"><label class="text" for="c-0-12">Pro Baustein kurz live zeigen – <span class="note">Weil „3x kurz zeigen“ mehr bleibt als „1x lang erklären“.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- 1. Einstieg -->
+  <section class="section" id="sec-1">
+    <h2>1. Einstieg & Einordnung (Warum CodBi?)</h2>
+    <ul>
+      <li class="item" data-label="Was ist CodBi?"><input type="checkbox" id="c-1-1"><label class="text" for="c-1-1"><b>Was ist CodBi?</b></label></li>
+      <li class="item level-2" data-label="Code Library – XIMA formcycle Plug-in"><input type="checkbox" id="c-1-2"><label class="text" for="c-1-2">„Code Library“ – ein XIMA-formcycle-Plug-in (Kotlin + TypeScript) – <span class="note">Weil die Technologiebasis für Entwickler und Betrieb relevant ist.</span></label></li>
+      <li class="item level-2" data-label="Low-Code-Logik-Engine"><input type="checkbox" id="c-1-3"><label class="text" for="c-1-3">Low-Code-Logik-Engine: vorgefertigte, wiederverwendbare Bausteine – <span class="note">Weil das Kernangebot „fertige Logik statt eigener Code“ ist.</span></label></li>
+      <li class="item level-2" data-label="Lokaler KI-Stack"><input type="checkbox" id="c-1-4"><label class="text" for="c-1-4">Enthält zusätzlich einen vollständig lokalen KI-Stack – <span class="note">Weil dies das entscheidende Unterscheidungsmerkmal gegenüber Cloud-Diensten ist.</span></label></li>
+
+      <li class="item" data-label="Kernversprechen / Wert"><input type="checkbox" id="c-1-5"><label class="text" for="c-1-5"><b>Kernversprechen / Wert</b></label></li>
+      <li class="item level-2" data-label="Komplexe Logik ohne Programmieren"><input type="checkbox" id="c-1-6"><label class="text" for="c-1-6">Komplexe Formular-Logik <b>ohne eigenes Programmieren</b> – <span class="note">Weil dadurch auch Fachpersonen ohne Entwickler-Know-how smarte Formulare bauen können.</span></label></li>
+      <li class="item level-2" data-label="Bausteine frei kombinieren"><input type="checkbox" id="c-1-7"><label class="text" for="c-1-7">Bausteine frei kombinieren statt individuellen JavaScript pro Formular – <span class="note">Weil das Wartung, Konsistenz und Qualität deutlich verbessert.</span></label></li>
+      <li class="item level-2" data-label="KI ohne Cloud-Zwang"><input type="checkbox" id="c-1-8"><label class="text" for="c-1-8">KI-Fähigkeiten ohne Cloud-Zwang – DSGVO-konform lokal – <span class="note">Weil viele öffentliche Stellen keine Daten an externe Cloud-Anbieter senden dürfen.</span></label></li>
+
+      <li class="item" data-label="Konkrete Problemstellung"><input type="checkbox" id="c-1-9"><label class="text" for="c-1-9"><b>Konkrete Problemstellung, die CodBi löst</b></label></li>
+      <li class="item level-2" data-label="Vorherigen Aufwand zeigen"><input type="checkbox" id="c-1-10"><label class="text" for="c-1-10">Vorherigen Aufwand zeigen (lange Client-Skripte, Duplikate) – <span class="note">Weil der „Schmerz“ die Motivation für Veränderung schafft.</span></label></li>
+      <li class="item level-2" data-label="Einmal bauen, überall nutzen"><input type="checkbox" id="c-1-11"><label class="text" for="c-1-11">„Einmal bauen, überall nutzen“ – <span class="note">Weil dies der zentrale Zeit-/Kostenvorteil gegenüber Klassik-Code ist.</span></label></li>
+
+      <li class="item" data-label="Drei Baustein-Arten"><input type="checkbox" id="c-1-12"><label class="text" for="c-1-12"><b>Die drei Baustein-Arten im Überblick</b></label></li>
+      <li class="item level-2" data-label="Funktionalitäten → Verhalten"><input type="checkbox" id="c-1-13"><label class="text" for="c-1-13"><b>Funktionalitäten</b> → Verhalten – <span class="note">Weil sie das „Was soll das Element tun?“ beantworten.</span></label></li>
+      <li class="item level-2" data-label="EPs → Daten"><input type="checkbox" id="c-1-14"><label class="text" for="c-1-14"><b>Elementplatzhalter (EPs)</b> → Daten – <span class="note">Weil sie das „Woher kommen die Werte?“ beantworten.</span></label></li>
+      <li class="item level-2" data-label="Standardkonfigurationen → Pakete"><input type="checkbox" id="c-1-15"><label class="text" for="c-1-15"><b>Standardkonfigurationen</b> → fertige Komplettpakete – <span class="note">Weil sie das „Was ist vorgefertigt?“ beantworten und den Start erleichtern.</span></label></li>
+
+      <li class="item" data-label="Was CodBi besonders macht"><input type="checkbox" id="c-1-16"><label class="text" for="c-1-16"><b>Was CodBi besonders macht (Differenzierung)</b></label></li>
+      <li class="item level-2" data-label="Lokale KI auf eigenem Server"><input type="checkbox" id="c-1-17"><label class="text" for="c-1-17">Lokale KI (LLaMA, Whisper, Tesseract) läuft auf dem eigenen Server – <span class="note">Weil dies einzigartig für DSGVO-/Öffentlichkeitsumfelder ist.</span></label></li>
+      <li class="item level-2" data-label="Daten verlassen Infrastruktur nicht"><input type="checkbox" id="c-1-18"><label class="text" for="c-1-18">Daten verlassen die Infrastruktur nicht (DSGVO/GDPR, AI Act) – <span class="note">Weil dies die Hauptsorge der Datenschutzbeauftragten adressiert.</span></label></li>
+      <li class="item level-2" data-label="Local API-Doc Manager"><input type="checkbox" id="c-1-19"><label class="text" for="c-1-19">Local API-Documentation Manager für eigenes Code-Sharing – <span class="note">Weil auch Teams ohne Kernel-Zugriff eigene Bausteine erstellen und teilen können.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- 2. Funktionalitäten -->
+  <section class="section" id="sec-2">
+    <h2>2. Funktionalitäten (Functionalities) – „Verhalten“</h2>
+
+    <div class="group">2.1 Was ist eine Funktionalität?</div>
+    <ul>
+      <li class="item" data-label="data-cb-func-Attribut"><input type="checkbox" id="c-2-1"><label class="text" for="c-2-1">Wird per <code>data-cb-func</code>-Attribut an ein HTML-Element „gehängt“ – <span class="note">Weil dieses Attribut der Einstiegspunkt ist, über den CodBi das Element erkennt und die Logik bindet.</span></label></li>
+      <li class="item" data-label="Transformiert/validiert/erweitert"><input type="checkbox" id="c-2-2"><label class="text" for="c-2-2">Transformiert, validiert oder erweitert Formular-Elemente zur Laufzeit – <span class="note">Weil sie die „verhaltensbezogene“ Ebene der Formular-Logik darstellen.</span></label></li>
+      <li class="item" data-label="Beispiele nennen"><input type="checkbox" id="c-2-3"><label class="text" for="c-2-3">Beispiele: Eingabe umwandeln, prüfen, maskieren, anreichern – <span class="note">Weil konkrete Beispiele das abstrakte Konzept sofort greifbar machen.</span></label></li>
+    </ul>
+
+    <div class="group">2.2 Vorteile von Funktionalitäten</div>
+    <ul>
+      <li class="item" data-label="Kein eigenes JavaScript nötig"><input type="checkbox" id="c-2-4"><label class="text" for="c-2-4"><b>Kein eigenes JavaScript nötig</b> → per Attribut aktivieren – <span class="note">Weil die Einstiegshürde sinkt und Fehler durch selbstgeschriebenen Code reduziert werden.</span></label></li>
+      <li class="item" data-label="Wiederverwendbar"><input type="checkbox" id="c-2-5"><label class="text" for="c-2-5"><b>Wiederverwendbar</b> → gleiche Funktion in vielen Formularen – <span class="note">Weil getestete Logik überall konsistent wirkt statt pro Formular neu implementiert zu werden.</span></label></li>
+      <li class="item" data-label="Parametrisierbar"><input type="checkbox" id="c-2-6"><label class="text" for="c-2-6"><b>Parametrisierbar</b> → je nach Kontext/Feld – <span class="note">Weil ein Baustein viele Szenarien abdeckt und flexibel bleibt.</span></label></li>
+      <li class="item" data-label="Effizient laden"><input type="checkbox" id="c-2-7"><label class="text" for="c-2-7"><b>Effizient laden</b> → nur bei Nutzung geladen – <span class="note">Weil das Seiten-Gewicht klein bleibt und die Performance stimmt.</span></label></li>
+    </ul>
+
+    <div class="group">2.3 Beispiel-Kategorien</div>
+    <ul>
+      <li class="item" data-label="AI / ML"><input type="checkbox" id="c-2-8"><label class="text" for="c-2-8"><b>AI / ML</b></label></li>
+      <li class="item level-2" data-label="AI.Llama.Chat"><input type="checkbox" id="c-2-9"><label class="text" for="c-2-9"><code>AI.Llama.Chat</code> – mehrschrittiger lokaler Chat – <span class="note">Weil eine vollständige, lokale Chat-Erfahrung ohne Cloud und ideal als „Wow“-Demo.</span></label></li>
+      <li class="item level-2" data-label="AI.Llama.Standard.QA"><input type="checkbox" id="c-2-10"><label class="text" for="c-2-10"><code>AI.Llama.Standard.QA</code> – Bild-/PDF-Frage-Antwort beim Upload – <span class="note">Weil gescannte Dokumente automatisch ausgewertet und Behörden-Workflows abgebildet werden.</span></label></li>
+      <li class="item level-2" data-label="AI.Llama.Standard.TxtQA"><input type="checkbox" id="c-2-11"><label class="text" for="c-2-11"><code>AI.Llama.Standard.TxtQA</code> – Text-Q&A bei Feldänderung, optionaler Websuche – <span class="note">Weil bei Eingaben live geantwortet und Kontext erweitert werden kann.</span></label></li>
+      <li class="item level-2" data-label="AI.OCR"><input type="checkbox" id="c-2-12"><label class="text" for="c-2-12"><code>AI.OCR</code> – Tesseract-Texterkennung – <span class="note">Weil gedruckter Text strukturiert extrahiert wird – ein häufiges Behörden-Thema.</span></label></li>
+
+      <li class="item" data-label="Eingabe-Validierung / Transformation"><input type="checkbox" id="c-2-13"><label class="text" for="c-2-13"><b>Eingabe-Validierung / Transformation</b></label></li>
+      <li class="item level-2" data-label="HTML.Input.Regex"><input type="checkbox" id="c-2-14"><label class="text" for="c-2-14"><code>HTML.Input.Regex</code> – gegen Regex prüfen – <span class="note">Weil formale Validierung ohne eigenen Code abgesichert wird.</span></label></li>
+      <li class="item level-2" data-label="HTML.Input.Cleave"><input type="checkbox" id="c-2-15"><label class="text" for="c-2-15"><code>HTML.Input.Cleave</code> – Eingabe-Maskierung – <span class="note">Weil vorformatierte Eingaben die Datenqualität erhöhen.</span></label></li>
+      <li class="item level-2" data-label="HTML.Input.Trans.Capital"><input type="checkbox" id="c-2-16"><label class="text" for="c-2-16"><code>HTML.Input.Trans.Capital</code> – Großschreiben – <span class="note">Weil Standardisierungen ohne manuellen Eingriff erfolgen.</span></label></li>
+      <li class="item level-2" data-label="HTML.Input.Blacklist"><input type="checkbox" id="c-2-17"><label class="text" for="c-2-17"><code>HTML.Input.Blacklist</code> – unerlaubte Werte sperren – <span class="note">Weil unerwünschte Eingaben zur Laufzeit verhindert werden.</span></label></li>
+      <li class="item level-2" data-label="HTML.Input.NoAutocomplete"><input type="checkbox" id="c-2-18"><label class="text" for="c-2-18"><code>HTML.Input.NoAutocomplete</code> – Autovervollständigung deaktivieren – <span class="note">Weil datenschutzrelevante Felder nicht vom Browser vorausgefüllt werden sollen.</span></label></li>
+
+      <li class="item" data-label="Datum / Zeit"><input type="checkbox" id="c-2-19"><label class="text" for="c-2-19"><b>Datum / Zeit</b></label></li>
+      <li class="item level-2" data-label="Date.Min"><input type="checkbox" id="c-2-20"><label class="text" for="c-2-20"><code>Date.Min</code> – Mindestdatum erzwingen – <span class="note">Weil z. B. keine Rückdatierungen in Anträgen möglich sind.</span></label></li>
+      <li class="item level-2" data-label="Date.NoWeekends"><input type="checkbox" id="c-2-21"><label class="text" for="c-2-21"><code>Date.NoWeekends</code> – Wochenenden verhindern – <span class="note">Weil nur gültige (Arbeits-)Tage zugelassen werden.</span></label></li>
+      <li class="item level-2" data-label="Date.Frame / Time.Frame"><input type="checkbox" id="c-2-22"><label class="text" for="c-2-22"><code>Date.Frame</code> / <code>Time.Frame</code> – zwei Felder koppeln – <span class="note">Weil Anfangs-/Endwerte logisch zusammengehören und konsistent validiert werden.</span></label></li>
+
+      <li class="item" data-label="Layout / HTML"><input type="checkbox" id="c-2-23"><label class="text" for="c-2-23"><b>Layout / HTML</b></label></li>
+      <li class="item level-2" data-label="HTML.Panel"><input type="checkbox" id="c-2-24"><label class="text" for="c-2-24"><code>HTML.Panel</code> – Panel-Strukturen mit fortgeschrittenem Layout – <span class="note">Weil komplexe Formulare strukturiert aufgebaut werden.</span></label></li>
+      <li class="item level-2" data-label="HTML.Panel.Accordion"><input type="checkbox" id="c-2-25"><label class="text" for="c-2-25"><code>HTML.Panel.Accordion</code> – Panels zu Akkordeons bündeln – <span class="note">Weil lange Formulare platzsparend dargestellt werden.</span></label></li>
+      <li class="item level-2" data-label="HTML.CSS"><input type="checkbox" id="c-2-26"><label class="text" for="c-2-26"><code>HTML.CSS</code> – CSS mit Platzhaltern injizieren – <span class="note">Weil Styling dynamisch und kontextabhängig angewendet wird.</span></label></li>
+      <li class="item level-2" data-label="HTML.Text.Injector"><input type="checkbox" id="c-2-27"><label class="text" for="c-2-27"><code>HTML.Text.Injector</code> – Text mit Platzhaltern einsetzen – <span class="note">Weil dynamische Texte ohne Code eingefügt werden.</span></label></li>
+      <li class="item level-2" data-label="HTML.SetAttribute"><input type="checkbox" id="c-2-28"><label class="text" for="c-2-28"><code>HTML.SetAttribute</code> – Attribute dynamisch setzen – <span class="note">Weil Attribute (readonly, required …) je nach Zustand gesetzt werden.</span></label></li>
+
+      <li class="item" data-label="Integrationen"><input type="checkbox" id="c-2-29"><label class="text" for="c-2-29"><b>Integrationen</b></label></li>
+      <li class="item level-2" data-label="LDAP.Autocomplete"><input type="checkbox" id="c-2-30"><label class="text" for="c-2-30"><code>LDAP.Autocomplete</code> – LDAP-Autovervollständigung – <span class="note">Weil Benutzerdaten direkt nachgeschlagen werden.</span></label></li>
+      <li class="item level-2" data-label="OpenPLZ.Autocomplete"><input type="checkbox" id="c-2-31"><label class="text" for="c-2-31"><code>OpenPLZ.Autocomplete</code> – PLZ-Autovervollständigung – <span class="note">Weil Adresstypo durch Vorausfüllen vermieden wird.</span></label></li>
+      <li class="item level-2" data-label="Matomo.Tracking"><input type="checkbox" id="c-2-32"><label class="text" for="c-2-32"><code>Matomo.Tracking</code> – Webanalytik – <span class="note">Weil Nutzungsdaten DSGVO-konform (ohne Cloud-Tracking) erfasst werden.</span></label></li>
+      <li class="item level-2" data-label="Media.Input.Speech.Whisper"><input type="checkbox" id="c-2-33"><label class="text" for="c-2-33"><code>Media.Input.Speech.Whisper</code> – lokale Spracheingabe – <span class="note">Weil Spracheingabe datenschutzkonform lokal verarbeitet wird.</span></label></li>
+    </ul>
+
+    <div class="group">2.4 Demo-Idee</div>
+    <ul>
+      <li class="item" data-label="Drag & Drop Funktionalität"><input type="checkbox" id="c-2-34"><label class="text" for="c-2-34">Feld anlegen und per Drag & Drop Funktionalität belegen – <span class="note">Weil das den Low-Code-Charakter unmittelbar zeigt.</span></label></li>
+      <li class="item" data-label="Wirkung live zeigen"><input type="checkbox" id="c-2-35"><label class="text" for="c-2-35">Wirkung live zeigen (z. B. Großschreibung/Maskierung) – <span class="note">Weil der direkte, sichtbare Effekt am überzeugendsten ist.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- 3. Elementplatzhalter -->
+  <section class="section" id="sec-3">
+    <h2>3. Elementplatzhalter (EPs) – „Dynamischer Datenzugriff“</h2>
+
+    <div class="group">3.1 Was ist ein EP?</div>
+    <ul>
+      <li class="item" data-label="EP ruft Werte zur Laufzeit ab"><input type="checkbox" id="c-3-1"><label class="text" for="c-3-1">Platzhalter, der in jedem Funktionalitäts-Parameter Werte zur Laufzeit abruft – <span class="note">Weil Parameter dadurch nicht statisch sind, sondern sich zur Laufzeit füllen.</span></label></li>
+      <li class="item" data-label="Quellen"><input type="checkbox" id="c-3-2"><label class="text" for="c-3-2">Quellen: DOM, globale Variablen, externe Dienste, berechnete Werte – <span class="note">Weil dies alle Datenquellen abdeckt, die Formulare benötigen.</span></label></li>
+      <li class="item" data-label="Einsetzbar überall"><input type="checkbox" id="c-3-3"><label class="text" for="c-3-3">Einsetzbar in: Funktionalitäten, Standardkonfigurationen, eigener Logik – <span class="note">Weil dieselbe Technik durchgängig angewendet wird → ein Prinzip überall.</span></label></li>
+    </ul>
+
+    <div class="group">3.2 Vorteile von EPs</div>
+    <ul>
+      <li class="item" data-label="Keine hartcodierten Werte"><input type="checkbox" id="c-3-4"><label class="text" for="c-3-4"><b>Keine hartcodierten Werte</b> → Logik bleibt flexibel – <span class="note">Weil Änderungen ohne Code-Änderung erfolgen.</span></label></li>
+      <li class="item" data-label="Kontextabhängig"><input type="checkbox" id="c-3-5"><label class="text" for="c-3-5"><b>Kontextabhängig</b> → eine Funktionalität, viele Formulare – <span class="note">Weil ein Baustein viele Fälle abdeckt und Wiederverwendung erst möglich wird.</span></label></li>
+      <li class="item" data-label="Nur EP-Referenz ändert sich"><input type="checkbox" id="c-3-6"><label class="text" for="c-3-6"><b>Nur der EP-Referenzwert ändert sich, nicht der Code</b> – <span class="note">Weil dies Wartung und Anpassung radikal vereinfacht.</span></label></li>
+      <li class="item" data-label="Lokal definierbar"><input type="checkbox" id="c-3-7"><label class="text" for="c-3-7"><b>Lokal definierbar</b> → eigene Platzhalter – <span class="note">Weil auch hausinterne, individuelle Datenflüsse abgebildet werden.</span></label></li>
+      <li class="item" data-label="Wiederverwendbare Muster"><input type="checkbox" id="c-3-8"><label class="text" for="c-3-8"><b>Wiederverwendbare Muster</b> – <span class="note">Weil sich Code-Muster ergeben, die über Formulare übertragbar sind.</span></label></li>
+    </ul>
+
+    <div class="group">3.3 Beispiel-Kategorien</div>
+    <ul>
+      <li class="item" data-label="Kern"><input type="checkbox" id="c-3-9"><label class="text" for="c-3-9"><b>Kern</b></label></li>
+      <li class="item level-2" data-label="F / I / V / Unique / Sorted"><input type="checkbox" id="c-3-10"><label class="text" for="c-3-10"><code>F</code> (suchen), <code>I</code> (Index), <code>V</code> (globale Variablen), <code>Unique</code>/<code>Sorted</code> – <span class="note">Weil dies die Grundoperationen der Datenverarbeitung abdecken.</span></label></li>
+
+      <li class="item" data-label="Daten"><input type="checkbox" id="c-3-11"><label class="text" for="c-3-11"><b>Daten</b></label></li>
+      <li class="item level-2" data-label="Data.CSV / Join / JSON.Path / DOM.Query / Net.URL"><input type="checkbox" id="c-3-12"><label class="text" for="c-3-12"><code>Data.CSV</code>, <code>Data.Join</code>, <code>JSON.Path</code>, <code>DOM.Query</code>, <code>Net.URL</code> – <span class="note">Weil Daten aus Listen, JSON, DOM und URLs genutzt werden.</span></label></li>
+
+      <li class="item" data-label="Datum / Zeit"><input type="checkbox" id="c-3-13"><label class="text" for="c-3-13"><b>Datum / Zeit</b></label></li>
+      <li class="item level-2" data-label="Date.Today / Holidays / Weekends"><input type="checkbox" id="c-3-14"><label class="text" for="c-3-14"><code>Date.Today</code>, <code>Date.Holidays</code>, <code>Date.Weekends</code> – <span class="note">Weil zeitabhängige Logik und Fristen automatisch korrekt bleiben.</span></label></li>
+
+      <li class="item" data-label="Externe Dienste"><input type="checkbox" id="c-3-15"><label class="text" for="c-3-15"><b>Externe Dienste</b></label></li>
+      <li class="item level-2" data-label="OpenPLZ / LDAP.Find / AI.Llama.Std.QA"><input type="checkbox" id="c-3-16"><label class="text" for="c-3-16"><code>OpenPLZ</code>, <code>LDAP.Find</code>, <code>AI.Llama.Std.QA</code> – <span class="note">Weil amtliche, Verzeichnis- und KI-Daten direkt eingebunden werden.</span></label></li>
+
+      <li class="item" data-label="BayVIS"><input type="checkbox" id="c-3-17"><label class="text" for="c-3-17"><b>BayVIS (Bayerisches Behördenverzeichnis)</b></label></li>
+      <li class="item level-2" data-label="BayVIS-Ansprechpartner"><input type="checkbox" id="c-3-18"><label class="text" for="c-3-18"><code>BayVIS.Ansprechpartner</code> / <code>.Details</code> – Kontakte – <span class="note">Weil Ansprechpartner-Daten ohne eigene Schnittstelle bereitgestellt werden.</span></label></li>
+      <li class="item level-2" data-label="BayVIS-Behoerden"><input type="checkbox" id="c-3-19"><label class="text" for="c-3-19"><code>BayVIS.Behoerden</code> / <code>.Details</code> / <code>.Gebaeude</code> – Behörden und Gebäude – <span class="note">Weil Behörden-Strukturen direkt abfragbar sind.</span></label></li>
+      <li class="item level-2" data-label="BayVIS-Leistungen"><input type="checkbox" id="c-3-20"><label class="text" for="c-3-20"><code>BayVIS.Leistungen</code> / <code>.Details</code> – Leistungen – <span class="note">Weil Leistungsdaten direkt in Formulare einfließen.</span></label></li>
+      <li class="item level-2" data-label="BayVIS-Dienststellen"><input type="checkbox" id="c-3-21"><label class="text" for="c-3-21"><code>BayVIS.Dienststellen</code> / <code>.Formulare</code> / <code>.Onlineverfahren</code> – <span class="note">Weil amtliche Zuständigkeiten und Verfahren abgebildet werden.</span></label></li>
+    </ul>
+
+    <div class="group">3.4 Feldreferenzen in Parametern (<code><[...]></code>-Notation)</div>
+    <ul>
+      <li class="item" data-label="this"><input type="checkbox" id="c-3-22"><label class="text" for="c-3-22"><code><[this]></code> → Wert des Elements, dem der Parameter gehört – <span class="note">Weil dies das aktuelle Feld als Kontext nutzt.</span></label></li>
+      <li class="item" data-label="Selektor-Referenz"><input type="checkbox" id="c-3-23"><label class="text" for="c-3-23"><code><[.FieldName]></code>, <code><[#id]></code>, <code><[input[name=x]]></code> → per CSS-Selektor – <span class="note">Weil beliebige Felder gezielt referenziert werden.</span></label></li>
+      <li class="item" data-label="Pfad-Referenz"><input type="checkbox" id="c-3-24"><label class="text" for="c-3-24"><code><[FieldName.path]></code>, <code><[Base::path]></code> → DOM-Eigenschaft oder JSON-Pfad – <span class="note">Weil auch Eigenschaften und verschachtelte JSON-Werte erreichbar sind.</span></label></li>
+      <li class="item" data-label="Timing"><input type="checkbox" id="c-3-25"><label class="text" for="c-3-25"><b>Timing:</b> Auflösung einmalig beim Initialisieren – <span class="note">Weil die Werte dann stabil vorliegen.</span></label></li>
+      <li class="item" data-label="Escape"><input type="checkbox" id="c-3-26"><label class="text" for="c-3-26"><b>Escape:</b> <code>°<[</code> zeigt Token wörtlich – <span class="note">Weil so eine „Referenz, die wie Text wirken soll“ möglich ist.</span></label></li>
+      <li class="item" data-label="Kombination mit [%field%]"><input type="checkbox" id="c-3-27"><label class="text" for="c-3-27">Kombination mit <code>[%field%]</code> in einem Durchlauf möglich – <span class="note">Weil beide Notationen aufeinander abgestimmt funktionieren.</span></label></li>
+    </ul>
+
+    <div class="group">3.5 Demo-Idee</div>
+    <ul>
+      <li class="item" data-label="PLZ → Ort"><input type="checkbox" id="c-3-28"><label class="text" for="c-3-28">PLZ eingeben → Ort automatisch füllen (OpenPLZ) – <span class="note">Weil der dynamische Datenabruf eindrucksvoll und sofort verständlich ist.</span></label></li>
+      <li class="item" data-label="Summen-Prüfung"><input type="checkbox" id="c-3-29"><label class="text" for="c-3-29">Oder: Summe aus zwei Feldern live prüfen – <span class="note">Weil eine typische, nachvollziehbare Querrechnung demonstriert wird.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- 4. Standardkonfigurationen -->
+  <section class="section" id="sec-4">
+    <h2>4. Standardkonfigurationen – „Fertige Komplettpakete“</h2>
+
+    <div class="group">4.1 Was ist eine Standardkonfiguration?</div>
+    <ul>
+      <li class="item" data-label="Vorgebaute Pakete"><input type="checkbox" id="c-4-1"><label class="text" for="c-4-1"><b>Vorgebaute Pakete</b>, die Funktionalitäten + EPs für typische Fälle verdrahten – <span class="note">Weil sie die mühsame Einzel-Verdrahtung abnehmen und erprobte Logik bündeln.</span></label></li>
+      <li class="item" data-label="Elementbezogen"><input type="checkbox" id="c-4-2"><label class="text" for="c-4-2"><b>Elementbezogen:</b> verdrahten Funktionen für ein einzelnes Element – <span class="note">Weil gezielte Verbesserungen an einem Element rasch aktiviert werden.</span></label></li>
+      <li class="item" data-label="Ganzheitlich (holistisch)"><input type="checkbox" id="c-4-3"><label class="text" for="c-4-3"><b>Ganzheitlich (holistisch):</b> gelten für das gesamte Formular → <b>ein Klick</b> – <span class="note">Weil formularübergreifende Standards ohne Einzelaufwand wirken.</span></label></li>
+    </ul>
+
+    <div class="group">4.2 Vorteile</div>
+    <ul>
+      <li class="item" data-label="Keine manuelle Einzel-Verdrahtung"><input type="checkbox" id="c-4-4"><label class="text" for="c-4-4"><b>Keine manuelle Einzel-Verdrahtung</b> → spart Zeit, vermeidet Fehler – <span class="note">Weil Verdrahtungsfehler schwer zu finden sind.</span></label></li>
+      <li class="item" data-label="Best-Practice out of the box"><input type="checkbox" id="c-4-5"><label class="text" for="c-4-5"><b>Best-Practice-Logik out of the box</b> – <span class="note">Weil man auf getestete Lösungen setzt statt selbst Fehler einzubringen.</span></label></li>
+      <li class="item" data-label="Lokal erweiterbar"><input type="checkbox" id="c-4-6"><label class="text" for="c-4-6"><b>Lokal erweiterbar/anpassbar</b> über den Manager – <span class="note">Weil Standards auf eigene Bedürfnisse zugeschnitten werden können.</span></label></li>
+      <li class="item" data-label="Geringe Einstiegshürde"><input type="checkbox" id="c-4-7"><label class="text" for="c-4-7"><b>Geringe Einstiegshürde</b> für die Fachebene – <span class="note">Weil Fachpersonen selbstständig beginnen können.</span></label></li>
+    </ul>
+
+    <div class="group">4.3 Beispiel-Kategorien</div>
+    <ul>
+      <li class="item" data-label="AI"><input type="checkbox" id="c-4-8"><label class="text" for="c-4-8"><code>AI</code> – bündelt Chat, Q&A, Extraktion, Validierung – <span class="note">Weil die gesamte KI-Ausstattung eines Formulars in einem Schritt aktiviert wird.</span></label></li>
+      <li class="item" data-label="Adress-/Verzeichnisdaten"><input type="checkbox" id="c-4-9"><label class="text" for="c-4-9"><b>Adress-/Verzeichnisdaten</b>: <code>OpenPLZ Autocomplete Sets</code>, <code>LDAP Autofill</code>, <code>BayVIS</code> – <span class="note">Weil Adressen und Stammdaten schnell/fehlerarm erfasst werden.</span></label></li>
+      <li class="item" data-label="Fachlogik"><input type="checkbox" id="c-4-10"><label class="text" for="c-4-10"><b>Fachlogik</b>: <code>Financial</code>, <code>People</code>, <code>Appointments</code> – <span class="note">Weil finanz-, personen- und termingebundene Workflows komplett abgedeckt werden.</span></label></li>
+      <li class="item" data-label="UI / Layout"><input type="checkbox" id="c-4-11"><label class="text" for="c-4-11"><b>UI / Layout</b>: <code>UI Panels</code> – <span class="note">Weil Struktur/Layout ohne manuelle Arbeit entsteht.</span></label></li>
+      <li class="item" data-label="Holistisch"><input type="checkbox" id="c-4-12"><label class="text" for="c-4-12"><b>Holistisch (ganzes Formular)</b> – <span class="note">Weil ein Klick das gesamte Formular mit Standards versieht.</span></label></li>
+      <li class="item level-2" data-label="Holistic CSS Standards"><input type="checkbox" id="c-4-13"><label class="text" for="c-4-13"><code>Holistic CSS Standards</code> – <span class="note">Weil ein einheitliches Erscheinungsbild über alle Formulare gilt.</span></label></li>
+      <li class="item level-2" data-label="Holistic Cleave input masks"><input type="checkbox" id="c-4-14"><label class="text" for="c-4-14"><code>Holistic Cleave input masks</code> – <span class="note">Weil durchgängig formatierte Eingaben die Datenqualität heben.</span></label></li>
+      <li class="item level-2" data-label="Holistic Fieldsets-to-Panel"><input type="checkbox" id="c-4-15"><label class="text" for="c-4-15"><code>Holistic Fieldsets-to-Panel</code> – <span class="note">Weil bestehende Formulare optisch aufgewertet werden.</span></label></li>
+      <li class="item level-2" data-label="Holistic Matomo Tracking"><input type="checkbox" id="c-4-16"><label class="text" for="c-4-16"><code>Holistic Matomo Tracking</code> – <span class="note">Weil Nutzungsdaten DSGVO-konform in allen Formularen erfasst werden.</span></label></li>
+      <li class="item level-2" data-label="Holistic Speech Input"><input type="checkbox" id="c-4-17"><label class="text" for="c-4-17"><code>Holistic Speech Input</code> – <span class="note">Weil Spracheingabe formularweit verfügbar gemacht wird.</span></label></li>
+    </ul>
+
+    <div class="group">4.4 Demo-Idee</div>
+    <ul>
+      <li class="item" data-label="Holistisches Masking aktivieren"><input type="checkbox" id="c-4-18"><label class="text" for="c-4-18">Ganzes Formular mit einer Standardkonfiguration aktivieren – <span class="note">Weil „vorher/nachher“ den größten visuellen Effekt hat.</span></label></li>
+      <li class="item" data-label="Vorher/Nachher-Vergleich"><input type="checkbox" id="c-4-19"><label class="text" for="c-4-19">Vorher/Nachher-Vergleich zeigen – <span class="note">Weil der Einstiegsklick-Komfort direkt spürbar wird.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- 5. Zusammenführung -->
+  <section class="section" id="sec-5">
+    <h2>5. Zusammenführung & der „Local API-Documentation Manager“</h2>
+
+    <div class="group">5.1 Warum die Kombination stark ist</div>
+    <ul>
+      <li class="item" data-label="Frei mischbar"><input type="checkbox" id="c-5-1"><label class="text" for="c-5-1">Funktionen + EPs + Standardkonfigurationen frei mischbar – <span class="note">Weil jede Ebene exakt einen Zweck erfüllt und dadurch die Logik verständlich bleibt.</span></label></li>
+      <li class="item" data-label="Weniger Bauaufwand"><input type="checkbox" id="c-5-2"><label class="text" for="c-5-2">Komplexer Workflow = Kombination weniger Bausteine statt viel Code – <span class="note">Weil das kürzere Build-Zeit und weniger Fehler bedeutet.</span></label></li>
+      <li class="item" data-label="Sanfter Einstieg"><input type="checkbox" id="c-5-3"><label class="text" for="c-5-3">Mit Standardkonfigurationen starten, dann fein justieren – <span class="note">Weil das einen sanften Einstieg mit Ausbaupotenzial bietet.</span></label></li>
+    </ul>
+
+    <div class="group">5.2 Local API-Documentation Manager</div>
+    <ul>
+      <li class="item" data-label="Eigene Elemente erstellen"><input type="checkbox" id="c-5-4"><label class="text" for="c-5-4"><b>Eigene Elemente erstellen</b> direkt im Designer (Code + Parameter + Variablen + CSS) – <span class="note">Weil kein Plugin-Quellcode geändert werden muss.</span></label></li>
+      <li class="item" data-label="Point-and-click / Autocomplete"><input type="checkbox" id="c-5-5"><label class="text" for="c-5-5"><b>Point-and-click / Autocomplete</b> statt manuellem Vertippen – <span class="note">Weil Tippfehler in technischen Namen eine häufige Fehlerquelle sind.</span></label></li>
+      <li class="item" data-label="JSON-Export/-Import"><input type="checkbox" id="c-5-6"><label class="text" for="c-5-6"><b>JSON-Export/-Import</b> für Austausch über Instanzen/Community – <span class="note">Weil einmal validierte Logik wiederverwendet wird statt neu entwickelt zu werden.</span></label></li>
+      <li class="item" data-label="Synchronisation"><input type="checkbox" id="c-5-7"><label class="text" for="c-5-7"><b>Synchronisation</b> mit dem Backend (definierbar, wer darf) – <span class="note">Weil zentrale Verwaltung und kontrollierte Berechtigungen gewährleistet sind.</span></label></li>
+      <li class="item" data-label="TypeScript-Template"><input type="checkbox" id="c-5-8"><label class="text" for="c-5-8"><b>TypeScript-Template</b> erzeugt automatisch importierbares JSON – <span class="note">Weil Entwickler in TypeScript schreiben und die Serialisierung automatisch erfolgt.</span></label></li>
+    </ul>
+
+    <div class="group">5.3 Demo-Idee</div>
+    <ul>
+      <li class="item" data-label="Eigenes Element anlegen"><input type="checkbox" id="c-5-9"><label class="text" for="c-5-9">Eigenes Element im Manager anlegen und nutzen – <span class="note">Weil die „eigene Logik ohne Kernel-Zugriff“-Idee greifbar wird.</span></label></li>
+      <li class="item" data-label="Export → Import"><input type="checkbox" id="c-5-10"><label class="text" for="c-5-10">Export → Import auf zweites Formular zeigen – <span class="note">Weil der Wiederverwendungs-Workflow das zentrale Versprechen sichtbar macht.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- 6. KI-Aspekte -->
+  <section class="section" id="sec-6">
+    <h2>6. Kurz: KI-Aspekte (sofern relevant)</h2>
+    <ul>
+      <li class="item" data-label="Lokaler KI-Stack"><input type="checkbox" id="c-6-1"><label class="text" for="c-6-1"><b>Voller lokaler KI-Stack</b> – kein Cloud-Zwang – <span class="note">Weil dies der entscheidende DSGVO-/Sicherheitsvorteil ist.</span></label></li>
+      <li class="item level-2" data-label="LLaMA / Whisper / Tesseract / AI-Proxy"><input type="checkbox" id="c-6-2"><label class="text" for="c-6-2"><b>Komponenten:</b> LLaMA (Chat/Q&A), Whisper (Sprache), Tesseract (OCR), AI-Proxy – <span class="note">Weil vier klar getrennte, einzeln aktivierbare Dienste ein vollständiges lokales KI-Set bilden.</span></label></li>
+      <li class="item" data-label="Automatische Einrichtung"><input type="checkbox" id="c-6-3"><label class="text" for="c-6-3"><b>Automatische Einrichtung</b> beim ersten Einsatz – <span class="note">Weil „Zero-Config“ den Aufwand massiv senkt.</span></label></li>
+      <li class="item" data-label="Crash-Isolation"><input type="checkbox" id="c-6-4"><label class="text" for="c-6-4"><b>Crash-Isolation:</b> separate OS-Prozesse, JVM bleibt stabil – <span class="note">Weil Robustheit im Produktivbetrieb entscheidend ist.</span></label></li>
+      <li class="item" data-label="Hardware"><input type="checkbox" id="c-6-5"><label class="text" for="c-6-5"><b>Hardware:</b> Vulkan/CUDA 12 mit CPU-Fallback – <span class="note">Weil auch ohne GPU ein Betrieb möglich bleibt.</span></label></li>
+      <li class="item" data-label="Konformität"><input type="checkbox" id="c-6-6"><label class="text" for="c-6-6"><b>Konformität:</b> DSGVO/GDPR und EU-KI-Verordnung – <span class="note">Weil dies das ausschlaggebende Argument für öffentliche Stellen ist.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- 7. Abschluss -->
+  <section class="section" id="sec-7">
+    <h2>7. Abschluss</h2>
+    <ul>
+      <li class="item" data-label="Kern-Vorteile"><input type="checkbox" id="c-7-1"><label class="text" for="c-7-1"><b>Kern-Vorteile</b></label></li>
+      <li class="item level-2" data-label="Weniger Eigen-Code"><input type="checkbox" id="c-7-2"><label class="text" for="c-7-2">1. Weniger Eigen-Code → fertige Bausteine – <span class="note">Weil dies Zeit und Wartungsaufwand spart.</span></label></li>
+      <li class="item level-2" data-label="Wiederverwendung"><input type="checkbox" id="c-7-3"><label class="text" for="c-7-3">2. Wiederverwendung & Austausch (JSON) – <span class="note">Weil getestete Logik überall genutzt werden kann.</span></label></li>
+      <li class="item level-2" data-label="Schnelle Einrichtung"><input type="checkbox" id="c-7-4"><label class="text" for="c-7-4">3. Schnelle, fehlerarme Einrichtung – <span class="note">Weil die Einstiegshürde sehr niedrig ist.</span></label></li>
+      <li class="item level-2" data-label="Lokale KI"><input type="checkbox" id="c-7-5"><label class="text" for="c-7-5">4. Lokale KI mit DSGVO-Konformität – <span class="note">Weil es ein Alleinstellungsmerkmal gegenüber Cloud-Lösungen ist.</span></label></li>
+
+      <li class="item" data-label="Wow-Moment"><input type="checkbox" id="c-7-6"><label class="text" for="c-7-6"><b>Live-Demo „Wow-Moment“</b></label></li>
+      <li class="item level-2" data-label="KI-Dokumentenanalyse"><input type="checkbox" id="c-7-7"><label class="text" for="c-7-7">KI-Dokumentenanalyse (OCR + Q&A) zeigen – <span class="note">Weil der emotionale Höhepunkt am Ende wirkungsvoll ist.</span></label></li>
+
+      <li class="item" data-label="Offene Punkte"><input type="checkbox" id="c-7-8"><label class="text" for="c-7-8"><b>Offene Punkte ansprechen</b></label></li>
+      <li class="item level-2" data-label="Hardware/Voraussetzungen"><input type="checkbox" id="c-7-9"><label class="text" for="c-7-9">Hardware-/Systemvoraussetzungen (RAM, GPU) – <span class="note">Weil der Betrieb im Vorfeld geklärt werden muss.</span></label></li>
+      <li class="item level-2" data-label="Betrieb & Deployment"><input type="checkbox" id="c-7-10"><label class="text" for="c-7-10">Betrieb & Deployment (OPERATIONS.md) – <span class="note">Weil die Verantwortlichen den Aufwand kennen müssen.</span></label></li>
+      <li class="item level-2" data-label="AI-Compliance"><input type="checkbox" id="c-7-11"><label class="text" for="c-7-11">KI-Compliance, Netzwerkfreigaben, AVV – <span class="note">Weil rechtliche Rahmenbedingungen abgesichert werden müssen.</span></label></li>
+
+      <li class="item" data-label="Nächste Schritte"><input type="checkbox" id="c-7-12"><label class="text" for="c-7-12"><b>Nächste Schritte vorschlagen</b></label></li>
+      <li class="item level-2" data-label="Onboarding durchspielen"><input type="checkbox" id="c-7-13"><label class="text" for="c-7-13">Onboarding-Formular durchspielen – <span class="note">Weil ein erster eigener Erfolg schnell entsteht.</span></label></li>
+      <li class="item level-2" data-label="Pilot-Formular bauen"><input type="checkbox" id="c-7-14"><label class="text" for="c-7-14">Pilot-Formular gemeinsam bauen – <span class="note">Weil der Nutzen an einem echten Anwendungsfall verifiziert wird.</span></label></li>
+      <li class="item level-2" data-label="Ansprechpartner benennen"><input type="checkbox" id="c-7-15"><label class="text" for="c-7-15">Fachliche Ansprechpartner/Team benennen – <span class="note">Weil klare Verantwortlichkeiten die Umsetzung vorantreiben.</span></label></li>
+    </ul>
+  </section>
+
+  <!-- Zeitplan-Tabelle -->
+  <section class="section" id="sec-table">
+    <h2>Empfohlene Reihenfolge für ~30–45 min Vortrag (Zeitplan)</h2>
+    <p class="note">Erläuterungen zu jeder Zeitfenster-Zeile; Kern-Aussagen/Fragen in Anführungszeichen mit Details.</p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:60px;">Zeit</th>
+          <th style="width:170px;">Abschnitt</th>
+          <th style="width:230px;">Schwerpunkt</th>
+          <th>Details & Leitfragen (Aussagen/Fragen mit Erläuterung)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-label="Tabelle 5min Einstieg">
+          <td class="cb-row"><input type="checkbox" id="c-t1"><label class="text" for="c-t1">5 min</label></td>
+          <td>1. Einstieg & Warum</td>
+          <td>Einordnung, Problem, 3 Bausteine</td>
+          <td><b>„Warum CodBi?“</b> – <span class="note">Einordnung als Low-Code-Logik-Engine für formcycle.</span> Leitfragen: „Was ist CodBi?“ (Bausteine + lokale KI), „Welches Problem löst es?“ (Weg vom Code zur wiederverwendbaren Logik), „Was sind die 3 Bausteine?“ (Verhalten/Daten/Pakete). Differenzierung: „Daten bleiben im Haus“.</td>
+        </tr>
+        <tr data-label="Tabelle 10min Funktionalitäten">
+          <td class="cb-row"><input type="checkbox" id="c-t2"><label class="text" for="c-t2">10 min</label></td>
+          <td>2. Funktionalitäten</td>
+          <td>Live-Demo (Verhalten)</td>
+          <td><b>„Verhalten“</b> – <span class="note">Wie Funktionalitäten Elemente transformieren/validieren/erweitern.</span> Kern-Aussagen: „Kein eigenes JavaScript nötig“, „Wiederverwendbar und parametrisierbar“, „Nur bei Bedarf geladen“. Leitfragen: „Welche Kategorien gibt es?“ Demo: Feld per Drag & Drop belegen.</td>
+        </tr>
+        <tr data-label="Tabelle 10min EPs">
+          <td class="cb-row"><input type="checkbox" id="c-t3"><label class="text" for="c-t3">10 min</label></td>
+          <td>3. Elementplatzhalter</td>
+          <td>Live-Demo (Datenzugriff, Feldreferenzen)</td>
+          <td><b>„Dynamischer Datenzugriff“</b> – <span class="note">EPs holen Werte zur Laufzeit aus DOM/Variablen/Diensten.</span> Kern-Aussagen: „Keine hartcodierten Werte“, „Nur der EP-Referenzwert ändert sich“, „EPs lokal definierbar“. Leitfragen: „Wie greife ich auf Feldwerte zu?“ (`<[...]>`-Notation). Demo: PLZ → Ort oder Summen-Prüfung.</td>
+        </tr>
+        <tr data-label="Tabelle 8min Standardkonfigurationen">
+          <td class="cb-row"><input type="checkbox" id="c-t4"><label class="text" for="c-t4">8 min</label></td>
+          <td>4. Standardkonfigurationen</td>
+          <td>Live-Demo (ein Klick)</td>
+          <td><b>„Fertige Komplettpakete“</b> – <span class="note">Funktionalitäten + EPs für typische Fälle verdrahtet.</span> Kern-Aussagen: „Ein einziger Aktivierungsklick“, „Best-Practice out of the box“, „Keine manuelle Einzel-Verdrahtung“. Leitfragen: „Was ist elementbezogen vs. ganzheitlich?“ Demo: holistisches Input-Masking mit Vorher/Nachher.</td>
+        </tr>
+        <tr data-label="Tabelle 5min Manager">
+          <td class="cb-row"><input type="checkbox" id="c-t5"><label class="text" for="c-t5">5 min</label></td>
+          <td>5. Local API-Doc Manager</td>
+          <td>Code-Sharing, Import/Export</td>
+          <td><b>„Herz des Code-Sharings“</b> – <span class="note">Eigene Elemente direkt im Designer erstellen.</span> Kern-Aussagen: „Point-and-click statt Vertippen“, „Eigene Logik ohne Kernel-Zugriff“, „JSON-Export/-Import für Wiederverwendung“. Leitfragen: „Wie teile ich Logik?“ Demo: Element anlegen + importieren.</td>
+        </tr>
+        <tr data-label="Tabelle Rest KI & Abschluss">
+          <td class="cb-row"><input type="checkbox" id="c-t6"><label class="text" for="c-t6">Rest</label></td>
+          <td>6. + 7. KI & Abschluss</td>
+          <td>nur falls relevant, Zusammenfassung, Fragen</td>
+          <td><b>„Lokale KI & Abschluss“</b> – <span class="note">Nur bei Datenschutz-/Management-Publikum vertiefen.</span> Kern-Aussage: „Daten bleiben im Haus – DSGVO/GDPR, AI Act“. Wow-Moment: KI-Dokumentenanalyse. Abschluss-Fragen: „Was sind die 4 Kern-Vorteile?“, „Welche offenen Punkte/Hardware?“, „Was sind die nächsten Schritte?“</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  const STORAGE_KEY = 'codbi-vorstellung-checklist';
+  const boxSelector = 'input[type="checkbox"]';
+  const root = document.body;
+
+  // Alle Checkboxen sammeln
+  function allBoxes() {
+    return Array.from(root.querySelectorAll(boxSelector));
+  }
+
+  // item/tr-Element zur Checkbox finden
+  function getOwner(box) {
+    return box.closest('.item') || box.closest('tbody tr');
+  }
+
+  function updateBox(box) {
+    const owner = getOwner(box);
+    if (!owner) return;
+    if (box.checked) {
+      owner.classList.add('done');
+    } else {
+      owner.classList.remove('done');
+    }
+  }
+
+  function updateProgress() {
+    const boxes = allBoxes();
+    const checked = boxes.filter(b => b.checked).length;
+    const prog = document.getElementById('progress');
+    if (prog) prog.textContent = checked + ' / ' + boxes.length + ' erledigt';
+  }
+
+  function save() {
+    const state = {};
+    allBoxes().forEach(box => { state[box.id] = box.checked; });
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    catch (e) { /* localStorage ggf. nicht verfügbar */ }
+  }
+
+  function load() {
+    let state = null;
+    try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); }
+    catch (e) { state = null; }
+    if (!state) return;
+    allBoxes().forEach(box => {
+      if (typeof state[box.id] === 'boolean') {
+        box.checked = state[box.id];
+        updateBox(box);
+      }
+    });
+  }
+
+  // Klick auf Checkbox
+  root.addEventListener('change', function (e) {
+    if (e.target && e.target.matches && e.target.matches(boxSelector)) {
+      updateBox(e.target);
+      updateProgress();
+      save();
+    }
+  });
+
+  // Klick auf die gesamte Zeile (Text) der Tabelle toggelt Checkbox
+  root.addEventListener('click', function (e) {
+    const row = e.target.closest && e.target.closest('tbody tr');
+    if (row && !e.target.matches('input[type="checkbox"]') && !e.target.matches('a')) {
+      const box = row.querySelector('input[type="checkbox"]');
+      if (box) {
+        box.checked = !box.checked;
+        updateBox(box);
+        updateProgress();
+        save();
+      }
+    }
+  });
+
+  // Toolbar-Buttons
+  document.getElementById('check-all').addEventListener('click', function () {
+    allBoxes().forEach(box => { box.checked = true; updateBox(box); });
+    updateProgress(); save();
+  });
+  document.getElementById('uncheck-all').addEventListener('click', function () {
+    allBoxes().forEach(box => { box.checked = false; updateBox(box); });
+    updateProgress(); save();
+  });
+
+  // Initialisieren
+  load();
+  updateProgress();
+})();
+</script>
+
+</body>
+</html>

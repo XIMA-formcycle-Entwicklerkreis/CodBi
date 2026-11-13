@@ -1,0 +1,31 @@
+{
+  "ap" : [ {
+    "amtsbezeichnung" : "Amt für Ordnung, Straßenverkehr und Bürgerservice",
+    "anrede" : "Herr",
+    "ansprechpartnerId" : 422296,
+    "behoerdeBezeichnung" : "Straßenverkehrsrecht",
+    "behoerdeId" : 316228,
+    "email" : "Fabian.Bauer@Ansbach.de",
+    "faxAnlage" : "51",
+    "faxDurchwahl" : "1248",
+    "faxLandvorwahl" : "49",
+    "faxOrtsvorwahl" : "981",
+    "funktion" : "Sachbearbeiter",
+    "gebaeudeBezeichnung" : "Verwaltungsgebäude Nürnberger Str. 32",
+    "gebaeudeId" : 253733,
+    "nachname" : "Bauer",
+    "sprechzeiten" : {
+      "nachVereinbarung" : false,
+      "oeffnungszeit" : [ ],
+      "sonderzeiten" : " "
+    },
+    "stellenbezeichnung" : "",
+    "telefonAnlage" : "51",
+    "telefonDurchwahl" : "248",
+    "telefonLandvorwahl" : "49",
+    "telefonOrtsvorwahl" : "981",
+    "vorname" : "Fabian",
+    "website" : "",
+    "zimmer" : "1.23"
+  } ]
+}

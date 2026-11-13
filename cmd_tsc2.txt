@@ -1,0 +1,12 @@
+packages/designer/__mocks__/@de-xima/fc-form-designer.ts(23,14): error TS2451: Cannot redeclare block-scoped variable 'registerCustomEditor'.
+packages/designer/__mocks__/@de-xima/fc-form-designer.ts(42,14): error TS2451: Cannot redeclare block-scoped variable 'registerCustomEditor'.
+packages/designer/__tests__/element-functionality-config-editor.spec.ts(317,40): error TS2339: Property 'getFormPropertyValueForCurrentLang' does not exist on type 'unknown'.
+packages/designer/__tests__/multiselect.spec.ts(36,4): error TS2352: Conversion of type 'IGlobalCallbacks' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'IGlobalCallbacks'.
+packages/designer/__tests__/multiselect.spec.ts(62,6): error TS2352: Conversion of type 'IGlobalCallbacks' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'IGlobalCallbacks'.
+packages/designer/__tests__/multiselect.spec.ts(71,36): error TS2345: Argument of type 'IMultiSelectDescriptor' is not assignable to parameter of type 'TEditorCfg<IMultiSelectDescriptor>'.
+  Type 'IPropertyDescriptor<"com.github.xima_formcycle_entwicklerkreis.fc.plugin:fc-plugin-codbi:MultiSelect">' is missing the following properties from type 'IEditorCfgExtra': base, id, designer
+packages/designer/src/js/EPManager.ts(252,82): error TS2552: Cannot find name 'selectionStart'. Did you mean 'onselectstart'?
+packages/designer/src/js/EPManager.ts(277,48): error TS2552: Cannot find name 'selectionStart'. Did you mean 'onselectstart'?
+packages/designer/src/js/OptionInput.ts(839,57): error TS2358: The left-hand side of an 'instanceof' expression must be of type 'any', an object type or a type parameter.

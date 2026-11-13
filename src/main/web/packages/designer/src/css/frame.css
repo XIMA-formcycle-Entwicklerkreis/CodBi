@@ -1219,6 +1219,83 @@
   color: darkorange;
 }
 
+/* ONE conditional branch (the TRUE/FALSE editors of e.g. OnLoad.Conditional / OnChange.Conditional):
+   a bordered block holding the branch label, its functionality selector and the parameter rows of the
+   selected branch functionality. The left border echoes the darkorange brand colour so a branch is
+   visually distinct from the regular parameter rows of the functionality. */
+.codbi-func-config__branch {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 6px;
+  padding: 4px 6px 6px;
+  border-left: 3px solid darkorange;
+  background: rgba(255, 140, 0, 0.06);
+  border-radius: 4px;
+}
+
+/* The branch label ("TRUE branch …" / "FALSE branch …"). It carries the branch explanation as a
+   `title` tooltip, so a regular cursor (not the text-selection caret) is used. */
+.codbi-func-config__branch-header {
+  cursor: default;
+  font-weight: 700;
+  font-size: 0.95em;
+  color: #925400;
+}
+
+/* The branch's functionality picker: it reuses the REGULAR listing's classes (`__funclist`,
+   `__filterrow`, `__filter`, `__options`, `__option`), so it looks and behaves exactly like the
+   functionality picker. It does not sit inside the double-button frame, so it paints its own
+   darkorange outline here. */
+.codbi-func-config__branch-pick {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid darkorange;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.45);
+}
+.codbi-func-config__branch-pick:hover {
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.35);
+}
+
+/* The branch picker's radios: the circular twin of the functionality checkbox (darkorange outline,
+   darkorange fill with a white dot once chosen). Without this the browser's default radio would
+   break the uniform darkorange row styling. */
+.codbi-func-config__option input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  align-self: center;
+  border: 2px solid darkorange;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  vertical-align: middle;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.codbi-func-config__option input[type="radio"]:hover {
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.25);
+}
+.codbi-func-config__option input[type="radio"]:checked {
+  background-color: darkorange;
+  background-image: radial-gradient(circle, #fff 0 3px, transparent 3.5px);
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* Shown under a branch selector while no functionality is chosen for that branch. */
+.codbi-func-config__branch-hint {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.3;
+  margin: 2px 0 0;
+}
+
 /* Parameter group header: an inline darkorange badge with white text, shown above the value rows of
    each selected functionality. It carries the functionality's short description as a `title` tooltip,
    so a regular cursor (not the text-selection caret) is used. */

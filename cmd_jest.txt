@@ -1,0 +1,166 @@
+PASS packages/designer/__tests__/mirror-dropdown-panel-host.spec.ts
+  MirrorDropdown panel host marker
+    √ marks the settings panel that hosts the dropdown (71 ms)
+    √ drops the marker from the panel of a DISCARDED dropdown (previous selection) (8 ms)
+  MirrorDropdown open-list lift
+    √ lifts every ancestor between the open list and the panel box, and only while open (13 ms)
+    √ keeps a closed dropdown from lifting its row again after a re-render of the list (6 ms)
+  MirrorDropdown open-list portal
+    √ portals the OPEN list to document.body so it escapes every settings-panel stacking context (6 ms)
+    √ restores the portaled list to its root when closed via the document click (10 ms)
+
+PASS packages/designer/__tests__/multiselect.spec.ts
+  MultiSelect standard-configuration tree
+    √ persists turning OFF a holistic standard configuration through set-property (131 ms)
+    √ reports the holistic standard configuration as inactive in the plugin metadata after toggling off (9 ms)
+    √ keeps the checkbox off when the config is toggled off and the panel is re-rendered (regression) (18 ms)
+
+PASS packages/designer/__tests__/ep-expression.spec.ts
+  EPExpression
+    √ parses plain text into a single text segment (13 ms)
+    √ parses a simple EP with no params (2 ms)
+    √ parses nested EPs and multiple params (2 ms)
+    √ round-trips a value with surrounding literal text (1 ms)
+    √ lowercases literal parameter values on request but keeps EP ids (1 ms)
+    √ escapes and restores literal braces (1 ms)
+    √ treats unbalanced braces as literal text (1 ms)
+    √ collects nested EP ids
+    √ creates an EP node with a given number of params
+    √ is stable across parse → serialize → parse
+  resolveEPSignatureForId
+    √ reads a typed Signature from detElementplaceholder (case-insensitive) (1 ms)
+    √ synthesizes a signature from a Parameter map when no Signature exists (1 ms)
+    √ returns undefined when nothing is known (1 ms)
+
+PASS packages/designer/__tests__/codbi-docs.spec.ts
+  codbiDocsUrl
+    √ honours the administrator's per-language docs redirect (docsAPI) (2 ms)
+    √ falls back to the English docsAPI entry for a language without a redirect
+    √ falls back to the configured base URL's English section when no docsAPI exists (1 ms)
+    √ falls back to the configured base URL's German section when no docsAPI exists
+
+PASS packages/designer/__tests__/register-custom-form-properties.spec.ts
+  registerCustomFormProperties
+    √ registers all form properties for the code library (4 ms)
+
+PASS packages/designer/__tests__/element-preview-suspension.spec.ts
+  CodbiElementMarkers CSS-class writer
+    √ writes the class and nudges the persist differ immediately by default (23 ms)
+    √ postpones the persist-differ nudge until the flush when `deferNotify` is set (1 ms)
+    √ only nudges the persist differ when the question is dismissed (no preview refresh) (1 ms)
+  element preview suspension
+    √ is released exactly when the last suspension ends (2 ms)
+    √ tolerates an unbalanced resume (1 ms)
+    √ can be released WITHOUT re-applying the previews (dismissed question)
+
+PASS packages/designer/__tests__/holistic-marker-targets.spec.ts
+  holisticTargetsAnchor
+    √ matches a leaf upload widget whose input belongs to its own cell (32 ms)
+    √ does NOT mark a PAGE that only CONTAINS an upload field (child item) (6 ms)
+    √ does NOT mark a PAGE whose child item is the second nested control (5 ms)
+    √ still matches a CONTAINER by its OWN rendered element (fieldset panel) (8 ms)
+    √ matches when the ANCHOR itself is the targeted element (5 ms)
+    √ supports tilde-separated target lists and tolerates invalid selectors (3 ms)
+
+PASS packages/designer/__tests__/marker-csv-tooltip.spec.ts
+  CodBi marker table — CSV parameter tooltip
+    √ shows the CSV value as a table when hovering the marker's Edit button (150 ms)
+    √ rebuilds the tooltip from the LIVE attribute value on the next hover (54 ms)
+    √ keeps a native title fallback on the marker's Edit button (15 ms)
+
+PASS packages/designer/__tests__/element-preview-refresh-loop.spec.ts
+  refreshBadges self-triggering
+    √ does not queue another pass from the mutations of its own pass (94 ms)
+    √ still refreshes when a designer re-render takes a badge down (26 ms)
+    √ ignores designer churn that leaves our widgets alone (15 ms)
+    √ ignores the churn of its OWN preview nodes (the clip/fit loops run between passes) (25 ms)
+
+PASS packages/designer/__tests__/standard-config-activation.spec.ts
+  standard-configuration activation resolution
+    √ resolves the owning configuration and marks only NOT activated configurations as inactive (18 ms)
+    √ counts a configuration active when the form's standards property selects it (2 ms)
+  standard-configuration activation question
+    √ asks before activating and activates the configuration on confirm (15 ms)
+    √ does not activate anything when the question is dismissed (4 ms)
+    √ does not ask at all when the owning configuration is already active (5 ms)
+  CodBi marker class sub-badges
+    √ dims a class of a NOT activated configuration, asks on click and repaints it after activation (152 ms)
+
+PASS packages/designer/__tests__/marker-sub-badge-hover.spec.ts
+  CodBi marker sub-badge hover (all colours)
+    √ does not hold any parameter table open after a single hover (130 ms)
+    √ collapses again after a rebuild re-expanded a table that was only hovered (76 ms)
+
+PASS packages/designer/__tests__/element-preview-rebuild.spec.ts
+  previewClipIsLost
+    √ is false while the clipped element is still inside the preview document (38 ms)
+    √ is true once the preview document re-rendered the form (13 ms)
+    √ is false without a clipped element or without a preview document (1 ms)
+  element preview after a designer re-render
+    √ rebuilds the preview iframe the designer removed (155 ms)
+    √ leaves an intact preview alone (no reload on every pass) (10 ms)
+
+PASS packages/designer/__tests__/register-element-functionality-properties.spec.ts
+  registerElementFunctionalityProperties
+    √ registers the per-element CodBi category, editor and funcs property (3 ms)
+
+PASS packages/designer/__tests__/register-custom-translations.spec.ts
+  registerButtonActionTranslations
+    √ registers the navigation action labels so the Aktion column localizes (2 ms)
+
+PASS packages/designer/__tests__/i18n.spec.ts
+  i18n
+    √ return the localized message when the current language is English
+    √ return the localized message when the current language is German (1 ms)
+
+PASS packages/designer/__tests__/register-custom-form-categories.spec.ts
+  registerCustomFormProperties
+    √ registers all form properties for the code library (1 ms)
+
+PASS packages/designer/__tests__/element-functionality-config-editor.spec.ts
+  ElementFunctionalityConfigEditor functionality lists
+    √ splits the functionalities into applicable (main) and non-applicable (toggle-only) lists (50 ms)
+    √ narrows BOTH functionality listings to the applied functionalities (only checked) (17 ms)
+    √ marks a functionality written in UPPERCASE in data-cb-func as selected (4 ms)
+    √ keeps the second list hidden until the toggle button is clicked (6 ms)
+    √ hides the APPLICABLE functionality list behind its own toggle (collapsed by default) (6 ms)
+    √ focuses the listing's filter input right after a toggle button expands the list (10 ms)
+    √ shows an activation notice instead of the config sections while the form-level CodBi is disabled (9 ms)
+    √ re-reveals the panel immediately when the live CodBi enable checkbox is checked (no rebuild) (6 ms)
+  ElementFunctionalityConfigEditor standard-configuration lists
+    √ splits the AVAILABLE standard configs into applicable and non-applicable lists by widget type (5 ms)
+    √ lists every available standard config even when no `Active` flag is present (plugin-provided metadata) (4 ms)
+    √ lists the per-config CSS Classes (without a leading dot) instead of the config file names (9 ms)
+    √ matches a config whose `supportedFormelementtypes` is a comma-separated STRING (manager channel) (6 ms)
+    √ re-renders the standard-config split when `setValue` is called (element changed) (6 ms)
+    √ reads each class's widget types from the config's own `classes[class].formelementtypes` entries (5 ms)
+    √ keeps the standard-config second list hidden until its toggle is clicked (4 ms)
+    √ hides the APPLICABLE standard-config list behind its own toggle (collapsed by default) (3 ms)
+    √ renders an id-only config row as read-only (no per-element checkbox) (2 ms)
+    √ applies/removes a standard-config class on the element through its checkbox (8 ms)
+    √ narrows BOTH standard-configuration listings to the applied classes (only checked) (7 ms)
+    √ asks before activating a NOT activated configuration when its class is applied (8 ms)
+    √ does not activate the configuration when the dialog is dismissed (4 ms)
+    √ dims the classes of NOT activated configurations and offers an activate button (3 ms)
+    √ prefixes the row tooltip with the full standard-configuration path (4 ms)
+    √ localizes the row tooltip from the class's own descriptionDe (classes without a functionality) (5 ms)
+    √ falls back to the localized functionality summary, and keeps English for an English designer (5 ms)
+    √ activates the configuration through the row's activate button without applying the class (4 ms)
+    √ keeps a class the element already carries in the applicable list (checked) although its type excludes it (2 ms)
+    √ excludes holistic standard configs (the "Holistic" keyword) from both listings (4 ms)
+  refreshElementFunctionalityConfig (post-sync panel refresh)
+    √ re-renders the mounted config panel through its own `setValue` (4 ms)
+    √ is published on window.CodbiPluginData so the local API-doc manager can call it
+  paramsToRemoveForRemovedFunctionality
+    √ keeps a shared parameter and drops the removed functionality's unique parameter
+    √ is symmetric: dropping the other functionality drops its unique parameter
+    √ matches parameters case-insensitively across functionalities (1 ms)
+    √ returns nothing for a functionality without parameters
+  ElementFunctionalityConfigEditor parameter row highlight
+    √ highlights the label while the value control is hovered and clears it on leave (4 ms)
+    √ keeps the highlight while one of the row's own controls holds focus (3 ms)
+
+Test Suites: 17 passed, 17 total
+Tests:       100 passed, 100 total
+Snapshots:   0 total
+Time:        7.685 s

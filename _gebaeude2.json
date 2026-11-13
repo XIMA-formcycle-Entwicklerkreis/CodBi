@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+
+<html
+    lang="de">
+    
+    <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="description" content="Webservices des BayernPortals für staatlichen und kommunalen Stellen" />
+    <meta name="keywords" content="XML-Webservices, Soap-Webservices, XÖV-Standard XZuFi, RESTFul Webservices" />
+    
+    <title >Unzureichende Berechtigungen</title>
+    
+</head>
+
+    <body>
+        <h5>Diese Seite ist geschützt. Die Anfrage scheitert aufgrund unzureichender Berechtigungen.</h5>
+        
+    </body>
+
+</html>

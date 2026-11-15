@@ -9,6 +9,8 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
+import { openCssEditor } from "./CssEditor.js";
+import type { ICssParameterSpec } from "./CssEditor.js";
 import { openCsvGridEditor } from "./CsvGridEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import type { IFunctionalityParameterSpec } from "./FunctionalityConfigEditor.js";
@@ -1904,6 +1906,8 @@ export function enableLocalDocInterface(): void {
             itemSeparator?: string;
             /** For `type: "csv"`: the separator between subparts (columns) of one element. */
             fieldSeparator?: string;
+            /** For `type: "css"`: which CSS flavour applies (stylesheet/declarations/classes/selector). */
+            cssKind?: string;
           }
 
           /**
@@ -1944,6 +1948,9 @@ export function enableLocalDocInterface(): void {
                 spec.itemName = meta?.itemName;
                 spec.itemSeparator = meta?.itemSeparator;
                 spec.fieldSeparator = meta?.fieldSeparator;
+              }
+              if (spec.type === "css" || spec.type === "selector") {
+                spec.cssKind = meta?.cssKind;
               }
               return spec;
             }
@@ -2135,8 +2142,10 @@ export function enableLocalDocInterface(): void {
               // A `csv` parameter opens the grid editor popup (openCsvGridEditor) from its own
               // compact launcher at the LEFT of the EP builder — the native text editor stays usable.
               const existingCsv = valueCell.querySelector<HTMLButtonElement>(`:scope > .${VAR_CSV_BUTTON_CLASS}`);
-              const isCsv = (spec?.type ?? "").toLowerCase() === "csv";
-              if (!isCsv) {
+              const variableSpecType = (spec?.type ?? "").toLowerCase();
+              const isCsv = variableSpecType === "csv";
+              const isCss = variableSpecType === "css" || variableSpecType === "selector";
+              if (!isCsv && !isCss) {
                 existingCsv?.remove();
                 valueCell.classList.remove("codbi-vars-has-csv");
               } else if (!existingCsv) {
@@ -2144,8 +2153,8 @@ export function enableLocalDocInterface(): void {
                 csvButton.type = "button";
                 csvButton.className = `${VAR_CSV_BUTTON_CLASS} codbi-func-input`;
                 csvButton.textContent = "⧉";
-                csvButton.title = "CSV editor";
-                csvButton.setAttribute("aria-label", "CSV editor");
+                csvButton.title = isCss ? "CSS editor" : "CSV editor";
+                csvButton.setAttribute("aria-label", isCss ? "CSS editor" : "CSV editor");
                 Object.assign(csvButton.style, {
                   position: "absolute",
                   top: "0",
@@ -2176,8 +2185,18 @@ export function enableLocalDocInterface(): void {
                 csvButton.addEventListener("click", (event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  // Only one grid popup at a time (mirrors the EP-builder launcher).
-                  if (document.querySelector(".codbi-csvg-overlay")) {
+                  // Only one popup editor at a time (mirrors the EP-builder launcher).
+                  if (document.querySelector(".codbi-csvg-overlay, .codbi-csse-overlay")) {
+                    return;
+                  }
+                  if (isCss) {
+                    openCssEditor({
+                      document: window.document,
+                      anchor: csvButton,
+                      value: readVariableRow(row).value,
+                      spec: spec as unknown as ICssParameterSpec,
+                      onApply: (value: string) => applyVariableValue(row, value),
+                    });
                     return;
                   }
                   openCsvGridEditor({

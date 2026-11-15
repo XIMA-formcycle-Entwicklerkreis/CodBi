@@ -417,6 +417,182 @@
     </div>
 }
 
+<!-- Local CodBi element REVIEW: an AI-drafted definition (functionality / element placeholder /
+     standard configuration) plus its prepared JavaScript is shown for approval before it is written
+     into the installation-wide local API-Doc storage. Deliberately the SAME dialog/classes as the
+     clarification popup (no window.confirm / window.alert). -->
+@if (localElementReview) {
+<p-dialog
+    [visible]="true"
+    (visibleChange)="closeLocalElementReview()"
+    (onHide)="closeLocalElementReview()"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="false"
+    [closeOnEscape]="true"
+    appendTo="body"
+    [baseZIndex]="999999"
+    maskStyleClass="cb-ai-clarification-mask"
+    header=" "
+    styleClass="cb-ai-clarification-dialog">
+
+    <div class="cb-ai-clarification-body">
+        <div class="cb-ai-clarification-header">
+            <img class="cb-ai-clarification-logo" [src]="codbiLogoUrl" alt="CodBi" />
+            <span class="cb-ai-clarification-title">Review the new CodBi element</span>
+        </div>
+
+        @if (localElementResultText) {
+            <p class="cb-ai-clarification-intro">{{ localElementResultText }}</p>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px">
+                <button type="button" class="cb-ai-clarification-option" (click)="closeLocalElementReview()">
+                    Close
+                </button>
+            </div>
+        } @else {
+            <p class="cb-ai-clarification-intro">
+                <strong>{{ localElementReview.kind || "element" }}</strong>
+                <strong>{{ localElementReview.name || "(unnamed)" }}</strong>
+            </p>
+
+            @if (localElementReview.usageText) {
+                <div style="margin: 8px 0">
+                    <div style="font-weight: 600; font-size: 12px; opacity: 0.75">Wiring in a form</div>
+                    <code style="display: block; white-space: pre-wrap; word-break: break-all">{{
+                        localElementReview.usageText
+                    }}</code>
+                </div>
+            }
+
+            @if (localElementReview.parameterText) {
+                <div style="margin: 8px 0">
+                    <div style="font-weight: 600; font-size: 12px; opacity: 0.75">Parameters</div>
+                    <pre
+                        style="max-height: 120px; overflow: auto; margin: 0; padding: 8px; border-radius: 6px; background: #f3f4f6; color: #111827; font-size: 12px; white-space: pre-wrap">{{
+                            localElementReview.parameterText
+                        }}</pre>
+                </div>
+            }
+
+            @if (localElementCodeLines.length) {
+                <!-- Code panel: syntax highlighting, line numbers, fold toggles per block, copy.
+                     Read-only — the code is what will be stored verbatim in the local API-Doc. -->
+                <div class="cb-ai-code-panel">
+                    <div class="cb-ai-code-toolbar">
+                        <span class="cb-ai-code-file">
+                            <span class="cb-ai-code-dot" aria-hidden="true"></span>
+                            {{ localElementReview.name || "element" }}.js
+                        </span>
+                        <span class="cb-ai-code-meta">
+                            {{ localElementCodeLineCount }} lines · JavaScript{{
+                                localElementCodeReformatted ? " · reformatted for display" : ""
+                            }}
+                        </span>
+                        <span class="cb-ai-code-spacer"></span>
+                        @if (localElementCodeWarnings.length) {
+                            <span
+                                class="cb-ai-code-risk"
+                                title="Dynamic code evaluation or modal browser dialogs in the generated code">
+                                ⚠ {{ localElementCodeWarnings.join(", ") }}
+                            </span>
+                        }
+                        <button
+                            type="button"
+                            class="cb-ai-code-btn"
+                            [title]="
+                                localElementCodeWrapped
+                                    ? 'Long lines are wrapped — click for horizontal scrolling'
+                                    : 'Long lines scroll horizontally — click to wrap them'
+                            "
+                            (click)="toggleLocalElementCodeWrap()">
+                            {{ localElementCodeWrapped ? "⏎ wrapped" : "⏎ scroll" }}
+                        </button>
+                        <button
+                            type="button"
+                            class="cb-ai-code-btn"
+                            title="Fold all blocks"
+                            (click)="collapseAllLocalElementCodeFolds()">
+                            ⊟
+                        </button>
+                        <button
+                            type="button"
+                            class="cb-ai-code-btn"
+                            title="Expand all blocks"
+                            (click)="expandAllLocalElementCodeFolds()">
+                            ⊞
+                        </button>
+                        <button
+                            type="button"
+                            class="cb-ai-code-btn cb-ai-code-btn--copy"
+                            [title]="localElementCodeCopied ? 'Copied' : 'Copy the code'"
+                            (click)="copyLocalElementCode()">
+                            {{ localElementCodeCopied ? "✓ copied" : "⧉ copy" }}
+                        </button>
+                    </div>
+                    <div
+                        class="cb-ai-code-view"
+                        [class.cb-ai-code-view--wrap]="localElementCodeWrapped">
+                        @for (line of localElementCodeLines; track line.no) {
+                            @if (!line.hidden) {
+                                <div
+                                    class="cb-ai-code-line"
+                                    [class.cb-ai-code-line--folded]="line.collapsed">
+                                    @if (line.foldable) {
+                                        <button
+                                            type="button"
+                                            class="cb-ai-code-fold"
+                                            [title]="line.collapsed ? 'Expand block' : 'Fold block'"
+                                            (click)="toggleLocalElementCodeFold(line.no - 1)">
+                                            {{ line.collapsed ? "▸" : "▾" }}
+                                        </button>
+                                    } @else {
+                                        <span class="cb-ai-code-fold cb-ai-code-fold--empty"></span>
+                                    }
+                                    <span class="cb-ai-code-no">{{ line.no }}</span>
+                                    <code class="cb-ai-code-src" [innerHTML]="line.html"></code>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (localElementReview.infoText) {
+                <p class="cb-ai-clarification-intro">{{ localElementReview.infoText }}</p>
+            }
+
+            @if (localElementReview.isUpdate) {
+                <label
+                    style="display: flex; align-items: center; gap: 8px; margin: 10px 0; font-weight: 600">
+                    <input
+                        type="checkbox"
+                        [checked]="localElementOverwrite"
+                        (change)="onLocalElementOverwriteChange($event)" />
+                    Replace the existing definition of {{ localElementReview.name }}
+                </label>
+            }
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px">
+                <button
+                    type="button"
+                    class="cb-ai-clarification-option"
+                    [disabled]="localElementCommitBusy"
+                    (click)="closeLocalElementReview()">
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    class="cb-ai-clarification-option cb-ai-clarification-option--selected"
+                    [disabled]="localElementCommitBusy || (localElementReview.isUpdate && !localElementOverwrite)"
+                    (click)="onLocalElementCommit()">
+                    {{ localElementCommitBusy ? "Writing…" : "Write into the local API-Doc storage" }}
+                </button>
+            </div>
+        }
+    </div>
+</p-dialog>
+}
+
 <!-- Clarification popup: the AI asks the user for missing information. Shows multiple-choice
      options, a free-text field, and an optional document attachment. Fades in/out and vanishes
      as soon as the answers are submitted (multi-round: phase 2 re-runs with the new history). -->

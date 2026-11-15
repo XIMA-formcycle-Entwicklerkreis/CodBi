@@ -2222,3 +2222,246 @@ body.cb-dialog-transparent .p-dialog {
     font-style: italic;
     color: #64748b;
 }
+
+/* ---------------------------------------------------------------------------
+ * Local CodBi element review — CODE PANEL.
+ *
+ * A read-only, editor-like view of the JavaScript that is about to be written
+ * into the installation-wide local API-Doc storage: syntax highlighting, line
+ * numbers, per-block folding and a copy button. The markup comes from the
+ * tokeniser in ai-assistant.ts (`tokenizeJavaScript`) via [innerHTML]; the
+ * component uses ViewEncapsulation.None, so these rules reach those spans.
+ * ------------------------------------------------------------------------- */
+.cb-ai-code-panel {
+    margin: 0.5rem 0;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #0f172a;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.25);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.cb-ai-code-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: linear-gradient(180deg, #16233c, #111c31);
+    border-bottom: 1px solid #1e293b;
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
+.cb-ai-code-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: #e2e8f0;
+    font-weight: 600;
+}
+
+.cb-ai-code-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+
+.cb-ai-code-meta {
+    color: #64748b;
+}
+
+.cb-ai-code-spacer {
+    flex: 1 1 auto;
+}
+
+/* Risky constructs found by the tokeniser (eval / Function / alert / confirm / prompt). */
+.cb-ai-code-risk {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.cb-ai-code-btn {
+    appearance: none;
+    border: 1px solid #334155;
+    background: #1e293b;
+    color: #cbd5e1;
+    border-radius: 6px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    font-family: inherit;
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease,
+        border-color 0.15s ease;
+
+    &:hover {
+        background: #273449;
+        color: #ffffff;
+        border-color: #475569;
+    }
+
+    &--copy {
+        min-width: 4.6rem;
+        text-align: center;
+    }
+}
+
+.cb-ai-code-view {
+    max-height: 320px;
+    overflow: auto;
+    padding: 0.35rem 0;
+    scrollbar-color: #475569 transparent;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 5px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+    }
+
+    /* Soft wrap: a minified one-liner would otherwise be a single endless row. `anywhere` breaks the
+       long unbroken runs a minified answer produces, so nothing can overflow the panel. */
+    &--wrap .cb-ai-code-line {
+        white-space: pre-wrap;
+    }
+
+    &--wrap .cb-ai-code-src {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+}
+
+.cb-ai-code-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0 0.5rem 0 0.15rem;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre;
+
+    &:hover {
+        background: rgba(148, 163, 184, 0.08);
+    }
+
+    /* The line that carries a collapsed block. */
+    &--folded {
+        background: rgba(56, 189, 248, 0.07);
+    }
+}
+
+.cb-ai-code-fold {
+    flex: 0 0 0.85rem;
+    width: 0.85rem;
+    height: 1.15rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.7rem;
+    cursor: pointer;
+
+    &:hover {
+        color: #e2e8f0;
+        background: rgba(148, 163, 184, 0.15);
+    }
+
+    &--empty {
+        cursor: default;
+        pointer-events: none;
+    }
+}
+
+.cb-ai-code-no {
+    flex: 0 0 2.4rem;
+    width: 2.4rem;
+    text-align: right;
+    color: #475569;
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.cb-ai-code-src {
+    flex: 1 1 auto;
+    color: #e2e8f0;
+    white-space: pre;
+    font-family: inherit;
+}
+
+/* Token colours (produced by the tokeniser, see ai-assistant.ts). */
+.cb-ai-code-kw {
+    color: #c678dd;
+}
+
+.cb-ai-code-str {
+    color: #98c379;
+}
+
+.cb-ai-code-tpl {
+    color: #7fd88f;
+}
+
+.cb-ai-code-cmt {
+    color: #7f8c98;
+    font-style: italic;
+}
+
+.cb-ai-code-num {
+    color: #d19a66;
+}
+
+.cb-ai-code-lit {
+    color: #d19a66;
+    font-weight: 600;
+}
+
+.cb-ai-code-fn {
+    color: #61afef;
+}
+
+.cb-ai-code-builtin {
+    color: #56b6c2;
+}
+
+.cb-ai-code-punct {
+    color: #9aa5b5;
+}
+
+.cb-ai-code-op {
+    color: #56b6c2;
+}
+
+.cb-ai-code-ident {
+    color: #e6e9ef;
+}
+
+/* Dynamic evaluation / modal dialogs — the constructs a reviewer must see. */
+.cb-ai-code-warn {
+    color: #ff8a8a;
+    font-weight: 600;
+    background: rgba(255, 107, 107, 0.14);
+    border-radius: 3px;
+}

@@ -320,6 +320,13 @@ export class CodBi implements CodbiGlobal {
   /**
    * Safely loads and executes code returned by the CodBi_LocalAPIDoc as an ES module.
    * This avoids direct eval and reduces bundler warnings.
+   *
+   * A failing import is reported WITH context: the stored value is a whole JavaScript file, and a
+   * transport that flattened it (e.g. by dropping its line breaks) made every `//` comment swallow the
+   * rest of the file — which surfaced only as a bare `SyntaxError: Unexpected end of input` and looked
+   * like a broken generated functionality instead of a broken transport.
+   *
+   * @param rawCode The stored code as returned by the API-doc's `Code` action.
    */
   private async importRemoteModule(rawCode: string): Promise<void> {
     const code = rawCode.replace(/<\|>/g, '"');
@@ -328,6 +335,17 @@ export class CodBi implements CodbiGlobal {
 
     try {
       await import(url);
+    } catch (error) {
+      const flattened = !code.includes("\n") && code.includes("//");
+      const hint = flattened
+        ? " The code arrived as ONE line although it contains `//` comments — its line breaks were lost on the way, so everything after the first comment is gone. Check that the API-doc returns the code unchanged."
+        : "";
+
+      console.error(
+        `[[ CodBi / Error ] The stored CodBi code could not be loaded: ${String(error)}. Length ${code.length}.${hint} Starts with: ${code.slice(0, 120)} … ends with: …${code.slice(-120)} ]`,
+      );
+
+      throw error;
     } finally {
       URL.revokeObjectURL(url);
     }

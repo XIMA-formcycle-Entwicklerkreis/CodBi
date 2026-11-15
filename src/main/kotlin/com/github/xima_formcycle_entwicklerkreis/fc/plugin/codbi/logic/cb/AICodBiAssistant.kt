@@ -457,8 +457,11 @@ class AICodBiAssistant : IPluginServletAction {
           "Log" -> handleLog(params)
           "SensitiveCheck" -> handleSensitiveCheck(params)
           "ApplyLogEntry" -> handleApplyLogEntry(params)
+          "RestoreLocalElement" -> handleRestoreLocalElement(params)
           "TouchWorkflow" -> handleTouchWorkflow(params)
           "MirrorPush" -> handlePushMirror(params)
+          "DraftLocalElement" -> handleLocalElementDraft(params)
+          "CommitLocalElement" -> handleLocalElementCommit(params)
           else -> jsonResponse("""{"error":"Unknown action"}""")
         }
       }
@@ -729,6 +732,15 @@ class AICodBiAssistant : IPluginServletAction {
   /** Reads the CodBi element-access + Matomo statistics plugin properties (idempotent). */
   override fun initialize(configData: IPluginInitializeData) {
     CodBiElementAccess.initialize(configData.properties)
+    // Users allowed to sync the local API-documentation — the same property/gate the Local API-Doc
+    // manager (`CodBi_LocalAPIDoc`) enforces. Committing an AI-drafted local CodBi element is an
+    // INSTALLATION-WIDE change, so it requires the same permission (an unset list allows nobody).
+    localElementSyncUsers =
+        configData.properties
+            .getProperty("APIDoc_UsersAllowedToSYNC")
+            ?.split(",")
+            ?.map { it.trim().lowercase() }
+            ?.filter { it.isNotEmpty() } ?: emptyList()
     // Matomo statistics backend for the AI assistant (see MatomoStats). Re-read on every plugin
     // re-initialization, so configuration changes take effect on the next request.
     configData.properties
@@ -1676,14 +1688,41 @@ class AICodBiAssistant : IPluginServletAction {
   private fun handleSensitiveCheck(params: IPluginServletActionParams): IPluginServletActionRetVal {
     val emf = CodbiEntities.entityManagerFactory
     if (emf == null) return jsonResponse("""{"error":"Database not available"}""")
-    val entryId = params.requestParameters["entryId"]?.firstOrNull()?.toLongOrNull()
-    val elementName = params.requestParameters["elementName"]?.firstOrNull()
+    // `removePrefix("entry-")`: the change log's tree node ids are `entry-<id>`, and a client that
+    // sends the node id instead of the bare numeric id must not lose the check silently.
+    val entryId =
+        params.requestParameters["entryId"]
+            ?.firstOrNull()
+            ?.trim()
+            ?.removePrefix("entry-")
+            ?.toLongOrNull()
+    val elementName = params.requestParameters["elementName"]?.firstOrNull()?.trim()
     val checked = params.requestParameters["checked"]?.firstOrNull()?.toBoolean() ?: false
     val username = currentUsername(params)
     if (entryId == null || elementName.isNullOrBlank() || username.isNullOrBlank()) {
+      // Traceable refusal: without this a check that is not persisted looks exactly like a lost
+      // write
+      // (reported: "the box I checked is unchecked again after a reload").
+      logger.warn(
+          "[AICodBiAssistant] SensitiveCheck REFUSED: entryId={}, element='{}', user='{}' (missing {} )",
+          entryId,
+          elementName,
+          username,
+          listOfNotNull(
+                  "entryId".takeIf { entryId == null },
+                  "elementName".takeIf { elementName.isNullOrBlank() },
+                  "username".takeIf { username.isNullOrBlank() })
+              .joinToString(", "))
       return jsonResponse("""{"ok":false}""")
     }
     val ok = AiAssistantLog.setSensitiveCheck(emf, entryId, elementName, username, checked)
+    logger.info(
+        "[AICodBiAssistant] SensitiveCheck {}: entry={}, element='{}', user='{}', ok={}",
+        if (checked) "CHECK" else "UNCHECK",
+        entryId,
+        elementName,
+        username,
+        ok)
     return jsonResponse(if (ok) """{"ok":true}""" else """{"ok":false}""")
   }
 
@@ -1819,6 +1858,1227 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  // region Local CodBi elements (intent "codbi-local-element")
+
+  /**
+   * Users allowed to sync the local API-documentation, read from `APIDoc_UsersAllowedToSYNC` — the
+   * SAME property the Local API-Doc manager enforces. A local CodBi element definition is an
+   * INSTALLATION-WIDE change (it affects every form), so committing one requires that permission.
+   */
+  @Volatile private var localElementSyncUsers: List<String> = emptyList()
+
+  /** Mirrors `StructuredDataStoreAction.isSyncAllowed()`: an unset list allows nobody. */
+  private fun isLocalElementSyncAllowed(userName: String?): Boolean =
+      userName != null && localElementSyncUsers.contains(userName.trim().lowercase())
+
+  /**
+   * `DraftLocalElement` action: drafts/updates a local CodBi element without a classification round
+   * (used by the review dialog's "draft again" and by the assistant when the intent is already
+   * known). Requires the `X-Model` header.
+   */
+  private fun handleLocalElementDraft(
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal {
+    val modelId =
+        params.headerMap.entries.find { it.key.equals("X-Model", ignoreCase = true) }?.value
+            ?: return jsonResponse("""{"error":"Missing X-Model header"}""")
+    val instance = Standard.instance ?: return jsonResponse("""{"error":"AI service not ready"}""")
+    val prompt =
+        params.requestParameters["prompt"]?.firstOrNull()
+            ?: return jsonResponse("""{"error":"Missing prompt"}""")
+    val lang = params.requestParameters["lang"]?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }
+    val uiLocale = lang?.let { java.util.Locale.forLanguageTag(it) } ?: java.util.Locale.ENGLISH
+    return try {
+      draftLocalElement(prompt, modelId, instance, uiLocale, params)
+    } catch (e: ExternalAiHttpException) {
+      logger.warn("[AICodBiAssistant] AI returned HTTP {}: {}", e.httpStatus, e.body)
+      jsonResponse("""{"error":${gson.toJson("AI error: " + (e.message ?: "unknown"))}}""")
+    } catch (e: Exception) {
+      logger.error("[AICodBiAssistant] Local element draft failed", e)
+      jsonResponse("""{"error":${gson.toJson("Draft failed: " + (e.message ?: "unknown"))}}""")
+    }
+  }
+
+  /**
+   * Drafts a **local CodBi element** (functionality / element placeholder / standard
+   * configuration).
+   *
+   * This is the execution path of the `codbi-local-element` intent AND of the `DraftLocalElement`
+   * action. It answers with the reviewable draft envelope
+   * `{"status":"codbi_element_draft","kind":…,"name":…,"draft":{…},"validationErrors":[…]}`, which
+   * the Local API-Doc manager (or the assistant dialog) shows to the user; **nothing is written
+   * here** — the commit is the separate, inference-free `CommitLocalElement` action.
+   */
+  private fun draftLocalElement(
+      prompt: String,
+      modelId: String,
+      instance: Standard,
+      uiLocale: java.util.Locale,
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal {
+    // PERMISSION FIRST — NO inference for a user who may not sync the local API-doc. A local CodBi
+    // element is installation-wide catalogue data, so only a user an administrator listed in
+    // APIDoc_UsersAllowedToSYNC may define one; the user is told exactly that instead of burning a
+    // model call.
+    val username = currentUsername(params)
+    logger.info(
+        "[AICodBiAssistant] [LocalElement] START request (user='{}', allowed={}): {}",
+        username,
+        isLocalElementSyncAllowed(username),
+        prompt)
+    if (!isLocalElementSyncAllowed(username)) {
+      return localElementDeniedResponse(uiLocale, username)
+    }
+
+    // Answers of an earlier clarification round (e.g. the technical name the AI asked for) — the
+    // drafting pass sees them exactly like the form/workflow passes do.
+    val clarificationHistory = parseClarificationHistory(params)
+    val clarificationContext = buildClarificationContext(clarificationHistory)
+    // The answers are handed to the model verbatim (see `clarificationContext` below). Deciding how
+    // the user names an element — in any language, however phrased — is the MODEL's job, never a
+    // pattern match over the request's words.
+
+    // Which local elements already exist (names are unique at runtime — a second registration is
+    // silently discarded) plus a COMPACT CATALOGUE (name, kind, short description) that the model
+    // decides from: a change request refers to an element by its PURPOSE ("the calc
+    // functionality"),
+    // not by its id, so a literal name lookup alone would silently create a duplicate.
+    var existingNames: Map<String, LocalElementKind> = emptyMap()
+    var catalogue: List<String> = emptyList()
+    try {
+      val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+      if (em != null) {
+        try {
+          existingNames = LocalElementStore.existingNames(em)
+          catalogue = LocalElementStore.catalogue(em)
+        } finally {
+          try {
+            em.close()
+          } catch (_: Exception) {}
+        }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load the local CodBi element index: {}", e.message)
+    }
+
+    // An element the request already NAMES — in any spelling a human uses for it. The KEY of an
+    // element is its lowercased dotted name, but nobody types that: "Mein Rechner", "mein_rechner"
+    // and
+    // "mein.rechner" all mean `Mein.Rechner`. A NORMALISED prompt
+    // (dots/underscores/dashes/whitespace
+    // collapsed to one space) is compared against the name and its space/underscore variants — a
+    // pure
+    // lookup of an id the installation already knows, never an interpretation of the request.
+    val plainPrompt = prompt.lowercase()
+    val normalizedPrompt = plainPrompt.replace(Regex("[\\s._\\-]+"), " ")
+    fun namesInRequest(name: String): Boolean {
+      val key = name.lowercase()
+      return plainPrompt.contains(key) ||
+          normalizedPrompt.contains(key.replace(".", " ")) ||
+          normalizedPrompt.contains(key.replace("_", " "))
+    }
+    // An answer to a question the SERVER asked that IS an existing name selects that element (this
+    // is
+    // how the answer to the target question below is picked up again — no second question, no
+    // loop).
+    val answeredTarget =
+        clarificationHistory
+            .map {
+              it.answer
+                  .trim()
+                  .trim('"', '\'', '`', '\u201E', '\u201C', '\u2018', '\u2019', ' ', ':')
+            }
+            .firstOrNull { candidate ->
+              candidate.isNotEmpty() &&
+                  existingNames.keys.any { it.equals(candidate, ignoreCase = true) }
+            }
+    var targetName: String? =
+        params.requestParameters["existing"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: answeredTarget
+            ?: existingNames.keys
+                .filter { it.length >= 4 && namesInRequest(it) }
+                .maxByOrNull { it.length }
+
+    var targetTokensIn = 0
+    var targetTokensOut = 0
+
+    // WHICH element is meant? When no id matched, the MODEL decides from the catalogue — and asks
+    // ONE
+    // question with the candidates as options when several could be meant. Deciding by MEANING is
+    // the
+    // model's job (any language, any phrasing); the server only validates its answer against the
+    // names
+    // that really exist.
+    if (targetName == null && catalogue.isNotEmpty()) {
+      val targetSystem = buildString {
+        append("You decide which EXISTING local CodBi element the user's request refers to.\n\n")
+        append("Answer with EXACTLY ONE JSON object — no prose, no code fences:\n")
+        append("- {\"status\":\"codbi_element_target\",\"Name\":\"<exact name from the list>\"} ")
+        append("when the request clearly refers to ONE listed element — also when it describes ")
+        append("that element by its PURPOSE or behaviour (\"the calc functionality\", \"den ")
+        append("Taschenrechner\", \"das Adressfeld\"), or by a word of its short description.\n")
+        append("- {\"status\":\"codbi_element_target\",\"new\":true} when the request asks for a ")
+        append("NEW element that no listed element covers.\n")
+        append("- {\"status\":\"need_clarification\",\"questions\":[{\"id\":\"target\",")
+        append("\"question\":\"<ONE question in the user's language>\",\"options\":[\"<name>\"],")
+        append("\"allowFreeText\":true}]} when SEVERAL listed elements could be meant and the ")
+        append("request does not decide between them. The options MUST be exact names from the ")
+        append("list (at most 6, most likely first).\n\n")
+        append("## EXISTING LOCAL CODBI ELEMENTS (name, kind, short description)\n\n")
+        append(catalogue.joinToString("\n"))
+      }
+      // The answers already given belong in the user turn too: after a free-text answer ("den
+      // Rechner")
+      // the model must SEE it on the second run, otherwise the question it already got answered
+      // could
+      // only be repeated — the one thing a clarification round must never do.
+      val targetUser =
+          if (clarificationContext.isNullOrBlank()) prompt
+          else prompt + "\n\n## ANSWERS ALREADY GIVEN BY THE USER\n\n" + clarificationContext.trim()
+      val targetMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(targetSystem)}},""")
+        append("""{"role":"user","content":${gson.toJson(targetUser)}}""")
+        append("]")
+      }
+      val targetRaw = instance.performFormAssist(modelId, targetMessages)
+      val targetUsage = instance.takeLastAssistUsage()
+      targetTokensIn += targetUsage?.promptTokens ?: estimateTokens(targetMessages)
+      targetTokensOut += targetUsage?.completionTokens ?: estimateTokens(targetRaw)
+      reportTrip("local-element-target", modelId, targetUsage, targetMessages, targetRaw)
+      val targetAnswer = extractJson(stripThinkTags(targetRaw)).trim()
+      logger.info(
+          "[AICodBiAssistant] [LocalElement] target round answer: {}", targetAnswer.take(800))
+
+      val targetQuestion = LocalElementDrafts.targetQuestionOf(targetAnswer)
+      if (targetQuestion != null && clarificationHistory.isEmpty()) {
+        // Only names that REALLY exist may become options; without a usable option the whole
+        // catalogue
+        // is offered (at most six entries).
+        val options =
+            targetQuestion.second
+                .mapNotNull { candidate ->
+                  existingNames.keys.firstOrNull { it.equals(candidate, ignoreCase = true) }
+                }
+                .distinct()
+                .ifEmpty { existingNames.keys.sorted().take(6) }
+        logger.info(
+            "[AICodBiAssistant] [LocalElement] the target is ambiguous — asking the user ({} option(s))",
+            options.size)
+        return localElementClarificationResponse(
+            listOf(
+                ClarificationQuestion(
+                    id = "target",
+                    question = targetQuestion.first,
+                    options = options,
+                    allowFreeText = true)),
+            clarificationHistory)
+      }
+      targetName = LocalElementDrafts.targetNameOf(targetAnswer, existingNames.keys)
+      if (targetName != null) {
+        logger.info(
+            "[AICodBiAssistant] [LocalElement] the model chose the element '{}'", targetName)
+      } else {
+        logger.info(
+            "[AICodBiAssistant] [LocalElement] no existing element matched — drafting a NEW element")
+      }
+    }
+
+    // The chosen element's CURRENT definition and code — the change-only rule needs both (a
+    // separate
+    // short-lived EntityManager, so no connection is held across the inference calls above).
+    var existingEntry: JsonObject? = null
+    var existingCode: String? = null
+    val resolvedTarget = targetName
+    if (resolvedTarget != null) {
+      val kind = existingNames[resolvedTarget.lowercase()]
+      if (kind != null) {
+        try {
+          val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+          if (em != null) {
+            try {
+              existingEntry = LocalElementStore.loadEntry(em, kind, resolvedTarget)
+              existingCode = LocalElementStore.loadCode(em, kind, resolvedTarget)
+              logger.info(
+                  "[AICodBiAssistant] [LocalElement] changing '{}' ({}): entry={}, codeLen={}",
+                  resolvedTarget,
+                  kind.draftValue,
+                  existingEntry != null,
+                  existingCode?.length ?: 0)
+            } finally {
+              try {
+                em.close()
+              } catch (_: Exception) {}
+            }
+          }
+        } catch (e: Exception) {
+          logger.warn("[AICodBiAssistant] Could not load the local CodBi element: {}", e.message)
+        }
+      }
+    }
+
+    // The stored prompt is returned SECTION-SPLIT by `PromptLoader.loadPrompt` (each `## ` heading
+    // becomes its own editable rule, only the intro stays in the parent row). A stored contract
+    // without
+    // its OUTPUT envelope therefore left the model with no envelope at all — it answered in its own
+    // key
+    // spelling (`script`, `description`, `parameters`, `attributes`). The bundled resource is the
+    // authoritative complete document; it is used whenever the stored one is incomplete.
+    val storedContract = loadPromptWithClasspathFallback(LocalElementDrafts.PROMPT_KEY)
+    if (storedContract != null && !LocalElementDrafts.isCompleteContract(storedContract)) {
+      logger.warn(
+          "[AICodBiAssistant] [LocalElement] the stored contract '{}' is INCOMPLETE (no OUTPUT block) — using the bundled '{}'",
+          LocalElementDrafts.PROMPT_KEY,
+          LocalElementDrafts.PROMPT_FILE)
+    }
+    val contract =
+        storedContract?.takeIf { LocalElementDrafts.isCompleteContract(it) }
+            ?: PromptLoader.loadPromptFileRaw(LocalElementDrafts.PROMPT_KEY)?.let {
+              PromptLoader.resolvePlaceholders(it)
+            }
+            ?: ("Define a LOCAL CodBi element and answer with ONE JSON object carrying " +
+                "status=codbi_element_draft, kind (functionality|elementPlaceholder|standard), Name, " +
+                "Description, Summary, CondensedPrompt, DetailedPrompt, Parameter, Code and Usage. " +
+                "Summary must be {\"en\":…,\"de\":…,\"it\":…}. supportedFormelementtypes is mandatory " +
+                "for a functionality. The Code must contain exactly one window.codbi registration " +
+                "call for the declared Name and must CALL its helper with toProcess.")
+    val systemPrompt = buildString {
+      append(contract.trim())
+      append(LocalElementDrafts.buildElementContext(existingNames, existingEntry, existingCode))
+      if (!clarificationContext.isNullOrBlank()) {
+        // The user already answered the AI's questions (e.g. the technical name) — the draft must
+        // now USE those values instead of asking again.
+        append("\n\n## ANSWERS ALREADY GIVEN BY THE USER\n\n").append(clarificationContext.trim())
+      }
+      // COMPACT-FIRST (like the form pass's pass-1): the condensed CodBi element catalogue — names
+      // and purposes only — so the drafting round pays a small prompt and then REQUESTS the exact
+      // details of the ids it wants to use (see the details round after the first completion).
+      // Deliberately INDEPENDENT of the form assistant's CodBi switch: that switch only decides
+      // whether a FORM run may use CodBi, while creating a local CodBi element inherently needs
+      // that knowledge.
+      append("\n\n# CODBI OVERVIEW (compact — request details for the ids you use)\n\n")
+      append(CodbiCapabilities.pass1ElementCatalog(true).trim())
+      append(
+          "\n\n## ASK FOR DETAILS WHEN YOU DO NOT KNOW AN ID EXACTLY\n\n" +
+              "Before writing the code you may ask ONCE for the authoritative details (exact " +
+              "parameter names, datatypes, placeholder syntax) of the functionalities / element " +
+              "placeholders you intend to use. Answer with EXACTLY ONE JSON object and nothing " +
+              "else:\n" +
+              "{\"status\":\"codbi_element_need_details\",\"ids\":[\"HTML.SETAttribute\",\"Mein.Wetter\"]}\n" +
+              "Rules: at most 6 ids; only ids you will really use (a built-in functionality, a " +
+              "built-in EP, or one of the local elements listed above). If you already know " +
+              "everything you need, return the normal draft instead — do NOT ask and draft in " +
+              "the same answer.")
+      append(
+          "\n\n## TODAY\n\nToday's date is " +
+              java.time.LocalDate.now() +
+              ". Answer with the JSON draft ONLY (no prose, no code fences).")
+    }
+    val messagesJson = buildString {
+      append("[")
+      append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+      append("""{"role":"user","content":${gson.toJson(prompt)}}""")
+      append("]")
+    }
+    var raw = instance.performFormAssist(modelId, messagesJson)
+    var usage = instance.takeLastAssistUsage()
+    var tokensIn = (usage?.promptTokens ?: estimateTokens(messagesJson)) + targetTokensIn
+    var tokensOut = (usage?.completionTokens ?: estimateTokens(raw)) + targetTokensOut
+    reportTrip("local-element-draft", modelId, usage, messagesJson, raw)
+
+    // COMPACT-FIRST, STEP 2: the model asked for the authoritative details of the ids it wants to
+    // use.
+    // ONE extra round supplies exactly those sections (`CodbiCapabilities.buildFullSectionFor`)
+    // instead
+    // of the whole ~134 k-char reference, so the drafting prompt stays small while the model still
+    // gets
+    // the exact parameter names and the `{ EP > … }` syntax it asked for. A blank result (unknown
+    // id)
+    // falls back to the complete reference, so this can never make the round WORSE than before.
+    LocalElementDrafts.requestedDetailIds(extractJson(stripThinkTags(raw)).trim())?.let { ids ->
+      val details =
+          runCatching { CodbiCapabilities.buildFullSectionFor(ids) }
+              .getOrNull()
+              .orEmpty()
+              .ifBlank { PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}") }
+      logger.info(
+          "[AICodBiAssistant] [LocalElement] details round for {} id(s): {} ({} chars)",
+          ids.size,
+          ids,
+          details.length)
+      val detailMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+        append(
+            """{"role":"user","content":${gson.toJson(prompt + "\n\n## CODBI DETAILS YOU REQUESTED\n\n" + details + "\n\nNow return the COMPLETE draft JSON for the element.")}}""")
+        append("]")
+      }
+      raw = instance.performFormAssist(modelId, detailMessages)
+      usage = instance.takeLastAssistUsage()
+      tokensIn += usage?.promptTokens ?: estimateTokens(detailMessages)
+      tokensOut += usage?.completionTokens ?: estimateTokens(raw)
+      reportTrip("local-element-details", modelId, usage, detailMessages, raw)
+    }
+
+    var answer = extractJson(stripThinkTags(raw)).trim()
+    logger.info(
+        "[AICodBiAssistant] [LocalElement] draft round: answer {} chars, parsed={}",
+        answer.length,
+        if (answer.startsWith("{")) "JSON-ish" else "NOT JSON")
+    logger.info("[AICodBiAssistant] [LocalElement] draft round answer:\n{}", answer.take(4000))
+
+    // LOOP GUARDS. Both question texts are OUR OWN, server-generated strings, so recognising them
+    // in
+    // the history is not "interpreting the user's wording" — it only remembers what WE already
+    // asked.
+    // How the user NAMES an element (in any language, however phrased) is decided by the model,
+    // never
+    // by a pattern here.
+    val nameAlreadyAsked =
+        clarificationHistory.any {
+          it.question.contains("Namen", ignoreCase = true) ||
+              it.question.contains("technical name", ignoreCase = true)
+        }
+    val kindAlreadyAsked =
+        clarificationHistory.any {
+          it.question.contains("Art von", ignoreCase = true) ||
+              it.question.contains("which kind", ignoreCase = true)
+        }
+
+    // 1) A CLARIFICATION ROUND is part of this intent: the MODEL decides what it still needs and
+    //    phrases the question in the user's language. It is surfaced in the assistant's popup, and
+    // the
+    //    answers come back in `clarificationHistory` (and therefore in the model's system prompt).
+    val parsedDraft = LocalElementDrafts.extractDraft(answer)
+    val modelClarification = parseClarificationRequest(answer)
+    if (modelClarification != null) {
+      if (!nameAlreadyAsked && parsedDraft == null) {
+        logger.info(
+            "[AICodBiAssistant] Local element: the AI asked {} clarifying question(s)",
+            modelClarification.questions.size)
+        return localElementClarificationResponse(modelClarification.questions, clarificationHistory)
+      }
+      // Asked again although the answers were already handed over → repair instead of looping.
+      logger.info(
+          "[AICodBiAssistant] Local element: the AI asked again after the answers were given — repairing instead of asking again")
+    }
+
+    // 2) Draft + kind. The KIND is never asked for when the request's own words name it.
+    var draft: JsonObject = parsedDraft ?: JsonObject()
+
+    // The answer to OUR OWN name question IS the name: it is taken VERBATIM (quotes/backticks
+    // stripped), so a model that keeps dropping the name can never force a second question. This
+    // reads an answer to a question the server asked — it does not interpret the user's wording,
+    // and
+    // the result is still validated as a dotted id.
+    val answeredName: String? =
+        if (!nameAlreadyAsked) null
+        else
+            clarificationHistory
+                .lastOrNull {
+                  it.question.contains("Namen", ignoreCase = true) ||
+                      it.question.contains("technical name", ignoreCase = true)
+                }
+                ?.answer
+                ?.trim()
+                ?.trim('"', '\'', '`', '\u201E', '\u201C', '\u2018', '\u2019', ' ', ':')
+                ?.takeIf { it.isNotBlank() }
+    if (!LocalElementDrafts.isUsableName(draft) && answeredName != null) {
+      draft.addProperty("Name", answeredName)
+      logger.info("[AICodBiAssistant] Local element: using the answered name '{}'", answeredName)
+    }
+
+    // A model may "help" by slipping a KIND SEGMENT into the name the user answered — reported:
+    // the answer `Mein.Wetter` was committed as `Mein.EP.Wetter`. The user's own answer wins
+    // whenever
+    // the draft name is only that answer plus/minus a kind marker; any other difference is left
+    // alone
+    // (so this never rewrites a name the model legitimately chose).
+    if (answeredName != null) {
+      val draftName = LocalElementDrafts.nameOf(draft)
+      val corrected = LocalElementDrafts.answeredNameOverride(draftName, answeredName)
+      if (corrected != null) {
+        draft.addProperty("Name", corrected)
+        logger.info(
+            "[AICodBiAssistant] Local element: the draft renamed '{}' to '{}' by adding a kind segment — using the answered name",
+            answeredName,
+            draftName)
+      }
+    }
+
+    val draftKind: LocalElementKind? =
+        LocalElementDrafts.kindOf(draft) ?: LocalElementKind.inferFromText(prompt)
+
+    // A local helper for the extra rounds below: same system prompt, ONE user message, and its own
+    // token accounting so the change log stays exact.
+    fun extraRound(label: String, userContent: String): String {
+      val msgs = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+        append("""{"role":"user","content":${gson.toJson(userContent)}}""")
+        append("]")
+      }
+      val out = instance.performFormAssist(modelId, msgs)
+      val used = instance.takeLastAssistUsage()
+      tokensIn += used?.promptTokens ?: estimateTokens(msgs)
+      tokensOut += used?.completionTokens ?: estimateTokens(out)
+      reportTrip(label, modelId, used, msgs, out)
+      return extractJson(stripThinkTags(out)).trim()
+    }
+
+    /**
+     * Diagnostic dump of one draft candidate (name/kind/code shape + the registration-call truth).
+     */
+    fun debugDump(label: String, candidate: JsonObject, problems: List<String> = emptyList()) {
+      val candidateKind =
+          LocalElementDrafts.kindOf(candidate) ?: LocalElementKind.inferFromText(prompt)
+      val code = LocalElementDrafts.codeOf(candidate)
+      logger.info(
+          "[AICodBiAssistant] [LocalElement/{}] name='{}' kind='{}' keys={} problems={} :: {}",
+          label,
+          LocalElementDrafts.nameOf(candidate),
+          candidateKind?.draftValue ?: "?",
+          candidate.keySet(),
+          problems,
+          if (code.isBlank()) "<NO CODE>"
+          else if (candidateKind == null) "codeLen=${code.length}"
+          else
+              LocalElementDrafts.describeRegistration(
+                  code, candidateKind, LocalElementDrafts.nameOf(candidate)))
+      if (problems.any { it.contains("registration", ignoreCase = true) } || code.length > 3000) {
+        logger.info(
+            "[AICodBiAssistant] [LocalElement/{}] CODE (first 3000 chars):\n{}",
+            label,
+            code.take(3000))
+      }
+    }
+
+    // 3) A draft that HAS a body but no usable name: the model gets ONE chance to read the name out
+    // of
+    //    the request BEFORE the user is bothered — the name is very often simply quoted there, and
+    //    asking for something the request already contains is the worst possible outcome. Only when
+    //    that round neither supplies a name nor asks a question is the user asked — once.
+    if (!LocalElementDrafts.isUsableName(draft) && draft.size() > 1 && !nameAlreadyAsked) {
+      logger.info(
+          "[AICodBiAssistant] Local element: the draft has no usable technical name — re-reading the request")
+      val nameRoundAnswer =
+          extraRound(
+              "local-element-name",
+              buildString {
+                append(prompt)
+                append("\n\n## YOUR PREVIOUS ANSWER\n\n```json\n")
+                    .append(draft.toString())
+                    .append("\n```")
+                append("\n\n## THE `Name` IS MISSING\n\n")
+                append(
+                    "Re-read the user request above: it very often ALREADY CONTAINS the technical name ")
+                append(
+                    "(a dotted identifier such as `Mein.Rechner`). If it does, use that name VERBATIM ")
+                append("in `Name` and return the COMPLETE corrected draft JSON. ")
+                append(
+                    "Answer with the clarification envelope ONLY if the request really contains no ")
+                append("such name.")
+              })
+      parseClarificationRequest(nameRoundAnswer)?.let { request ->
+        return localElementClarificationResponse(request.questions, clarificationHistory)
+      }
+      LocalElementDrafts.extractDraft(nameRoundAnswer)?.let { redraft ->
+        if (LocalElementDrafts.isUsableName(redraft)) {
+          draft = redraft
+          logger.info(
+              "[AICodBiAssistant] Local element: the name '{}' was read out of the request",
+              LocalElementDrafts.nameOf(redraft))
+        }
+      }
+      if (!LocalElementDrafts.isUsableName(draft)) {
+        logger.info(
+            "[AICodBiAssistant] Local element: the request names no element — asking the user")
+        return localElementClarificationResponse(
+            listOf(localElementNameQuestion(uiLocale)), clarificationHistory)
+      }
+    }
+
+    // 4) Same for a kind that could not be read from either the draft or the request: ask once, and
+    //    afterwards report it inline instead of asking a second time.
+    if (draftKind == null && draft.size() > 1) {
+      if (!kindAlreadyAsked) {
+        logger.info("[AICodBiAssistant] Local element: the kind is unknown — asking the user")
+        return localElementClarificationResponse(
+            listOf(localElementKindQuestion(uiLocale)), clarificationHistory)
+      }
+      return localElementInvalidResponse(
+          draft, null, listOf(localElementMissingKindMessage(uiLocale)), tokensIn, tokensOut)
+    }
+    // Only reachable with an EMPTY draft (the model answered with prose): the repair round below
+    // asks
+    // for a complete draft, whose own `kind` then wins. It never reaches the user as a guess.
+    val kindResolved: LocalElementKind = draftKind ?: LocalElementKind.FUNCTIONALITY
+
+    // STRUCTURE FIX before validating: the id INSIDE the registration call must BE the declared
+    // name
+    // (it is the runtime key — a variant makes the definition unusable). A wrong/variant id is
+    // rewritten in place with the very same replacement the Local API-Doc manager performs on
+    // "RENAME CODE", instead of rejecting an otherwise complete draft.
+    val declaredName = LocalElementDrafts.nameOf(draft)
+    val rawCode = LocalElementDrafts.codeOf(draft)
+    // ONE preparation step — id normalised AND a missing registration call wrapped. The repair
+    // round
+    // and the commit use the SAME step, so no path can validate/store an unprepared code.
+    val preparedCode = LocalElementDrafts.prepareCode(kindResolved, declaredName, rawCode)
+    val codeWasWrapped =
+        rawCode.isNotBlank() &&
+            LocalElementDrafts.registrationCount(rawCode, kindResolved, declaredName) == 0
+    val codeWasNormalized = preparedCode != rawCode
+    // The mechanical `element` → `toProcess` repair, reported to the review dialog so the user
+    // knows
+    // the generated code was adjusted (the element the functionality is tagged on is `toProcess`).
+    val codeElementFixed =
+        LocalElementDrafts.repairElementReference(kindResolved, rawCode) != rawCode
+    if (preparedCode != rawCode) {
+      draft.addProperty("Code", preparedCode)
+    }
+    logger.info(
+        "[AICodBiAssistant] [LocalElement] code prepared: rawLen={} preparedLen={} changed={} wrapped={} elementFixed={} :: {}",
+        rawCode.length,
+        preparedCode.length,
+        codeWasNormalized,
+        codeWasWrapped,
+        codeElementFixed,
+        LocalElementDrafts.describeRegistration(preparedCode, kindResolved, declaredName))
+    debugDump("prepared", draft)
+
+    // 5) VALIDATE. An already existing name is NOT an error — it means "this replaces the
+    //    definition", which the review dialog asks the user to confirm (as long as the kind
+    // matches).
+    val existingKind = existingNames[LocalElementDrafts.nameOf(draft).lowercase()]
+    val isUpdate = existingKind != null
+    fun validateWith(candidate: JsonObject, forKind: LocalElementKind): List<String> =
+        LocalElementDrafts.validate(
+            candidate, forKind, existingNames, allowOverwrite = isUpdate && existingKind == forKind)
+    var problems = validateWith(draft, kindResolved)
+    var workingKind: LocalElementKind = kindResolved
+
+    // 4b) A CODE-ONLY round. The drafting pass has to fit the Description, three prompts, the typed
+    //     parameters AND the whole implementation into ONE completion — and the code is what gets
+    // cut
+    //     short when the output budget is tight (reported twice: a calculator ending
+    // mid-statement).
+    //     Asking for the code ALONE keeps that answer small, so it fits comfortably below any
+    // provider
+    //     limit and can be checked on its own.
+    val codeForCheck = LocalElementDrafts.codeOf(draft)
+    val codeIsBroken =
+        codeForCheck.isNotEmpty() &&
+            !(LocalElementDrafts.hasBalancedBraces(codeForCheck) &&
+                LocalElementDrafts.endsAsAStatement(codeForCheck))
+    if (workingKind != LocalElementKind.STANDARD && (codeForCheck.isEmpty() || codeIsBroken)) {
+      val targetName = LocalElementDrafts.nameOf(draft)
+      logger.info(
+          "[AICodBiAssistant] [LocalElement] code {} (len={}) — asking for the CODE alone",
+          if (codeForCheck.isEmpty()) "missing" else "truncated",
+          codeForCheck.length)
+      val codeRoundAnswer =
+          extraRound(
+              "local-element-code",
+              buildString {
+                append(prompt)
+                append("\n\n## YOUR PREVIOUS DRAFT\n\n```json\n")
+                    .append(draft.toString())
+                    .append("\n```")
+                append("\n\n## ANSWER WITH THE CODE ONLY\n\n")
+                append("Return EXACTLY ONE JSON object — {\"Code\":\"…\"} — and nothing else.\n")
+                append("- `Code` is the COMPLETE, self-contained JavaScript for `")
+                    .append(targetName)
+                append("`.\n")
+                append("- Exactly ONE registration call whose first argument is '")
+                    .append(targetName)
+                append("'.\n")
+                if (workingKind == LocalElementKind.ELEMENT_PLACEHOLDER) {
+                  append("- `window.codbi.registerEP('").append(targetName)
+                  append("', (params) => { … return theValue; });` — an EP RETURNS its value.\n")
+                } else {
+                  append("- `window.codbi.registerFunctionality('").append(targetName)
+                  append("', (toLoad, toProcess) => { … });` — read parameters from `toLoad` ")
+                  append("(e.g. `toLoad.layout`), build the UI in `toProcess` and END with ")
+                  append("`toProcess.appendChild(wrapper);`.\n")
+                }
+                append(
+                    "- Build repeated controls in ONE loop over an array, stay under ~1500 characters, ")
+                append(
+                    "and make sure EVERY brace, bracket and statement is CLOSED (a truncated code is ")
+                append("rejected).\n")
+              })
+      val codeOnly =
+          LocalElementDrafts.extractDraft(codeRoundAnswer)
+              ?.let { LocalElementDrafts.codeOf(it) }
+              .orEmpty()
+      if (codeOnly.isNotBlank()) {
+        draft.addProperty("Code", LocalElementDrafts.prepareCode(workingKind, targetName, codeOnly))
+        debugDump("code-round", draft)
+        problems = validateWith(draft, workingKind)
+      } else {
+        logger.warn("[AICodBiAssistant] [LocalElement] the code-only round returned no usable Code")
+      }
+    }
+
+    // 5) ONE repair round for everything only the AI can fix (a missing prompt, code without the
+    //    registration call, a forbidden construct) — never an alert that throws the draft away.
+    if (problems.isNotEmpty()) {
+      val repairUser = buildString {
+        append(prompt)
+        append("\n\n## YOUR PREVIOUS ANSWER\n\n```json\n").append(draft.toString()).append("\n```")
+        append("\n\n## PROBLEMS YOU MUST FIX\n")
+        problems.forEach { append("- ").append(it).append('\n') }
+        if (problems.any { it.contains("registration", ignoreCase = true) }) {
+          // A concrete, copy-able skeleton beats a description here: the id is the ONLY thing that
+          // has to match, and the model must see it written out.
+          val target = LocalElementDrafts.nameOf(draft)
+          append("\nThe Code must contain exactly one call whose FIRST argument is '")
+          append(target)
+          append("':  window.codbi.registerFunctionality('")
+          append(target)
+          append("', (toLoad, toProcess) => { …your code… });")
+        }
+        if (problems.any {
+          it.contains("eval", ignoreCase = true) || it.contains("Function", ignoreCase = true)
+        }) {
+          append(
+              "\nDo NOT use eval(), new Function() or Function('return ' + expr)() — all three are ")
+          append("dynamic code evaluation and are rejected. Evaluate EXPLICITLY instead ")
+          append("(one handler per key that appends to an expression string, plus an ")
+          append("operator-precedence evaluation over the tokens — or a numeric state machine).")
+        }
+        if (problems.any { it.contains("toProcess", ignoreCase = true) }) {
+          // The two live errors this repairs: `ReferenceError: element is not defined`, and a
+          // functionality that registers but never builds anything ("does nothing").
+          append(
+              "\nThe registration callback is `(toLoad, toProcess) => { … }` and that is the ONLY ")
+          append("scope you get — there is no global `element`, `el` or `this`. The attached form ")
+          append("element IS `toProcess`: build your UI inside it (toProcess.appendChild(…), ")
+          append(
+              "toProcess.querySelector(…), toProcess.getAttribute('data-cb-<param>')), and read ")
+          append("`data-cb-<param>` parameters from that same element.")
+          append("\n`toLoad` is the resolved PARAMETER OBJECT — read `toLoad.layout`, NEVER ")
+          append(
+              "`toLoad.getAttribute(…)` (that throws a TypeError and nothing renders). The UI must ")
+          append(
+              "be appended INTO `toProcess` (`toProcess.appendChild(wrapper)`); a functionality ")
+          append("that never touches `toProcess` renders nothing.")
+          append("\nCALL your code with it: defining a helper (or assigning `window.CodBi.x`) and ")
+          append("never invoking it means the functionality does NOTHING and is rejected. End the ")
+          append(
+              "callback body with the call, e.g. `insertCalculator(toProcess, toLoad);`, and do not ")
+          append("wait for DOMContentLoaded (the element already exists).")
+        }
+        if (problems.any { it.contains("truncat", ignoreCase = true) }) {
+          // The answer was cut off — the usual cause is an over-long inline implementation.
+          append("\nYour previous Code was CUT OFF. Keep it COMPACT but complete (aim for ~1500 ")
+          append("characters): build the buttons in ONE loop over an array, avoid long inline CSS/")
+          append("expressions, and END the callback with `toProcess.appendChild(wrapper);`. Never ")
+          append("leave a statement unfinished.")
+        }
+        if (problems.any { it.contains("never attach", ignoreCase = true) }) {
+          append(
+              "\nThe finished UI must be INSERTED into the element: `toProcess.appendChild(wrapper);` ")
+          append(
+              "(or `toProcess.innerHTML = …`). Creating elements without attaching them renders ")
+          append("nothing.")
+        }
+        if (problems.any { it.contains("Summary", ignoreCase = true) }) {
+          // The local API-doc manager stores the short description PER LANGUAGE.
+          append("\n`Summary` must be an OBJECT with all three manager languages: ")
+          append("{\"en\":\"<one sentence>\",\"de\":\"<ein Satz>\",\"it\":\"<una frase>\"}. ")
+          append("A plain string leaves the German and Italian designer UI empty.")
+        }
+        if (problems.any { it.contains("supportedFormelementtypes", ignoreCase = true) }) {
+          append(
+              "\n`supportedFormelementtypes` must be a JSON array of FORMCYCLE widget class names ")
+          append(
+              "(e.g. [\"XFieldSet\",\"XContainer\"] for a calculator, [\"XTextField\"] for a field ")
+          append("behaviour). Without it the element is never offered in the per-element panel.")
+        }
+        append("\nReturn the CORRECTED draft JSON only (same envelope, complete object).")
+      }
+      val repairMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+        append("""{"role":"user","content":${gson.toJson(repairUser)}}""")
+        append("]")
+      }
+      val repairRaw = instance.performFormAssist(modelId, repairMessages)
+      val repairUsage = instance.takeLastAssistUsage()
+      tokensIn += repairUsage?.promptTokens ?: estimateTokens(repairMessages)
+      tokensOut += repairUsage?.completionTokens ?: estimateTokens(repairRaw)
+      reportTrip("local-element-repair", modelId, repairUsage, repairMessages, repairRaw)
+      logger.info(
+          "[AICodBiAssistant] [LocalElement] repair round answer:\n{}",
+          extractJson(stripThinkTags(repairRaw)).trim().take(4000))
+      LocalElementDrafts.extractDraft(extractJson(stripThinkTags(repairRaw)).trim())?.let { repaired
+        ->
+        // The repaired answer runs through the SAME preparation — it must never skip it.
+        val repairedKind = LocalElementDrafts.kindOf(repaired) ?: workingKind
+        val repairedName = LocalElementDrafts.nameOf(repaired)
+        if (repairedName.isNotBlank()) {
+          val prepared =
+              LocalElementDrafts.prepareCode(
+                  repairedKind, repairedName, LocalElementDrafts.codeOf(repaired))
+          if (prepared != LocalElementDrafts.codeOf(repaired))
+              repaired.addProperty("Code", prepared)
+        }
+        val repairedProblems = validateWith(repaired, repairedKind)
+        debugDump("repaired", repaired, repairedProblems)
+        // Never make it worse: keep the better of the two answers.
+        if (repairedProblems.size <= problems.size) {
+          draft = repaired
+          workingKind = repairedKind
+          problems = repairedProblems
+        }
+      }
+    }
+
+    // 6) Still not committable → report the reasons (the dialog shows them). The inference is never
+    //    discarded silently and the user is never asked to retype a generated part.
+    if (problems.isNotEmpty()) {
+      debugDump("invalid", draft, problems)
+      logger.info(
+          "[AICodBiAssistant] [LocalElement] REJECTED after {} problem(s): {}",
+          problems.size,
+          problems)
+      return localElementInvalidResponse(draft, workingKind, problems, tokensIn, tokensOut)
+    }
+
+    val price = instance.priceForModel(modelId)
+    val cost = price?.costFor(tokensIn.toLong(), tokensOut.toLong())
+    val response = JsonObject()
+    response.addProperty("status", "codbi_element_draft")
+    response.addProperty("intent", LocalElementDrafts.INTENT)
+    response.addProperty("kind", workingKind.draftValue)
+    response.addProperty("name", LocalElementDrafts.nameOf(draft))
+    response.addProperty("isUpdate", isUpdate || existingEntry != null)
+    response.add("draft", draft)
+    LocalElementDrafts.usageOf(draft)?.let { response.add("usage", it) }
+    response.add("validationErrors", gson.toJsonTree(problems))
+    response.addProperty("codeNormalized", codeWasNormalized)
+    response.addProperty("codeWrapped", codeWasWrapped)
+    // The generated code referenced an undefined `element`; it was rewritten to `toProcess`.
+    response.addProperty("codeElementFixed", codeElementFixed)
+    response.addProperty("tokens", tokensIn + tokensOut)
+    response.addProperty("tokensIn", tokensIn)
+    response.addProperty("tokensOut", tokensOut)
+    response.addProperty("cost", cost ?: 0.0)
+    response.addProperty("currency", price?.currency ?: "")
+    response.addProperty("committable", true)
+    return jsonResponse(gson.toJson(response))
+  }
+
+  /**
+   * The refusal returned when the requesting user is not allowed to sync the local API-doc. It is
+   * an informational answer (the dialog shows the text, nothing is aborted mid-way) and —
+   * critically — it is produced BEFORE any model call.
+   */
+  private fun localElementDeniedResponse(
+      uiLocale: java.util.Locale,
+      username: String?
+  ): IPluginServletActionRetVal {
+    val who = username?.takeIf { it.isNotBlank() } ?: "?"
+    val message =
+        if (uiLocale.language.startsWith("de")) {
+          "Zum Anlegen lokaler CodBi-Elemente fehlt die Berechtigung: Der Benutzer \"" +
+              who +
+              "\" muss von einem Administrator in der Plugin-Einstellung APIDoc_UsersAllowedToSYNC " +
+              "eingetragen werden (er darf dann die lokale API-Dokumentation synchronisieren). " +
+              "Es wurde keine KI-Anfrage ausgeführt und nichts geändert."
+        } else {
+          "Creating local CodBi elements requires permission: an administrator must add the user \"" +
+              who +
+              "\" to the plugin setting APIDoc_UsersAllowedToSYNC (the users allowed to sync " +
+              "the local API-documentation). No AI request was made and nothing was changed."
+        }
+    return jsonResponse(
+        """{"status":"codbi_element_denied","intent":${gson.toJson(LocalElementDrafts.INTENT)},"message":${gson.toJson(message)}}""")
+  }
+
+  /** Wraps clarification questions into the envelope the assistant dialog opens as its popup. */
+  private fun localElementClarificationResponse(
+      questions: List<ClarificationQuestion>,
+      clarificationHistory: List<ClarificationTurn>
+  ): IPluginServletActionRetVal =
+      jsonResponse(
+          """{"intent":${gson.toJson(LocalElementDrafts.INTENT)},"clarification":${gson.toJson(ClarificationRequest(questions))},"clarificationHistory":${gson.toJson(clarificationTurnsToJson(clarificationHistory))}}""")
+
+  /** The ONE question a user really has to answer: the element's technical (dotted) name. */
+  private fun localElementNameQuestion(uiLocale: java.util.Locale): ClarificationQuestion {
+    // The examples deliberately contain NO kind segment ("EP", "Func", "Config"): a model reading
+    // them
+    // used to "help" by inserting such a segment into the name the user then answered
+    // ("Mein.Wetter" → "Mein.EP.Wetter"), silently renaming the element.
+    val text =
+        if (uiLocale.language.startsWith("de")) {
+          "Unter welchem technischen Namen soll das CodBi-Element angelegt werden? " +
+              "Bitte genau diesen Punkt-Namen angeben, z. B. „Mein.Rechner“ oder „Mein.Wetter“ — " +
+              "er wird unverändert übernommen (kein Zusatz wie „EP“ oder „Func“). " +
+              "Beschreibung, Kurz-/Detail-Prompt, Parameter und Code erzeuge ich selbst."
+        } else {
+          "Under which technical name should the CodBi element be created? Please give exactly that " +
+              "dotted name, e.g. \"My.Calculator\" or \"My.Weather\" — it is used unchanged (no extra " +
+              "segment such as \"EP\" or \"Func\"). I generate the description, the condensed/detailed " +
+              "prompts, the parameters and the code myself."
+        }
+    return ClarificationQuestion("q1", text, emptyList(), allowFreeText = true, multiSelect = false)
+  }
+
+  /** Message when no technical name could be obtained (asked once, never twice). */
+  private fun localElementMissingNameMessage(uiLocale: java.util.Locale): String =
+      if (uiLocale.language.startsWith("de")) {
+        "Ohne technischen Namen kann das Element nicht angelegt werden. Bitte die Anfrage mit einem " +
+            "Punkt-Namen wiederholen, z. B.: Erstelle eine lokale Funktionalität 'Mein.Rechner' …"
+      } else {
+        "The element cannot be created without a technical name. Please repeat the request with a " +
+            "dotted name, e.g.: Create a local functionality 'My.Calculator' …"
+      }
+
+  /** Message when the kind of local element stays unclear (asked once, never twice). */
+  private fun localElementMissingKindMessage(uiLocale: java.util.Locale): String =
+      if (uiLocale.language.startsWith("de")) {
+        "Die Art des CodBi-Elements ist unklar. Bitte Funktionalität, Element-Placeholder (EP) oder " +
+            "Standardkonfiguration in der Anfrage nennen."
+      } else {
+        "The kind of CodBi element is unclear. Please name a functionality, an element placeholder " +
+            "(EP) or a standard configuration in the request."
+      }
+
+  /**
+   * The `codbi_element_invalid` answer: the draft could not be made committable (after one repair
+   * round). The dialog shows the reasons inline — no alert, nothing is lost.
+   */
+  private fun localElementInvalidResponse(
+      draft: JsonObject,
+      kind: LocalElementKind?,
+      problems: List<String>,
+      tokensIn: Int,
+      tokensOut: Int
+  ): IPluginServletActionRetVal {
+    val invalid = JsonObject()
+    invalid.addProperty("status", "codbi_element_invalid")
+    invalid.addProperty("intent", LocalElementDrafts.INTENT)
+    invalid.addProperty("kind", kind?.draftValue ?: "")
+    invalid.addProperty("name", LocalElementDrafts.nameOf(draft))
+    invalid.add("draft", draft)
+    invalid.add("validationErrors", gson.toJsonTree(problems))
+    invalid.addProperty("message", problems.joinToString(" "))
+    invalid.addProperty("tokens", tokensIn + tokensOut)
+    invalid.addProperty("tokensIn", tokensIn)
+    invalid.addProperty("tokensOut", tokensOut)
+    return jsonResponse(gson.toJson(invalid))
+  }
+
+  /** The only other legitimate question: which KIND of local element is meant. */
+  private fun localElementKindQuestion(uiLocale: java.util.Locale): ClarificationQuestion {
+    val de = uiLocale.language.startsWith("de")
+    val text =
+        if (de) "Welche Art von lokalem CodBi-Element soll angelegt werden?"
+        else "Which kind of local CodBi element should be created?"
+    val options =
+        if (de) {
+          listOf(
+              "Funktionalität (Verhalten an einem Formularelement)",
+              "Element-Placeholder (EP, liefert einen Wert)",
+              "Standardkonfiguration (CSS-Klassen/globale Vorgaben)")
+        } else {
+          listOf(
+              "Functionality (behaviour attached to a form element)",
+              "Element placeholder (EP, produces a value)",
+              "Standard configuration (CSS classes / global presets)")
+        }
+    return ClarificationQuestion("q1", text, options, allowFreeText = true, multiSelect = false)
+  }
+
+  /**
+   * `CommitLocalElement` action — the **deterministic** (inference-free) write of a reviewed draft
+   * into the local API-doc storage. Everything the draft needs was decided by the drafting pass;
+   * this method only re-validates it, merges it into the documentation JSON, stores the code and
+   * records a change-log entry.
+   *
+   * The recorded entry ALWAYS carries the hardcoded "to be checked" marking: defining an element
+   * that runs JavaScript in every session of this installation must be reviewed like a sensitive
+   * element.
+   *
+   * Parameters: `draft` (the draft JSON), `overwrite` ("true" replaces an existing element),
+   * `prompt` (the original user request, stored in the change log) and the optional token/cost
+   * values of the drafting inference.
+   */
+  private fun handleLocalElementCommit(
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal {
+    val username = currentUsername(params)
+    if (!isLocalElementSyncAllowed(username)) {
+      return jsonResponse(
+          """{"error":${gson.toJson("Only users listed in APIDoc_UsersAllowedToSYNC may commit a local CodBi element.")}}""")
+    }
+    val emf =
+        CodbiEntities.entityManagerFactory
+            ?: return jsonResponse("""{"error":"Database not ready"}""")
+    val draftRaw =
+        params.requestParameters["draft"]?.firstOrNull()
+            ?: return jsonResponse("""{"error":"Missing draft"}""")
+    val draft =
+        LocalElementDrafts.extractDraft(draftRaw)
+            ?: return jsonResponse("""{"error":"The draft is not a JSON object"}""")
+    // The review dialog posts the draft BODY it was given — and the envelope's `kind` is not
+    // necessarily repeated inside that body (the model often omits it, the envelope carries it).
+    // The resolved kind/name are therefore ALSO accepted as explicit parameters: without this a
+    // complete, already validated draft was refused at commit time with "Unknown draft kind",
+    // which looked like "the AI cannot create the element".
+    val kind =
+        LocalElementDrafts.kindOf(draft)
+            ?: LocalElementKind.fromDraft(
+                params.requestParameters["kind"]?.firstOrNull()
+                    ?: params.requestParameters["codbiElementKind"]?.firstOrNull())
+            ?: return jsonResponse("""{"error":"Unknown draft kind"}""")
+    val name =
+        LocalElementDrafts.nameOf(draft).ifBlank {
+          params.requestParameters["name"]?.firstOrNull()?.trim().orEmpty()
+        }
+    if (name.isBlank()) {
+      return jsonResponse("""{"error":"The draft has no Name"}""")
+    }
+    // Keep the resolved identity INSIDE the draft: validation, the documentation entry and the
+    // change log all read kind/name from there.
+    draft.addProperty("kind", kind.draftValue)
+    draft.addProperty("Name", name)
+    val overwrite = params.requestParameters["overwrite"]?.firstOrNull()?.toBoolean() ?: false
+    // The registration id is the runtime key: enforce it on WRITE as well, so a draft that was
+    // reviewed/edited after drafting can never be stored with a mismatching id.
+    val code =
+        LocalElementDrafts.prepareCode(kind, name, LocalElementDrafts.codeOf(draft)).also {
+          if (it != LocalElementDrafts.codeOf(draft)) draft.addProperty("Code", it)
+        }
+    logger.info(
+        "[AICodBiAssistant] [LocalElement] COMMIT '{}' ({}) codeLen={} :: {}",
+        name,
+        kind.draftValue,
+        code.length,
+        LocalElementDrafts.describeRegistration(code, kind, name))
+    val modelId =
+        params.headerMap.entries.find { it.key.equals("X-Model", ignoreCase = true) }?.value ?: ""
+
+    var problems: List<String>
+    var existed = false
+    var saved = false
+    // The documentation entry exactly as it is written — recorded with the change-log entry so the
+    // commit can be RESTORED later without a new inference (see `handleRestoreLocalElement`).
+    var writtenEntry: JsonObject? = null
+    val em = emf.createEntityManager()
+    try {
+      val existingNames = LocalElementStore.existingNames(em)
+      existed = existingNames.containsKey(name.lowercase())
+      if (existed && !overwrite) {
+        problems =
+            listOf(
+                "A local ${existingNames[name.lowercase()]?.draftValue ?: "element"} named '" +
+                    name +
+                    "' already exists — confirm the overwrite to replace it.")
+      } else {
+        problems = LocalElementDrafts.validate(draft, kind, existingNames, overwrite)
+        if (problems.isEmpty()) {
+          val entry = LocalElementDrafts.documentationEntry(kind, draft, code)
+          writtenEntry = entry
+          saved = LocalElementStore.save(em, kind, name, entry, code.takeIf { it.isNotBlank() })
+        }
+      }
+    } catch (e: Exception) {
+      logger.error("[AICodBiAssistant] Committing a local CodBi element failed", e)
+      problems = listOf("The write failed: " + (e.message ?: "unknown"))
+    } finally {
+      try {
+        em.close()
+      } catch (_: Exception) {}
+    }
+    if (!saved) {
+      // Traceable refusal: the dialog shows the message, the server log shows WHICH rule refused
+      // the
+      // commit (kind, name, overwrite, storage failure) — so a "it still does not work" report can
+      // be
+      // answered from the log instead of guessing.
+      logger.warn(
+          "[AICodBiAssistant] [LocalElement] COMMIT refused for '{}' ({}): {}",
+          name,
+          kind.draftValue,
+          problems)
+      return jsonResponse(
+          """{"status":"error","errors":${gson.toJson(problems)},"message":${gson.toJson(problems.firstOrNull() ?: "Commit failed.")}}""")
+    }
+
+    // region Change log — an inference-free, ALWAYS-to-be-checked entry
+    val action = if (existed) "updated" else "created"
+    val change =
+        JsonObject().apply {
+          add(
+              "localElement",
+              JsonObject().apply {
+                addProperty("kind", kind.draftValue)
+                addProperty("name", LocalElementDrafts.nameOf(draft))
+                addProperty("action", action)
+                addProperty("hasCode", code.isNotBlank())
+                // Hardcoded review requirement: the change log marks every local-element entry as
+                // "to be checked" (see AiAssistantLog.loadLogs), independent of
+                // AI_Log_SensitiveElements.
+                addProperty("mustReview", true)
+                // The COMPLETE payload, so the log entry can be written back into the local API-doc
+                // ("restore") instead of re-running an inference: exactly what the commit wrote —
+                // the
+                // documentation entry plus the JavaScript.
+                addProperty("restorable", writtenEntry != null)
+                writtenEntry?.let { stored ->
+                  add(
+                      "restore",
+                      JsonObject().apply {
+                        addProperty("kind", kind.draftValue)
+                        addProperty("name", name)
+                        add("entry", stored)
+                        addProperty("code", code)
+                      })
+                }
+              })
+        }
+    val tokensIn = params.requestParameters["tokensIn"]?.firstOrNull()?.toLongOrNull() ?: 0L
+    val tokensOut = params.requestParameters["tokensOut"]?.firstOrNull()?.toLongOrNull() ?: 0L
+    val cost = params.requestParameters["cost"]?.firstOrNull()?.toDoubleOrNull()
+    val currency =
+        params.requestParameters["currency"]?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }
+    try {
+      AiAssistantLog.recordInference(
+          emf,
+          params.requestParameters["prompt"]?.firstOrNull()
+              ?: ("Local CodBi element " + name + " (" + kind.draftValue + ")"),
+          LocalElementDrafts.INTENT,
+          modelId,
+          null /* formKey — a local definition belongs to the installation, not to a form */,
+          null /* workflowVersionId */,
+          change,
+          null /* workflowChanges */,
+          tokensIn,
+          tokensOut,
+          cost = cost,
+          currency = currency,
+          username = username)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to record the local element change log: {}", e.message)
+    }
+    // endregion
+
+    val response = JsonObject()
+    response.addProperty("status", "ok")
+    response.addProperty("intent", LocalElementDrafts.INTENT)
+    response.addProperty("kind", kind.draftValue)
+    response.addProperty("name", name)
+    response.addProperty("created", !existed)
+    response.addProperty("committed", true)
+    response.addProperty("mustReview", true)
+    LocalElementDrafts.usageOf(draft)?.let { response.add("usage", it) }
+    response.addProperty(
+        "message",
+        LocalElementDrafts.describe(kind, name, action) +
+            " — reopen the Local API-Doc manager to see it.")
+    return jsonResponse(gson.toJson(response))
+  }
+
+  // endregion
+
+  /**
+   * `RestoreLocalElement` action — the API-doc counterpart of the form's "apply this entry again".
+   *
+   * The change-log entry records the documentation entry AND the JavaScript exactly as the commit
+   * wrote them, so a restore is a plain WRITE: no inference, and no manager synchronisation is
+   * needed (the client re-reads the storage through the usual `codbi-local-doc-changed` event).
+   *
+   * Installation-wide data, so only users listed in `APIDoc_UsersAllowedToSYNC` may do it — the
+   * same rule as committing.
+   *
+   * Parameters: `entryId` (the change-log entry to restore).
+   */
+  private fun handleRestoreLocalElement(
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal {
+    val username = currentUsername(params)
+    if (!isLocalElementSyncAllowed(username)) {
+      return jsonResponse(
+          """{"error":${gson.toJson("Only users listed in APIDoc_UsersAllowedToSYNC may restore a local CodBi element.")}}""")
+    }
+    val emf =
+        CodbiEntities.entityManagerFactory
+            ?: return jsonResponse("""{"error":"Database not ready"}""")
+    val entryId =
+        params.requestParameters["entryId"]?.firstOrNull()?.trim()?.toLongOrNull()
+            ?: return jsonResponse("""{"error":"Missing entryId"}""")
+    val change =
+        AiAssistantLog.loadFormChanges(emf, entryId)
+            ?: return jsonResponse("""{"error":"The log entry could not be read."}""")
+    val local =
+        change.get("localElement")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: return jsonResponse("""{"error":"This log entry is not a local API-doc change."}""")
+    val restore =
+        local.get("restore")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: return jsonResponse(
+                """{"error":${gson.toJson("This entry does not carry a restorable payload — it was recorded before restoring was supported. Create the element again once to make it restorable.")}}""")
+    val kind =
+        LocalElementKind.fromDraft(restore.get("kind")?.takeIf { it.isJsonPrimitive }?.asString)
+            ?: return jsonResponse("""{"error":"The recorded element kind is unknown."}""")
+    val name =
+        restore
+            .get("name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.trim()
+            .orEmpty()
+            .ifBlank {
+              local.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+            }
+    if (name.isBlank()) {
+      return jsonResponse("""{"error":"The recorded entry has no element name."}""")
+    }
+    val entry =
+        restore.get("entry")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: return jsonResponse(
+                """{"error":"The recorded entry has no stored documentation."}""")
+    val code = restore.get("code")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+
+    val em = emf.createEntityManager()
+    val saved =
+        try {
+          LocalElementStore.save(em, kind, name, entry, code.takeIf { it.isNotBlank() })
+        } catch (e: Exception) {
+          logger.error("[AICodBiAssistant] Restoring a local CodBi element failed", e)
+          false
+        } finally {
+          try {
+            em.close()
+          } catch (_: Exception) {}
+        }
+    if (!saved) {
+      return jsonResponse(
+          """{"error":${gson.toJson("Restoring '$name' failed — see the server log.")}}""")
+    }
+    logger.info(
+        "[AICodBiAssistant] [LocalElement] RESTORE '{}' ({}) from log entry {} by user '{}' (codeLen={})",
+        name,
+        kind.draftValue,
+        entryId,
+        username,
+        code.length)
+
+    val response = JsonObject()
+    response.addProperty("status", "ok")
+    response.addProperty("kind", kind.draftValue)
+    response.addProperty("name", name)
+    response.addProperty("restored", true)
+    response.addProperty(
+        "message",
+        LocalElementDrafts.describe(kind, name, "restored") +
+            " — written straight into the local API-doc, no synchronisation needed.")
+    return jsonResponse(gson.toJson(response))
+  }
+
   private fun handleRun(params: IPluginServletActionParams): IPluginServletActionRetVal {
     val modelId =
         params.headerMap.entries.find { it.key.equals("X-Model", ignoreCase = true) }?.value
@@ -1946,6 +3206,14 @@ class AICodBiAssistant : IPluginServletAction {
     var intent = params.requestParameters["intent"]?.firstOrNull() ?: "both"
     val result = StringBuilder("{")
     result.append(""""intent":${gson.toJson(intent)}""")
+    // A LOCAL CodBi element definition (functionality / element placeholder / standard
+    // configuration) is an INSTALLATION-WIDE catalogue change, not a form edit: it never touches
+    // the
+    // form JSON, needs no form/workflow context and is drafted in its own short pass. Handling it
+    // here (and returning) keeps the (large) form/workflow passes out of this run entirely.
+    if (intent == LocalElementDrafts.INTENT) {
+      return draftLocalElement(prompt, modelId, instance, uiLocale, params)
+    }
     // For "both" intent: form elements are updated after form modification so the workflow AI
     // sees buttons/fields that were just created by the form AI (not just the pre-existing ones).
     // Safety net: when the frontend did not send the explicit `formElements` list (e.g. an older
@@ -3410,7 +4678,8 @@ class AICodBiAssistant : IPluginServletAction {
             renderClassifyIntentContext(
                 chatContext = chatContext,
                 formStructureContext = formStructureContext,
-                clarificationContext = clarificationContext)
+                clarificationContext = clarificationContext) +
+            localElementCatalogueBlock()
 
     val messagesJson = buildString {
       append("[")
@@ -3441,7 +4710,8 @@ class AICodBiAssistant : IPluginServletAction {
       when (intent) {
         "form",
         "workflow",
-        "both" -> intent to usage
+        "both",
+        LocalElementDrafts.INTENT -> intent to usage
         else -> {
           logger.warn(
               "[AICodBiAssistant] Unexpected intent classification '{}' â€” defaulting to 'both'",
@@ -3456,6 +4726,59 @@ class AICodBiAssistant : IPluginServletAction {
       "both" to usage
     }
   }
+
+  /**
+   * The LOCAL CodBi elements of this installation, appended to the router's system prompt.
+   *
+   * Whether a request changes the ELEMENT CATALOGUE ("die Rechner-Funktionalität soll die Tasten
+   * umbrechen") or the OPEN FORM ("baue einen Taschenrechner in das Fieldset ein") can only be
+   * decided with the FACTS: without the names the router saw just the user's wording, answered
+   * "form", and a change to an element's code was executed as a form change — the element stayed
+   * exactly as it was (reported: "I tried to change the functionality but it remained the same",
+   * log `Classified intent as: form`).
+   *
+   * Short by construction (name + kind + a clipped description, at most [limit] entries) and only
+   * present when the installation HAS local elements; a failed read simply omits the block.
+   */
+  private fun localElementCatalogueBlock(limit: Int = 60): String =
+      try {
+        val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+
+        if (em == null) ""
+        else {
+          try {
+            val lines = LocalElementStore.catalogue(em, limit)
+
+            if (lines.isEmpty()) ""
+            else
+                buildString {
+                  append(
+                      "\n\nCRITICAL — LOCAL CODBI ELEMENTS OF THIS INSTALLATION (name, kind, short description)\n\n")
+                  append(lines.joinToString("\n"))
+                  append(
+                      "\n\nA request that changes HOW ONE OF THESE ELEMENTS WORKS — its JavaScript, its ")
+                  append("buttons, its rendering, its parameters or its behaviour — is ")
+                  append(
+                      "\"codbi-local-element\", also when the element is described by its PURPOSE ")
+                  append("instead of its name (\"die Rechner-Funktionalität\", \"the calc ")
+                  append("functionality\", \"unser Taschenrechner\") and also when the request is ")
+                  append(
+                      "phrased as a defect (\"die Tasten stehen alle in einer Reihe\"). A request ")
+                  append(
+                      "that instead USES an element in the OPEN FORM (attach it to an element, set ")
+                  append(
+                      "a data-cb-* parameter, insert a calculator into the fieldset) stays \"form\".\n")
+                }
+          } finally {
+            try {
+              em.close()
+            } catch (_: Exception) {}
+          }
+        }
+      } catch (e: Exception) {
+        logger.warn("[AICodBiAssistant] Classifier element catalogue unavailable: {}", e.message)
+        ""
+      }
 
   /**
    * Cheap fallback-safe GATE: only decides whether it is worth asking the AI whether a whole-form

@@ -269,6 +269,20 @@ internal object PromptLoader {
   }
 
   /**
+   * Returns the COMPLETE bundled `.md` resource for [key] — every `## ` heading included, NOT
+   * split.
+   *
+   * [loadPrompt] / [loadPromptFromClasspath] return only the text BEFORE the first `## ` heading of
+   * a sectioned file (each section becomes its own editable rule). A caller that needs the whole
+   * instruction must read the raw file: the local-element contract is ONE document, and delivering
+   * only its intro left the model without the output envelope and the hard rules.
+   */
+  fun loadPromptFileRaw(key: String): String? {
+    val entry = findIndexEntryByKey(key) ?: return null
+    return loadResourceFile(entry)
+  }
+
+  /**
    * Loads a prompt's text directly from the bundled classpath `.md` resources (via `index.json`),
    * WITHOUT touching the database. Used as the offline fallback whenever the DB is unavailable.
    */

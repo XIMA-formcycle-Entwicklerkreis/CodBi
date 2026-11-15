@@ -980,7 +980,19 @@ function createLiteralControl(
 
   const input = doc.createElement("input");
   const numeric = normalized === "integer" || normalized === "number";
-  input.type = numeric ? "number" : "text";
+  // A DATE / datetime parameter gets a real picker in the EP builder as well (requested). It is only
+  // used while the literal is EMPTY or a plain date(time) — a composed value (another segment, an EP
+  // reference) must stay editable in a text field, because a date input would empty it.
+  const rawLiteral = String(value ?? "").trim();
+  const isDateKind = normalized === "date" || normalized === "datum" || normalized === "iso-date";
+  const isDateTimeKind = normalized === "datetime" || normalized === "datetime-local" || normalized === "date-time";
+  const dateType: "date" | "datetime-local" | undefined =
+    isDateKind && (rawLiteral === "" || /^\d{4}-\d{2}-\d{2}$/.test(rawLiteral))
+      ? "date"
+      : isDateTimeKind && (rawLiteral === "" || /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$/.test(rawLiteral))
+        ? "datetime-local"
+        : undefined;
+  input.type = dateType ?? (numeric ? "number" : "text");
   if (normalized === "integer") {
     input.step = "1";
   } else if (normalized === "number") {

@@ -43,10 +43,69 @@ workflow (the PaymentInitPlugin node) plus notification emails for successful an
 that automation is a WORKFLOW change on top of the FORM structure change. NEVER classify such a
 request as plain "form" — otherwise the workflow would never be built.
 
+- "codbi-local-element": the request DEFINES a NEW (or changes an EXISTING) **local CodBi element**
+  for this installation — a CodBi FUNCTIONALITY, an ELEMENT PLACEHOLDER or a STANDARD CONFIGURATION,
+  together with its parameters and its JavaScript. Examples (ANY language, decide by MEANING):
+  - "Erstelle eine Funktionalität Mein.Rechner die … einen JS-Taschenrechner einbaut …" / "create a
+    functionality My.Calculator that builds a calculator into a container" → codbi-local-element
+  - "Erstelle einen EP Mein.EP der einen Wetterbericht … bezieht mit den Parametern …" / "create an
+    element placeholder My.EP that fetches a weather report with parameters …" → codbi-local-element
+  - "Erstelle eine Standardkonfiguration JOJO.Rechner für die Funktionalität Mein.Rechner,
+    voreingestellt auf wissenschaftliche Anzeige" → codbi-local-element
+  - "Ändere die Funktionalität Mein.Rechner so, dass …" / "extend the EP My.EP so that …" →
+    codbi-local-element
+  CRITICAL — the DISTINCTION from "form": a request that merely USES an existing CodBi element in the
+  form ("baue einen Taschenrechner in das Fieldset ein", "add a field that shows the weather") is
+  "form". "codbi-local-element" is ONLY chosen when the request asks to CREATE/DEFINE/CHANGE the
+  element ITSELF (its name, parameters, signature, classes, globals or behaviour/code) — i.e. it
+  changes the installation's element catalogue, not the open form.
+
+CRITICAL — A NAMED KIND IS ALWAYS A DEFINITION REQUEST, NEVER A "form" REQUEST.
+When the request names the KIND of element it wants — "Standardkonfiguration" / "standard
+configuration" / "Konfiguration", "Funktionalität" / "functionality", "Element-Placeholder" / "EP" /
+"Platzhalter" — the user wants a NEW LOCAL ELEMENT of that kind, even when
+- the verb is not "create" but a NEED ("ich brauche", "ich möchte", "ich will", "hilf mir", "kannst du
+  mir … bauen", "I need", "give me", "we need"), and
+- the described BEHAVIOUR could also be produced by applying existing functionalities to a form field.
+That is the exact distinction: describing what ONE FIELD in the open form should do is "form";
+asking for a reusable element (a configuration / functionality / EP) that does it is
+"codbi-local-element".
+- "Ich brauche eine Standardkonfiguration die das Wetter vom 16.11.2026 und den zwei Tagen darauf
+  abruft und in der Konsole ausgibt" → codbi-local-element (define a standard configuration; do NOT
+  run the form pass that applies Sys.Log.Console to a field)
+- "Ich brauche eine Funktionalität die …" / "we need a configuration that logs …" →
+  codbi-local-element
+- COUNTER-EXAMPLE that stays "form": "gib das Wetter vom 16.11.2026 im Feld tfWetter aus" / "log that
+  field's value into the console" — it names a FIELD of the open form, not a new element kind.
+
+CRITICAL — CHANGING HOW AN EXISTING LOCAL ELEMENT WORKS IS "codbi-local-element", NOT "form".
+When the request changes the BEHAVIOUR / JAVASCRIPT / BUTTONS / RENDERING / PARAMETERS of an element
+that appears in the LOCAL CODBI ELEMENTS list, choose "codbi-local-element" — also when
+- the element is described by its PURPOSE instead of its name ("die Rechner-Funktionalität", "der
+  Taschenrechner", "the calc functionality", "unser Wetter-EP", "the address field EP");
+- the request is phrased as a DEFECT or complaint instead of an instruction ("die Tasten stehen alle
+  in einer Reihe", "the buttons are all in one row", "der Rechner zeigt nichts an", "the calculator
+  shows nothing");
+- the words "ändern" / "change" / "update" never appear at all.
+The element's code lives in the installation's element catalogue, NOT in the form: the form pass can
+never change it, so such a request must never be routed to "form" (it would come back unchanged).
+Examples:
+- "Die Tasten der Rechner-Funktionalität stehen alle in einer Reihe" → codbi-local-element
+- "the calc functionality should wrap its buttons into a grid" → codbi-local-element
+- "der Taschenrechner soll die wissenschaftlichen Tasten nur bei layout=scientific zeigen" →
+  codbi-local-element
+COUNTER-EXAMPLES — these stay "form", because they USE an existing element in the OPEN FORM:
+- "baue einen Taschenrechner in das Fieldset ein" / "insert the calculator into that container"
+- "setze data-cb-layout auf scientific auf div1" / "attach the calc functionality to the fieldset"
+- "add a field that shows the weather" (uses an EP in a new field)
+
 CRITICAL — Decide by INTENT, not by matching these example words. The same intent can be expressed in
 any language. If the request changes form structure, applies CodBi functionalities, or toggles standard
 configurations → "form". If it creates/modifies workflow automation (emails, state changes, triggers,
-notifications, file downloads after submission) → "workflow". If it does both → "both".
+notifications, file downloads after submission) → "workflow". If it does both → "both". If it DEFINES
+or CHANGES a local CodBi element (functionality / element placeholder / standard configuration)
+itself → "codbi-local-element".
 
-Respond ONLY with valid JSON: {"intent":"form"} or {"intent":"workflow"} or {"intent":"both"}
+Respond ONLY with valid JSON: {"intent":"form"} or {"intent":"workflow"} or {"intent":"both"} or
+{"intent":"codbi-local-element"}
 No explanation, no markdown, no code fences.

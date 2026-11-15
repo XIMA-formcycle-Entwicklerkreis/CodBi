@@ -63,6 +63,23 @@ cb-ai-assistant-log {
     animation: cb-log-sensitive-pulse 1.6s ease-in-out infinite;
 }
 
+/* The "API Doc" button is a VIEW SWITCH between the form change log and the local API-doc change log.
+   While the API-doc view is active it is filled with the CodBi accent colour, so it is obvious that the
+   list below does NOT show the form's entries. */
+.cb-log-apidoc-btn--active.p-button {
+    background: #ff8c00 !important;
+    border-color: #ff8c00 !important;
+    color: #fff !important;
+}
+
+/* The "Unchecked" filter button: filled while un-checked review items exist, so a pending sensitive
+   element / API-doc element cannot be overlooked. */
+.cb-log-unchecked-btn--pending.p-button {
+    background: #ff8c00 !important;
+    border-color: #ff8c00 !important;
+    color: #fff !important;
+}
+
 @keyframes cb-log-sensitive-pulse {
     0%,
     100% {
@@ -487,8 +504,12 @@ cb-ai-assistant-log {
 
 .cb-log-node > .cb-log-node__summary {
     display: flex;
+    /* A narrow panel must not CUT the header: the row wraps, so a checkbox, the token badge or the
+       "checked by …" badge moves to the next line instead of squeezing the label out of view. */
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
+    row-gap: 2px;
     /* Flex items must be allowed to shrink BELOW their content width; otherwise a long value (e.g.
        an element's `rtevalue`) or a long label overflows the row and visually overlaps its
        neighbours. `overflow: hidden` additionally guarantees nothing paints outside the row. */
@@ -591,9 +612,11 @@ cb-ai-assistant-log {
     min-width: 0;
     max-width: 100%;
     flex: 0 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wrap instead of vanishing: in a narrow panel a long label used to be clipped to nothing, so the
+       entry could not be identified at all. */
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
     /* Shared with `.cb-log-node__value`: identical line boxes are what makes the two texts appear
        vertically centered against each other (the value uses a smaller monospace font). */
     line-height: 1.3;
@@ -911,6 +934,36 @@ cb-ai-assistant-log {
 .cb-log-node__apply-again--only:hover {
     background: #efe6d5;
     color: #b45309;
+}
+
+/* The "restore into the API-doc" button of a LOCAL API-DOC entry (a CodBi element committed by the
+   assistant). It writes the RECORDED definition back into the local API-doc storage — no inference and
+   no synchronisation — so it carries the CodBi accent colour and sits next to the re-apply button. */
+.cb-log-node__restore-api-doc {
+    margin-left: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #ff8c00;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.7em;
+    line-height: 1;
+}
+
+.cb-log-node__restore-api-doc:hover {
+    background: #fff1e0;
+    color: #c96a00;
+}
+
+.cb-log-node__restore-api-doc:disabled {
+    opacity: 0.45;
+    cursor: default;
 }
 
 .cb-log-node__children {

@@ -40,6 +40,38 @@ class StructuredDataStoreAction : IPluginServletAction {
   /** Read / Write locker. */
   private val lock = ReentrantReadWriteLock()
 
+  companion object {
+    /**
+     * Serializes the code payload of the `CODE` action as the JSON the clients expect.
+     *
+     * The stored value is a whole JavaScript FILE, so its **line breaks are structure** and must
+     * never be removed. They used to be stripped (`.replace("\n", "")`), which turned every script
+     * into ONE line — and because a `//` comment then swallows everything that follows it, the
+     * runtime's `importRemoteModule()` failed with a `SyntaxError`. The functionality was never
+     * registered and the element stayed empty although the stored code was complete: the reported
+     * "the dialog shows a complete calculator but the form shows nothing". It is also why the code
+     * appeared as a single line wherever it was read back.
+     *
+     * Quotes still travel as the `<|>` placeholder the clients replace back (see
+     * `LocalDocInterface`), backslashes stay escaped and `\n` / `\t` are emitted as JSON escapes.
+     *
+     * @param result The stored code (or the `NONE` marker).
+     * @return A JSON object `{"result": "<code>"}`.
+     */
+    internal fun codeResponseJson(result: String): String {
+      val escaped =
+          result
+              .replace("\\", "\\\\")
+              .replace("\"", "<|>")
+              .replace("\r\n", "\\n")
+              .replace("\n", "\\n")
+              .replace("\r", "")
+              .replace("\t", "\\t")
+
+      return "{\"result\": \"$escaped\"}"
+    }
+  }
+
   /**
    * Initializes the plugin by loading configuration.
    *
@@ -201,12 +233,9 @@ class StructuredDataStoreAction : IPluginServletAction {
           return PluginServletActionRetVal(servletResponse)
         }
 
-        var result = loadCodeFromFile(element, detail)
+        val result = loadCodeFromFile(element, detail)
 
-        lock.read {
-          servletResponse.value =
-              "{\"result\": \"${ result.replace("\\","\\\\").replace("\"","<|>").replace("\r","").replace("\n","").replace("\t","")}\"}"
-        }
+        lock.read { servletResponse.value = codeResponseJson(result) }
       }
 
       "RETRIEVE" -> {

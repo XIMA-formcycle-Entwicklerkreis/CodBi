@@ -1210,6 +1210,50 @@
   padding: 3px 6px;
 }
 
+/* The ENUM parameter editor (a native <select>): the browser's stock widget (grey gradient, system
+   arrow, square corners) does not belong in the CodBi panel, so it is restyled like the other CodBi
+   dropdowns (Mirror element picker, EP builder): white surface, darkorange border and a darkorange
+   chevron, warm hover/focus feedback. `appearance: none` removes the native widget — the chevron is a
+   background image, which also renders in the designer's Chromium host. */
+.codbi-func-config__value.codbi-func-config__select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23ff8c00' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding: 3px 22px 3px 6px;
+  border: 1px solid darkorange;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.codbi-func-config__value.codbi-func-config__select:hover {
+  background-color: #fff3e6;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2);
+}
+/* Keep the rounded pill on focus: the generic `.codbi-func-config__value:focus` rule enlarges the
+   bottom border to 3px, which looks wrong on a dropdown. */
+.codbi-func-config__value.codbi-func-config__select:focus {
+  border-bottom-width: 1px;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.3);
+  outline: none;
+}
+/* The popup list: same warm selection echo as the Mirror dropdown (Chromium honours it). */
+.codbi-func-config__value.codbi-func-config__select option {
+  background: #fff;
+  color: inherit;
+}
+.codbi-func-config__value.codbi-func-config__select option:checked {
+  background: #fff1e0;
+}
+/* The blank "not set" entry stays visibly distinct from a real option. */
+.codbi-func-config__value.codbi-func-config__select option[value=""] {
+  color: #6b7280;
+}
+
 /* The parameter label turns darkorange when its value field is hovered/active/focused. Covers
    text/number/select inputs AND the boolean checkbox.
    The state is tracked by JS (see `buildParamRow` in ElementFunctionalityConfigEditor) instead of with a
@@ -1256,6 +1300,19 @@
 }
 .codbi-func-config__branch-pick:hover {
   box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.35);
+}
+
+/* The branch picker lists its functionalities ONE PER ROW — reported: the "Wenn"/"Sonst" rows showed
+   the functionality names side by side instead of stacked like the element panel's functionality
+   listing. The shared `__options` container of the REGULAR listing flows its rows (flex row), so the
+   branch picker overrides it with a plain vertical stack; the row itself keeps the radio + text on one
+   line, exactly as in the regular listing. */
+.codbi-func-config__branch-pick .codbi-func-config__options {
+  display: block;
+}
+.codbi-func-config__branch-pick .codbi-func-config__option {
+  box-sizing: border-box;
+  width: 100%;
 }
 
 /* The branch picker's radios: the circular twin of the functionality checkbox (darkorange outline,

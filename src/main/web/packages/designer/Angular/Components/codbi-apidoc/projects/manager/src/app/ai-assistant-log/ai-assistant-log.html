@@ -56,6 +56,33 @@
             (onClick)="expandCheckedSensitiveNodes()"
             [disabled]="loading || logs.length === 0"
             title="Expand all checked (acknowledged) sensitive elements up to their top-level nodes" />
+        <!-- Only the entries that still contain an UN-checked review item (a sensitive element or a local
+             API-doc element commit). Filled orange while such entries exist — like the Sensitive button. -->
+        <p-button
+            label="Unchecked"
+            icon="pi pi-filter"
+            severity="secondary"
+            size="small"
+            [outlined]="!uncheckedOnly"
+            [styleClass]="uncheckedOnly && hasUncheckedSensitive ? 'cb-log-unchecked-btn--pending' : (uncheckedOnly ? 'cb-log-apidoc-btn--active' : '')"
+            (onClick)="toggleUncheckedOnly()"
+            [disabled]="loading"
+            [title]="uncheckedOnly
+                ? 'Showing only the entries with un-checked sensitive / API-doc review items — click to show all entries again'
+                : 'Show only the entries that still contain an un-checked sensitive element or API-doc review item'" />
+        <p-button
+            label="API Doc"
+            icon="pi pi-code"
+            severity="secondary"
+            size="small"
+            [outlined]="!showApiDocLogs"
+            [styleClass]="showApiDocLogs ? 'cb-log-apidoc-btn--active' : ''"
+            [badge]="apiDocEntryCount > 0 ? apiDocEntryCount.toString() : undefined"
+            (onClick)="toggleApiDocLogs()"
+            [disabled]="loading"
+            [title]="showApiDocLogs
+                ? 'Showing the local API-doc changes (CodBi elements) — click to return to the form change log'
+                : 'Show only the local API-doc changes (CodBi element definitions created or changed by the assistant)'" />
         <p-button
             label="Export"
             icon="pi pi-download"
@@ -65,7 +92,9 @@
             (onClick)="exportLog()"
             [disabled]="loading || logs.length === 0"
             title="Export the change-log entries as JSON" />
-        @if (isSyncUser && formOptions.length > 0) {
+        <!-- The cross-form selector belongs to the FORM view: local API-doc changes are
+             installation-wide and are not filtered by form, so the selector is hidden there. -->
+        @if (isSyncUser && formOptions.length > 0 && !showApiDocLogs) {
             <!-- INLINE dropdown instead of `<p-select>`: PrimeNG appends its overlay to <body> and its
                  position inside this transformed assistant dialog was unreliable (the options ended
                  up at the trigger's bottom-right corner and, once forced, across the whole window
@@ -118,12 +147,12 @@
             {{ countLabel }}
         </span>
         @if (totalTokens > 0) {
-            <span class="cb-log-tokens" title="Total input and output tokens used by all inferences for this form">
+            <span class="cb-log-tokens" title="Total input and output tokens used by all inferences for this form (including installation-wide CodBi element changes)">
                 {{ totalTokensLabel }}
             </span>
         }
         @if (costByCurrency.size > 0) {
-            <span class="cb-log-tokens cb-log-tokens--cost" title="Total estimated cost of all inferences for this form (input + output tokens × configured price per 1M tokens), grouped by currency">
+            <span class="cb-log-tokens cb-log-tokens--cost" title="Total estimated cost of all inferences for this form including installation-wide CodBi element changes (input + output tokens × configured price per 1M tokens), grouped by currency">
                 {{ totalCostLabel }}
             </span>
         }
@@ -161,9 +190,18 @@
         <p-message severity="error" [text]="errorText" />
     }
 
+    @if (sensitiveWarning) {
+        <p-message severity="warn" [text]="sensitiveWarning" />
+    }
+
     @if (!loading && !errorText && logs.length === 0) {
         <div class="cb-log-empty">
-            Click &ldquo;Refresh&rdquo; to reload the log. No changes recorded yet &mdash; run the AI assistant to create the first log entry.
+            @if (showApiDocLogs) {
+                No local API-doc changes recorded yet &mdash; let the assistant create or change a local CodBi
+                element. Click &ldquo;API Doc&rdquo; again to return to the form change log.
+            } @else {
+                Click &ldquo;Refresh&rdquo; to reload the log. No changes recorded yet &mdash; run the AI assistant to create the first log entry.
+            }
         </div>
     }
 
@@ -176,12 +214,14 @@
                     [applyAgainTitle]="applyAgainTitle"
                     [applyWithoutChildrenLabel]="applyWithoutChildrenLabel"
                     [applyWithoutChildrenTitle]="applyWithoutChildrenTitle"
-                    [applyAgainBusy]="applyAgainBusy"
+                    [applyAgainBusy]="applyAgainBusy || restoreBusy"
                     [applyAllowed]="isShowingCurrentForm"
+                    [restoreApiDocAllowed]="isSyncUser"
                     (sensitiveChecked)="onSensitiveChecked($event)"
                     (promptOpen)="onPromptOpen($event)"
                     (chatReplyOpen)="onChatReplyOpen($event)"
-                    (applyAgain)="onApplyAgain($event)" />
+                    (applyAgain)="onApplyAgain($event)"
+                    (restoreApiDoc)="onRestoreApiDoc($event)" />
             }
             @if (loadingOlder) {
                 <div class="cb-log-loading-older" title="Loading older entries&#x2026;">

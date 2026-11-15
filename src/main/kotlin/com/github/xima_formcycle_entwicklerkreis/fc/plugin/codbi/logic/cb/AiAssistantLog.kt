@@ -167,28 +167,51 @@ object AiAssistantLog {
         q.setParameter("name", elementName)
         q.setParameter("user", username)
         val existing = (q.resultList as List<CodbiAiLogSensitiveCheck>).firstOrNull()
+        logger.info(
+            "[AiAssistantLog] setSensitiveCheck entry={} element='{}' user='{}' checked={} existingRow={}",
+            entryId,
+            elementName,
+            username,
+            checked,
+            existing?.id)
         if (checked) {
           if (existing == null) {
-            em.persist(
+            val row =
                 CodbiAiLogSensitiveCheck(
-                    logEntryId = entryId, elementName = elementName, username = username))
+                    logEntryId = entryId, elementName = elementName, username = username)
+            em.persist(row)
+            logger.info("[AiAssistantLog] setSensitiveCheck INSERTED (id={} after flush)", row.id)
           }
         } else if (existing != null) {
           em.remove(existing)
+          logger.info("[AiAssistantLog] setSensitiveCheck REMOVED row {}", existing.id)
         }
         em.transaction.commit()
+        logger.info(
+            "[AiAssistantLog] setSensitiveCheck COMMITTED entry={} element='{}' checked={}",
+            entryId,
+            elementName,
+            checked)
         true
       } catch (e: Exception) {
         if (em.transaction.isActive) {
           runCatching { em.transaction.rollback() }
         }
-        logger.warn("[AiAssistantLog] Failed to set sensitive check: {}", e.message)
+        // WITH the throwable, so the actual SQL/JPA cause (missing table, unknown entity,
+        // constraint,
+        // column mismatch, …) appears in the server log instead of only its message.
+        logger.warn(
+            "[AiAssistantLog] Failed to set sensitive check for entry {} / '{}' (user '{}'):",
+            entryId,
+            elementName,
+            username,
+            e)
         false
       } finally {
         em.close()
       }
     } catch (e: Exception) {
-      logger.warn("[AiAssistantLog] Failed to set sensitive check: {}", e.message)
+      logger.warn("[AiAssistantLog] Failed to open an EntityManager for the sensitive check:", e)
       false
     }
   }
@@ -209,7 +232,19 @@ object AiAssistantLog {
               CodbiAiLogSensitiveCheck::class.java)
       q.setParameter("username", username)
       q.setParameter("ids", entryIds)
-      for (c in q.resultList as List<CodbiAiLogSensitiveCheck>) {
+      @Suppress("UNCHECKED_CAST") val rows = q.resultList as List<CodbiAiLogSensitiveCheck>
+      logger.info(
+          "[AiAssistantLog] loadSensitiveChecks user='{}': {} loaded entr(y/ies), {} stored check(s)",
+          username,
+          entryIds.size,
+          rows.size)
+      for (c in rows) {
+        logger.info(
+            "[AiAssistantLog]   check: entry={} element='{}' user='{}' at={}",
+            c.logEntryId,
+            c.elementName,
+            c.username,
+            c.checkedAt)
         val o = JsonObject()
         o.addProperty("entryId", c.logEntryId.toString())
         o.addProperty("elementName", c.elementName)
@@ -218,7 +253,8 @@ object AiAssistantLog {
         checks.add(o)
       }
     } catch (e: Exception) {
-      logger.warn("[AiAssistantLog] Failed to load sensitive checks: {}", e.message)
+      // WITH the throwable: a broken check table must be visible, not silently "no checks yet".
+      logger.warn("[AiAssistantLog] Failed to load sensitive checks:", e)
     }
     return checks
   }
@@ -268,12 +304,19 @@ object AiAssistantLog {
       try {
         val filter = formKey?.trim()?.takeIf { it.isNotEmpty() }
         val hasFilter = filter != null
+        // INSTALLATION-WIDE entries (form_key NULL) belong in every form's log: a local CodBi
+        // element
+        // is catalogue data that affects ALL forms, so filtering strictly by `l.formKey = :formKey`
+        // hid every local-element commit — the reported "after the inference there is nothing in
+        // the
+        // change log".
+        val scope = "l.formKey = :formKey OR l.formKey IS NULL"
         // Total number of matching entries — independent of the page, so the caption can show the
         // true inference count even when only a window of [limit] entries is loaded.
         val totalQuery =
             em.createQuery(
                 if (hasFilter) {
-                  "SELECT COUNT(l) FROM CodbiAiAssistantLog l WHERE l.formKey = :formKey"
+                  "SELECT COUNT(l) FROM CodbiAiAssistantLog l WHERE $scope"
                 } else {
                   "SELECT COUNT(l) FROM CodbiAiAssistantLog l"
                 },
@@ -289,7 +332,7 @@ object AiAssistantLog {
             em.createQuery(
                 if (hasFilter) {
                   "SELECT l.modelId, COALESCE(SUM(l.tokensIn), 0), COALESCE(SUM(l.tokensOut), 0) " +
-                      "FROM CodbiAiAssistantLog l WHERE l.formKey = :formKey GROUP BY l.modelId"
+                      "FROM CodbiAiAssistantLog l WHERE $scope GROUP BY l.modelId"
                 } else {
                   "SELECT l.modelId, COALESCE(SUM(l.tokensIn), 0), COALESCE(SUM(l.tokensOut), 0) " +
                       "FROM CodbiAiAssistantLog l GROUP BY l.modelId"
@@ -309,7 +352,7 @@ object AiAssistantLog {
         }
         val jpql =
             if (hasFilter) {
-              "SELECT l FROM CodbiAiAssistantLog l WHERE l.formKey = :formKey ORDER BY l.id DESC"
+              "SELECT l FROM CodbiAiAssistantLog l WHERE $scope ORDER BY l.id DESC"
             } else {
               "SELECT l FROM CodbiAiAssistantLog l ORDER BY l.id DESC"
             }
@@ -370,11 +413,66 @@ object AiAssistantLog {
                                 parsed.asJsonArray, AI.logSensitiveElements))
                       }
                     }
+                // HARDCODED review requirement: an entry of the intent
+                // "codbi-local-element" DEFINED or CHANGED a local CodBi element — JavaScript that
+                // runs in EVERY session of this installation. Such an entry is therefore ALWAYS
+                // marked "to be checked" (the same red border + verification checkbox as a
+                // configured sensitive element), INDEPENDENT of AI_Log_SensitiveElements and of
+                // whether a name matches that configuration.
+                if (entry.intent == LocalElementDrafts.INTENT) {
+                  val elementName =
+                      entry.formChanges
+                          ?.takeIf { it.isNotBlank() }
+                          ?.let { text ->
+                            runCatching {
+                                  val parsed = JsonParser.parseString(text)
+                                  if (parsed.isJsonObject) {
+                                    parsed.asJsonObject
+                                        .get("localElement")
+                                        ?.takeIf { it.isJsonObject }
+                                        ?.asJsonObject
+                                        ?.get("name")
+                                        ?.takeIf { it.isJsonPrimitive }
+                                        ?.asString
+                                  } else null
+                                }
+                                .getOrNull()
+                          }
+                          ?.takeIf { it.isNotBlank() }
+                  // A (legacy or malformed) entry without a readable name still has to be reviewed.
+                  used.add(elementName ?: "CodBi local element")
+                }
                 used.sorted()
               }
               .getOrNull()
               ?.takeIf { it.isNotEmpty() }
               ?.let { used -> e.add("sensitiveUsed", gson.toJsonTree(used)) }
+          // Hardcoded "must be reviewed" flag: the frontend renders every local-element entry as a
+          // review item even when its name does not occur in AI_Log_SensitiveElements.
+          if (entry.intent == LocalElementDrafts.INTENT) {
+            e.addProperty("mustReview", true)
+            // Whether this entry carries the COMPLETE payload (documentation entry + JavaScript),
+            // so
+            // the client may offer "restore into the API-doc" instead of a new inference. Entries
+            // recorded before that payload existed stay restorable=false.
+            val restorable =
+                entry.formChanges
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { text ->
+                      runCatching {
+                            val parsed = JsonParser.parseString(text)
+                            parsed.isJsonObject &&
+                                parsed.asJsonObject
+                                    .get("localElement")
+                                    ?.takeIf { it.isJsonObject }
+                                    ?.asJsonObject
+                                    ?.get("restore")
+                                    ?.isJsonObject == true
+                          }
+                          .getOrDefault(false)
+                    } ?: false
+            e.addProperty("apiDocRestorable", restorable)
+          }
           // Destructive SQL statements blocked by the backend sanitizer in this entry's workflow
           // changes. The frontend uses this to auto-open the change log (with an error icon) after
           // a
@@ -1172,6 +1270,34 @@ object AiAssistantLog {
    * form the log panel is showing. Returns `null` for an unknown entry or one that changed no
    * element.
    */
+  /**
+   * Loads the stored `formChanges` JSON of one log entry, or `null` when the entry does not exist
+   * or carries no change description.
+   *
+   * Used by the **restore into the local API-doc** action: it writes the RECORDED payload back into
+   * `codbi_local_apidoc` instead of re-running an inference, so nothing is recomputed and no
+   * manager synchronisation is needed.
+   */
+  fun loadFormChanges(emf: EntityManagerFactory?, entryId: Long): JsonObject? {
+    val em = emf?.createEntityManager() ?: return null
+    return try {
+      val row = em.find(CodbiAiAssistantLog::class.java, entryId) ?: return null
+      val raw = row.formChanges?.takeIf { it.isNotBlank() } ?: return null
+      runCatching { JsonParser.parseString(raw) }
+          .getOrNull()
+          ?.takeIf { it.isJsonObject }
+          ?.asJsonObject
+    } catch (e: Exception) {
+      LoggerFactory.getLogger(AiAssistantLog::class.java)
+          .warn("[AiAssistantLog] Could not read the change log entry {}: {}", entryId, e.message)
+      null
+    } finally {
+      try {
+        em.close()
+      } catch (_: Exception) {}
+    }
+  }
+
   fun loadEntryItems(emf: EntityManagerFactory?, entryId: Long, formKey: String?): JsonObject? {
     val em = emf?.createEntityManager() ?: return null
     try {

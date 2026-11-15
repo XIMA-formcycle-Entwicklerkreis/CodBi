@@ -43,6 +43,7 @@
   { "file": "codbi-fallback-apply.md", "key": "codbi.fallback_apply" },
   { "file": "codbi-fallback-workflow.md", "key": "codbi.fallback_workflow" },
   { "file": "codbi-canonical-output-rules.md", "key": "codbi.canonical_output_rules" },
+  { "file": "codbi-local-element-contract.md", "key": "codbi.local_element_contract" },
   { "file": "codbi-codbi-disabled.md", "key": "codbi.codbi_disabled" },
   { "file": "codbi-translation-delta-instruction.md", "key": "codbi.translation_delta_instruction" }
 ]

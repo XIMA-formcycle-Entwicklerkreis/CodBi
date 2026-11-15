@@ -4,6 +4,9 @@ import { Constants } from "codbi-common";
 import { MARK_ELEMENTS_CHANGED_EVENT } from "./CodbiSwitchEditor.js";
 import type { IFunctionalityParameterSpec } from "./FunctionalityConfigEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
+import { attachCssValueTooltip, openCssEditor } from "./CssEditor.js";
+import type { ICssParameterSpec } from "./CssEditor.js";
+import { cssValueSummary } from "./CssValueCodec.js";
 import { attachCsvValueTooltip, openCsvGridEditor } from "./CsvGridEditor.js";
 import { mirrorElementOptions, mirrorFormOptions } from "./MirrorSelect.js";
 import {
@@ -476,7 +479,7 @@ interface IAttributeEntry {
 }
 
 /** The type of a functionality parameter (mirrors `codbi-common`'s `TParameterType`). */
-type TParamType = "string" | "integer" | "number" | "boolean" | "enum" | "csv";
+type TParamType = "string" | "integer" | "number" | "boolean" | "enum" | "csv" | "css" | "selector";
 
 /** The designer-side view of ONE `csv` subpart (a column) of a `type: "csv"` parameter. */
 interface ICsvSubpart {
@@ -516,6 +519,10 @@ interface IParamSpec {
   itemSeparator?: string;
   /** For `type: "csv"`: the separator between subparts (columns) of one element (default `;`). */
   fieldSeparator?: string;
+  /** For `type: "css"`: which CSS flavour applies (`stylesheet`/`declarations`/`classes`/`selector`). */
+  cssKind?: string;
+  /** For `type: "css"`: optional per-parameter snippets offered by the CSS editor. */
+  snippets?: string[];
 }
 
 /** Structural view of one CodBi functionality definition (`window.CodbiPluginData.detFunctionalities`). */
@@ -3019,7 +3026,7 @@ function healRunningPreviews(items: Record<string, IMarkerItemLike>): void {
  * preview chrome) but NEVER its own children, and grows the iframe to the element's full frontend
  * height so there is no scrollbar. Returns `false` while the element is not (yet) present.
  */
-function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boolean {
+export function clipPreviewToElement(frame: HTMLIFrameElement, elementRef: string): boolean {
   try {
     const cdoc = frame.contentDocument;
     if (!cdoc || !cdoc.body) {
@@ -3350,7 +3357,7 @@ function designerAppBaseUrl(): string {
  * The project id comes from `XFC_METADATA.currentProject.id`; the `xfd2id` (the form-design / draft id)
  * is read from the designer page's URL (walking up the frame chain, since the designer may be framed).
  */
-function designerPreviewUrl(): string {
+export function designerPreviewUrl(): string {
   const projectId = currentProjectId();
   if (!projectId) {
     console.warn("[CodBi] Preview: no project id — cannot build designer preview URL");
@@ -4136,6 +4143,7 @@ function buildParamTable(
   popup: HTMLElement,
   variant: "func" | "css" | "holistic" = "func",
   badge?: HTMLDivElement,
+  elementId = "",
 ): HTMLTableElement {
   // Bulletproof opaque backing for the parameter table. A Mirror widget renders ANOTHER form's theme
   // CSS into the same canvas; that theme can override the popup/table stylesheet backgrounds and
@@ -4321,10 +4329,10 @@ function buildParamTable(
           setFuncAttribute(resolve(), attrName, applied);
         });
       };
-    } else if (type === "csv") {
-      // A `csv` parameter holds a table of elements (one per row) with typed subparts. A compact
-      // "⧉ Edit" button opens the grid editor popup (see openCsvGridEditor) because such a nested
-      // table does not fit inline in the badge row.
+    } else if (type === "csv" || type === "css" || type === "selector") {
+      // A `csv` parameter holds a table of elements (one per row) with typed subparts; a `css`
+      // parameter holds a stylesheet / declaration list / class list / selector. Neither fits inline
+      // in the badge row, so a compact "⧉ Edit" button opens the matching popup editor.
       const csv = doc.createElement("button");
       csv.type = "button";
       csv.className = "codbi-func-input";
@@ -4349,7 +4357,11 @@ function buildParamTable(
       // attribute (not the row's snapshot) and the tooltip rebuilds itself on every mouseenter, so it
       // also reflects a value applied through the grid editor. A static `title` stays as the native
       // fallback.
+      const isCssParam = type === "css" || type === "selector";
       const csvSummary = (): string => {
+        if (isCssParam) {
+          return cssValueSummary(attributeValue(attributeEntries(resolve()), attrName), spec);
+        }
         const itemSep = spec?.itemSeparator ?? ",";
         const itemCount = String(attributeValue(attributeEntries(resolve()), attrName))
           .split(itemSep)
@@ -4361,25 +4373,50 @@ function buildParamTable(
         }
         return subCount > 0 ? `${itemCount} ${itemName}s · ${subCount} fields` : `${itemCount} ${itemName}s`;
       };
-      csv.title = `Edit ${attrName} (tabular CSV editor)`;
-      attachCsvValueTooltip(
-        csv,
-        () => attributeValue(attributeEntries(resolve()), attrName),
-        spec as IFunctionalityParameterSpec | undefined,
-        csvSummary(),
-      );
+      csv.title = isCssParam ? `Edit ${attrName} (CSS editor)` : `Edit ${attrName} (tabular CSV editor)`;
+      if (isCssParam) {
+        attachCssValueTooltip(csv, () => attributeValue(attributeEntries(resolve()), attrName), csvSummary());
+      } else {
+        attachCsvValueTooltip(
+          csv,
+          () => attributeValue(attributeEntries(resolve()), attrName),
+          spec as IFunctionalityParameterSpec | undefined,
+          csvSummary(),
+        );
+      }
       csv.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        const onApply = (applied: string): void => {
+          setFuncAttribute(resolve(), attrName, applied);
+        };
+        if (isCssParam) {
+          openCssEditor({
+            document: window.document,
+            anchor,
+            parameterName: attrName,
+            value,
+            spec: spec as unknown as ICssParameterSpec,
+            // EXACTLY the preview the element preview switch loads: the platform's rendered form,
+            // clipped to the form element this badge belongs to. The CSS editor therefore always
+            // shows the element as it appears in the frontend (an unfolded panel WITH its content) —
+            // never a designer-side clone and never a part of it.
+            previewSrc: designerPreviewUrl(),
+            previewElementId: elementId,
+            previewClip: clipPreviewToElement,
+            // Only used when the platform preview page cannot be derived.
+            previewRoot: anchor,
+            onApply,
+          });
+          return;
+        }
         const csvSpec = (spec ?? {}) as IFunctionalityParameterSpec;
         openCsvGridEditor({
           document: window.document,
           anchor,
           value,
           spec: csvSpec,
-          onApply: (applied) => {
-            setFuncAttribute(resolve(), attrName, applied);
-          },
+          onApply,
         });
       });
       control = csv;
@@ -4830,6 +4867,7 @@ function buildFuncBadgeInner(
   resolve: () => IMarkerItemLike,
   anchor: HTMLElement,
   badge?: HTMLDivElement,
+  elementId = "",
 ): DocumentFragment {
   const fragment = doc.createDocumentFragment();
   const icon = doc.createElement("span");
@@ -4917,7 +4955,7 @@ function buildFuncBadgeInner(
       if (openFuncSubBadge === func.name) {
         setSubBadgeOpen(item, true);
       }
-      params.appendChild(buildParamTable(doc, [section], resolve, anchor, item, params, "func", badge));
+      params.appendChild(buildParamTable(doc, [section], resolve, anchor, item, params, "func", badge, elementId));
       list.appendChild(item);
     }
     // The applied CSS standard-configuration classes, shown as BLUE sub-badges. Each reveals the FULL
@@ -4974,7 +5012,7 @@ function buildFuncBadgeInner(
       if (openFuncSubBadge === cssClass) {
         setSubBadgeOpen(item, true);
       }
-      params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "css", badge));
+      params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "css", badge, elementId));
       list.appendChild(item);
     }
     // The active HOLISTIC standard-configurations that hit this element, shown as GREEN sub-badges.
@@ -5013,7 +5051,7 @@ function buildFuncBadgeInner(
       if (openFuncSubBadge === config.id) {
         setSubBadgeOpen(item, true);
       }
-      params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "holistic", badge));
+      params.appendChild(buildParamTable(doc, sections, resolve, anchor, item, params, "holistic", badge, elementId));
       list.appendChild(item);
     }
   }
@@ -5123,7 +5161,7 @@ function ensureFuncBadge(item: IMarkerItemLike, anchor: HTMLElement): void {
   );
   // Resolve the item freshly on every edit (the badge may outlive the Item instance it was built for).
   const resolve = (): IMarkerItemLike => resolveFuncItem(id, anchor, item);
-  badge.replaceChildren(buildFuncBadgeInner(doc, funcs, cssClasses, holistic, resolve, anchor, badge));
+  badge.replaceChildren(buildFuncBadgeInner(doc, funcs, cssClasses, holistic, resolve, anchor, badge, id));
   // If a parameter was just added via the "+ Add" dropdown, move focus into its new value input so
   // the popup stays open (and the user can type) instead of collapsing back to icon size.
   restorePendingParamFocus(badge);

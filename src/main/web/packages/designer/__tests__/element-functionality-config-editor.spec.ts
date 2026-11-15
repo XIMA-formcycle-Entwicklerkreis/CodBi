@@ -82,6 +82,136 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
     ) as HTMLElement;
   }
 
+  it("lists the parameters a standard configuration's functionality provides as overridable values", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {
+        "Html.Panel": {
+          Parameter: { CSSHeaderUnfolded: "The unfolded header style." },
+        },
+      },
+      detStandards: {
+        "UI.Panels": {
+          classes: {
+            CodBi_HTML_Panel_Standard: {
+              description: "Panel.",
+              formelementtypes: ["XFieldSet"],
+              // The literal values the configuration's `loadConfig` applies (published by the generator).
+              params: { CSSHeaderUnfolded: "background:#eee;" },
+            },
+          },
+          funcs: { CodBi_HTML_Panel_Standard: "Html.Panel" },
+        },
+      },
+    };
+
+    // NOTHING is on the element yet: the row must be pre-filled from the configuration itself.
+    const properties: Record<string, unknown> = {
+      cssclasses: ["CodBi_HTML_Panel_Standard"],
+      attributes: [],
+    };
+    const rootEl = buildEditor("XFieldSet", properties);
+
+    // The functionality shows up as its own group, so its name is displayed above the parameter.
+    const groups = Array.from(rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__param-group"));
+    expect(groups.some((group) => (group.textContent ?? "").includes("Html.Panel"))).toBe(true);
+
+    // The row is pre-filled with the value the configuration applied.
+    const row = Array.from(rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__param-row")).find(
+      (candidate) => candidate.querySelector(".codbi-func-config__param-label")?.textContent === "CSSHeaderUnfolded",
+    );
+    expect(row).toBeDefined();
+    const input = row?.querySelector<HTMLInputElement>(".codbi-func-config__value");
+    expect(input?.value).toBe("background:#eee;");
+
+    // A change persists ONLY that parameter — never `data-cb-func` (the class carries the functionality).
+    if (input) {
+      input.value = "background:#000;";
+      input.dispatchEvent(new Event("change"));
+    }
+    const attributes = properties.attributes as Array<{ text: string; value: string }>;
+    expect(attributes.find((entry) => entry.text.toLowerCase() === "data-cb-cssheaderunfolded")?.value).toBe(
+      "background:#000;",
+    );
+    expect(attributes.some((entry) => entry.text.toLowerCase() === "data-cb-func")).toBe(false);
+
+    // Writing the configuration's OWN value back drops the override again.
+    if (input) {
+      input.value = "background:#eee;";
+      input.dispatchEvent(new Event("change"));
+    }
+    expect(
+      (properties.attributes as Array<{ text: string; value: string }>).some(
+        (entry) => entry.text.toLowerCase() === "data-cb-cssheaderunfolded",
+      ),
+    ).toBe(false);
+  });
+
+  it("shows a boolean parameter as a CHECKBOX even when the configuration writes it UPPERCASE", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {
+        // The structured metadata channel says `boolean` …
+        "Html.Panel": { parameters: { GenerateHeader: { type: "boolean", default: "false" } } },
+      },
+      detStandards: {
+        "UI.Panels": {
+          classes: {
+            CodBi_HTML_Panel_Standard: {
+              description: "Panel.",
+              formelementtypes: ["XFieldSet"],
+              // … while the configuration's own value is `TRUE` (as `UI.Panels` ships it).
+              params: { GenerateHeader: "TRUE" },
+            },
+          },
+          funcs: { CodBi_HTML_Panel_Standard: "Html.Panel" },
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XFieldSet", { cssclasses: ["CodBi_HTML_Panel_Standard"], attributes: [] });
+
+    const row = Array.from(rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__param-row")).find(
+      (candidate) => candidate.querySelector(".codbi-func-config__param-label")?.textContent === "GenerateHeader",
+    );
+    expect(row).toBeDefined();
+
+    // A checkbox (checked), not a text input showing the literal "TRUE".
+    const checkbox = row?.querySelector<HTMLInputElement>(".codbi-func-config__bool");
+    expect(checkbox).not.toBeNull();
+    expect(checkbox?.checked).toBe(true);
+    expect(row?.querySelector<HTMLInputElement>("input.codbi-func-config__value")).toBeNull();
+  });
+
+  it("renders an ENUM parameter as the CodBi-styled select, not the browser's stock dropdown", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {
+        "Mein.Rechner": {
+          parameters: { layout: { type: "enum", options: ["normal", "scientific"], default: "normal" } },
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XFieldSet", {
+      attributes: [{ text: "data-cb-func", value: "Mein.Rechner" }],
+    });
+
+    const row = Array.from(rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__param-row")).find(
+      (candidate) => candidate.querySelector(".codbi-func-config__param-label")?.textContent === "layout",
+    );
+    expect(row).toBeDefined();
+
+    // `codbi-func-config__select` is the class the darkorange dropdown look hangs on (white surface,
+    // darkorange border + chevron); `codbi-func-config__value` keeps the shared focus transitions.
+    const select = row?.querySelector<HTMLSelectElement>("select.codbi-func-config__select");
+    expect(select).not.toBeNull();
+    expect(select?.classList.contains("codbi-func-config__value")).toBe(true);
+    expect(Array.from(select?.options ?? []).map((option) => option.value)).toEqual(["", "normal", "scientific"]);
+    // The blank entry stays available, so the parameter can be cleared ("not set").
+    expect(select?.value).toBe("");
+  });
+
   it("narrows BOTH functionality listings to the applied functionalities (only checked)", () => {
     TestState.language = "en";
     (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
@@ -314,7 +444,10 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
     expect(hint?.style.display).toBe("none");
 
     // And although the saved form-property model still reports disabled, the live checkbox wins.
-    expect(TestState.designerInstance?.getFormPropertyValueForCurrentLang).toBeUndefined();
+    expect(
+      (TestState.designerInstance as unknown as { getFormPropertyValueForCurrentLang?: unknown } | undefined)
+        ?.getFormPropertyValueForCurrentLang,
+    ).toBeUndefined();
 
     document.body.removeChild(checkbox);
   });

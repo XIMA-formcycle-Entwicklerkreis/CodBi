@@ -89,6 +89,13 @@ export interface LogNode {
   blockedSql?: boolean;
   /** The statement/DDL reasons that triggered the block (e.g. ["DROP", "TRUNCATE"]). */
   blockedSqlReasons?: string[];
+  /**
+   * For a LOCAL API-DOC entry (a CodBi element committed by the assistant): the entry carries the
+   * complete payload, so it can be written back into `codbi_local_apidoc` — the API-doc counterpart of
+   * "apply this entry again". Rendered as an extra button, gated by [restoreApiDocAllowed]
+   * (`APIDoc_UsersAllowedToSYNC`), because it changes installation-wide data.
+   */
+  restoreApiDoc?: boolean;
   /** For a `reply` node: the plain Markdown text of the AI's chat answer. */
   chatReplyText?: string;
   /** For a `reply` node: structured statistics (e.g. the Matomo summary) rendered as charts. */
@@ -117,13 +124,15 @@ export interface LogNode {
         [class.cb-log-node--blocked]="node.blockedSql === true"
         (toggle)="onToggle($event)">
       <summary class="cb-log-node__summary">
-        @if (node.sensitive === true) {
+        @if (node.sensitive === true || node.checked === true) {
           <input
               type="checkbox"
               class="cb-log-node__sensitive-check"
               [checked]="node.checked === true"
               (change)="onSensitiveCheckedChange($event)"
-              title="Mark as checked — remove the sensitive marking" />
+              [attr.title]="node.checked === true
+                  ? 'Checked — untick to mark this element as NOT checked again'
+                  : 'Mark as checked — remove the sensitive marking (stored per user)'" />
         }
         <span
             class="cb-log-node__icon cb-log-node__icon--{{ node.kind }}"
@@ -240,6 +249,17 @@ export interface LogNode {
             <i class="pi pi-box" aria-hidden="true"></i>
           </button>
         }
+        @if (node.restoreApiDoc === true && restoreApiDocAllowed) {
+          <button
+              type="button"
+              class="cb-log-node__restore-api-doc"
+              [attr.title]="restoreApiDocTitle"
+              [attr.aria-label]="restoreApiDocLabel"
+              [disabled]="applyAgainBusy"
+              (click)="requestRestoreApiDoc($event)">
+            <i class="pi pi-history" aria-hidden="true"></i>
+          </button>
+        }
         @if (node.kind === 'reply' && (node.chatReplyText || node.chatStats)) {
           <button
               type="button"
@@ -304,6 +324,10 @@ export interface LogNode {
                 [applyWithoutChildrenTitle]="applyWithoutChildrenTitle"
                 [applyAgainBusy]="applyAgainBusy"
                 [applyAllowed]="applyAllowed"
+                [restoreApiDocAllowed]="restoreApiDocAllowed"
+                [restoreApiDocLabel]="restoreApiDocLabel"
+                [restoreApiDocTitle]="restoreApiDocTitle"
+                (restoreApiDoc)="restoreApiDoc.emit($event)"
                 (sensitiveChecked)="sensitiveChecked.emit($event)"
                 (promptOpen)="promptOpen.emit($event)"
                 (chatReplyOpen)="chatReplyOpen.emit($event)"
@@ -354,6 +378,18 @@ export class LogTreeNode {
   /** Localized tooltip of the extra "apply this element only (without children)" button. */
   @Input() applyWithoutChildrenTitle =
     "Apply ONLY this element to the CURRENT form — without the child elements that were built inside it";
+  /** Localized label of the API-doc restore button ("restore this element into the API-doc"). */
+  @Input() restoreApiDocLabel = "Restore into the API-doc";
+  /**
+   * Tooltip of the API-doc restore button: it writes the RECORDED definition back into the local
+   * API-doc storage — nothing is re-generated and no synchronisation is needed.
+   */
+  @Input() restoreApiDocTitle =
+    "Restores this element into the local API-doc storage (documentation entry + JavaScript) exactly as it was recorded — nothing is re-generated and synchronising is NOT necessary.";
+  /** Whether restoring into the API-doc is offered (only users in APIDoc_UsersAllowedToSYNC may). */
+  @Input() restoreApiDocAllowed = false;
+  /** Emitted when the user asks to restore this entry's element into the local API-doc. */
+  @Output() restoreApiDoc = new EventEmitter<LogNode>();
   /** True while a run is in flight — disables the button so a second run cannot be started. */
   @Input() applyAgainBusy = false;
   /** Whether re-applying is offered at all. The change log sets this to `false` while it shows a
@@ -395,6 +431,14 @@ export class LogTreeNode {
    */
   onSensitiveCheckedChange(event: Event): void {
     const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
+    // Diagnostic: proves the checkbox event reaches the component and WHICH review names travel with
+    // it. An empty `sensitiveNames` here is exactly the case that could never be stored.
+    console.info("[[ CodBi ] sensitive checkbox change:", {
+      id: this.node.id,
+      entryId: this.node.entryId,
+      checked,
+      sensitiveNames: this.node.sensitiveNames,
+    });
     this.node.checked = checked;
     this.node.sensitive = !checked;
     if (checked) {
@@ -543,6 +587,12 @@ export class LogTreeNode {
     if (node.kind !== "inference" || !node.raw) {
       return false;
     }
+    // A LOCAL API-DOC entry is NOT a form/workflow change: re-applying it through the form pass can only
+    // fail (the reported "clicking restore shows an error"). Such an entry has its own restore button
+    // that writes it into the local API-doc storage instead — see [requestRestoreApiDoc].
+    if (String(node.raw["intent"] ?? "") === "codbi-local-element") {
+      return false;
+    }
     return String(node.raw["intent"] ?? "") !== "chat";
   }
 
@@ -557,8 +607,22 @@ export class LogTreeNode {
     this.applyAgain.emit(this.node);
   }
 
+  /**
+   * Requests writing this log entry's recorded element back into the local API-doc. The write itself is
+   * performed by the log component (a plain server action — no inference, no synchronisation).
+   */
+  requestRestoreApiDoc(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.applyAgainBusy || this.node.restoreApiDoc !== true) {
+      return;
+    }
+    this.restoreApiDoc.emit(this.node);
+  }
+
   /** True when this row is a CONTAINER that may ALSO be applied WITHOUT its children — the extra
    *  button next to the normal re-apply button (see [requestApplyWithoutChildren]). */
+
   canApplyOnlyElement(node: LogNode): boolean {
     return this.applyAllowed && node.applyContainer === true && node.applyRaw != null && !!node.applyItemName;
   }

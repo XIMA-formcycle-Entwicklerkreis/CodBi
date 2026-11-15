@@ -107,7 +107,7 @@ interface Window {
          * CSV grid editor popup for `type: "csv"`). */
         parameters?: {
           [name: string]: {
-            type?: "string" | "integer" | "number" | "boolean" | "enum" | "csv";
+            type?: "string" | "integer" | "number" | "boolean" | "enum" | "csv" | "css" | "selector";
             options?: string[];
             default?: string;
             description?: string;
@@ -126,6 +126,10 @@ interface Window {
             itemSeparator?: string;
             /** For `type: "csv"`: the separator between subparts (columns) of one element. */
             fieldSeparator?: string;
+            /** For `type: "css"`: which CSS flavour applies (stylesheet/declarations/classes/selector). */
+            cssKind?: "stylesheet" | "declarations" | "classes" | "selector";
+            /** For `type: "css"`: optional per-parameter snippets offered by the CSS editor. */
+            snippets?: string[];
           };
         };
         /**

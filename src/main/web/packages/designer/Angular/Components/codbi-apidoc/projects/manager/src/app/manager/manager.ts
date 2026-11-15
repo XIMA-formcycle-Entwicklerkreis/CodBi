@@ -2105,7 +2105,82 @@ export class Manager implements AfterViewInit {
     };
   }
   /**
-   *  Loads {@link Manager.items }, {@link Manager.itemsElementplaceholder} & {@link Manager.itemsStandard } up to
+   * Re-attaches every synced entry's `Code` from the designer's LIVE registry
+   * (`window.CodbiPluginData.det*`), which `LocalDocInterface` fills from the API-doc's `Code` action.
+   *
+   * The runtime loads an element's JavaScript from the `"<detail>_<name>"` row, but the manager's code
+   * editor and the Export read it from the DOCUMENTATION ENTRY. [`Manager.convertNodes()`](src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/manager/manager.ts:2268)
+   * does not know that field, so every synchronisation used to DROP the code from the stored
+   * documentation — after the next designer reload the code editor of a locally committed element was
+   * empty again (the reported "no code supplied for the generated functionality").
+   *
+   * @param localNodeData The freshly converted entries that are about to be stored.
+   */
+  /**
+   * Whether a path queued in {@link Manager.removedElements } still EXISTS in the documentation that is
+   * about to be stored.
+   *
+   * The queue is only flushed on a synchronisation, so it can go stale: a local element the Form
+   * Assistant commits after the user deleted it (or one that is deleted and re-created) leaves an entry
+   * behind whose code row no longer must be deleted — flushing it blindly removed the FRESHLY stored
+   * code of the re-created element (the reported "the change was applied, then the element was gone").
+   *
+   * @param localNodeData The converted documentation about to be stored.
+   * @param toDelete The queued path.
+   */
+  private isStillDocumented(
+    localNodeData: { detFunctionalities: object; detElementplaceholder: object; detStandards: object },
+    toDelete: { type: string; path: string },
+  ): boolean {
+    const registry =
+      toDelete.type === "Functionality"
+        ? localNodeData.detFunctionalities
+        : toDelete.type === "Elementplaceholder"
+          ? localNodeData.detElementplaceholder
+          : localNodeData.detStandards;
+    const wanted = String(toDelete.path ?? "")
+      .trim()
+      .toLowerCase();
+
+    if (wanted === "") {
+      return false;
+    }
+
+    return Object.keys(registry as Record<string, unknown>).some((key) => key.trim().toLowerCase() === wanted);
+  }
+  private preserveCodeInSync(localNodeData: {
+    detFunctionalities: object;
+    detElementplaceholder: object;
+    detStandards: object;
+  }): void {
+    const live = window.CodbiPluginData as unknown as
+      | Record<string, Record<string, { Code?: unknown }> | undefined>
+      | undefined;
+
+    const merge = (target: object, registryKey: string): void => {
+      const registry = live?.[registryKey];
+
+      if (registry === undefined) {
+        return;
+      }
+
+      const entries = target as Record<string, Record<string, unknown>>;
+
+      for (const key of Object.keys(entries)) {
+        const code = registry[key]?.["Code"];
+
+        if (typeof code === "string" && code !== "") {
+          entries[key]["Code"] = code;
+        }
+      }
+    };
+
+    merge(localNodeData.detFunctionalities, "detFunctionalities");
+    merge(localNodeData.detElementplaceholder, "detElementplaceholder");
+    merge(localNodeData.detStandards, "detStandards");
+  }
+  /**
+   *  Loads {@link Manager.items }, {@link Manager.itemsElementplaceholder } & {@link Manager.itemsStandard } up to
    *  the CodBi-Plugin's storage using its middleware prior to setting {@link Manager.synchronized } and
    *  {@link Manager.synchronizing } appropriately. */
   protected async enSync() {
@@ -2115,6 +2190,10 @@ export class Manager implements AfterViewInit {
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
+
+    // The stored documentation must keep the JavaScript of every element, otherwise the manager's code
+    // editor (and Export) lose it on the next sync — see `preserveCodeInSync`.
+    this.preserveCodeInSync(localNodeData);
 
     const fileListings = this.enrichData(window[this.docPath], localNodeData);
     // #endregion Generate data to sync.
@@ -2195,6 +2274,13 @@ export class Manager implements AfterViewInit {
     // #endregion Code Renaming
     // #region Code Deletion
     for (const toDelete of this.removedElements) {
+      // A path that EXISTS in the documentation about to be stored must NOT be deleted: a local element
+      // the Form Assistant committed after the user deleted it (or one that was deleted and re-created)
+      // leaves a STALE entry in the queue, and flushing it blindly removed the freshly stored code row —
+      // the reported "the change was applied but the element is unchanged / gone" right after a commit.
+      if (this.isStillDocumented(localNodeData, toDelete)) {
+        continue;
+      }
       if (!this.renamedElements.some((candidate) => candidate.oldPath === toDelete.path)) {
         await getJQuery().ajax({
           url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
@@ -2531,18 +2617,92 @@ export class Manager implements AfterViewInit {
     this.itemsElementplaceholder = this.toTreeNodes(this.parsedAPIDoc.detElementplaceholder);
     this.itemsStandard = this.toTreeNodes(this.parsedAPIDoc.detStandards);
     // #endregion Set items
-    // #region Merge with the CodBi's internal API Doc
-    for (const key in this.parsedAPIDoc.detFunctionalities) {
-      window.CodbiPluginData.detFunctionalities[key].local = true;
-    }
-    for (const key in this.parsedAPIDoc.detElementplaceholder) {
-      window.CodbiPluginData.detElementplaceholder[key].local = true;
-    }
+    this.mergeDocIntoLiveRegistry();
+  }
+  /**
+   * Merges the stored documentation into the designer's LIVE registry
+   * (`window.CodbiPluginData.det*`) and flags the entries as `local`.
+   *
+   * Entries the live registry does not know yet — typically a local element just committed by the Form
+   * Assistant — are ADDED, so the element config panel and the on-canvas markers can use them without a
+   * designer reload. The stored doc does not carry the build-time metadata, so `parameters`,
+   * `supportedFormelementtypes` and `Summary` of an already known entry are kept (see
+   * `applyTypesToLiveRegistry` and `LocalDocInterface`).
+   */
+  private mergeDocIntoLiveRegistry(): void {
+    const doc = this.parsedAPIDoc;
 
-    for (const key in this.parsedAPIDoc.detStandards) {
-      window.CodbiPluginData.detStandards[key].local = true;
+    if (doc === undefined || window.CodbiPluginData === undefined) {
+      return;
     }
-    // #endregion Merge with the CodBi's internal API Doc
+    type Registry = Record<string, Record<string, unknown>>;
+    const merge = (stored: Registry | undefined, registry: Registry | undefined): void => {
+      if (!stored || !registry) {
+        return;
+      }
+      for (const key of Object.keys(stored)) {
+        const entry = stored[key];
+        const live = registry[key];
+
+        if (live === undefined) {
+          registry[key] = { ...entry, local: true };
+          continue;
+        }
+        registry[key] = {
+          ...live,
+          ...entry,
+          parameters: entry["parameters"] ?? live["parameters"],
+          supportedFormelementtypes: entry["supportedFormelementtypes"] ?? live["supportedFormelementtypes"],
+          Summary: entry["Summary"] ?? live["Summary"],
+          local: true,
+        };
+      }
+    };
+    const data = window.CodbiPluginData as unknown as {
+      detFunctionalities?: Registry;
+      detElementplaceholder?: Registry;
+      detStandards?: Registry;
+    };
+    const stored = doc as unknown as {
+      detFunctionalities?: Registry;
+      detElementplaceholder?: Registry;
+      detStandards?: Registry;
+    };
+
+    merge(stored.detFunctionalities, data.detFunctionalities);
+    merge(stored.detElementplaceholder, data.detElementplaceholder);
+    merge(stored.detStandards, data.detStandards);
+  }
+  /**
+   * Reloads the local API-doc from the plugin and rebuilds every tree.
+   *
+   * The manager is created ONCE per designer page from a snapshot (`apidoc` input), so a change made
+   * outside the manager — e.g. a local element committed by the Form Assistant — stayed invisible until
+   * the designer was reloaded. This re-fetches the stored documentation and re-applies it, which also
+   * feeds the newly stored entries into the live registry (so the config panel and the markers see them
+   * immediately).
+   */
+  public reloadLocalApiDoc(): void {
+    getJQuery().ajax({
+      url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+      type: "GET",
+      headers: {
+        "X-Action": "Retrieve",
+      },
+      success: (response: unknown) => {
+        try {
+          this.apidoc = JSON.stringify(response);
+          if (this.items && this.items.length > 0) {
+            this.currentlySelectedTreeNode = this.items[0];
+          }
+          // The panel lists and the marker badges read the SAME registry and must reflect the change.
+          window.CodbiPluginData?.refreshElementConfig?.();
+          this.cdr.markForCheck();
+        } catch (x) {
+          console.warn("[CodBi] Could not reload the local API-doc", x);
+        }
+      },
+    });
   }
   /** Stores the parsed {@link Manager.apidoc }. */
   protected parsedAPIDoc: ImportedApiDoc | undefined;
@@ -2785,6 +2945,8 @@ export class Manager implements AfterViewInit {
   }
   /** Initiates this {@link Manager } further by setting the {@link Manager.translocoService }'s active language
    *  to {@link Manager.language }. */
+  /** Rebuilds the trees when another component changed the stored documentation. */
+  private readonly onLocalDocChanged = (): void => this.reloadLocalApiDoc();
   ngOnInit() {
     this.translocoService.setActiveLang(this.language);
   }
@@ -2802,6 +2964,9 @@ export class Manager implements AfterViewInit {
     // Fetch the installed FORMCYCLE widget classes (core + plugins) once, so the functionality's
     // "Form element types" listing can offer every type (see `fetchInstalledFormElementTypes`).
     this.fetchInstalledFormElementTypes();
+    // Something OUTSIDE the manager (the Form Assistant) committed a local element: rebuild the trees
+    // so the new element is visible immediately instead of only after a designer reload.
+    window.addEventListener("codbi-local-doc-changed", this.onLocalDocChanged);
     getJQuery().ajax({
       url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
       type: "GET",
@@ -3521,12 +3686,19 @@ export class Manager implements AfterViewInit {
     return result;
   }
   /**
-   * Pushes the functionality types of the just-synced node data into the designer's LIVE
+   * Pushes the just-synced node data into the designer's LIVE
    * `window.CodbiPluginData.detFunctionalities`, so the element config panel already reflects the sync
-   * on its next render. Only a NON-EMPTY selection is pushed — an entry without any type is left
+   * on its next render. Only a NON-EMPTY type selection is pushed — an entry without any type is left
    * untouched so a built-in functionality's own applicability is never widened by an unrelated local
    * entry. The authoritative merge (including "cleared" selections) happens when the designer reloads
    * the stored doc (see `LocalDocInterface`).
+   *
+   * It also **REMOVES** the entries the sync no longer contains: a plugin-local element that was
+   * deleted in the manager must leave the live registry as well, otherwise it disappears from the
+   * config panel (whose listing is built from the synced data) but keeps being rendered by the
+   * on-canvas CodBi markers, which resolve their sub-badges from `detFunctionalities` — the reported
+   * "removed from the panel, still on the element" behaviour. Only entries flagged `local` are ever
+   * removed, so a built-in functionality can never be pruned by a sync.
    *
    * @param detFunctionalities The `detFunctionalities` section of the just-synced payload. */
   private applyTypesToLiveRegistry(detFunctionalities: object): void {
@@ -3537,6 +3709,25 @@ export class Manager implements AfterViewInit {
     const section = detFunctionalities as {
       [key: string]: { supportedFormelementtypes?: string | string[] } | undefined;
     };
+    const live = registry as unknown as {
+      [key: string]: { supportedFormelementtypes?: string | string[]; local?: boolean } | undefined;
+    };
+    // What the just-synced documentation still contains (compared case-insensitively, because the
+    // registry keys are lowercased while the manager keeps the original casing).
+    const synced = new Set<string>();
+    for (const key in section) {
+      synced.add(key.toLowerCase());
+    }
+    for (const key of Object.keys(live)) {
+      const entry = live[key];
+      if (entry?.local !== true) {
+        continue;
+      }
+      if (synced.has(key.toLowerCase())) {
+        continue;
+      }
+      delete live[key];
+    }
     for (const key in section) {
       const entry = registry[key];
       if (entry === undefined) {

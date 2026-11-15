@@ -726,7 +726,7 @@ export class AiAssistant implements OnInit, OnDestroy {
   private phase2Context: {
     prompt: string;
     modelId: string;
-    intent: "form" | "workflow" | "both";
+    intent: "form" | "workflow" | "both" | "codbi-local-element";
     imageParams: Array<{ name: string; dataUrl: string }>;
     chatOptions?: ChatRunOptions;
   } | null = null;
@@ -4188,6 +4188,10 @@ export class AiAssistant implements OnInit, OnDestroy {
    * that produced the broken form tab (see [installDesignerTabRepairWatchdog]).
    */
   private revalidateWorkflowAndReload(): void {
+    // Every workflow-driven reload goes through here, so the darkened screen with the CodBi banner and
+    // the localized loading message is shown for ALL of them (workflow only, workflow + form, and the
+    // re-apply paths) — the same overlay used after a local-element commit.
+    AiAssistant.showReloadOverlay();
     this.reloadDesigner();
   }
 
@@ -4470,7 +4474,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           return;
         }
 
-        const intent = p1["intent"] as "form" | "workflow" | "both";
+        const intent = p1["intent"] as "form" | "workflow" | "both" | "codbi-local-element";
 
         // Count the intent-classification inference in the token counter as well.
         const classTokens = typeof p1["tokens"] === "number" ? p1["tokens"] : 0;
@@ -4522,10 +4526,819 @@ export class AiAssistant implements OnInit, OnDestroy {
       .join(" \u00B7 ");
   }
 
+  /**
+   * State of the local-element REVIEW dialog (`null` while it is closed). It shows what the drafting
+   * pass produced — kind, name, wiring, parameters and the prepared code — so the user decides BEFORE
+   * anything is written into the installation-wide local API-Doc storage.
+   */
+  localElementReview: {
+    draft: Record<string, unknown>;
+    kind: string;
+    name: string;
+    isUpdate: boolean;
+    code: string;
+    parameterText: string;
+    usageText: string;
+    infoText: string;
+    modelId: string;
+    prompt: string;
+    tokensIn: number;
+    tokensOut: number;
+    cost: number;
+    currency: string;
+  } | null = null;
+
+  /** True when the user confirmed replacing an EXISTING definition (only relevant for `isUpdate`). */
+  localElementOverwrite = false;
+
+  /** True while the deterministic commit POST is in flight. */
+  localElementCommitBusy = false;
+
+  /** Result of the commit (success message or a refusal), shown in the SAME dialog. */
+  localElementResultText: string | null = null;
+
+  /**
+   * Highlighted + foldable view of the drafted JavaScript shown in the review dialog. One entry per
+   * source line, so the template can render a gutter (line numbers + fold toggles) and hide the
+   * lines of a collapsed block.
+   */
+  localElementCodeLines: Array<{
+    no: number;
+    html: string;
+    foldable: boolean;
+    collapsed: boolean;
+    hidden: boolean;
+  }> = [];
+
+  /** Distinct risky constructs found in the reviewed code (`eval`, `Function`, `alert`, …). */
+  localElementCodeWarnings: string[] = [];
+
+  /** Total number of source lines of the reviewed code (shown in the panel header). */
+  localElementCodeLineCount = 0;
+
+  /** True for two seconds after the code was copied (button feedback). */
+  localElementCodeCopied = false;
+
+  /** Soft-wrap the code panel (default ON: a minified one-liner would otherwise need a scrollbar). */
+  localElementCodeWrapped = true;
+
+  /** True when the code was reformatted for DISPLAY (it arrived minified on a single line). */
+  localElementCodeReformatted = false;
+
+  /** Raw code behind [localElementCodeLines] — rebuilt on every fold toggle, copied verbatim. */
+  private localElementCodeRaw = "";
+
+  /** The code as DISPLAYED (possibly reformatted/indented) — never copied, never committed. */
+  private localElementCodeDisplay = "";
+
+  /** Highlighted HTML per source line (kept so folding never re-tokenises the code). */
+  private localElementCodeHtml: string[] = [];
+
+  /** Fold range per opening line: `start line index → last line index of the block`. */
+  private localElementCodeFoldEnd = new Map<number, number>();
+
+  /** Line indexes whose block is currently collapsed. */
+  private localElementCollapsedFolds = new Set<number>();
+
+  /**
+   * Review + commit of an AI-drafted **local CodBi element** (functionality / element placeholder /
+   * standard configuration).
+   *
+   * The draft was produced by the backend (`status: "codbi_element_draft"`); committing it is a
+   * DETERMINISTIC, inference-free write into the installation-wide local API-doc storage. The
+   * backend records the commit in the change log and marks that entry as "to be checked" (hardcoded,
+   * like a sensitive element), because the definition's JavaScript runs in every session.
+   */
+  private onLocalElementDraft(draft: Record<string, unknown>, modelId: string, prompt: string): void {
+    const kind = String(draft["kind"] ?? "");
+    const name = String(draft["name"] ?? "");
+    const errors = Array.isArray(draft["validationErrors"]) ? (draft["validationErrors"] as string[]) : [];
+    const isUpdate = draft["isUpdate"] === true;
+    const usage =
+      draft["usage"] && typeof draft["usage"] === "object" ? (draft["usage"] as Record<string, unknown>) : undefined;
+
+    // Count the drafting inference in the token / cost counters (the early return below skips the
+    // generic bookkeeping of a form/workflow run).
+    const draftTokens = typeof draft["tokens"] === "number" ? (draft["tokens"] as number) : 0;
+    if (draftTokens > 0) {
+      this.lastTokens = draftTokens;
+      this.sessionTokens += draftTokens;
+    }
+    const draftCost = typeof draft["cost"] === "number" ? (draft["cost"] as number) : 0;
+    if (draftCost > 0) {
+      this.lastCost = draftCost;
+      this.addSessionCost(String(draft["currency"] ?? ""), draftCost);
+    }
+
+    const wiring = usage
+      ? Object.entries(usage)
+          .map(([key, value]) => `${key}="${String(value)}"`)
+          .join(" ")
+      : "";
+    // REVIEW CONTENT: the user must be able to judge what is about to be installed into the
+    // installation-wide catalogue — the parameters AND the JavaScript (truncated for very long code;
+    // the complete code is stored as drafted).
+    const draftBody =
+      draft["draft"] && typeof draft["draft"] === "object" ? (draft["draft"] as Record<string, unknown>) : {};
+    // A parameter may be a plain description OR the typed object the contract asks for
+    // (`{ type, enum, default, description }`) — both are rendered readably.
+    const parameterValueText = (name: string, value: unknown): string => {
+      if (value && typeof value === "object") {
+        const meta = value as Record<string, unknown>;
+        const rawOptions = meta["options"] ?? meta["enum"];
+        const type = typeof meta["type"] === "string" ? ` (${meta["type"]})` : "";
+        const options = Array.isArray(rawOptions) ? ` [${rawOptions.map(String).join(", ")}]` : "";
+        const fallback =
+          meta["default"] === undefined || meta["default"] === null ? "" : ` = ${String(meta["default"])}`;
+        const description = typeof meta["description"] === "string" ? ` — ${meta["description"]}` : "";
+        return `  ${name}${type}${options}${fallback}${description}`;
+      }
+      return `  ${name}: ${String(value)}`;
+    };
+    const parameters =
+      draftBody["Parameter"] && typeof draftBody["Parameter"] === "object"
+        ? Object.entries(draftBody["Parameter"] as Record<string, unknown>)
+            .map(([name, value]) => parameterValueText(name, value))
+            .join("\n")
+        : "";
+    const code = typeof draftBody["Code"] === "string" ? (draftBody["Code"] as string) : "";
+    const infoText = [
+      draft["codeNormalized"] === true
+        ? "The registration id inside the code was adjusted to the element name (it is the runtime key)."
+        : "",
+      draft["codeWrapped"] === true
+        ? "The code contained no registration call, so it was wrapped in window.codbi.registerFunctionality(...)."
+        : "",
+      draft["codeElementFixed"] === true
+        ? "The code referenced the undefined variable 'element'; it was replaced by 'toProcess' — the form element the functionality is attached to."
+        : "",
+      isUpdate ? "This REPLACES an existing local definition." : "This is a NEW local definition.",
+      "The definition is installation-wide (it affects every form) and its JavaScript runs in every session.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    // A draft the backend did not clear is reported in the assistant's own error area — never in an
+    // alert, and it is never committed.
+    if (errors.length > 0 || draft["committable"] === false) {
+      this.setError(
+        `${kind || "element"} ${name || "(unnamed)"}: ` + (errors.length > 0 ? errors.join(" ") : "not committable"),
+      );
+      return;
+    }
+
+    // Open the REVIEW dialog (the same PrimeNG dialog the clarification round uses) instead of
+    // window.confirm/alert: the user must SEE the code and the parameters before they enter the
+    // installation-wide local API-Doc storage.
+    this.localElementReview = {
+      draft: draftBody,
+      kind,
+      name,
+      isUpdate,
+      code,
+      parameterText: parameters,
+      usageText: wiring,
+      infoText,
+      modelId,
+      prompt,
+      tokensIn: Number(draft["tokensIn"] ?? 0),
+      tokensOut: Number(draft["tokensOut"] ?? 0),
+      cost: draftCost,
+      currency: String(draft["currency"] ?? ""),
+    };
+    this.localElementOverwrite = false;
+    this.localElementResultText = null;
+    this.localElementCommitBusy = false;
+    // Syntax highlighting + folding for the code panel (structural, from the code itself).
+    this.buildLocalElementCodeView(code);
+    this.cdr.markForCheck();
+  }
+
+  /** Toggles the "replace the existing definition" confirmation of the review dialog. */
+  onLocalElementOverwriteChange(event: Event): void {
+    this.localElementOverwrite = (event.target as HTMLInputElement).checked;
+    this.cdr.markForCheck();
+  }
+
+  /** Closes the review dialog (Cancel, Escape, or the Close button of the result view). */
+  closeLocalElementReview(): void {
+    this.localElementReview = null;
+    this.localElementResultText = null;
+    this.localElementCommitBusy = false;
+    this.localElementCodeLines = [];
+    this.localElementCodeWarnings = [];
+    this.localElementCodeLineCount = 0;
+    this.localElementCodeCopied = false;
+    this.localElementCodeRaw = "";
+    this.localElementCodeDisplay = "";
+    this.localElementCodeReformatted = false;
+    this.localElementCodeHtml = [];
+    this.localElementCodeFoldEnd = new Map<number, number>();
+    this.localElementCollapsedFolds = new Set<number>();
+    this.cdr.markForCheck();
+  }
+
+  /** Expands/collapses ONE code block of the review dialog. */
+  toggleLocalElementCodeFold(index: number): void {
+    if (!this.localElementCodeFoldEnd.has(index)) return;
+    if (this.localElementCollapsedFolds.has(index)) {
+      this.localElementCollapsedFolds.delete(index);
+    } else {
+      this.localElementCollapsedFolds.add(index);
+    }
+    this.refreshLocalElementCodeLines();
+  }
+
+  /** Collapses every block of the reviewed code (outline view). */
+  collapseAllLocalElementCodeFolds(): void {
+    this.localElementCollapsedFolds = new Set(this.localElementCodeFoldEnd.keys());
+    this.refreshLocalElementCodeLines();
+  }
+
+  /** Expands every block of the reviewed code. */
+  expandAllLocalElementCodeFolds(): void {
+    this.localElementCollapsedFolds.clear();
+    this.refreshLocalElementCodeLines();
+  }
+
+  /** Copies the reviewed JavaScript verbatim (the code, never the highlighted markup). */
+  copyLocalElementCode(): void {
+    const text = this.localElementCodeRaw;
+    if (!text) return;
+    const done = (): void => {
+      this.localElementCodeCopied = true;
+      this.cdr.markForCheck();
+      setTimeout(() => {
+        this.localElementCodeCopied = false;
+        this.cdr.markForCheck();
+      }, 2000);
+    };
+    const fallback = (): void => {
+      try {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        document.body.removeChild(area);
+        done();
+      } catch {
+        // Clipboard unavailable — the code stays selectable in the panel.
+      }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+      return;
+    }
+    fallback();
+  }
+
+  // #region Code panel of the review dialog (syntax highlighting + folding)
+
+  /** Keywords that get the keyword colour of the code panel. */
+  private static readonly JS_KEYWORDS = new Set<string>([
+    "async",
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "export",
+    "extends",
+    "finally",
+    "for",
+    "from",
+    "function",
+    "get",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "let",
+    "new",
+    "of",
+    "return",
+    "set",
+    "static",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield",
+  ]);
+
+  /** `true`/`false`/`null`/… get the literal colour. */
+  private static readonly JS_LITERALS = new Set<string>(["true", "false", "null", "undefined", "NaN", "Infinity"]);
+
+  /** Browser/CodBi globals get the builtin colour. */
+  private static readonly JS_BUILTINS = new Set<string>([
+    "window",
+    "document",
+    "console",
+    "Math",
+    "JSON",
+    "Object",
+    "Array",
+    "String",
+    "Number",
+    "Boolean",
+    "Promise",
+    "Date",
+    "RegExp",
+    "Map",
+    "Set",
+    "WeakMap",
+    "Intl",
+    "Symbol",
+    "Reflect",
+    "fetch",
+    "codbi",
+    "jQuery",
+    "$",
+    "localStorage",
+    "sessionStorage",
+    "setTimeout",
+    "setInterval",
+    "clearTimeout",
+    "clearInterval",
+    "requestAnimationFrame",
+    "parseInt",
+    "parseFloat",
+    "isNaN",
+    "encodeURIComponent",
+    "decodeURIComponent",
+  ]);
+
+  /**
+   * Constructs an editor should flag in a REVIEW: dynamic code evaluation and modal browser dialogs.
+   * They are highlighted in the warning colour and summarised in the panel header, so the user sees
+   * the risk before committing something that runs in every session.
+   */
+  private static readonly JS_RISKY = new Set<string>(["eval", "Function", "alert", "confirm", "prompt"]);
+
+  /**
+   * Builds the highlighted, foldable view of the drafted JavaScript.
+   *
+   * Folding is derived STRUCTURALLY from the brace balance of the code characters (the tokeniser
+   * excludes strings and comments), so it works for any formatting the model produced.
+   */
+  private buildLocalElementCodeView(code: string): void {
+    this.localElementCodeRaw = code ?? "";
+    // Kinds without code (e.g. a standard configuration) get no code panel at all.
+    if (this.localElementCodeRaw.trim().length === 0) {
+      this.localElementCodeHtml = [];
+      this.localElementCodeLines = [];
+      this.localElementCodeLineCount = 0;
+      this.localElementCodeWarnings = [];
+      this.localElementCodeFoldEnd = new Map<number, number>();
+      this.localElementCollapsedFolds = new Set<number>();
+      return;
+    }
+    // A model answer is sometimes ONE minified line. Reformat it for the panel only — the raw code is
+    // what is copied and what gets committed.
+    this.localElementCodeDisplay = AiAssistant.autoFormatJavaScript(this.localElementCodeRaw);
+    this.localElementCodeReformatted = this.localElementCodeDisplay !== this.localElementCodeRaw;
+    const tokenized = AiAssistant.tokenizeJavaScript(this.localElementCodeDisplay);
+    this.localElementCodeHtml = tokenized.html.map((line) => (line.length === 0 ? "&nbsp;" : line));
+    this.localElementCodeLineCount = this.localElementCodeHtml.length;
+    this.localElementCodeWarnings = tokenized.risky;
+
+    // Brace balance per line → `start → end` fold ranges.
+    const depthBefore: number[] = [];
+    const delta: number[] = [];
+    let depth = 0;
+    for (const line of tokenized.plain) {
+      depthBefore.push(depth);
+      const open = (line.match(/\{/g) ?? []).length;
+      const close = (line.match(/\}/g) ?? []).length;
+      delta.push(open - close);
+      depth += open - close;
+    }
+    const foldEnd = new Map<number, number>();
+    for (let i = 0; i < tokenized.plain.length; i += 1) {
+      if (delta[i] <= 0) continue;
+      let d = depthBefore[i];
+      for (let j = i; j < tokenized.plain.length; j += 1) {
+        d += delta[j];
+        if (j > i && d <= depthBefore[i]) {
+          foldEnd.set(i, j);
+          break;
+        }
+      }
+    }
+    this.localElementCodeFoldEnd = foldEnd;
+    this.localElementCollapsedFolds = new Set<number>();
+    this.refreshLocalElementCodeLines();
+  }
+
+  /**
+   * Reformats a MINIFIED answer (one physical line) for display: a newline + indentation after every
+   * `{` and `;`, and before every `}`. Whitespace and every token are copied VERBATIM (strings, template
+   * literals and comments included), so the display can never alter the code — and an already formatted
+   * answer is returned untouched.
+   */
+  private static autoFormatJavaScript(code: string): string {
+    if (!code) return code;
+    const physical = code.split("\n").filter((line) => line.trim().length > 0).length;
+    if (physical > 3) return code;
+    let out = "";
+    let indent = 0;
+    let i = 0;
+    const pad = (): string => "  ".repeat(Math.max(0, indent));
+    const length = code.length;
+    while (i < length) {
+      const c = code[i];
+      // Strings, template literals and comments are copied verbatim (no formatting inside them).
+      if (c === '"' || c === "'" || c === "`") {
+        const quote = c;
+        let j = i + 1;
+        let body = c;
+        while (j < length) {
+          const d = code[j];
+          if (d === "\\") {
+            body += d + (code[j + 1] ?? "");
+            j += 2;
+            continue;
+          }
+          body += d;
+          j += 1;
+          if (d === quote) break;
+          if (d === "\n" && quote !== "`") break;
+        }
+        out += body;
+        i = j;
+        continue;
+      }
+      if (c === "/" && code[i + 1] === "*") {
+        const end = code.indexOf("*/", i + 2);
+        const stop = end < 0 ? length : end + 2;
+        out += code.slice(i, stop);
+        i = stop;
+        continue;
+      }
+      if (c === "/" && code[i + 1] === "/") {
+        const end = code.indexOf("\n", i);
+        const stop = end < 0 ? length : end;
+        out += code.slice(i, stop) + "\n" + pad();
+        i = stop;
+        continue;
+      }
+      out += c;
+      if (c === "{") {
+        indent += 1;
+        out += "\n" + pad();
+      } else if (c === ";") {
+        out += "\n" + pad();
+      } else if (c === "}") {
+        indent = Math.max(0, indent - 1);
+        out = out.replace(/[ \t]+$/, "");
+        out = out.slice(0, -1) + "\n" + pad() + "}";
+      }
+      i += 1;
+    }
+    return out.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  /** Toggles soft-wrapping of the code panel. */
+  toggleLocalElementCodeWrap(): void {
+    this.localElementCodeWrapped = !this.localElementCodeWrapped;
+    this.cdr.markForCheck();
+  }
+
+  /** Re-applies the fold state to [localElementCodeLines] (no re-tokenising). */
+  private refreshLocalElementCodeLines(): void {
+    const hidden: boolean[] = new Array<boolean>(this.localElementCodeHtml.length).fill(false);
+    for (const start of this.localElementCollapsedFolds) {
+      const end = this.localElementCodeFoldEnd.get(start);
+      if (end === undefined) continue;
+      for (let i = start + 1; i <= end; i += 1) hidden[i] = true;
+    }
+    this.localElementCodeLines = this.localElementCodeHtml.map((html, index) => ({
+      no: index + 1,
+      html,
+      foldable: this.localElementCodeFoldEnd.has(index),
+      collapsed: this.localElementCollapsedFolds.has(index),
+      hidden: hidden[index] ?? false,
+    }));
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Minimal JavaScript tokeniser for the review panel: escapes the source and wraps keywords,
+   * strings, template literals, comments, numbers, function names and risky constructs in the
+   * `cb-ai-code-*` spans. It also returns the raw "structure" of every line (strings and comments
+   * removed) which drives the fold computation.
+   */
+  private static tokenizeJavaScript(code: string): {
+    html: string[];
+    plain: string[];
+    risky: string[];
+  } {
+    const html: string[] = [];
+    const plain: string[] = [];
+    const risky = new Set<string>();
+    let h = "";
+    let p = "";
+    // Escaping FIRST: the highlighted markup is injected via [innerHTML], so an unescaped `<` or
+    // `&` in the generated code would break the panel (and could smuggle markup into the dialog).
+    const esc = (s: string): string => s.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+    const span = (cls: string, text: string): string =>
+      text.length === 0 ? "" : `<span class="${cls}">${esc(text)}</span>`;
+    const breakLine = (): void => {
+      html.push(h);
+      plain.push(p);
+      h = "";
+      p = "";
+    };
+    const length = code.length;
+    let i = 0;
+    while (i < length) {
+      const c = code[i];
+      if (c === "\n") {
+        breakLine();
+        i += 1;
+        continue;
+      }
+      // Block comment (may span lines; carries no structure).
+      if (c === "/" && code[i + 1] === "*") {
+        const end = code.indexOf("*/", i + 2);
+        const stop = end < 0 ? length : end + 2;
+        code
+          .slice(i, stop)
+          .split("\n")
+          .forEach((part, idx) => {
+            if (idx > 0) breakLine();
+            h += span("cb-ai-code-cmt", part);
+          });
+        i = stop;
+        continue;
+      }
+      // Line comment.
+      if (c === "/" && code[i + 1] === "/") {
+        const end = code.indexOf("\n", i);
+        const stop = end < 0 ? length : end;
+        h += span("cb-ai-code-cmt", code.slice(i, stop));
+        i = stop;
+        continue;
+      }
+      // String or template literal.
+      if (c === '"' || c === "'" || c === "`") {
+        const quote = c;
+        let j = i + 1;
+        let body = c;
+        while (j < length) {
+          const d = code[j];
+          if (d === "\\") {
+            body += d + (code[j + 1] ?? "");
+            j += 2;
+            continue;
+          }
+          body += d;
+          j += 1;
+          if (d === quote) break;
+          if (d === "\n" && quote !== "`") break;
+        }
+        const cls = quote === "`" ? "cb-ai-code-tpl" : "cb-ai-code-str";
+        body.split("\n").forEach((part, idx) => {
+          if (idx > 0) breakLine();
+          h += span(cls, part);
+        });
+        i = j;
+        continue;
+      }
+      // Number literal (hex/binary/octal/exponent/separators).
+      if (c >= "0" && c <= "9") {
+        let j = i + 1;
+        while (j < length) {
+          const d = code[j];
+          if (/[0-9a-fA-FxXbBoO._]/.test(d)) {
+            j += 1;
+            continue;
+          }
+          if ((d === "+" || d === "-") && /[eE]/.test(code[j - 1] ?? "")) {
+            j += 1;
+            continue;
+          }
+          break;
+        }
+        h += span("cb-ai-code-num", code.slice(i, j));
+        i = j;
+        continue;
+      }
+      // Identifier / keyword / literal / function name / builtin / risky construct.
+      if (/[A-Za-z_$]/.test(c)) {
+        let j = i + 1;
+        while (j < length && /[A-Za-z0-9_$]/.test(code[j])) j += 1;
+        const word = code.slice(i, j);
+        let cls = "cb-ai-code-ident";
+        if (AiAssistant.JS_RISKY.has(word)) {
+          cls = "cb-ai-code-warn";
+          risky.add(word);
+        } else if (AiAssistant.JS_KEYWORDS.has(word)) {
+          cls = "cb-ai-code-kw";
+        } else if (AiAssistant.JS_LITERALS.has(word)) {
+          cls = "cb-ai-code-lit";
+        } else if (AiAssistant.JS_BUILTINS.has(word)) {
+          cls = "cb-ai-code-builtin";
+        } else {
+          let k = j;
+          while (k < length && (code[k] === " " || code[k] === "\t")) k += 1;
+          if (code[k] === "(") cls = "cb-ai-code-fn";
+        }
+        h += span(cls, word);
+        p += word;
+        i = j;
+        continue;
+      }
+      // Punctuation and operators (structure for the fold computation).
+      if (/[{}()\[\];,.]/.test(c)) {
+        h += span("cb-ai-code-punct", c);
+        p += c;
+        i += 1;
+        continue;
+      }
+      if (/[+\-*\/%=<>!&|^~?:]/.test(c)) {
+        h += span("cb-ai-code-op", c);
+        p += c;
+        i += 1;
+        continue;
+      }
+      // Whitespace and anything else.
+      h += esc(c);
+      i += 1;
+    }
+    breakLine();
+    return { html, plain, risky: Array.from(risky) };
+  }
+
+  // #endregion
+
+  /** Commits the reviewed draft — deterministic and inference-free (`CommitLocalElement`). */
+  onLocalElementCommit(): void {
+    const review = this.localElementReview;
+    if (!review || this.localElementCommitBusy) return;
+    this.localElementCommitBusy = true;
+    this.cdr.markForCheck();
+    // The review holds the draft BODY; the envelope's resolved kind/name are NOT necessarily part of
+    // it (the model usually omits `kind`). Both are added explicitly — otherwise the deterministic
+    // commit refused an already validated draft with "Unknown draft kind".
+    const commitDraft: Record<string, unknown> = {
+      ...review.draft,
+      kind: review.kind,
+      Name: review.name,
+    };
+    getJQuery().ajax({
+      url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+      type: "POST",
+      headers: { "X-Action": "CommitLocalElement", "X-Model": review.modelId },
+      data: {
+        draft: JSON.stringify(commitDraft),
+        kind: review.kind,
+        name: review.name,
+        overwrite: String(this.localElementOverwrite),
+        prompt: review.prompt,
+        tokensIn: String(review.tokensIn),
+        tokensOut: String(review.tokensOut),
+        cost: String(review.cost),
+        currency: review.currency,
+        formKey: getCurrentFormKey() ?? "",
+      },
+      dataType: "json",
+      success: (commitResponse: unknown) => {
+        const r = commitResponse as Record<string, unknown> | null;
+        this.localElementCommitBusy = false;
+        this.localElementResultText =
+          !r || "error" in r
+            ? String(r?.["error"] ?? "Committing the CodBi element failed.")
+            : String(r["message"] ?? "Committed.");
+        if (r && !("error" in r)) {
+          // Make the stored element visible EVERYWHERE in the designer's DATA (manager trees, element
+          // config panel, on-canvas markers) …
+          try {
+            window.dispatchEvent(new CustomEvent("codbi-local-doc-changed"));
+          } catch {
+            // A blocked event is harmless — the element is committed either way.
+          }
+          // … and then RELOAD the designer: a changed functionality / EP / standard configuration
+          // defines JavaScript that the RUNNING document has already imported and registered, and the
+          // plugin data (`CodbiPluginData.det*`) was read once at boot. Neither can be swapped in
+          // place, so the new code only becomes active after a reload (reported: "the change takes
+          // effect only after reloading the designer").
+          this.scheduleDesignerReloadAfterLocalElement();
+        }
+        this.spinnerText = "";
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.localElementCommitBusy = false;
+        this.localElementResultText = "Committing the CodBi element failed.";
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  /**
+   * Full-screen "the designer is reloading" overlay: a darkened backdrop with a centred CodBi banner
+   * that FADES IN, carrying a big localized loading message. Shown before every assistant-driven
+   * designer reload (a generated workflow, or a changed local functionality / EP / standard
+   * configuration), so the user knows why the page disappears instead of seeing it blink away.
+   */
+  private static showReloadOverlay(): void {
+    try {
+      if (document.getElementById("codbi-reload-overlay") !== null) {
+        return;
+      }
+      const lang = (document.documentElement.lang || navigator.language || "de").toLowerCase();
+      const text = lang.startsWith("en")
+        ? "Reloading the designer…"
+        : lang.startsWith("it")
+          ? "Ricaricamento del designer…"
+          : "Der Designer wird neu geladen…";
+      const base = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+      const overlay = document.createElement("div");
+      overlay.id = "codbi-reload-overlay";
+      overlay.setAttribute("role", "status");
+      overlay.setAttribute("aria-live", "polite");
+      overlay.style.cssText =
+        "position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;" +
+        "background:rgba(15,20,28,.62);opacity:0;transition:opacity .45s ease;";
+      const card = document.createElement("div");
+      // A FULL-WIDTH banner across the designer window (same height as before), with the logo and the
+      // message CENTRED inside it — no rounded card, just a darkorange top/bottom edge.
+      card.style.cssText =
+        "display:flex;align-items:center;justify-content:center;gap:20px;width:100%;box-sizing:border-box;" +
+        "padding:26px 36px;" +
+        // Soft horizontal gradient instead of a flat white bar: a warm grey edge on the left, a wide
+        // white centre for the logo + message, and a slightly cooler/darker grey on the right.
+        "background:linear-gradient(90deg,#efeaea 0%,#ffffff 11%,#ffffff 87%,#e2dedb 98%);" +
+        "border-top:2px solid darkorange;border-bottom:2px solid darkorange;" +
+        "box-shadow:0 18px 50px rgba(0,0,0,.35);opacity:0;" +
+        "transform:translateY(10px);transition:opacity .45s ease,transform .45s ease;";
+      const logo = document.createElement("img");
+      logo.src = `${base}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
+      logo.alt = "CodBi";
+      logo.style.cssText = "width:64px;height:64px;flex:0 0 auto;";
+      const label = document.createElement("div");
+      label.textContent = text;
+      label.style.cssText =
+        "font:700 clamp(18px,2.4vw,30px)/1.25 system-ui,'Segoe UI',Arial,sans-serif;color:#3a2a14;" +
+        "text-align:center;";
+      card.append(logo, label);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      // Next frame: fade the backdrop in and lift the banner, so the change is ANIMATED.
+      requestAnimationFrame(() => {
+        overlay.style.opacity = "1";
+        card.style.opacity = "1";
+        card.style.transform = "translateY(0) scale(1)";
+      });
+    } catch (x) {
+      // The overlay is cosmetic — it must never block the reload.
+      console.warn("[CodBi] Could not show the reload overlay", x);
+    }
+  }
+
+  /**
+   * Reloads the designer after a committed local element (functionality, element placeholder or
+   * standard configuration).
+   *
+   * The element's code is loaded into the RUNNING document (`importRemoteModule()`) and registered in
+   * `window.codbi`, and `window.CodbiPluginData.det*` is filled once when the designer boots — none of
+   * those caches can be replaced in place, so a reload is the only reliable way to activate a CHANGED
+   * definition. The short delay lets the review dialog show its success text first.
+   */
+  private scheduleDesignerReloadAfterLocalElement(): void {
+    window.setTimeout(() => {
+      try {
+        this.spinnerText = "Reloading designer\u2026";
+        this.cdr.markForCheck();
+        AiAssistant.showReloadOverlay();
+        window.location.reload();
+      } catch (x) {
+        console.warn("[CodBi] Could not reload the designer after a local element commit", x);
+      }
+    }, 1500);
+  }
+
   private runPhase2(
     prompt: string,
     modelId: string,
-    intent: "form" | "workflow" | "both",
+    intent: "form" | "workflow" | "both" | "codbi-local-element",
     imageParams: Array<{ name: string; dataUrl: string }> = [],
     chatOptions?: ChatRunOptions,
   ): void {
@@ -4721,6 +5534,21 @@ export class AiAssistant implements OnInit, OnDestroy {
                 : {}),
             })),
           );
+          return;
+        }
+
+        // LOCAL CodBi element (functionality / element placeholder / standard configuration).
+        // A permission refusal or an unfixable draft is INFORMATIONAL — it is shown in the dialog and
+        // never pops an alert that would abort the run.
+        const localElementStatus = String(p2["status"] ?? "");
+        if (localElementStatus === "codbi_element_denied" || localElementStatus === "codbi_element_invalid") {
+          this.setError(String(p2["message"] ?? ""));
+          return;
+        }
+        // A reviewable draft: review it and commit it deterministically (no second inference). The
+        // form is NOT touched by this intent.
+        if (localElementStatus === "codbi_element_draft") {
+          this.onLocalElementDraft(p2, modelId, prompt);
           return;
         }
 
@@ -5017,6 +5845,9 @@ export class AiAssistant implements OnInit, OnDestroy {
           // Instead, write sessionStorage inside doReload(), right before window.location.reload().
           const standardsForReload = typeof p2["standards"] === "string" ? (p2["standards"] as string) : undefined;
           const doReload = (): void => {
+            // Tell the user why the page is about to disappear (generated workflow → the designer has
+            // to reload): darkened screen + centred CodBi banner with the localized loading message.
+            AiAssistant.showReloadOverlay();
             // Write pending standards at the very last moment — after publish() completes and
             // immediately before the page unloads — so the value cannot be consumed by any
             // MultiSelect reconstruction that happened during async rendering.

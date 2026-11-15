@@ -19,6 +19,8 @@ import {
   normalizeSupportedFormelementtype,
 } from "codbi-common";
 import { removeFuncAttributeQuiet, setItemAttributeValue } from "./CodbiElementMarkers.js";
+import { attachCssValueTooltip, openCssEditor } from "./CssEditor.js";
+import { cssValueSummary } from "./CssValueCodec.js";
 import { attachCsvValueTooltip, openCsvGridEditor } from "./CsvGridEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import { containedElementItem, syncSelectedFunctionalityChild } from "./FunctionalityChildItems.js";
@@ -278,7 +280,7 @@ export interface ICsvSubpartSpec {
 
 /** The structured type spec of one functionality parameter (the `parameters` metadata channel). */
 export interface IFunctionalityParameterSpec {
-  type?: "string" | "integer" | "number" | "boolean" | "enum" | "csv";
+  type?: "string" | "integer" | "number" | "boolean" | "enum" | "csv" | "css" | "selector";
   options?: string[];
   /**
    * For `type: "csv"`: the ordered definition of the grid columns / subparts. Every element (row) of
@@ -292,6 +294,13 @@ export interface IFunctionalityParameterSpec {
   itemSeparator?: string;
   /** For `type: "csv"`: the separator between the subparts (fields) of one element. Defaults to `;`. */
   fieldSeparator?: string;
+  /**
+   * For `type: "css"`: WHICH of the four CSS meanings the parameter has. Absent means `"stylesheet"`;
+   * `type: "selector"` implies `"selector"`.
+   */
+  cssKind?: "stylesheet" | "declarations" | "classes" | "selector";
+  /** For `type: "css"`: optional per-parameter snippets offered by the CSS editor. */
+  snippets?: string[];
   default?: string;
   /**
    * A short human readable description of the parameter (the base/English locale). When present this
@@ -517,6 +526,10 @@ export function buildBranchFunctionalityPicker(options: IBranchPickerOptions): H
 
   const optionsHost = doc.createElement("div");
   optionsHost.className = "codbi-func-config__options";
+  // One functionality PER ROW (reported: the "Wenn"/"Sonst" names were shown side by side). The shared
+  // `__options` container of the regular listing flows its rows; an INLINE style is used here because
+  // the designer's own panel CSS may outrank any class-based override.
+  optionsHost.style.cssText = "display:block;width:100%;";
   // One radio group per branch, so the TRUE and FALSE pickers (and two conditionals on one element)
   // never interfere.
   const radioName = `codbi-branch-${options.branch.prefix}-${options.ownerId}`;
@@ -1384,6 +1397,9 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
     /** Whether this parameter is a `csv` (grid-edited) parameter. */
     const isCsvParam = (): boolean => type === "csv";
 
+    /** Whether this parameter is a CSS parameter (edited in the CSS editor popup). */
+    const isCssParam = (): boolean => type === "css" || type === "selector";
+
     // Restores the ORIGINAL control for a parameter type that was temporarily switched to a text
     // input: a boolean back to its checkbox, an enum back to its select, a CSV back to the grid
     // editor button. Pure string parameters have no other control and simply stay a text input.
@@ -1392,7 +1408,7 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
         showCheckbox();
       } else if (type === "enum" && spec?.options && spec.options.length > 0) {
         showSelect(spec.options);
-      } else if (isCsvParam()) {
+      } else if (isCsvParam() || isCssParam()) {
         showCsv(currentValue);
       }
     };
@@ -1451,31 +1467,47 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
           csvButton.style.color = "#925400";
         });
         csvButton.addEventListener("click", () => {
+          const onApply = (next: string): void => {
+            csvState.value = next;
+            write(next);
+            if (csvSummary) {
+              csvSummary.textContent = csvSummaryLabel(next);
+            }
+          };
           try {
-            openCsvGridEditor({
-              document: window.document,
-              anchor: this.root,
-              value: csvState.value,
-              spec,
-              onApply: (next) => {
-                csvState.value = next;
-                write(next);
-                if (csvSummary) {
-                  csvSummary.textContent = csvSummaryLabel(next);
-                }
-              },
-            });
+            if (isCssParam()) {
+              openCssEditor({
+                document: window.document,
+                anchor: this.root,
+                parameterName: name,
+                value: csvState.value,
+                spec,
+                onApply,
+              });
+            } else {
+              openCsvGridEditor({
+                document: window.document,
+                anchor: this.root,
+                value: csvState.value,
+                spec,
+                onApply,
+              });
+            }
           } catch (err) {
             // The popup could not open (e.g. no document) — fall back to plain text editing.
-            console.error("[CodBi] Functionality: could not open the CSV editor", err);
+            console.error("[CodBi] Functionality: could not open the parameter editor", err);
             showText(csvState.value);
           }
         });
         csvStack.appendChild(csvButton);
-        // Hover shows a table-like tooltip of the current parameter value (re-rendered on every
-        // mouseenter from the live csvState). A simple static title stays as a native fallback.
-        csvButton.title = `Edit ${name} (tabular CSV editor)`;
-        attachCsvValueTooltip(csvButton, () => csvState.value, spec, csvSummaryLabel(csvState.value));
+        // Hover shows a tooltip of the current parameter value (re-rendered on every mouseenter from
+        // the live csvState). A simple static title stays as a native fallback.
+        csvButton.title = isCssParam() ? `Edit ${name} (CSS editor)` : `Edit ${name} (tabular CSV editor)`;
+        if (isCssParam()) {
+          attachCssValueTooltip(csvButton, () => csvState.value, csvSummaryLabel(csvState.value));
+        } else {
+          attachCsvValueTooltip(csvButton, () => csvState.value, spec, csvSummaryLabel(csvState.value));
+        }
       }
       csvState.value = value;
       if (!csvSummary) {
@@ -1487,8 +1519,11 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       csvSummary.textContent = csvSummaryLabel(value);
     };
 
-    /** Computes the short human-readable summary of a CSV value (element + subpart count). */
+    /** Computes the short human-readable summary of the value (CSV counts / CSS summary). */
     const csvSummaryLabel = (value: string): string => {
+      if (isCssParam()) {
+        return cssValueSummary(value, spec);
+      }
       let itemSep = ",";
       let fieldSep = ";";
       if (spec?.itemSeparator) {
@@ -1544,7 +1579,7 @@ export class FunctionalityConfigEditor extends Editors.BaseEditor<typeof Functio
       showCheckbox();
     } else if (type === "enum" && spec?.options && spec.options.length > 0) {
       showSelect(spec.options);
-    } else if (isCsvParam()) {
+    } else if (isCsvParam() || isCssParam()) {
       showCsv(currentValue);
     } else {
       showText(currentValue);

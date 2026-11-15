@@ -20,6 +20,8 @@ import {
 } from "codbi-common";
 import { codbiDocsUrl } from "./CodbiDocs.js";
 import {
+  clipPreviewToElement,
+  designerPreviewUrl,
   elementCssClasses,
   flushElementCssClassChange,
   refreshCodbiElementMarkers,
@@ -28,6 +30,8 @@ import {
   setItemAttributeValueQuiet,
   setItemPropertyValueQuiet,
 } from "./CodbiElementMarkers.js";
+import { attachCssValueTooltip, openCssEditor } from "./CssEditor.js";
+import { cssValueSummary } from "./CssValueCodec.js";
 import { attachCsvValueTooltip, openCsvGridEditor } from "./CsvGridEditor.js";
 import { openEPBuilder } from "./EPBuilder.js";
 import {
@@ -72,6 +76,18 @@ import { i18n as i18nTyped, localizedParameterDescription } from "./i18n.js";
 
 // Kept part of this module's public surface (it is the shape of the activation dialog's class list).
 export type { IStandardConfigClassEntry };
+
+/** One functionality contributed by a standard-configuration CSS class on the edited element. */
+interface IStandardConfigParamGroup {
+  /** The standard configuration the class belongs to. */
+  configId: string;
+  /** The CSS class that is applied to the element (it carries the functionality). */
+  cssClass: string;
+  /** The functionality the class applies. */
+  functionalityId: string;
+  /** The literal values the class's `loadConfig` object applies (used to pre-fill the rows). */
+  defaults: Readonly<Record<string, string>>;
+}
 
 /**
  * Loosened `i18n` accessor (see the identical widening in FunctionalityConfigEditor). The strongly
@@ -747,6 +763,21 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     return this.showStdApplicable || this.showStdInapplicable;
   }
 
+  /**
+   * @returns the live DOM node of the element being edited, used as the CSS editor's preview root so
+   * the preview shows exactly the element the parameter belongs to.
+   *
+   * @param element - The item being configured.
+   */
+  private previewRootFor(element: IItemLike | undefined): HTMLElement | null {
+    try {
+      const provider = element as unknown as { getItemContentCell?: () => Array<HTMLElement | undefined> };
+      return provider?.getItemContentCell?.()[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** The element the editor currently applies to (the selected master item), or `undefined`. */
   private targetElement(): IItemLike | undefined {
     try {
@@ -830,6 +861,117 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       setItemAttributeValueQuiet(item as never, name, value);
       this.writeFuncAttribute(item, this.selected.join(","));
     }
+  }
+
+  /**
+   * Writes one `data-cb-*` attribute for a parameter that a STANDARD CONFIGURATION provides, WITHOUT
+   * touching `data-cb-func`: the configuration's CSS class carries the functionality, so tagging the
+   * element would apply the functionality twice. An empty value REMOVES the attribute, which restores
+   * the value the configuration itself applies (i.e. drops the override).
+   *
+   * @param name  - The full attribute name (e.g. `data-cb-cssheaderunfolded`).
+   * @param value - The (changed) value; empty removes the override.
+   */
+  private writeOverrideAttribute(name: string, value: string): void {
+    const item = this.targetElement();
+    if (!item) {
+      return;
+    }
+    // The runtime writes the attributes lowercased (`data-cb-cssheaderunfolded`) while the parameter key
+    // keeps its declared casing — write under the EXISTING name so no case-duplicate is created.
+    const resolved = this.resolveAttributeCase(item, name);
+    if (value === "") {
+      removeFuncAttributeQuiet(item as never, resolved);
+      return;
+    }
+    setItemAttributeValueQuiet(item as never, resolved, value);
+  }
+
+  /**
+   * Resolves the existing attribute name of `element` that equals `name` case-insensitively.
+   *
+   * @param element - The element whose attribute bag is inspected.
+   * @param name    - The wanted attribute name.
+   * @returns The existing name when one matches, else `name` itself.
+   */
+  private resolveAttributeCase(element: IItemLike | undefined, name: string): string {
+    const existing = this.attributeEntriesOf(element).find(
+      (entry) => String(entry.text).toLowerCase() === name.toLowerCase(),
+    );
+    return existing ? String(existing.text) : name;
+  }
+
+  /**
+   * @returns the value of the attribute matching `name` case-insensitively (empty when absent).
+   *
+   * @param element - The element whose attribute bag is inspected.
+   * @param name    - The wanted attribute name.
+   */
+  private resolveAttributeCaseValue(element: IItemLike | undefined, name: string): string {
+    const entry = this.attributeEntriesOf(element).find(
+      (candidate) => String(candidate.text).toLowerCase() === name.toLowerCase(),
+    );
+    return entry ? String(entry.value) : "";
+  }
+
+  /** @returns the raw `{ text, value }` attribute entries of the item (empty when unavailable). */
+  private attributeEntriesOf(element: IItemLike | undefined): Array<{ text: string; value: string }> {
+    try {
+      const persisted = (
+        element as unknown as {
+          getPersist?: () => { properties?: { attributes?: Array<{ text: string; value: string }> } };
+        }
+      )?.getPersist?.();
+      return persisted?.properties?.attributes ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Resolves the functionalities contributed by the STANDARD CONFIGURATIONS that are currently applied
+   * to the edited element (their CSS class is present). Their parameters are offered as OVERRIDES: the
+   * rows show the values the configuration's runtime application wrote onto the element, and only a
+   * CHANGED value is persisted as an attribute.
+   *
+   * A functionality already present in {@link selected} is skipped — it is listed once, as a regular
+   * functionality group (which does tag `data-cb-func`).
+   *
+   * @param element - The edited element (its `cssclasses` decide which configurations apply).
+   * @returns One entry per contributed functionality.
+   */
+  private standardConfigParameterGroups(element: IItemLike | undefined): IStandardConfigParamGroup[] {
+    const groups: IStandardConfigParamGroup[] = [];
+    if (!element) {
+      return groups;
+    }
+    const applied = new Set(elementCssClasses(element as never).map((cssClass) => String(cssClass).toLowerCase()));
+    const seen = new Set<string>();
+
+    for (const [configId, classes, funcs] of activeStandardConfigs()) {
+      for (const [cssClass, funcCsv] of Object.entries(funcs ?? {})) {
+        if (!applied.has(cssClass.toLowerCase())) {
+          continue;
+        }
+        // The literal parameter values the configuration applies (published by the config generator).
+        const classSpec = classes?.[cssClass];
+        const defaults: Readonly<Record<string, string>> =
+          classSpec != null && typeof classSpec === "object" ? (classSpec.params ?? {}) : {};
+        for (const funcId of parseCsv(funcCsv)) {
+          const key = funcId.toLowerCase();
+          if (key === "" || seen.has(key) || this.selected.includes(key)) {
+            continue;
+          }
+          if (Object.keys(functionalityParameters(funcId)).length === 0) {
+            continue;
+          }
+          seen.add(key);
+          groups.push({ configId, cssClass, functionalityId: funcId, defaults });
+        }
+      }
+    }
+
+    return groups;
   }
 
   /**
@@ -1370,6 +1512,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     const owner = on ? standardConfigOwnerOfClass(label) : undefined;
     const askForActivation = owner !== undefined && !isStandardConfigActive(owner, this.locallyActiveIds());
     setElementCssClass(item as never, label, on, { deferNotify: askForActivation });
+    // The class may contribute a standard-configuration functionality whose parameters are now offered
+    // as overrides — re-render the parameter table so the group appears/disappears immediately.
+    this.renderParams();
     if (askForActivation && owner !== undefined) {
       // The SHARED activation question (also opened by the on-canvas marker badges) freezes ALL element
       // previews while it is open — every draft sync / badge refresh / preview (re)fit makes FORMCYCLE
@@ -1682,6 +1827,69 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         }
       }
     }
+    // Parameters of the functionalities contributed by APPLIED standard configurations. They are listed
+    // exactly like the parameters of a selected functionality (grouped under the functionality's name),
+    // but their rows read the values the configuration applied and persist ONLY a changed value (see
+    // `writeOverrideAttribute`) — `data-cb-func` is never written for them.
+    for (const group of this.standardConfigParameterGroups(element)) {
+      const params = functionalityParameters(group.functionalityId);
+      const types = functionalityParameterTypes(group.functionalityId);
+      const names = Object.keys(params);
+      if (names.length === 0) {
+        continue;
+      }
+      any = true;
+      const header = document.createElement("div");
+      header.className = "codbi-func-config__param-group";
+      header.title = `${group.configId} · ${group.cssClass}`;
+      // A slider/tune icon (SVG) marking "these values come from a standard configuration". It is sized
+      // in `em`, so it always matches the caption's font size (same as the badge text).
+      const mark = document.createElement("span");
+      mark.className = "codbi-func-config__param-source";
+      mark.title = header.title;
+      mark.setAttribute("aria-hidden", "true");
+      mark.style.cssText =
+        "display:inline-flex;align-items:center;justify-content:center;margin-right:4px;color:#925400;" +
+        "font-size:1em;line-height:1;vertical-align:-0.1em;";
+      const svgNs = "http://www.w3.org/2000/svg";
+      const icon = document.createElementNS(svgNs, "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("width", "1em");
+      icon.setAttribute("height", "1em");
+      icon.setAttribute("fill", "none");
+      icon.setAttribute("stroke", "currentColor");
+      icon.setAttribute("stroke-width", "2.2");
+      icon.setAttribute("stroke-linecap", "round");
+      for (const d of ["M4 7h16", "M4 12h16", "M4 17h16"]) {
+        const track = document.createElementNS(svgNs, "path");
+        track.setAttribute("d", d);
+        icon.appendChild(track);
+      }
+      for (const [cx, cy] of [
+        [9, 7],
+        [15, 12],
+        [7, 17],
+      ] as const) {
+        const knob = document.createElementNS(svgNs, "circle");
+        knob.setAttribute("cx", String(cx));
+        knob.setAttribute("cy", String(cy));
+        knob.setAttribute("r", "2.4");
+        knob.setAttribute("fill", "#fff");
+        icon.appendChild(knob);
+      }
+      mark.appendChild(icon);
+      header.append(mark, document.createTextNode(originalCaseKey(group.functionalityId) || group.functionalityId));
+      fragment.appendChild(header);
+      for (const name of names) {
+        try {
+          fragment.appendChild(
+            this.buildParamRow(element, name, params[name], findParameterSpec(types, name), "", false, group.defaults),
+          );
+        } catch (x) {
+          console.error("[CodBi] Element: could not render standard-config parameter", group.functionalityId, name, x);
+        }
+      }
+    }
     // The "Parameter" title is shown only when there is at least one parameter to display. When the
     // selection has no parameters, both the heading and the (former) "Keine Parameter" hint are
     // hidden entirely — nothing is rendered below the highlighted double button in that case.
@@ -1790,6 +1998,10 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     description: string,
     spec?: IFunctionalityParameterSpec,
     attributePrefix = "",
+    /** `false` for a STANDARD-CONFIGURATION parameter: only the changed value is written (no `data-cb-func`). */
+    assertFunc = true,
+    /** The literal values a standard configuration applies — pre-fills the row and defines "unchanged". */
+    configDefaults?: Readonly<Record<string, string>>,
   ): HTMLElement {
     const row = document.createElement("div");
     row.className = "codbi-func-config__param-row";
@@ -1822,7 +2034,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // use the FULL prefixed attribute name so the value lands in (and is read from) the persisted
     // attribute, otherwise the config panel and the badge/runtime would target different attributes.
     const attrName = `data-cb-${attributePrefix}${name}`;
-    const currentValue = currentAttributeValueForItem(element, attrName);
+    let currentValue = currentAttributeValueForItem(element, attrName);
+    if (currentValue === "" && !assertFunc) {
+      // A standard configuration's runtime wrote the attribute lowercased — read it case-insensitively.
+      currentValue = this.resolveAttributeCaseValue(element, attrName);
+    }
+    if (currentValue === "" && !assertFunc && configDefaults != null) {
+      // Nothing on the element yet → show the value the configuration itself applies.
+      const defaultKey = Object.keys(configDefaults).find((key) => key.toLowerCase() === name.toLowerCase());
+      currentValue = defaultKey === undefined ? "" : String(configDefaults[defaultKey] ?? "");
+    }
     // The structured type wins; the legacy `{Type}`-in-description hint stays as a fallback.
     const type = spec?.type ?? parameterType(description);
 
@@ -1862,6 +2083,16 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // Writes a parameter (and re-asserts `data-cb-func`) directly onto the selected element. Uses the
     // FULL `data-cb-<key>` attribute name (see `attrName` above) so it matches the persisted attribute.
     const write = (value: string): void => {
+      if (!assertFunc) {
+        // A standard-configuration parameter: persist ONLY a CHANGED value. `data-cb-func` stays
+        // untouched — the configuration's CSS class carries the functionality. Writing the
+        // configuration's own value back REMOVES the attribute again (no redundant override).
+        const defaults = configDefaults ?? {};
+        const defaultKey = Object.keys(defaults).find((key) => key.toLowerCase() === name.toLowerCase());
+        const defaultValue = defaultKey === undefined ? "" : String(defaults[defaultKey] ?? "");
+        this.writeOverrideAttribute(attrName, value === defaultValue ? "" : value);
+        return;
+      }
       this.writeAttribute(attrName, value);
       // Only a REGULAR parameter re-asserts the functionality tag. A branch parameter must not touch
       // `data-cb-func` — the branch functionality is named by its own `data-cb-<prefix>func`.
@@ -1890,13 +2121,19 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       }
       if (!textInput) {
         textInput = document.createElement("input");
-        textInput.type = type === "integer" || type === "number" ? "number" : "text";
+        // A DATE parameter gets a real date picker instead of a plain string field (requested): the
+        // stored value is the browser's own `yyyy-mm-dd` (or `yyyy-mm-ddThh:mm`) string, which is
+        // exactly what Formcycle/CodBi pass on. An EP expression (`{ Mein.Wetter > … }`) never matches
+        // that shape and therefore stays editable in a plain text field.
+        const dateType = dateInputType(type, value);
+        textInput.type = dateType ?? (type === "integer" || type === "number" ? "number" : "text");
         if (type === "integer") {
           textInput.step = "1";
         } else if (type === "number") {
           textInput.step = "any";
         }
-        textInput.className = "codbi-func-config__value";
+        textInput.className =
+          dateType === null ? "codbi-func-config__value" : "codbi-func-config__value codbi-func-config__date";
         textInput.style.flex = "1";
         textInput.addEventListener("change", () => {
           write(textInput?.value ?? "");
@@ -1931,7 +2168,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         checkbox.addEventListener("change", () => write(checkbox?.checked ? "true" : "false"));
         cell.insertBefore(checkbox, epButton);
       }
-      checkbox.checked = currentValue === "true" || currentValue === "1";
+      checkbox.checked = TRUTHY_FLAG_VALUES.has(currentValue.trim().toLowerCase());
     };
 
     const showSelect = (options: string[]): void => {
@@ -1945,7 +2182,9 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       }
       if (!select) {
         select = document.createElement("select");
-        select.className = "codbi-func-config__value";
+        // `__select` carries the CodBi dropdown look (white surface, darkorange border + chevron);
+        // `__value` keeps the shared border/focus transitions of every parameter editor.
+        select.className = "codbi-func-config__value codbi-func-config__select";
         select.style.flex = "1";
         const blank = document.createElement("option");
         blank.value = "";
@@ -1967,8 +2206,14 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     /** Whether this parameter is a `csv` (grid-edited) parameter. */
     const isCsvParam = (): boolean => type === "csv";
 
+    /** Whether this parameter is a CSS parameter (edited in the CSS editor popup). */
+    const isCssParam = (): boolean => type === "css" || type === "selector";
+
     /** Computes the short human-readable summary of a CSV value (element count). */
     const csvSummaryLabel = (value: string): string => {
+      if (isCssParam()) {
+        return cssValueSummary(value, spec);
+      }
       let itemSep = ",";
       let fieldSep = ";";
       if (spec?.itemSeparator) {
@@ -2033,31 +2278,55 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
           csvButton.style.color = "#925400";
         });
         csvButton.addEventListener("click", () => {
+          const onApply = (next: string): void => {
+            csvState.value = next;
+            write(next);
+            if (csvSummary) {
+              csvSummary.textContent = csvSummaryLabel(next);
+            }
+          };
           try {
-            openCsvGridEditor({
-              document: window.document,
-              anchor: row,
-              value: csvState.value,
-              spec,
-              onApply: (next) => {
-                csvState.value = next;
-                write(next);
-                if (csvSummary) {
-                  csvSummary.textContent = csvSummaryLabel(next);
-                }
-              },
-            });
+            if (isCssParam()) {
+              openCssEditor({
+                document: window.document,
+                anchor: row,
+                parameterName: name,
+                value: csvState.value,
+                spec,
+                // Use the platform's OWN preview page (the one the element preview switch loads) so the
+                // author sees the fully rendered form with the CSS applied live.
+                previewSrc: designerPreviewUrl(),
+                previewElementId: String((element as unknown as { getId?: () => string } | undefined)?.getId?.() ?? ""),
+                // Isolate the element and drop the platform preview menu — exactly like the element
+                // preview switch does.
+                previewClip: clipPreviewToElement,
+                previewRoot: this.previewRootFor(element),
+                onApply,
+              });
+            } else {
+              openCsvGridEditor({
+                document: window.document,
+                anchor: row,
+                value: csvState.value,
+                spec,
+                onApply,
+              });
+            }
           } catch (err) {
             // The popup could not open — fall back to plain text editing.
-            console.error("[CodBi] Formelement: could not open the CSV editor", err);
+            console.error("[CodBi] Formelement: could not open the parameter editor", err);
             showText(csvState.value);
           }
         });
         csvStack.appendChild(csvButton);
-        // Hover shows a table-like tooltip of the current parameter value (re-rendered on every
-        // mouseenter from the live csvState). A simple static title stays as a native fallback.
-        csvButton.title = `Edit ${name}`;
-        attachCsvValueTooltip(csvButton, () => csvState.value, spec, csvSummaryLabel(csvState.value));
+        // Hover shows a tooltip of the current parameter value (re-rendered on every mouseenter from
+        // the live csvState). A simple static title stays as a native fallback.
+        csvButton.title = isCssParam() ? `Edit ${name} (CSS editor)` : `Edit ${name}`;
+        if (isCssParam()) {
+          attachCssValueTooltip(csvButton, () => csvState.value, csvSummaryLabel(csvState.value));
+        } else {
+          attachCsvValueTooltip(csvButton, () => csvState.value, spec, csvSummaryLabel(csvState.value));
+        }
       }
       csvState.value = value;
       if (!csvSummary) {
@@ -2077,7 +2346,7 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
         showCheckbox();
       } else if (type === "enum" && spec?.options && spec.options.length > 0) {
         showSelect(spec.options);
-      } else if (isCsvParam()) {
+      } else if (isCsvParam() || isCssParam()) {
         showCsv(currentValue);
       }
     };
@@ -2116,18 +2385,11 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
     // value control BEFORE it (otherwise insertBefore throws).
     cell.appendChild(epButton);
 
-    if (
-      isBooleanParam() &&
-      (currentValue === "" ||
-        currentValue === "true" ||
-        currentValue === "false" ||
-        currentValue === "1" ||
-        currentValue === "0")
-    ) {
+    if (isBooleanParam() && isBooleanFlagValue(currentValue)) {
       showCheckbox();
     } else if (type === "enum" && spec?.options && spec.options.length > 0) {
       showSelect(spec.options);
-    } else if (isCsvParam()) {
+    } else if (isCsvParam() || isCssParam()) {
       showCsv(currentValue);
     } else {
       showText(currentValue);
@@ -2172,6 +2434,64 @@ export class ElementFunctionalityConfigEditor extends Editors.BaseEditor<typeof 
       console.error("[CodBi] Element: could not open the EP builder", x);
     }
   }
+}
+
+/** The values that mean "checked" for a boolean parameter, compared case-insensitively. */
+const TRUTHY_FLAG_VALUES: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
+
+/** The parameter datatypes rendered as a DATE PICKER (all spellings the API-doc uses). */
+const DATE_PARAM_TYPES: ReadonlySet<string> = new Set(["date", "datum", "iso-date", "isodate"]);
+/** The parameter datatypes rendered as a DATE+TIME picker. */
+const DATETIME_PARAM_TYPES: ReadonlySet<string> = new Set([
+  "datetime",
+  "datetime-local",
+  "date-time",
+  "timestamp",
+  "zeitpunkt",
+]);
+
+/**
+ * The `<input type>` to use for a date/datetime parameter.
+ *
+ * @param type  The parameter's declared datatype (may be `undefined`).
+ * @param value The current value.
+ * @returns `"date"` / `"datetime-local"`, or **`null`** when the parameter is no date type — or when
+ *   its value is not a plain (date)time string. The latter keeps an EP expression editable: a date
+ *   input would silently EMPTY such a value, which would destroy a composed placeholder.
+ */
+function dateInputType(type: string | undefined, value: string): "date" | "datetime-local" | null {
+  const kind = String(type ?? "")
+    .trim()
+    .toLowerCase();
+  const isDateTime = DATETIME_PARAM_TYPES.has(kind);
+  if (!isDateTime && !DATE_PARAM_TYPES.has(kind)) {
+    return null;
+  }
+  const raw = String(value ?? "").trim();
+  if (raw === "") {
+    return isDateTime ? "datetime-local" : "date";
+  }
+  const dateTimePattern = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$/;
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (isDateTime) {
+    return dateTimePattern.test(raw) ? "datetime-local" : null;
+  }
+  return datePattern.test(raw) ? "date" : null;
+}
+
+/**
+ * @param value - A parameter value.
+ * @returns Whether it is one of the spellings a boolean parameter uses (`TRUE`, `true`, `1`, …).
+ *
+ * Standard configurations write their flags UPPERCASE (`GenerateHeader: "TRUE"` in `UI.Panels`),
+ * runtime attributes may be lowercased. Comparing case-sensitively showed such a parameter as a plain
+ * text input (with the literal `TRUE`) instead of its checkbox.
+ */
+function isBooleanFlagValue(value: string): boolean {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return raw === "" || raw === "false" || raw === "0" || raw === "no" || raw === "off" || TRUTHY_FLAG_VALUES.has(raw);
 }
 
 /**
@@ -2283,6 +2603,11 @@ export function refreshElementFunctionalityConfig(): void {
     // non-hot path invoked after an EXTERNAL registry update that must be visible immediately, so flush
     // the queue instead of waiting for the next macrotask.
     flushElementConfigRenders();
+    // The on-canvas marker badges resolve their orange sub-badges from the SAME registry
+    // (`detFunctionalities`), so they must be rebuilt too. Without this a functionality that was just
+    // REMOVED from the local API-doc kept its badge on the element until the designer was reloaded —
+    // the panel was already correct, which made the stale marker look like a separate bug.
+    refreshCodbiElementMarkers();
   } catch (x) {
     console.warn("[CodBi] Element: could not refresh the config panel", x);
   }

@@ -236,8 +236,17 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     this.cdr = cdr;
   }
 
+  /**
+   * Console marker of the change-log build. A stale CACHED manager bundle silently keeps the old
+   * behaviour (e.g. a sensitive check that is never persisted, with no server request at all) while
+   * the server already runs the new plugin jar. Logging a marker makes "which bundle does the browser
+   * execute?" answerable in one glance of the browser console.
+   */
+  private readonly buildMarker = "codbi-change-log 2026-11-15 sensitive-check-persist v4";
+
   // #region Lifecycle
   ngOnInit(): void {
+    console.info("[[ CodBi ] change-log build:", this.buildMarker);
     // The panel is embedded in the assistant dialog and only rendered while unfolded, so this
     // component is created on every open. Load the entries right away so the change log is never
     // empty on first display — even if the parent's open() call is delayed. load() also retries an
@@ -662,6 +671,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
               });
             }
           }
+          // Diagnostic: what the backend reported as already-checked (the keys the marking compares
+          // against) — the decisive line when a tick does not survive a reload.
+          console.info("[[ CodBi ] sensitive checks loaded:", {
+            user: this.currentUser,
+            acknowledged: [...this.acknowledgedSensitive],
+          });
           // The backend derives the totals from the summed tokens per model × configured price per 1M,
           // so we prefer those over summing per-entry values.
           this.totalTokensIn = Number(
@@ -961,45 +976,132 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   }
 
   /**
+   * HARDCODED review requirement ("to be checked"): one entry of the intent
+   * `codbi-local-element` per log entry — an AI-drafted **local CodBi element** (functionality /
+   * element placeholder / standard configuration). Such an entry defines JavaScript that runs in
+   * EVERY session of the installation, so it is ALWAYS marked with the sensitive red border +
+   * verification checkbox, independent of `AI_Log_SensitiveElements`. Filled by [buildTree].
+   */
+  private readonly hardcodedReviewByEntry = new Map<string, string[]>();
+
+  /**
+   * The names a log entry must be flagged with regardless of `AI_Log_SensitiveElements`: the element
+   * name(s) recorded by the backend for a local-element commit. Empty for every other entry.
+   */
+  private reviewNamesOf(entry: Record<string, unknown>): string[] {
+    const form = entry["form"];
+    const formObj = form && typeof form === "object" ? (form as Record<string, unknown>) : undefined;
+    const localElement =
+      formObj && formObj["localElement"] && typeof formObj["localElement"] === "object"
+        ? (formObj["localElement"] as Record<string, unknown>)
+        : undefined;
+    // The review requirement comes from the backend flag OR — belt and braces — from the entry BEING a
+    // local API-doc change: such an entry stores JavaScript that runs in every session, so it must be
+    // marked even when the flag is missing (an entry recorded by an older build) or the deployment is
+    // mixed. Without this a log could show an unreviewed element commitment with no checkbox at all.
+    if (entry["mustReview"] !== true && localElement === undefined) return [];
+    const used = Array.isArray(entry["sensitiveUsed"]) ? (entry["sensitiveUsed"] as unknown[]).map(String) : [];
+    const names = used.filter((n) => n.trim().length > 0);
+    if (names.length > 0) return names;
+    // Fall back to the element name the entry itself carries, then to a stable generic label.
+    const elementName = String(localElement?.["name"] ?? "").trim();
+    return [elementName !== "" ? elementName : "Codbi local element"];
+  }
+
+  /**
    * Applies the **always-on** red border: every node whose label/value matches one of the configured
-   * sensitive elements ([sensitiveElements]) is flagged with `sensitive = true` — unless the user has
+   * sensitive elements ([sensitiveElements]) — or whose entry carries the hardcoded review
+   * requirement ([hardcodedReviewByEntry]) — is flagged with `sensitive = true`, unless the user has
    * dismissed it by ticking the node's checkbox ([acknowledgedSensitive]). Called on every load,
    * search and clear, so the marking is persistent and reflects the current configuration.
    */
   private markSensitiveNodes(): void {
-    if (this.sensitiveElements.length === 0) return;
+    if (this.sensitiveElements.length === 0 && this.hardcodedReviewByEntry.size === 0) return;
+    // Diagnostic: the facts the marking works from — which entries demand a review, which keys the
+    // backend reported as checked, and which sensitive elements are configured.
+    console.info("[[ CodBi ] mark sensitive nodes:", {
+      entries: this.logs.length,
+      hardcoded: [...this.hardcodedReviewByEntry.entries()],
+      acknowledged: [...this.acknowledgedSensitive],
+      configuredElements: this.sensitiveElements,
+    });
     for (const top of this.logs) {
-      this.markNodeSensitive([top], this.entryIdOf(top));
+      const entryId = this.entryIdOf(top);
+      // BOTH key shapes are tried: the numeric id is the canonical one, the `entry-<id>` shape is what
+      // an earlier build filed the names under. Never let a naming difference drop the review names
+      // again — that made the tick un-storable (no name → nothing to persist).
+      const hardcoded =
+        this.hardcodedReviewByEntry.get(entryId) ?? this.hardcodedReviewByEntry.get(`entry-${entryId}`) ?? [];
+      // The entry row carries the marking, so it is visible even while the entry is collapsed …
+      this.markNodeSensitive([top], entryId, hardcoded);
+      if (hardcoded.length > 0) {
+        // … and the row that NAMES the element ("Local …") carries the SAME review item, so expanding
+        // the entry shows the marking on the element itself. Both rows flip together — see
+        // `onSensitiveChecked`, which re-applies the marking to the whole log.
+        for (const child of top.children ?? []) {
+          if (String(child.id ?? "").endsWith("-localelement")) {
+            this.markNodeSensitive([child], entryId, hardcoded);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Applies the "to be checked" marking to ONE node: the red border + verification checkbox
+   * (`sensitive = true`) — or, when the user already acknowledged this (entry, element) pair, the
+   * ticked checkbox together with the "checked by … on …" badge.
+   */
+  private applyReviewMarking(node: LogNode, entryId: string, names: string[]): void {
+    if (names.length === 0) return;
+    node.entryId = entryId;
+    node.sensitiveNames = names;
+    const acknowledged = names.find((name) => this.acknowledgedSensitive.has(this.sensitiveKey(entryId, name)));
+    if (acknowledged) {
+      node.sensitive = false;
+      node.checked = true;
+      this.applyCheckInfoToNode(node, entryId);
+    } else {
+      node.sensitive = true;
+      node.checked = false;
+      node.checkedBy = undefined;
+      node.checkedAt = undefined;
     }
   }
 
   /** Recursively flags matching nodes as `sensitive` (rendered with an always-on red border). */
-  private markNodeSensitive(nodes: LogNode[], entryId: string): void {
+  private markNodeSensitive(nodes: LogNode[], entryId: string, hardcoded: string[] = []): void {
     for (const node of nodes) {
-      const matched = this.matchingSensitiveNames(node);
-      node.entryId = entryId;
-      node.sensitiveNames = matched;
-      const acknowledged = matched.find((name) => this.acknowledgedSensitive.has(this.sensitiveKey(entryId, name)));
-      if (acknowledged) {
-        // The user already dismissed this (entry, element) pair — keep it unmarked and restore the
-        // checked checkbox + the "checked by … on …" badge.
-        node.sensitive = false;
-        node.checked = true;
-        this.applyCheckInfoToNode(node, entryId);
-      } else if (matched.length > 0) {
-        node.sensitive = true;
-        node.checked = false;
-        node.checkedBy = undefined;
-        node.checkedAt = undefined;
+      const matched = [...new Set([...this.matchingSensitiveNames(node), ...hardcoded])];
+      // ONLY assign when something matched. An empty `matched` used to OVERWRITE the review names a
+      // node received at build time (the "Local …" element row of an API-doc entry), so the checkbox
+      // survived while the names were gone — the tick then had nothing to store and no request was
+      // ever sent (the reported "ticking the box does nothing at all").
+      if (matched.length > 0) {
+        node.entryId = entryId;
+        node.sensitiveNames = matched;
+        this.applyReviewMarking(node, entryId, matched);
+      } else if (node.entryId === undefined) {
+        node.entryId = entryId;
       }
       if (node.children) this.markNodeSensitive(node.children, entryId);
     }
   }
 
+  /**
+   * The NUMERIC log-entry id used for persisted sensitive checks. Node ids are `entry-<id>` while the
+   * backend stores `logEntryId` as a number, so EVERY key (stored review names, acknowledgement keys,
+   * the request's `entryId`) must be built from the bare id. Filing the names under the prefixed id on
+   * one side only made the lookup miss — the check was therefore never persisted.
+   */
+  private numericEntryId(entryId: string): string {
+    const m = /^entry-([0-9]+)/.exec(entryId);
+    return m ? m[1] : entryId;
+  }
+
   /** Extracts the inference id from a top-level node's `entry-<id>` id. */
   private entryIdOf(top: LogNode): string {
-    const m = /^entry-([0-9]+)/.exec(top.id);
-    return m ? m[1] : top.id;
+    return this.numericEntryId(top.id);
   }
 
   /** Stable key for one (entry, element) sensitive acknowledgement. */
@@ -1014,7 +1116,31 @@ export class AiAssistantLog implements OnInit, OnDestroy {
    */
   onSensitiveChecked(node: LogNode): void {
     const entryId = node.entryId ?? this.entryIdOf(node);
-    const names = node.sensitiveNames ?? this.matchingSensitiveNames(node);
+    const hardcoded =
+      this.hardcodedReviewByEntry.get(entryId) ?? this.hardcodedReviewByEntry.get(`entry-${entryId}`) ?? [];
+    // The names are resolved in THREE steps, because a node whose `sensitiveNames` is missing used to
+    // persist NOTHING: the tick survived until the next rebuild (view switch / reload) and then vanished
+    // — reported as "toggling the API Doc button un-checks it again".
+    //   1. the names the node was marked with,
+    //   2. the entry's hardcoded review names (an API-doc element commit),
+    //   3. the configured sensitive patterns that match the node's text.
+    const names =
+      node.sensitiveNames && node.sensitiveNames.length > 0
+        ? node.sensitiveNames
+        : hardcoded.length > 0
+          ? hardcoded
+          : this.matchingSensitiveNames(node);
+    if (names.length === 0) {
+      console.warn("[[ CodBi / Warning ] This node carries no review name — the check cannot be stored:", node.id);
+    }
+    // Traceable: shows in the browser console that the handler ran and WHICH pair is being stored, so a
+    // check that does not survive a reload can be diagnosed without a server round-trip.
+    console.info("[[ CodBi ] sensitive check:", {
+      entryId,
+      names,
+      checked: node.checked === true,
+      acknowledged: names.map((name) => this.sensitiveKey(entryId, name)),
+    });
     for (const name of names) {
       const key = this.sensitiveKey(entryId, name);
       if (node.checked === true) {
@@ -1029,12 +1155,22 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       }
       this.persistSensitiveCheck(entryId, name, node.checked === true);
     }
+    // The "checked by … on …" badge must appear on the row the user just ticked. That row renders ITS
+    // OWN node object (a recursive tree node may hold a re-created instance after expand/collapse), so
+    // the fields are set on the received node directly — `markSensitiveNodes()` below only updates the
+    // parent's tree objects.
     if (node.checked === true) {
-      this.applyCheckInfoToNode(node, entryId);
+      const info = names.length > 0 ? this.sensitiveCheckInfo.get(this.sensitiveKey(entryId, names[0])) : undefined;
+      node.sensitive = false;
+      node.checkedBy = info?.username ?? (this.currentUser || "?");
+      node.checkedAt = this.formatTimestamp(info?.checkedAt ?? new Date().toISOString());
     } else {
       node.checkedBy = undefined;
       node.checkedAt = undefined;
     }
+    // Re-apply the marking for the WHOLE log: an API-doc entry shows the same review item on the entry
+    // row AND on its element row, so both must flip together.
+    this.markSensitiveNodes();
     this.cdr.markForCheck();
   }
 
@@ -1068,12 +1204,38 @@ export class AiAssistantLog implements OnInit, OnDestroy {
 
   /** Persists/removes one sensitive-element dismiss check for the current user on the backend. */
   private persistSensitiveCheck(entryId: string, elementName: string, checked: boolean): void {
+    // Diagnostic: proves the write LEAVES the browser (the server logs every SensitiveCheck request
+    // including refusals, so "no server line" means exactly this line is missing from the console).
+    console.info("[[ CodBi ] posting SensitiveCheck:", { entryId, elementName, checked });
     getJQuery().ajax({
       url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
       type: "POST",
       headers: { "X-Action": "SensitiveCheck" },
       data: { entryId, elementName, checked: String(checked) },
       dataType: "json",
+      // A refused check used to be invisible: the box stayed ticked until the next load silently reset
+      // it. Now the console says WHY, so a non-persisting check can be diagnosed from a browser log.
+      success: (response: { ok?: boolean; error?: string } | null) => {
+        if (response?.ok !== true) {
+          console.warn(
+            `[[ CodBi / Warning ] The sensitive check for entry ${entryId} / '${elementName}' was NOT stored:`,
+            response ?? "no answer",
+          );
+          this.sensitiveWarning = `The sensitive check for entry ${entryId} / “${elementName}” was NOT stored (see the browser console).`;
+        } else {
+          console.info(`[[ CodBi ] sensitive check stored: entry ${entryId} / '${elementName}' (checked=${checked})`);
+          this.sensitiveWarning = null;
+        }
+        this.cdr.markForCheck();
+      },
+      error: (_xhr: unknown, _status: unknown, error: unknown) => {
+        console.warn(
+          `[[ CodBi / Warning ] The sensitive check for entry ${entryId} / '${elementName}' could not be sent:`,
+          String(error),
+        );
+        this.sensitiveWarning = `The sensitive check for entry ${entryId} / “${elementName}” could not be sent (see the browser console).`;
+        this.cdr.markForCheck();
+      },
     });
   }
 
@@ -1143,15 +1305,154 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   }
 
   /**
-   * Filters the raw log entries by the current [searchText]. A case-insensitive substring match is
-   * applied to the prompt, the model id and every value in the entry's `form` change description
-   * (widget names, class names, attribute names/values, variable names), so e.g. typing a class name
-   * or a global-variable name shows the matching inferences.
+   * The intent of a LOCAL API-DOC inference (a CodBi element definition/change) — mirrors the server's
+   * `LocalElementDrafts.INTENT` and the `intent` field of a log entry.
+   */
+  private readonly apiDocIntent = "codbi-local-element";
+
+  /**
+   * Which half of the change log is shown: the FORM logs (default) or the LOCAL API-DOC logs.
+   *
+   * A local CodBi element belongs to the installation, not to a form, so its entries carry no
+   * `formKey` and would otherwise be mixed into every form's log. The "API Doc" toolbar button
+   * separates the two views instead of hiding either half.
+   */
+  showApiDocLogs = false;
+
+  /**
+   * Switches the change log between the form/workflow entries and the local API-doc entries and
+   * rebuilds the tree from the cached raw entries (no reload needed — both halves are already loaded).
+   */
+  toggleApiDocLogs(): void {
+    this.showApiDocLogs = !this.showApiDocLogs;
+    this.rebuildLogs();
+  }
+
+  /**
+   * When ON, only entries that still contain an UNCHECKED review item are listed — I.e. the sensitive
+   * elements and the local API-doc element commits the editor has not looked at yet. The toolbar button
+   * lights up (like the "Sensitive" bolt button) while such entries exist, so nothing is overlooked.
+   */
+  uncheckedOnly = false;
+
+  /** Switches the "only un-checked" filter on/off and rebuilds the tree. */
+  toggleUncheckedOnly(): void {
+    this.uncheckedOnly = !this.uncheckedOnly;
+    this.rebuildLogs();
+  }
+
+  /**
+   * Rebuilds the tree from the ALREADY loaded entries, re-applies the "to be checked" marking and the
+   * active view filters (form/API-doc and only-unchecked). No reload — both halves are already loaded.
+   */
+  private rebuildLogs(): void {
+    this.logs = this.buildTree(this.applyFilter(this.rawEntries));
+    this.markSensitiveNodes();
+    this.applyUncheckedFilter();
+    this.expandSearchMatches();
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Drops every entry without an unchecked review item while [uncheckedOnly] is on. Runs AFTER the
+   * marking (that is what sets `sensitive`), so it covers both the configured sensitive elements and the
+   * hardcoded API-doc review items.
+   */
+  private applyUncheckedFilter(): void {
+    if (!this.uncheckedOnly) {
+      return;
+    }
+    const hasUnchecked = (nodes: LogNode[] | undefined): boolean => {
+      if (!nodes) {
+        return false;
+      }
+      for (const node of nodes) {
+        if (node.sensitive === true) {
+          return true;
+        }
+        if (hasUnchecked(node.children)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    this.logs = this.logs.filter((top) => hasUnchecked([top]));
+  }
+
+  /** Whether [entry] is a local API-doc (CodBi element) inference. */
+  private isApiDocEntry(entry: Record<string, unknown>): boolean {
+    return String(entry["intent"] ?? "") === this.apiDocIntent;
+  }
+
+  /**
+   * How many local API-doc entries the loaded window contains — shown as a badge on the "API Doc"
+   * button so a pending review item cannot be overlooked while the form view is active (the two views
+   * never mix, by design).
+   */
+  get apiDocEntryCount(): number {
+    return this.rawEntries.filter((entry) => this.isApiDocEntry(entry)).length;
+  }
+
+  /** True while a restore request is in flight (disables the tree's buttons meanwhile). */
+  restoreBusy = false;
+
+  /**
+   * Last failure of a sensitive-check WRITE, shown as a warning above the tree. A check that cannot be
+   * stored must never fail silently: the tick would simply be gone after the next reload, which looks
+   * like a broken checkbox instead of a backend/transport error.
+   */
+  sensitiveWarning: string | null = null;
+
+  /**
+   * Writes a recorded local API-doc change back into `codbi_local_apidoc` — the API-doc counterpart of
+   * the form's "apply this entry again".
+   *
+   * The entry stores the COMPLETE payload (documentation entry + JavaScript), so the server performs a
+   * plain write: nothing is re-generated and no manager synchronisation is required. Afterwards the
+   * designer is told to re-read the storage (`codbi-local-doc-changed`), which refreshes the local
+   * API-doc manager, the per-element config panel and the on-canvas markers.
+   */
+  onRestoreApiDoc(node: LogNode): void {
+    const entryId = this.entryIdOf(node);
+    if (!entryId || this.restoreBusy) {
+      return;
+    }
+    this.restoreBusy = true;
+    getJQuery().ajax({
+      url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+      type: "POST",
+      headers: { "X-Action": "RestoreLocalElement" },
+      data: { entryId },
+      success: (response: { status?: string; name?: string; message?: string; error?: string } | null) => {
+        this.restoreBusy = false;
+        const error = response?.error ? String(response.error) : "";
+        this.errorText = error ? error : null;
+        if (!error) {
+          // The element now exists (again) in the local API-doc storage; let the manager/designer re-read
+          // it instead of requiring a synchronisation.
+          window.dispatchEvent(new CustomEvent("codbi-local-doc-changed"));
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.restoreBusy = false;
+        this.errorText = "Restoring the element into the local API-doc failed.";
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  /**
+   * Filters the raw log entries by the active VIEW ([showApiDocLogs]) and by the current [searchText].
+   * A case-insensitive substring match is applied to the prompt, the model id and every value in the
+   * entry's `form` change description (widget names, class names, attribute names/values, variable
+   * names), so e.g. typing a class name or a global-variable name shows the matching inferences.
    */
   private applyFilter(entries: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    const scoped = entries.filter((entry) => this.isApiDocEntry(entry) === this.showApiDocLogs);
     const q = this.searchText.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((entry) => {
+    if (!q) return scoped;
+    return scoped.filter((entry) => {
       const prompt = String(entry["prompt"] ?? "").toLowerCase();
       const model = String(entry["modelId"] ?? "").toLowerCase();
       if (prompt.includes(q) || model.includes(q)) return true;
@@ -1285,9 +1586,15 @@ export class AiAssistantLog implements OnInit, OnDestroy {
 
   /** Toolbar counter: "N Inferences" plus the covered date range. When infinite scroll has only
    *  loaded a page of the true total, the caption reports the TRUE total (backend `total`) so the
-   *  counter is not stuck at the 200-entry page size. */
+   *  counter is not stuck at the 200-entry page size.
+   *
+   *  In the API-DOC view the backend total (which counts the form scope) does not apply, so the caption
+   *  reports what that view actually lists — the local CodBi element changes of this installation. */
   get countLabel(): string {
     const range = this.inferenceRange;
+    if (this.showApiDocLogs) {
+      return `${this.logs.length} API-doc changes${range ? ` ${range}` : ""}`;
+    }
     const shown = this.totalInferences > this.logs.length ? this.totalInferences : this.logs.length;
     return `${shown} Inferences${range ? ` ${range}` : ""}`;
   }
@@ -1416,6 +1723,17 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   private buildTree(logs: Array<Record<string, unknown>>): LogNode[] {
     return logs.map((entry, index) => {
       const entryId = `entry-${String(entry["id"] ?? index)}`;
+      // Persisted sensitive checks are keyed by the NUMERIC entry id (the backend stores `logEntryId`
+      // as a number), so the review names are filed under that same key the marking and the checkbox
+      // use. Filing them under `entry-<id>` made every later lookup miss.
+      const checkKey = this.numericEntryId(entryId);
+      // Reset/hardcode the review requirement of THIS entry (see [reviewNamesOf]).
+      const reviewNames = this.reviewNamesOf(entry);
+      if (reviewNames.length > 0) {
+        this.hardcodedReviewByEntry.set(checkKey, reviewNames);
+      } else {
+        this.hardcodedReviewByEntry.delete(checkKey);
+      }
       const prompt = String(entry["prompt"] ?? "");
       const inferenceTs = this.formatTimestamp(String(entry["ts"] ?? ""));
       const inferenceUser = String(entry["username"] ?? "");
@@ -1484,7 +1802,103 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         children.push(this.buildClarificationNode(clarification as Array<Record<string, unknown>>, entryId));
       }
       const form = entry["form"] as Record<string, unknown> | undefined;
-      if (form) {
+      // A LOCAL CodBi element commit ("codbi-local-element"): the stored `form` payload holds only
+      // the element definition (no widgets/classes/attributes), so it is rendered as its own row
+      // instead of an empty "Form" node.
+      const localElementEntry =
+        form && typeof form["localElement"] === "object" && form["localElement"] !== null
+          ? (form["localElement"] as Record<string, unknown>)
+          : undefined;
+      if (localElementEntry) {
+        // Everything that was WRITTEN is shown (and copyable): the recorded documentation entry, its
+        // typed parameter metadata and the complete JavaScript. Without this the entry only showed
+        // "created · with code", so the stored definition could not be inspected or copied from the log.
+        const recorded =
+          localElementEntry["restore"] && typeof localElementEntry["restore"] === "object"
+            ? (localElementEntry["restore"] as Record<string, unknown>)
+            : {};
+        const stored =
+          recorded["entry"] && typeof recorded["entry"] === "object"
+            ? (recorded["entry"] as Record<string, unknown>)
+            : {};
+        /** Any recorded value as displayable text (objects/arrays as pretty JSON). */
+        const asText = (value: unknown): string => {
+          if (value === undefined || value === null) {
+            return "";
+          }
+          if (typeof value === "string") {
+            return value;
+          }
+          if (typeof value === "number" || typeof value === "boolean") {
+            return String(value);
+          }
+          return JSON.stringify(value, null, 2);
+        };
+        /** One copyable `label → value` row, omitted when the value is empty. */
+        const row = (key: string, label: string, value: unknown, multiline = false): LogNode | null => {
+          const text = asText(value);
+          if (text.trim() === "") {
+            return null;
+          }
+          return {
+            id: `${entryId}-localelement-${key}`,
+            kind: "param-item",
+            label,
+            value: text,
+            multiline,
+            expanded: false,
+          };
+        };
+        // The manager stores the short description per language — show each language on its own line.
+        const summary = stored["Summary"];
+        const summaryText =
+          summary && typeof summary === "object" && !Array.isArray(summary)
+            ? ["en", "de", "it"]
+                .map((lang) => {
+                  const text = asText((summary as Record<string, unknown>)[lang]);
+                  return text.trim() === "" ? "" : `${lang}: ${text}`;
+                })
+                .filter((line) => line !== "")
+                .join("\n") || asText(summary)
+            : asText(summary);
+        const details = [
+          row("name", "Name", localElementEntry["name"]),
+          row("kind", "Kind", localElementEntry["kind"]),
+          row("description", "Description", stored["Description"], true),
+          row("summary", "Summary", summaryText, true),
+          row("condensed", "CondensedPrompt", stored["CondensedPrompt"], true),
+          row("detailed", "DetailedPrompt", stored["DetailedPrompt"], true),
+          row("parameter", "Parameter", stored["Parameter"], true),
+          row("parameter-meta", "parameters (typed)", stored["parameters"], true),
+          row("types", "supportedFormelementtypes", stored["supportedFormelementtypes"], true),
+          // The JavaScript LAST: it is the longest row, so nothing important hides below it.
+          row("code", "Code", recorded["code"], true),
+        ].filter((node): node is LogNode => node !== null);
+        const restoreApiDoc = entry["apiDocRestorable"] === true;
+        const localNode: LogNode = {
+          id: `${entryId}-localelement`,
+          kind: "func",
+          codbi: true,
+          label: `Local ${String(localElementEntry["kind"] ?? "element")}`,
+          idTag: String(localElementEntry["name"] ?? ""),
+          value: [
+            String(localElementEntry["action"] ?? "created"),
+            localElementEntry["hasCode"] === true ? "with code" : "",
+          ]
+            .filter(Boolean)
+            .join(" \u00b7 "),
+          // Only an entry that carries the COMPLETE payload can be written back; older entries (recorded
+          // before the payload was stored) get no restore button.
+          restoreApiDoc,
+          children: details,
+          expanded: false,
+        };
+        // An AI-drafted local element defines JavaScript that runs in EVERY session of the installation,
+        // so this row is ALWAYS "to be checked" — red border + verification checkbox, and once the user
+        // ticked it, the ticked checkbox with the "checked by … on …" badge.
+        this.applyReviewMarking(localNode, checkKey, reviewNames);
+        children.push(localNode);
+      } else if (form) {
         // The form items that are CONTAINERS in the entry (their logged children sit beneath them);
         // only those get the extra "element only (without children)" re-apply button.
         const containerItems = new Set<string>(

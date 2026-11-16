@@ -871,6 +871,27 @@ internal object LocalElementDrafts {
             "The Code uses 'toLoad' as a DOM element — 'toLoad' is the resolved PARAMETER OBJECT " +
                 "(read `toLoad.layout`), the ELEMENT is 'toProcess' " +
                 "(toProcess.getAttribute('data-cb-<param>'), toProcess.appendChild(…)).")
+      } else {
+        // Wrong-CASED parameter read (reported: `toLoad.extraValue` instead of
+        // `toLoad.extravalue`).
+        // The runtime lowercases EVERY `toLoad` property — the `data-cb-<param>` attribute name
+        // with
+        // the `data-cb-` prefix dropped AND the remainder lowered — so a property identifier
+        // holding
+        // an uppercase letter (that is not one of the DOM members above) always refers to a
+        // property
+        // that is `undefined`.
+        val wrongCaseProp =
+            TO_LOAD_PROP.findAll(code)
+                .map { it.groupValues[1] }
+                .firstOrNull { p -> p.any { it.isUpperCase() } && !TO_LOAD_DOM_MEMBERS.matches(p) }
+        if (wrongCaseProp != null) {
+          problems.add(
+              "The Code reads 'toLoad.$wrongCaseProp' — every 'toLoad' parameter property is " +
+                  "LOWERCASED at runtime (the 'data-cb-<param>' attribute name with the 'data-cb-' " +
+                  "prefix dropped and lowercased), so that property is 'undefined'. Read " +
+                  "'toLoad.${wrongCaseProp.lowercase()}' instead.")
+        }
       }
       if (!usesProcessedElement(code)) {
         // A functionality that never touches its element cannot render anything — the user unfolds
@@ -1003,19 +1024,92 @@ internal object LocalElementDrafts {
       countRegistrations(code, kind, name)
 
   /**
+   * Removes comments (line comments and block comments) and the contents of string and template
+   * literals, replacing each non-newline character with a SPACE so positions and line structure are
+   * kept.
+   *
+   * The `element`/`elem` use/declaration checks must only ever see REAL code: an `element` inside a
+   * comment or a string is not a variable reference at all, so it must neither be flagged as an
+   * undeclared use nor count as a declaration. Without this, a generated calculator that correctly
+   * uses `toProcess`/`document.createElement` but mentions "element" in an explanatory comment (or
+   * a string) is falsely rejected for "using the undefined variable 'element'".
+   */
+  private fun stripCommentsAndStrings(code: String): String {
+    val chars = code.toCharArray()
+    var i = 0
+    while (i < code.length) {
+      val c = code[i]
+      when {
+        c == '\'' || c == '"' || c == '`' -> {
+          val quote = c
+          chars[i] = ' '
+          i += 1
+          while (i < code.length) {
+            val d = code[i]
+            if (d == '\\') {
+              chars[i] = ' '
+              if (i + 1 < code.length) {
+                chars[i + 1] = ' '
+                i += 2
+              } else {
+                i += 1
+              }
+              continue
+            }
+            if (d != '\n') chars[i] = ' '
+            i += 1
+            if (d == quote) break
+            if (d == '\n' && quote != '`') break
+          }
+        }
+        c == '/' && code.getOrNull(i + 1) == '/' -> {
+          chars[i] = ' '
+          chars[i + 1] = ' '
+          i += 2
+          while (i < code.length && code[i] != '\n') {
+            chars[i] = ' '
+            i += 1
+          }
+        }
+        c == '/' && code.getOrNull(i + 1) == '*' -> {
+          chars[i] = ' '
+          chars[i + 1] = ' '
+          i += 2
+          while (i < code.length) {
+            if (code[i] == '*' && code.getOrNull(i + 1) == '/') {
+              chars[i] = ' '
+              chars[i + 1] = ' '
+              i += 2
+              break
+            }
+            if (code[i] != '\n') chars[i] = ' '
+            i += 1
+          }
+        }
+        else -> i += 1
+      }
+    }
+    return String(chars)
+  }
+
+  /**
    * Whether the code USES `element`/`elem` without declaring it anywhere.
    *
    * The registration callback's scope only provides `toLoad` and `toProcess`, so such a reference
    * is guaranteed to throw `ReferenceError: element is not defined` at runtime. A code that
    * declares its own `element`/`elem` (a `const`, a `function` parameter or an arrow parameter) is
    * untouched — only the undeclared case is reported.
+   *
+   * Comments and string/template literals are stripped before the checks: an `element` inside them
+   * is not a variable reference (see [stripCommentsAndStrings]).
    */
   fun usesUndeclaredElement(code: String): Boolean {
     if (code.isBlank()) return false
-    if (!ELEMENT_ALIAS_USE.containsMatchIn(code)) return false
-    if (ELEMENT_DECLARED.containsMatchIn(code)) return false
-    if (ELEMENT_FUNCTION_PARAM.containsMatchIn(code)) return false
-    if (ELEMENT_ARROW_PARAM.containsMatchIn(code)) return false
+    val body = stripCommentsAndStrings(code)
+    if (!ELEMENT_ALIAS_USE.containsMatchIn(body)) return false
+    if (ELEMENT_DECLARED.containsMatchIn(body)) return false
+    if (ELEMENT_FUNCTION_PARAM.containsMatchIn(body)) return false
+    if (ELEMENT_ARROW_PARAM.containsMatchIn(body)) return false
     return true
   }
 
@@ -1128,6 +1222,25 @@ internal object LocalElementDrafts {
           "\\btoLoad\\s*\\.\\s*(getAttribute|setAttribute|hasAttribute|appendChild|append|prepend|" +
               "querySelector|querySelectorAll|classList|dataset|innerHTML|textContent|innerText|" +
               "addEventListener|insertBefore|remove|removeChild|closest|children)\\b")
+
+  /**
+   * Any `toLoad.<prop>` access. Group 1 holds the property identifier.
+   *
+   * Used to detect a WRONG-CASED parameter read: the runtime lowercases EVERY `toLoad` property
+   * (the `data-cb-<param>` attribute name with the `data-cb-` prefix dropped AND the remainder
+   * lowered), so `toLoad.extraValue`/`toLoad.Data` is `undefined` and must be written
+   * `toLoad.extravalue` / `toLoad.data`.
+   */
+  private val TO_LOAD_PROP = Regex("\\btoLoad\\s*\\.\\s*([A-Za-z_$][A-Za-z0-9_$]*)\\b")
+
+  /**
+   * The DOM members of `TO_LOAD_AS_ELEMENT`, tested as whole identifiers to exclude from casing.
+   */
+  private val TO_LOAD_DOM_MEMBERS =
+      Regex(
+          "(getAttribute|setAttribute|hasAttribute|appendChild|append|prepend|querySelector|" +
+              "querySelectorAll|classList|dataset|innerHTML|textContent|innerText|addEventListener|" +
+              "insertBefore|remove|removeChild|closest|children)")
 
   /**
    * Diagnostic summary of a generated code's registration calls — logged when validation rejects a

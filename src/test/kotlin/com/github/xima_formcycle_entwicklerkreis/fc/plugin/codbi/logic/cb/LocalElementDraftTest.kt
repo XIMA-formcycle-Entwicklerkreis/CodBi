@@ -360,6 +360,47 @@ class LocalElementDraftTest {
                 "[1].forEach((element) => element); });"))
   }
 
+  /**
+   * A generated calculator that only uses `toProcess`/`input`/`document.createElement` must NOT be
+   * rejected for the undefined variable 'element' — the reported false positive. Models add
+   * explanatory comments that mention "element" (or a string that contains it); such an occurrence
+   * is not a variable reference, so it must be ignored, while a REAL undeclared `element` USE is
+   * still caught and repaired.
+   */
+  @Test
+  fun `an element word in a comment or string is not an undeclared use`() {
+    val withComment =
+        "window.codbi.registerFunctionality('Mein.Rechner', (toLoad, toProcess) => {\n" +
+            "  const input = toProcess;\n" +
+            "  // position the element inside the input's wrapper\n" +
+            "  const btn = document.createElement('button');\n" +
+            "  input.appendChild(btn);\n" +
+            "});"
+    assertFalse(LocalElementDrafts.usesUndeclaredElement(withComment), withComment)
+    assertEquals(
+        withComment,
+        LocalElementDrafts.repairElementReference(LocalElementKind.FUNCTIONALITY, withComment),
+        "a comment mention must never be rewritten")
+
+    val withString =
+        "window.codbi.registerFunctionality('Mein.Rechner', (toLoad, toProcess) => {\n" +
+            "  const label = 'element'; const btn = document.createElement('button');\n" +
+            "  btn.textContent = label; toProcess.appendChild(btn);\n" +
+            "});"
+    assertFalse(LocalElementDrafts.usesUndeclaredElement(withString), withString)
+
+    // A genuine undeclared element VALUE use is still caught and rewritten.
+    val broken =
+        "window.codbi.registerFunctionality('Mein.Rechner', (toLoad, toProcess) => {\n" +
+            "  // real\n" +
+            "  element.appendChild(document.createElement('button'));\n" +
+            "});"
+    assertTrue(LocalElementDrafts.usesUndeclaredElement(broken), broken)
+    val repaired = LocalElementDrafts.repairElementReference(LocalElementKind.FUNCTIONALITY, broken)
+    assertTrue(repaired.contains("toProcess.appendChild("), repaired)
+    assertFalse(LocalElementDrafts.usesUndeclaredElement(repaired), repaired)
+  }
+
   @Test
   fun `missing prompts are refused because later form runs could not use the element`() {
     val draft =
@@ -616,6 +657,34 @@ class LocalElementDraftTest {
     val problems =
         LocalElementDrafts.validate(draft, LocalElementKind.FUNCTIONALITY, emptyMap(), false)
     assertTrue(problems.any { it.contains("PARAMETER OBJECT") }, problems.toString())
+  }
+
+  /**
+   * Reported: the AI generated `toLoad.extraValue` although the runtime lowercases EVERY `toLoad`
+   * property (the `data-cb-<param>` name with the `data-cb-` prefix dropped AND lowered), so a
+   * wrong-cased property read is `undefined` at runtime and must be written `toLoad.extravalue`.
+   */
+  @Test
+  fun `a wrong-cased toLoad property access is refused`() {
+    val broken =
+        "window.codbi.registerFunctionality('Mein.Rechner', (toLoad, toProcess) => { " +
+            "const v = toLoad.extraValue; toProcess.appendChild(document.createElement('div')); });"
+    val draft =
+        draft(functionalityDraft.replace(Regex("\"Code\":\"[^\"]*\""), "\"Code\":\"$broken\""))
+    val problems =
+        LocalElementDrafts.validate(draft, LocalElementKind.FUNCTIONALITY, emptyMap(), false)
+    assertTrue(problems.any { it.contains("LOWERCASED") }, problems.toString())
+    assertTrue(problems.any { it.contains("extravalue") }, problems.toString())
+
+    val fine =
+        "window.codbi.registerFunctionality('Mein.Rechner', (toLoad, toProcess) => { " +
+            "const v = toLoad.extravalue; toProcess.appendChild(document.createElement('div')); });"
+    val fineDraft =
+        draft(functionalityDraft.replace(Regex("\"Code\":\"[^\"]*\""), "\"Code\":\"$fine\""))
+    assertTrue(
+        LocalElementDrafts.validate(fineDraft, LocalElementKind.FUNCTIONALITY, emptyMap(), false)
+            .isEmpty(),
+        "an all-lowercase toLoad property must not be flagged")
   }
 
   /**

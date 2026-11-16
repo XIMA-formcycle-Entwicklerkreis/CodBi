@@ -2144,6 +2144,25 @@ class AICodBiAssistant : IPluginServletAction {
                 "call for the declared Name and must CALL its helper with toProcess.")
     val systemPrompt = buildString {
       append(contract.trim())
+      // PROACTIVE guard (not only the repair round): a calculator / evaluator-style functionality
+      // naturally reaches for eval()/new Function()/Function('return '+expr)() to evaluate an
+      // entered expression, but ALL of those are dynamic code evaluation and are REFUSED by
+      // validation (a generated calculator that uses eval() returns "The Code must not contain
+      // eval(" and is rejected). Say so up front and give a concrete eval-free approach so the
+      // FIRST draft already generates valid, evaluator-style code instead of wasting a repair
+      // round.
+      append(
+          "\nDo NOT use eval(), new Function() or Function('return ' + expr)() — all three are " +
+              "dynamic code evaluation and are REJECTED (the Code must not contain 'eval('). " +
+              "When the element is a CALCULATOR (or otherwise has to evaluate an entered " +
+              "expression), evaluate EXPLICITLY without any eval-family construct. The simplest " +
+              "correct approach is a NUMERIC STATE MACHINE the key handlers drive: keep a " +
+              "`display` string and an operator/left-operand, digit keys append to the display, " +
+              "'=' runs ONE binary operation with the chosen precedence (a few `if`s over " +
+              "`+ - * /` — not a general expression parser). If you want full precedence " +
+              "(- and ÷ before + and +/−) implement a tiny two-pass eval: parse the display into " +
+              "tokens, first resolve * and /, then + and -. NEVER hand a concatenated expression " +
+              "string to eval(), Function() or their aliases.\n")
       append(LocalElementDrafts.buildElementContext(existingNames, existingEntry, existingCode))
       if (!clarificationContext.isNullOrBlank()) {
         // The user already answered the AI's questions (e.g. the technical name) — the draft must
@@ -2559,8 +2578,13 @@ class AICodBiAssistant : IPluginServletAction {
               "toProcess.querySelector(…), toProcess.getAttribute('data-cb-<param>')), and read ")
           append("`data-cb-<param>` parameters from that same element.")
           append("\n`toLoad` is the resolved PARAMETER OBJECT — read `toLoad.layout`, NEVER ")
+          append("`toLoad.getAttribute(…)` (that throws a TypeError and nothing renders). EVERY ")
           append(
-              "`toLoad.getAttribute(…)` (that throws a TypeError and nothing renders). The UI must ")
+              "`toLoad` property name is LOWERCASED (the `data-cb-` prefix dropped AND the remainder ")
+          append(
+              "lowered): `data-cb-extraValue`/`data-cb-extravalue` is ALWAYS read as `toLoad.extravalue`, ")
+          append(
+              "never `toLoad.extraValue`. Write ALL `toLoad.*` access in lowercase. The UI must ")
           append(
               "be appended INTO `toProcess` (`toProcess.appendChild(wrapper)`); a functionality ")
           append("that never touches `toProcess` renders nothing.")
@@ -2668,6 +2692,15 @@ class AICodBiAssistant : IPluginServletAction {
     response.addProperty("cost", cost ?: 0.0)
     response.addProperty("currency", price?.currency ?: "")
     response.addProperty("committable", true)
+    // The per-inference breakdown and the clarification Q&A are threaded to the deterministic
+    // commit (see `handleLocalElementCommit`) so the change-log entry for a local CodBi element
+    // shows the SAME "Inference trips" and "Clarification" sections as a form/workflow entry.
+    // They are computed NOW, on the thread that ran the inference (runTrips is ThreadLocal and the
+    // commit is a separate request), so they must travel inside the draft envelope.
+    val tripsJson = tripsToJson()
+    if (tripsJson.size() > 0) response.add("trips", tripsJson)
+    val clarificationJson = clarificationTurnsToJson(clarificationHistory)
+    if (clarificationJson.size() > 0) response.add("clarification", clarificationJson)
     return jsonResponse(gson.toJson(response))
   }
 
@@ -2946,6 +2979,23 @@ class AICodBiAssistant : IPluginServletAction {
     val cost = params.requestParameters["cost"]?.firstOrNull()?.toDoubleOrNull()
     val currency =
         params.requestParameters["currency"]?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }
+    // The drafting pass's per-inference breakdown and clarification Q&A travel with the draft
+    // envelope (see `draftLocalElement`) and are echoed back here, so the change-log entry shows
+    // the same "Inference trips" and "Clarification" sections as a form/workflow entry.
+    fun jsonArrayParam(name: String): JsonArray? =
+        params.requestParameters[name]
+            ?.firstOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+              try {
+                val parsed = JsonParser.parseString(it)
+                if (parsed.isJsonArray && parsed.asJsonArray.size() > 0) parsed.asJsonArray
+                else null
+              } catch (_: Exception) {
+                null
+              }
+            }
     try {
       AiAssistantLog.recordInference(
           emf,
@@ -2961,7 +3011,9 @@ class AICodBiAssistant : IPluginServletAction {
           tokensOut,
           cost = cost,
           currency = currency,
-          username = username)
+          username = username,
+          clarification = jsonArrayParam("clarification"),
+          trips = jsonArrayParam("trips"))
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record the local element change log: {}", e.message)
     }

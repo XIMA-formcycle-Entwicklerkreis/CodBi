@@ -40,6 +40,12 @@ EXACTLY like this (capital `Name`, `Description`, `Summary`, `CondensedPrompt`, 
 > - **`toLoad` is the resolved PARAMETER OBJECT.** Read values as `toLoad.layout`. It is NOT an element:
 >   `toLoad.getAttribute(…)` throws `TypeError: toLoad.getAttribute is not a function` and the whole
 >   functionality aborts before rendering anything.
+> - **EVERY `toLoad` PROPERTY NAME IS LOWERCASED.** Each property is the functionality's own
+>   `data-cb-<param>` attribute name with the `data-cb-` prefix DROPPED AND the remainder converted to
+>   lowercase. So a parameter declared (or written) as `data-cb-extraValue` or `data-cb-extravalue` is
+>   ALWAYS read as `toLoad.extravalue` — NEVER `toLoad.extraValue` (that is `undefined` and silently
+>   breaks the functionality). A parameter `data-cb-layout` is `toLoad.layout`. ALWAYS write `toLoad.*`
+>   access in ALL-LOWERCASE; the attribute spelling does not matter.
 > - **`toProcess` is the form element the functionality is tagged on.** Build your UI into it and END
 >   the callback with that append: `toProcess.appendChild(wrapper)`. A functionality that never touches
 >   `toProcess` renders nothing and is rejected.
@@ -169,9 +175,13 @@ THE NAME — READ IT OUT OF THE REQUEST FIRST (any language, any punctuation):
    such an id does not exist at runtime and the configuration does nothing.
    **THE PARAMETER KEYS ARE THE FUNCTIONALITY'S OWN PARAMETERS**, with the `data-cb-` prefix DROPPED:
    the attribute `data-cb-Data` (Sys.Log.Console) is the key `Data`, `data-cb-replacement` is
-   `replacement`, `data-cb-Values` is `Values`, `data-cb-toset` is `toset`, and so on. NEVER key a
-   configuration parameter by your own idea (`StartDate`, `Days`) when the functionality applied does
-   not have that parameter — pass such values through the element placeholder instead.
+   `replacement`, `data-cb-Values` is `Values`, `data-cb-toset` is `toset`, and so on. These
+   `loadConfig` keys keep the FUNCTIONALITY'S ORIGINAL PARAMETER CASING — they are the declarative keys
+   a functionality consumes, NOT the (always-lowercased) `toLoad` object properties of its own
+   `Code`. In the `Code` callback read every parameter as `toLoad.<lowercase>`, never as the `Data` /
+   `Values`-case key from here. NEVER key a configuration parameter by your own idea (`StartDate`,
+   `Days`) when the functionality applied does not have that parameter — pass such values through the
+   element placeholder instead.
    **AN ELEMENT PLACEHOLDER IS A VALUE**: write it as `{ <EP name> > <arg1> ; <arg2> … }` — the name
    is followed by `>`, then the POSITIONAL arguments separated by `;`, in the order of the EP's
    declared parameters — and put it into the value parameter the functionality consumes (`Data`,

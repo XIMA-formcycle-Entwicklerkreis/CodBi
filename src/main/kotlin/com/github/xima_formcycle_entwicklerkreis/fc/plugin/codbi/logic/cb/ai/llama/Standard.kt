@@ -1135,7 +1135,22 @@ class Standard : LLAMA() {
    * @param messagesJson A JSON array of chat-completion messages (system + user roles).
    * @return The raw text response from the AI model.
    */
-  internal fun performFormAssist(modelId: String, messagesJson: String): String {
+  internal fun performFormAssist(
+      modelId: String,
+      messagesJson: String,
+      // TRUE for a FORM BUILD pass: the answer is a large JSON document, so the output budget must
+      // go
+      // into the JSON and not into a long chain of thought. A reasoning-capable provider otherwise
+      // burns the whole budget in its reasoning channel and returns EMPTY content (observed: 144k
+      // chars of reasoning, `finish_reason="length"`, no form JSON at all). See
+      // [resolveReasoningEffort].
+      buildPass: Boolean = false
+  ): String {
+    // Cap the reasoning budget for a BUILD pass (see [resolveReasoningEffort]). Kept per THREAD
+    // because the routing happens several calls deeper ([callFormAssistModel]) and every web-access
+    // round must inherit it. It is overwritten by the very next call, so a pooled thread can never
+    // leak a previous run's cap.
+    buildPassReasoningCap.set(if (buildPass) BUILD_REASONING_CAP else null)
     val svc = chatCompletionService ?: error("AI service not ready")
     // Start a fresh usage accumulator: takeLastAssistUsage() must report exactly THIS call (with
     // all
@@ -1187,6 +1202,12 @@ class Standard : LLAMA() {
    * handed to the build pass instead (see `AICodBiAssistant`).
    */
   private val webAccessNotes = ThreadLocal<String?>()
+
+  /**
+   * Reasoning-budget CAP for the FORM BUILD pass executing on this thread, or `null` for "no cap".
+   * Set by [performFormAssist]'s `buildPass` flag and consumed by [resolveReasoningEffort].
+   */
+  private val buildPassReasoningCap = ThreadLocal<String?>()
 
   /**
    * Returns the web-access transcript collected on THIS thread since the last call and clears it.
@@ -1250,8 +1271,38 @@ class Standard : LLAMA() {
    * The result is handed to [ChatCompletionService.chatCompletion] as its per-call override. A
    * `default`/blank request value (or none) falls through to the configured sources.
    */
-  internal fun resolveReasoningEffort(modelId: String): String? =
-      requestReasoningEffort.get() ?: configuredReasoningEffort(modelId)
+  internal fun resolveReasoningEffort(modelId: String): String? {
+    val resolved = requestReasoningEffort.get() ?: configuredReasoningEffort(modelId)
+    // BUILD passes are CAPPED at the lowest level. Building a form from a document is a
+    // transcription
+    // task: the model must emit a large JSON document, and every token spent thinking is a token
+    // not
+    // spent on the answer. A reasoning provider left on its default (or on `medium`/`high`)
+    // otherwise
+    // answers a document build with EMPTY content and a 100k+ char analysis. The cap is a MAXIMUM,
+    // so
+    // an explicitly configured `low` stays `low`, and the chat/workflow/translate passes (no cap
+    // set)
+    // keep the user's or the plugin's setting unchanged.
+    val cap = buildPassReasoningCap.get() ?: return resolved
+    return if (reasoningRank(resolved) > reasoningRank(cap)) cap else resolved
+  }
+
+  /**
+   * The reasoning level a FORM BUILD pass is capped at. `low` is the lowest level the external
+   * reasoning APIs accept (`low`/`medium`/`high`), so it both frees the output budget and stays
+   * within every provider's supported set.
+   */
+  private val BUILD_REASONING_CAP = "low"
+
+  /** `low` < `medium` < `high`; an unset/provider-default budget ranks highest, so a cap wins. */
+  private fun reasoningRank(effort: String?): Int =
+      when (effort?.trim()?.lowercase()) {
+        "low" -> 0
+        "medium" -> 1
+        "high" -> 2
+        else -> 3
+      }
 
   /** The value the assistant dropdown should preselect for [modelId] (`default` when unset). */
   internal fun reasoningEffortSelectionFor(modelId: String): String =

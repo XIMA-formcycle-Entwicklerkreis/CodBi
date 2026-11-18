@@ -561,6 +561,16 @@ interface ClarificationQuestion {
   codbiOption?: string;
 }
 
+/**
+ * Param-name prefix marking an attached document as a CLARIFICATION document (appended to the
+ * `codbi-base64:` param name). A clarification attachment only ANSWERS a question - the backend must
+ * not treat it as the document the form is built from, because that one activates the document
+ * parsing rules (FILE UPLOAD OVERRIDE, one page per image, ...).
+ *
+ * Must stay in sync with `ImageProcessingService.CLARIFICATION_IMAGE_PREFIX`.
+ */
+const CLARIFICATION_IMAGE_PREFIX = "clarification:";
+
 /** One answered clarification round (used for the change log and the re-run conversation). */
 interface ClarificationTurn {
   question: string;
@@ -845,6 +855,18 @@ export class AiAssistant implements OnInit, OnDestroy {
   private readonly escapeHandler = (event: KeyboardEvent): void => {
     if (event.key !== "Escape") return;
     const target = event.target as HTMLElement | null;
+    // While the find bar of the local-element code panel is open, ESC closes that bar first
+    // (instead of the dialog) — the focus leaves the input, so this early branch catches it.
+    if (this.localElementFindOpen && !this.typingInFormDesigner(target)) {
+      this.closeLocalElementFind();
+      return;
+    }
+    // When the code panel is maximized to fullscreen, ESC first leaves the fullscreen layer
+    // (putting the editor back into the dialog) before a second ESC can close the dialog.
+    if (this.localElementFullscreen) {
+      this.toggleLocalElementFullscreen();
+      return;
+    }
     // Skip the binding while the user is typing in an input/textarea/contentEditable so ESC does
     // not yank focus away mid-edit inside the form designer.
     if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable === true)) {
@@ -855,6 +877,48 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.closeChat();
     } else {
       this.close();
+    }
+  };
+
+  /** True while [target] is a text input belonging to the Formcycle designer (never the find bar). */
+  private typingInFormDesigner(target: HTMLElement | null): boolean {
+    if (!target || (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA"))
+      return target?.isContentEditable === true;
+    // The find bar's own input closes via its (keydown.escape); Escape anywhere else in the
+    // review dialog should close the find bar, not the assistant dialog.
+    return target.closest(".cb-ai-code-findbar") == null;
+  }
+
+  /** Ctrl+F / Strg+F (and F3 / Shift+F3 / Ctrl+G) inside the local-element review code panel. */
+  private readonly localElementFindKeyHandler = (event: KeyboardEvent): void => {
+    const findable =
+      this.localElementReview !== null &&
+      this.localElementCodeEdit.trim().length > 0 &&
+      this.localElementFindOpen === false;
+    // Ctrl+F / Strg+F: open the find bar and focus it (suppressing the native browser find).
+    if (findable && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      this.openLocalElementFind();
+      return;
+    }
+    // Only act on find-navigation keys while the find bar is open.
+    if (!this.localElementFindOpen) return;
+    const target = event.target as HTMLElement | null;
+    // Only route F3 / Ctrl+G when focus is inside the code panel (so the app-wide shortcuts keep
+    // working everywhere else).
+    if (!target?.closest(".cb-ai-code-panel")) return;
+    if (event.key === "F3") {
+      // F3 = next, Shift+F3 = previous (mirrors the browser find).
+      event.preventDefault();
+      if (event.shiftKey) this.findLocalElementPrev();
+      else this.findLocalElementNext();
+      return;
+    }
+    if (event.key.toLowerCase() === "g" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      if (event.shiftKey) this.findLocalElementPrev();
+      else this.findLocalElementNext();
+      return;
     }
   };
 
@@ -1673,6 +1737,9 @@ export class AiAssistant implements OnInit, OnDestroy {
     document.addEventListener("codbi:ai-assistant:speech", this.speechHandler);
     // ESC closes the assistant dialog / chat popup (see escapeHandler for the full behaviour).
     document.addEventListener("keydown", this.escapeHandler);
+    // Ctrl+F / Strg+F (and F3 / Ctrl+G) find inside the local-element review code panel: the native
+    // browser find is suppressed while that dialog is open so the search stays in the code editor.
+    document.addEventListener("keydown", this.localElementFindKeyHandler);
     // Persist the chat before ANY reload so it re-opens afterwards (our own reload or Formcycle's).
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
     // On window resizes, re-clamp the change-log panel (25%-75% of the actual dialog width) and
@@ -1749,6 +1816,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     document.removeEventListener("codbi:ai-assistant:open", this.openHandler);
     document.removeEventListener("codbi:ai-assistant:speech", this.speechHandler);
     document.removeEventListener("keydown", this.escapeHandler);
+    document.removeEventListener("keydown", this.localElementFindKeyHandler);
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     window.removeEventListener("resize", this.onWindowResize);
     this.stopSpeech();
@@ -3294,7 +3362,12 @@ export class AiAssistant implements OnInit, OnDestroy {
       let extra: Array<{ name: string; dataUrl: string }> = [];
       if (file) {
         try {
-          extra = await this.fileToImageParams(file);
+          // Mark it as a CLARIFICATION document: an attachment that only answers a question must not
+          // activate the document-parsing rules of the build pass.
+          extra = (await this.fileToImageParams(file)).map((p) => ({
+            ...p,
+            name: `${CLARIFICATION_IMAGE_PREFIX}${p.name}`,
+          }));
         } catch {
           extra = [];
         }
@@ -4546,6 +4619,11 @@ export class AiAssistant implements OnInit, OnDestroy {
     tokensOut: number;
     cost: number;
     currency: string;
+    // Per-inference breakdown and clarification Q&A from the drafting pass — threaded to the
+    // deterministic commit so the change-log entry shows the same "Inference trips" and
+    // "Clarification" sections as a form/workflow entry.
+    trips: Array<Record<string, unknown>>;
+    clarification: Array<Record<string, unknown>>;
   } | null = null;
 
   /** True when the user confirmed replacing an EXISTING definition (only relevant for `isUpdate`). */
@@ -4582,14 +4660,27 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Soft-wrap the code panel (default ON: a minified one-liner would otherwise need a scrollbar). */
   localElementCodeWrapped = true;
 
+  /** True when the code panel is maximized to fullscreen (pinned above the dialog). */
+  localElementFullscreen = false;
+
   /** True when the code was reformatted for DISPLAY (it arrived minified on a single line). */
   localElementCodeReformatted = false;
 
-  /** Raw code behind [localElementCodeLines] — rebuilt on every fold toggle, copied verbatim. */
+  /** Raw code behind the editor — editable, copied verbatim, and committed. */
   private localElementCodeRaw = "";
 
-  /** The code as DISPLAYED (possibly reformatted/indented) — never copied, never committed. */
+  /** The code as DISPLAYED in the editor (possibly reformatted/indented once at open). */
   private localElementCodeDisplay = "";
+
+  /** The value bound to the editable code <textarea> (always mirrors what the user sees/types). */
+  localElementCodeEdit = "";
+
+  /** Joined highlighted HTML of the code shown as the underlay behind the transparent <textarea>. */
+  localElementEditHtml = "";
+
+  /** The currently selected word in the editor, if any. When non-empty, every other occurrence of
+      that exact word is highlighted in the underlay (IDE-style "references highlight"). */
+  localElementCodeSelection = "";
 
   /** Highlighted HTML per source line (kept so folding never re-tokenises the code). */
   private localElementCodeHtml: string[] = [];
@@ -4599,6 +4690,574 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   /** Line indexes whose block is currently collapsed. */
   private localElementCollapsedFolds = new Set<number>();
+
+  /** True while the in-dialog find bar (Ctrl+F / Strg+F) of the code panel is open. */
+  localElementFindOpen = false;
+
+  /** The current find query (matched case-insensitively). */
+  localElementFindQuery = "";
+
+  /** 0-based source-line indexes whose (display) text contains the find query. */
+  localElementFindMatches: number[] = [];
+
+  /** Position into [localElementFindMatches] of the currently active match. */
+  localElementFindIndex = 0;
+
+  // ------------------------------------------------------------------------
+  // Localization of the local-element REVIEW dialog / generator dialogues.
+  // Follows the same convention as `reasoningEffortLabel` / `buergerserviceSwitchLabel`:
+  // switch on [uiLang] with de / it / nl and an English default.
+  // ------------------------------------------------------------------------
+
+  /** Title of the review dialog. */
+  get localElementReviewTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Neues CodBi-Element prüfen";
+      case "it":
+        return "Rivedi il nuovo elemento CodBi";
+      case "nl":
+        return "Nieuw CodBi-element beoordelen";
+      default:
+        return "Review the new CodBi element";
+    }
+  }
+
+  /** Title of the clarification dialog ("the AI needs some information"). */
+  get clarificationTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Die KI benötigt einige Informationen";
+      case "it":
+        return "L'IA ha bisogno di alcune informazioni";
+      case "nl":
+        return "De AI heeft wat informatie nodig";
+      default:
+        return "The AI needs some information";
+    }
+  }
+
+  /** Intro line of the clarification dialog. */
+  get clarificationIntro(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Bitte beantworten Sie die folgenden Fragen, damit der KI-Assistent Ihre Anfrage fortsetzen kann.";
+      case "it":
+        return "Rispondere alle seguenti domande affinché l'assistente IA possa proseguire la richiesta.";
+      case "nl":
+        return "Beantwoord de volgende vragen zodat de AI-assistent uw verzoek kan voortzetten.";
+      default:
+        return "Please answer the following questions so the AI assistant can continue your request.";
+    }
+  }
+
+  /** Fallback label for an element without a name. */
+  get localElementUnnamed(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "(ohne Namen)";
+      case "it":
+        return "(senza nome)";
+      case "nl":
+        return "(zonder naam)";
+      default:
+        return "(unnamed)";
+    }
+  }
+
+  /** Close button of the result view. */
+  get localElementCloseButton(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Schließen";
+      case "it":
+        return "Chiudi";
+      case "nl":
+        return "Sluiten";
+      default:
+        return "Close";
+    }
+  }
+
+  /** Cancel button of the review dialog. */
+  get localElementCancelButton(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Abbrechen";
+      case "it":
+        return "Annulla";
+      case "nl":
+        return "Annuleren";
+      default:
+        return "Cancel";
+    }
+  }
+
+  /** Heading above the wiring / usage snippet. */
+  get localElementWiringLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Einbindung in ein Formular";
+      case "it":
+        return "Cablaggio in un modulo";
+      case "nl":
+        return "Inbedding in een formulier";
+      default:
+        return "Wiring in a form";
+    }
+  }
+
+  /** Heading above the parameter list. */
+  get localElementParametersLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Parameter";
+      case "it":
+        return "Parametri";
+      case "nl":
+        return "Parameters";
+      default:
+        return "Parameters";
+    }
+  }
+
+  /** Code-panel meta line: "N lines · JavaScript". */
+  get localElementLinesLabel(): string {
+    return this.uiLang === "de" ? "Zeilen" : this.uiLang === "it" ? "righe" : this.uiLang === "nl" ? "regels" : "lines";
+  }
+
+  /** Code-panel meta suffix when the code was reformatted for display. */
+  get localElementReformattedLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "für die Anzeige formatiert";
+      case "it":
+        return "riformattato per la visualizzazione";
+      case "nl":
+        return "opgemaakt voor weergave";
+      default:
+        return "reformatted for display";
+    }
+  }
+
+  /** Risk tooltip: dynamic code evaluation / modal browser dialogs in the generated code. */
+  get localElementRiskTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Dynamische Code-Auswertung oder modale Browser-Dialoge im generierten Code";
+      case "it":
+        return "Valutazione dinamica del codice o finestre modali del browser nel codice generato";
+      case "nl":
+        return "Dynamische code-evaluatie of modale browserdialogen in de gegenereerde code";
+      default:
+        return "Dynamic code evaluation or modal browser dialogs in the generated code";
+    }
+  }
+
+  /** Tooltip of the wrap toggle when lines ARE wrapped. */
+  get localElementWrapTitleWrapped(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Lange Zeilen werden umbrochen – klicken für horizontales Scrollen";
+      case "it":
+        return "Le righe lunghe vanno a capo – clic per lo scorrimento orizzontale";
+      case "nl":
+        return "Lange regels worden afgebroken – klik voor horizontaal scrollen";
+      default:
+        return "Long lines are wrapped — click for horizontal scrolling";
+    }
+  }
+
+  /** Tooltip of the wrap toggle when lines scroll horizontally. */
+  get localElementWrapTitleScroll(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Lange Zeilen scrollen horizontal – klicken zum Umbruch";
+      case "it":
+        return "Le righe lunghe scorrono orizzontalmente – clic per andare a capo";
+      case "nl":
+        return "Lange regels scrollen horizontaal – klik om af te breken";
+      default:
+        return "Long lines scroll horizontally — click to wrap them";
+    }
+  }
+
+  /** Wrap-toggle button label (wrapped state). */
+  get localElementWrapLabelWrapped(): string {
+    return this.uiLang === "de"
+      ? "⏎ umbrochen"
+      : this.uiLang === "it"
+        ? "⏎ a capo"
+        : this.uiLang === "nl"
+          ? "⏎ afgebroken"
+          : "⏎ wrapped";
+  }
+
+  /** Wrap-toggle button label (scroll state). */
+  get localElementWrapLabelScroll(): string {
+    return this.uiLang === "de"
+      ? "⏎ scrollen"
+      : this.uiLang === "it"
+        ? "⏎ scroll"
+        : this.uiLang === "nl"
+          ? "⏎ scroll"
+          : "⏎ scroll";
+  }
+
+  /** Tooltip: fold all blocks. */
+  get localElementFoldAllTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Alle Blöcke einklappen";
+      case "it":
+        return "Comprimi tutti i blocchi";
+      case "nl":
+        return "Alle blokken inklappen";
+      default:
+        return "Fold all blocks";
+    }
+  }
+
+  /** Tooltip: expand all blocks. */
+  get localElementExpandAllTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Alle Blöcke ausklappen";
+      case "it":
+        return "Espandi tutti i blocchi";
+      case "nl":
+        return "Alle blokken uitklappen";
+      default:
+        return "Expand all blocks";
+    }
+  }
+
+  /** Tooltip of the find button. */
+  get localElementFindTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Im Code suchen (Strg+F)";
+      case "it":
+        return "Cerca nel codice (Ctrl+F)";
+      case "nl":
+        return "Zoeken in de code (Ctrl+F)";
+      default:
+        return "Search in the code (Ctrl+F / Strg+F)";
+    }
+  }
+
+  /** Placeholder of the find input. */
+  get localElementFindPlaceholder(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Im Code suchen…";
+      case "it":
+        return "Cerca nel codice…";
+      case "nl":
+        return "Zoeken in de code…";
+      default:
+        return "Find in code…";
+    }
+  }
+
+  /** Tooltip of the previous-match button. */
+  get localElementFindPrevTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Vorheriger Treffer (Umschalt+F3)";
+      case "it":
+        return "Risultato precedente (Maiusc+F3)";
+      case "nl":
+        return "Vorige overeenkomst (Shift+F3)";
+      default:
+        return "Previous match (Shift+F3)";
+    }
+  }
+
+  /** Tooltip of the next-match button. */
+  get localElementFindNextTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Nächster Treffer (F3 / Strg+G)";
+      case "it":
+        return "Risultato successivo (F3 / Ctrl+G)";
+      case "nl":
+        return "Volgende overeenkomst (F3 / Ctrl+G)";
+      default:
+        return "Next match (F3 / Ctrl+G)";
+    }
+  }
+
+  /** Tooltip of the close-find button. */
+  get localElementFindCloseTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Suche schließen (Esc)";
+      case "it":
+        return "Chiudi la ricerca (Esc)";
+      case "nl":
+        return "Zoeken sluiten (Esc)";
+      default:
+        return "Close find (Esc)";
+    }
+  }
+
+  /** Tooltip of the maximize (fullscreen) button of the code panel (normal state). */
+  get localElementMaximizeTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Editor vergrößern (Vollbild)";
+      case "it":
+        return "Ingrandisci l'editor (schermo intero)";
+      case "nl":
+        return "Editor vergroten (volledig scherm)";
+      default:
+        return "Maximize editor (fullscreen)";
+    }
+  }
+
+  /** Tooltip of the maximize (fullscreen) button of the code panel (fullscreen state). */
+  get localElementMinimizeTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Editor wieder in den Dialog setzen (Vollbild beenden)";
+      case "it":
+        return "Riporta l'editor nel dialogo (esci da schermo intero)";
+      case "nl":
+        return "Editor terug in het dialoogvenster (schermvullende modus verlaten)";
+      default:
+        return "Put editor back into the dialog (exit fullscreen)";
+    }
+  }
+
+  /** Tooltip of a fold toggle when its block is collapsed. */
+  get localElementFoldExpandTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Block ausklappen";
+      case "it":
+        return "Espandi blocco";
+      case "nl":
+        return "Blok uitklappen";
+      default:
+        return "Expand block";
+    }
+  }
+
+  /** Tooltip of a fold toggle when its block is expanded. */
+  get localElementFoldCollapseTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Block einklappen";
+      case "it":
+        return "Comprimi blocco";
+      case "nl":
+        return "Blok inklappen";
+      default:
+        return "Fold block";
+    }
+  }
+
+  /** Tooltip of the copy button (copied state). */
+  get localElementCopyTitleCopied(): string {
+    return this.uiLang === "de"
+      ? "Kopiert"
+      : this.uiLang === "it"
+        ? "Copiato"
+        : this.uiLang === "nl"
+          ? "Gekopieerd"
+          : "Copied";
+  }
+
+  /** Tooltip of the copy button (normal state). */
+  get localElementCopyTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Code kopieren";
+      case "it":
+        return "Copia il codice";
+      case "nl":
+        return "Code kopiëren";
+      default:
+        return "Copy the code";
+    }
+  }
+
+  /** Copy-button label (copied state). */
+  get localElementCopyLabelCopied(): string {
+    return this.uiLang === "de"
+      ? "✓ kopiert"
+      : this.uiLang === "it"
+        ? "✓ copiato"
+        : this.uiLang === "nl"
+          ? "✓ gekopieerd"
+          : "✓ copied";
+  }
+
+  /** Copy-button label (normal state). */
+  get localElementCopyLabel(): string {
+    return this.uiLang === "de"
+      ? "⧉ kopieren"
+      : this.uiLang === "it"
+        ? "⧉ copia"
+        : this.uiLang === "nl"
+          ? "⧉ kopiëren"
+          : "⧉ copy";
+  }
+
+  /** Label of the replace-existing-definition confirmation. */
+  get localElementReplaceLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Vorhandene Definition von";
+      case "it":
+        return "Sostituisci la definizione esistente di";
+      case "nl":
+        return "Vervang de bestaande definitie van";
+      default:
+        return "Replace the existing definition of";
+    }
+  }
+
+  /** Write-into-storage button label (busy state). */
+  get localElementWritingButton(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Wird geschrieben…";
+      case "it":
+        return "Scrittura…";
+      case "nl":
+        return "Bezig met schrijven…";
+      default:
+        return "Writing…";
+    }
+  }
+
+  /** Write-into-storage button label. */
+  get localElementWriteButton(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "In den lokalen API-Doc-Speicher schreiben";
+      case "it":
+        return "Scrivi nell'archivio locale API-Doc";
+      case "nl":
+        return "Schrijven naar de lokale API-Doc-opslag";
+      default:
+        return "Write into the local API-Doc storage";
+    }
+  }
+
+  /** Info text: the registration id was adjusted to the element name. */
+  get localElementInfoCodeNormalized(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Die Registrierungs-ID im Code wurde an den Elementnamen angepasst (sie ist der Laufzeit-Schlüssel).";
+      case "it":
+        return "L'ID di registrazione nel codice è stato adeguato al nome dell'elemento (è la chiave in fase di esecuzione).";
+      case "nl":
+        return "De registratie-id in de code is aangepast aan de elementnaam (dit is de runtime-sleutel).";
+      default:
+        return "The registration id inside the code was adjusted to the element name (it is the runtime key).";
+    }
+  }
+
+  /** Info text: there was no registration call, so the code was wrapped. */
+  get localElementInfoCodeWrapped(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Der Code enthielt keinen Registrierungsaufruf und wurde daher in window.codbi.registerFunctionality(...) eingebettet.";
+      case "it":
+        return "Il codice non conteneva una chiamata di registrazione, quindi è stato avvolto in window.codbi.registerFunctionality(...).";
+      case "nl":
+        return "De code bevatte geen registratie-aanroep, dus is deze ingepakt in window.codbi.registerFunctionality(...).";
+      default:
+        return "The code contained no registration call, so it was wrapped in window.codbi.registerFunctionality(...).";
+    }
+  }
+
+  /** Info text: the undefined 'element' variable was replaced by 'toProcess'. */
+  get localElementInfoCodeElementFixed(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Der Code referenzierte die undefinierte Variable „element“; sie wurde durch „toProcess“ ersetzt – das Formularelement, an dem die Funktionalität hängt.";
+      case "it":
+        return "Il codice faceva riferimento alla variabile indefinita 'element'; è stata sostituita con 'toProcess' – l'elemento del modulo a cui è collegata la funzionalità.";
+      case "nl":
+        return "De code verwees naar de ongedefinieerde variabele 'element'; deze is vervangen door 'toProcess' – het formulierelement waaraan de functionaliteit is gekoppeld.";
+      default:
+        return "The code referenced the undefined variable 'element'; it was replaced by 'toProcess' — the form element the functionality is attached to.";
+    }
+  }
+
+  /** Info text: this REPLACES an existing local definition. */
+  get localElementInfoIsUpdate(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Dies ERSETZT eine vorhandene lokale Definition.";
+      case "it":
+        return "Questo SOSTITUISCE una definizione locale esistente.";
+      case "nl":
+        return "Dit VERVANGT een bestaande lokale definitie.";
+      default:
+        return "This REPLACES an existing local definition.";
+    }
+  }
+
+  /** Info text: this is a NEW local definition. */
+  get localElementInfoIsNew(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Dies ist eine NEUE lokale Definition.";
+      case "it":
+        return "Questa è una NUOVA definizione locale.";
+      case "nl":
+        return "Dit is een NIEUWE lokale definitie.";
+      default:
+        return "This is a NEW local definition.";
+    }
+  }
+
+  /** Info text: the definition is installation-wide and its JavaScript runs in every session. */
+  get localElementInfoInstallationWide(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Die Definition ist installationsweit (sie betrifft jedes Formular) und ihr JavaScript läuft in jeder Sitzung.";
+      case "it":
+        return "La definizione è a livello di installazione (riguarda ogni modulo) e il suo JavaScript viene eseguito in ogni sessione.";
+      case "nl":
+        return "De definitie geldt voor de hele installatie (het beïnvloedt elk formulier) en de JavaScript ervan draait in elke sessie.";
+      default:
+        return "The definition is installation-wide (it affects every form) and its JavaScript runs in every session.";
+    }
+  }
+
+  /** Result message shown after a successful commit of a local CodBi element. */
+  get localElementCommittedText(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Gespeichert.";
+      case "it":
+        return "Salvato.";
+      case "nl":
+        return "Opgeslagen.";
+      default:
+        return "Committed.";
+    }
+  }
+
+  /** Result message shown when the commit of a local CodBi element failed. */
+  get localElementCommitFailedText(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Das Speichern des CodBi-Elements ist fehlgeschlagen.";
+      case "it":
+        return "Salvataggio dell'elemento CodBi non riuscito.";
+      case "nl":
+        return "Het opslaan van het CodBi-element is mislukt.";
+      default:
+        return "Committing the CodBi element failed.";
+    }
+  }
 
   /**
    * Review + commit of an AI-drafted **local CodBi element** (functionality / element placeholder /
@@ -4663,17 +5322,11 @@ export class AiAssistant implements OnInit, OnDestroy {
         : "";
     const code = typeof draftBody["Code"] === "string" ? (draftBody["Code"] as string) : "";
     const infoText = [
-      draft["codeNormalized"] === true
-        ? "The registration id inside the code was adjusted to the element name (it is the runtime key)."
-        : "",
-      draft["codeWrapped"] === true
-        ? "The code contained no registration call, so it was wrapped in window.codbi.registerFunctionality(...)."
-        : "",
-      draft["codeElementFixed"] === true
-        ? "The code referenced the undefined variable 'element'; it was replaced by 'toProcess' — the form element the functionality is attached to."
-        : "",
-      isUpdate ? "This REPLACES an existing local definition." : "This is a NEW local definition.",
-      "The definition is installation-wide (it affects every form) and its JavaScript runs in every session.",
+      draft["codeNormalized"] === true ? this.localElementInfoCodeNormalized : "",
+      draft["codeWrapped"] === true ? this.localElementInfoCodeWrapped : "",
+      draft["codeElementFixed"] === true ? this.localElementInfoCodeElementFixed : "",
+      isUpdate ? this.localElementInfoIsUpdate : this.localElementInfoIsNew,
+      this.localElementInfoInstallationWide,
     ]
       .filter(Boolean)
       .join(" ");
@@ -4705,6 +5358,12 @@ export class AiAssistant implements OnInit, OnDestroy {
       tokensOut: Number(draft["tokensOut"] ?? 0),
       cost: draftCost,
       currency: String(draft["currency"] ?? ""),
+      // Keep the drafting pass's per-inference breakdown and clarification Q&A so the deterministic
+      // commit can store them in the change log (the same sections a form/workflow entry shows).
+      trips: Array.isArray(draft["trips"]) ? (draft["trips"] as Array<Record<string, unknown>>) : [],
+      clarification: Array.isArray(draft["clarification"])
+        ? (draft["clarification"] as Array<Record<string, unknown>>)
+        : [],
     };
     this.localElementOverwrite = false;
     this.localElementResultText = null;
@@ -4732,9 +5391,14 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.localElementCodeRaw = "";
     this.localElementCodeDisplay = "";
     this.localElementCodeReformatted = false;
+    this.localElementCodeEdit = "";
+    this.localElementEditHtml = "";
+    this.localElementCodeSelection = "";
     this.localElementCodeHtml = [];
     this.localElementCodeFoldEnd = new Map<number, number>();
     this.localElementCollapsedFolds = new Set<number>();
+    this.localElementFullscreen = false;
+    this.closeLocalElementFind();
     this.cdr.markForCheck();
   }
 
@@ -4901,49 +5565,130 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.localElementCodeRaw = code ?? "";
     // Kinds without code (e.g. a standard configuration) get no code panel at all.
     if (this.localElementCodeRaw.trim().length === 0) {
-      this.localElementCodeHtml = [];
-      this.localElementCodeLines = [];
+      this.localElementEditHtml = "";
+      this.localElementCodeEdit = "";
       this.localElementCodeLineCount = 0;
       this.localElementCodeWarnings = [];
-      this.localElementCodeFoldEnd = new Map<number, number>();
-      this.localElementCollapsedFolds = new Set<number>();
+      this.localElementFullscreen = false;
       return;
     }
-    // A model answer is sometimes ONE minified line. Reformat it for the panel only — the raw code is
-    // what is copied and what gets committed.
+    // A model answer is sometimes ONE minified line. Reformat it once for the panel — the displayed
+    // text becomes the editable source; an already formatted answer is returned untouched.
     this.localElementCodeDisplay = AiAssistant.autoFormatJavaScript(this.localElementCodeRaw);
     this.localElementCodeReformatted = this.localElementCodeDisplay !== this.localElementCodeRaw;
-    const tokenized = AiAssistant.tokenizeJavaScript(this.localElementCodeDisplay);
-    this.localElementCodeHtml = tokenized.html.map((line) => (line.length === 0 ? "&nbsp;" : line));
-    this.localElementCodeLineCount = this.localElementCodeHtml.length;
-    this.localElementCodeWarnings = tokenized.risky;
+    this.localElementCodeEdit = this.localElementCodeDisplay;
+    this.applyLocalElementEditUnderlay(this.localElementCodeDisplay);
+    // Each new draft starts scrolled into the dialog, wrapped, and NOT maximized.
+    this.localElementFullscreen = false;
+    this.localElementCodeWrapped = true;
+  }
 
-    // Brace balance per line → `start → end` fold ranges.
-    const depthBefore: number[] = [];
-    const delta: number[] = [];
-    let depth = 0;
-    for (const line of tokenized.plain) {
-      depthBefore.push(depth);
-      const open = (line.match(/\{/g) ?? []).length;
-      const close = (line.match(/\}/g) ?? []).length;
-      delta.push(open - close);
-      depth += open - close;
+  /**
+   * (Re)tokenises the edited code for the highlighting underlay of the editable editor — keeps the
+   * line count, the risky-construct warnings and the highlighted HTML in sync with what the user
+   * types, WITHOUT reformatting (so typing never causes the caret to jump).
+   */
+  private applyLocalElementEditUnderlay(code: string): void {
+    const text = code ?? "";
+    // Re-tokenise with the currently selected word so every other occurrence of it is highlighted
+    // in the underlay (IDE-style references highlight).
+    const tokenized = AiAssistant.tokenizeJavaScript(text, this.localElementCodeSelection);
+    // Each tokenised array entry is one source line without its trailing newline → joining with "\n"
+    // reproduces the code 1:1 for the <pre> underlay (blank lines stay blank).
+    this.localElementEditHtml = tokenized.html.join("\n");
+    this.localElementCodeLineCount = tokenized.html.length;
+    this.localElementCodeWarnings = tokenized.risky;
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Called on every change of the code editor's <textarea>. The edited text becomes the code that is
+   * copied and committed, the highlight underlay is refreshed, and the find results are recomputed.
+   */
+  onLocalElementEdit(value: string): void {
+    const code = value ?? "";
+    this.localElementCodeEdit = code;
+    this.localElementCodeRaw = code;
+    const review = this.localElementReview;
+    if (review) {
+      review.code = code;
+      review.draft["Code"] = code;
     }
-    const foldEnd = new Map<number, number>();
-    for (let i = 0; i < tokenized.plain.length; i += 1) {
-      if (delta[i] <= 0) continue;
-      let d = depthBefore[i];
-      for (let j = i; j < tokenized.plain.length; j += 1) {
-        d += delta[j];
-        if (j > i && d <= depthBefore[i]) {
-          foldEnd.set(i, j);
-          break;
-        }
+    this.applyLocalElementEditUnderlay(code);
+    this.recomputeLocalElementFind(this.localElementFindQuery);
+  }
+
+  /**
+   * Fired whenever the editor's text selection changes (drag-select, Shift+arrows, click). If the
+   * selection is a single word, every other occurrence of that word is highlighted in the underlay;
+   * any other selection (multi-token, empty, or too long) clears the references highlight.
+   */
+  onLocalElementEditorSelect(event: Event): void {
+    const target = event.target as HTMLTextAreaElement | null;
+    const value = target?.value ?? this.localElementCodeEdit;
+    const start = Math.min(target?.selectionStart ?? 0, target?.selectionEnd ?? 0);
+    const end = Math.max(target?.selectionStart ?? 0, target?.selectionEnd ?? 0);
+    const selected = (end > start ? value.slice(start, end) : "").trim();
+    // A "word" must be short, contiguous, and free of whitespace & characters that never form an
+    // identifier — anything else (a whole line, an expression, nothing) clears the highlight.
+    const word = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(selected) && selected.length <= 100 ? selected : "";
+    if (word === this.localElementCodeSelection) return;
+    this.localElementCodeSelection = word;
+    this.applyLocalElementEditUnderlay(this.localElementCodeEdit);
+    this.cdr.markForCheck();
+  }
+
+  /** Keeps the highlight underlay aligned with the <textarea> while the editor scrolls. */
+  syncLocalElementEditorScroll(event: Event): void {
+    const target = event.target as HTMLTextAreaElement;
+    const underlay = this.localElementUnderlayElement(target);
+    if (underlay) {
+      underlay.scrollTop = target.scrollTop;
+      underlay.scrollLeft = target.scrollLeft;
+    }
+  }
+
+  /**
+   * Lets Tab insert an indentation at the caret instead of moving focus out of the editor, and lets
+   * Escape close the in-dialog find bar (the dialog's own closeOnEscape is suppressed while editing).
+   */
+  onLocalElementEditorKeydown(event: KeyboardEvent): void {
+    const target = event.target as HTMLTextAreaElement;
+    if (event.key === "Tab") {
+      event.preventDefault();
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const indent = this.localElementCodeEdit;
+      const next = indent.slice(0, start) + "\t" + indent.slice(end);
+      this.localElementCodeEdit = next;
+      this.localElementCodeRaw = next;
+      if (this.localElementReview) {
+        this.localElementReview.code = next;
+        this.localElementReview.draft["Code"] = next;
       }
+      this.applyLocalElementEditUnderlay(next);
+      this.recomputeLocalElementFind(this.localElementFindQuery);
+      // Restore the caret after the inserted tab (Angular's re-render would otherwise move it).
+      this.cdr.markForCheck();
+      requestAnimationFrame(() => {
+        target.focus();
+        target.setSelectionRange(start + 1, start + 1);
+      });
+    } else if (event.key === "Escape" && this.localElementFindOpen) {
+      this.closeLocalElementFind();
     }
-    this.localElementCodeFoldEnd = foldEnd;
-    this.localElementCollapsedFolds = new Set<number>();
-    this.refreshLocalElementCodeLines();
+  }
+
+  /**
+   * The (optional) DOM node of the highlight underlay that belongs to the given editor element. It is
+   * scoped to the code panel the editor lives in (via `closest`) instead of a document-wide query, so
+   * the mirror always targets the underlay that actually stacks behind THIS textarea.
+   */
+  private localElementUnderlayElement(from?: HTMLElement): HTMLElement | null {
+    if (from) {
+      return from.closest<HTMLElement>(".cb-ai-code-panel")?.querySelector<HTMLElement>(".cb-ai-code-underlay") ?? null;
+    }
+    return document.querySelector<HTMLElement>(".cb-ai-code-underlay");
   }
 
   /**
@@ -5020,6 +5765,17 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  /**
+   * Toggles the code panel between the in-dialog view and a fullscreen layer pinned above every
+   * other element (`.cb-ai-code-panel--fullscreen`: `position: fixed; inset: 0`). When leaving
+   * fullscreen the mounted element keeps its DOM identity, so scroll/fold state and find matches
+   * are preserved.
+   */
+  toggleLocalElementFullscreen(): void {
+    this.localElementFullscreen = !this.localElementFullscreen;
+    this.cdr.markForCheck();
+  }
+
   /** Re-applies the fold state to [localElementCodeLines] (no re-tokenising). */
   private refreshLocalElementCodeLines(): void {
     const hidden: boolean[] = new Array<boolean>(this.localElementCodeHtml.length).fill(false);
@@ -5038,13 +5794,131 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  // #region In-dialog find (Ctrl+F / Strg+F) of the review code panel
+
+  /** Opens the find bar of the code panel and focuses its input (prefills a selection if any). */
+  openLocalElementFind(): void {
+    if (!this.localElementCodeEdit || this.localElementCodeEdit.trim().length === 0) return;
+    this.localElementFindOpen = true;
+    // Prefill the user's selection (the browser `window.getSelection()`) so Ctrl+F over a word
+    // starts the search right away, mirroring the native find.
+    const selection = window.getSelection()?.toString()?.trim();
+    if (selection && selection.length > 0 && selection.length <= 200 && !selection.includes("\n")) {
+      this.localElementFindQuery = selection;
+    }
+    this.recomputeLocalElementFind(this.localElementFindQuery);
+    this.cdr.markForCheck();
+    // Focus the input on the next tick (the bar renders now that find is open).
+    setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>(".cb-ai-code-findbar-input");
+      input?.focus();
+      input?.select();
+    }, 0);
+  }
+
+  /** Closes the find bar and clears the match highlighting. */
+  closeLocalElementFind(): void {
+    this.localElementFindOpen = false;
+    this.localElementFindQuery = "";
+    this.localElementFindMatches = [];
+    this.localElementFindIndex = 0;
+    this.cdr.markForCheck();
+  }
+
+  /** Recomputed the matching lines whenever the user types in the find input. */
+  onLocalElementFindInput(value: string): void {
+    this.localElementFindQuery = value ?? "";
+    this.recomputeLocalElementFind(this.localElementFindQuery);
+  }
+
+  /** (Re)computes the list of 0-based source lines whose display text contains [query]. */
+  private recomputeLocalElementFind(query: string): void {
+    const q = (query ?? "").toLowerCase();
+    const matches: number[] = [];
+    if (q.length > 0 && this.localElementCodeEdit) {
+      this.localElementCodeEdit.split("\n").forEach((text, index) => {
+        if (text.toLowerCase().includes(q)) matches.push(index);
+      });
+    }
+    const keepIndex = this.localElementFindMatches[this.localElementFindIndex];
+    this.localElementFindMatches = matches;
+    // Keep the previously active match focused when the query is only being refined; otherwise jump
+    // to the first match.
+    const prior = keepIndex === undefined ? -1 : matches.indexOf(keepIndex);
+    this.localElementFindIndex = matches.length === 0 ? 0 : Math.max(0, prior < 0 ? 0 : prior);
+    this.scrollToLocalElementFindLine();
+  }
+
+  /** Moves to and scrolls to the NEXT match. */
+  findLocalElementNext(): void {
+    if (this.localElementFindMatches.length === 0) return;
+    this.localElementFindIndex = (this.localElementFindIndex + 1) % this.localElementFindMatches.length;
+    this.scrollToLocalElementFindLine();
+  }
+
+  /** Moves to and scrolls to the PREVIOUS match. */
+  findLocalElementPrev(): void {
+    if (this.localElementFindMatches.length === 0) return;
+    this.localElementFindIndex =
+      (this.localElementFindIndex - 1 + this.localElementFindMatches.length) % this.localElementFindMatches.length;
+    this.scrollToLocalElementFindLine();
+  }
+
+  /** The 0-based source-line index of the currently active match (−1 when none). */
+  private activeLocalElementFindLine(): number {
+    const line = this.localElementFindMatches[this.localElementFindIndex];
+    return line === undefined ? -1 : line;
+  }
+
+  /** True when the given 0-based source-line index is part of the current find result set. */
+  isLocalElementFindMatch(index: number): boolean {
+    return (
+      this.localElementFindOpen && this.localElementFindQuery.length > 0 && this.localElementFindMatches.includes(index)
+    );
+  }
+
+  /** True when the given 0-based source-line index is the currently active find match. */
+  isLocalElementFindCurrent(index: number): boolean {
+    return this.localElementFindOpen && index === this.activeLocalElementFindLine();
+  }
+
+  /** "n/m" match counter for the find bar (empty when the query is empty). */
+  get localElementFindCounter(): string {
+    if (!this.localElementFindOpen || this.localElementFindQuery.length === 0) return "";
+    if (this.localElementFindMatches.length === 0) return "0/0";
+    return `${this.localElementFindIndex + 1}/${this.localElementFindMatches.length}`;
+  }
+
+  /**
+   * Scrolls the active find match into view inside the editable code editor (the textarea is the
+   * scrolling element; the highlight underlay is kept in sync by the mirror handler).
+   */
+  private scrollToLocalElementFindLine(): void {
+    const line = this.activeLocalElementFindLine();
+    if (line < 0) return;
+    setTimeout(() => {
+      const editor = document.querySelector<HTMLTextAreaElement>(".cb-ai-code-editor");
+      const underlay = this.localElementUnderlayElement();
+      if (!editor) return;
+      const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 18;
+      const target = Math.max(0, line * lineHeight - editor.clientHeight / 2);
+      editor.scrollTop = target;
+      if (underlay) underlay.scrollTop = target;
+    }, 0);
+  }
+
+  // #endregion In-dialog find (Ctrl+F / Strg+F) of the review code panel
+
   /**
    * Minimal JavaScript tokeniser for the review panel: escapes the source and wraps keywords,
    * strings, template literals, comments, numbers, function names and risky constructs in the
    * `cb-ai-code-*` spans. It also returns the raw "structure" of every line (strings and comments
    * removed) which drives the fold computation.
    */
-  private static tokenizeJavaScript(code: string): {
+  private static tokenizeJavaScript(
+    code: string,
+    highlight = "",
+  ): {
     html: string[];
     plain: string[];
     risky: string[];
@@ -5059,6 +5933,15 @@ export class AiAssistant implements OnInit, OnDestroy {
     const esc = (s: string): string => s.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
     const span = (cls: string, text: string): string =>
       text.length === 0 ? "" : `<span class="${cls}">${esc(text)}</span>`;
+    // When the user selects a word in the editor, `highlight` is that word: any WHOLE token that
+    // equals it (case-insensitively) gets the `cb-ai-code-selmatch` class IN ADDITION to its token
+    // colour, so all other occurrences light up like an IDE "references" highlight. Only identifier/
+    // keyword/number tokens are matched — never fragments inside strings or comments.
+    const highlightLower = highlight.length === 0 ? null : highlight.toLowerCase();
+    const sel = (cls: string, word: string): string =>
+      highlightLower !== null && word.toLowerCase() === highlightLower
+        ? span(`${cls} cb-ai-code-selmatch`, word)
+        : span(cls, word);
     const breakLine = (): void => {
       html.push(h);
       plain.push(p);
@@ -5136,7 +6019,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           }
           break;
         }
-        h += span("cb-ai-code-num", code.slice(i, j));
+        h += sel("cb-ai-code-num", code.slice(i, j));
         i = j;
         continue;
       }
@@ -5160,7 +6043,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           while (k < length && (code[k] === " " || code[k] === "\t")) k += 1;
           if (code[k] === "(") cls = "cb-ai-code-fn";
         }
-        h += span(cls, word);
+        h += sel(cls, word);
         p += word;
         i = j;
         continue;
@@ -5192,6 +6075,13 @@ export class AiAssistant implements OnInit, OnDestroy {
   onLocalElementCommit(): void {
     const review = this.localElementReview;
     if (!review || this.localElementCommitBusy) return;
+    // Showing the "the designer is going to reload" banner as soon as the user clicks the commit /
+    // implement button: from THIS instant the reload is semantically decided — the commit below
+    // stores the element and every successful path ends in scheduleDesignerReloadAfterLocalElement().
+    // Previously the banner only appeared ~1.5s later, right before the actual window.location.reload().
+    // (Idempotent: the later call in scheduleDesignerReloadAfterLocalElement is a no-op when it is
+    // already visible, so the review dialog still gets a brief moment to show its success text.)
+    AiAssistant.showReloadOverlay();
     this.localElementCommitBusy = true;
     this.cdr.markForCheck();
     // The review holds the draft BODY; the envelope's resolved kind/name are NOT necessarily part of
@@ -5216,6 +6106,10 @@ export class AiAssistant implements OnInit, OnDestroy {
         tokensOut: String(review.tokensOut),
         cost: String(review.cost),
         currency: review.currency,
+        // The drafting pass's inference breakdown + clarification Q&A, stored with the change-log
+        // entry (see handleLocalElementCommit) so the log shows them for a local element too.
+        trips: review.trips.length > 0 ? JSON.stringify(review.trips) : "",
+        clarification: review.clarification.length > 0 ? JSON.stringify(review.clarification) : "",
         formKey: getCurrentFormKey() ?? "",
       },
       dataType: "json",
@@ -5224,8 +6118,8 @@ export class AiAssistant implements OnInit, OnDestroy {
         this.localElementCommitBusy = false;
         this.localElementResultText =
           !r || "error" in r
-            ? String(r?.["error"] ?? "Committing the CodBi element failed.")
-            : String(r["message"] ?? "Committed.");
+            ? String(r?.["error"] ?? this.localElementCommitFailedText)
+            : String(r["message"] ?? this.localElementCommittedText);
         if (r && !("error" in r)) {
           // Make the stored element visible EVERYWHERE in the designer's DATA (manager trees, element
           // config panel, on-canvas markers) …
@@ -5246,7 +6140,7 @@ export class AiAssistant implements OnInit, OnDestroy {
       },
       error: () => {
         this.localElementCommitBusy = false;
-        this.localElementResultText = "Committing the CodBi element failed.";
+        this.localElementResultText = this.localElementCommitFailedText;
         this.cdr.markForCheck();
       },
     });
@@ -5274,31 +6168,161 @@ export class AiAssistant implements OnInit, OnDestroy {
       overlay.id = "codbi-reload-overlay";
       overlay.setAttribute("role", "status");
       overlay.setAttribute("aria-live", "polite");
+      // TRANSPARENT scrim: the designer stays fully visible behind the banner — the banner itself
+      // carries all the contrast, the backdrop only positions it.
       overlay.style.cssText =
         "position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;" +
-        "background:rgba(15,20,28,.62);opacity:0;transition:opacity .45s ease;";
+        "background:transparent;" +
+        "opacity:0;transition:opacity .45s ease;";
       const card = document.createElement("div");
       // A FULL-WIDTH banner across the designer window (same height as before), with the logo and the
-      // message CENTRED inside it — no rounded card, just a darkorange top/bottom edge.
+      // message CENTRED inside it.
+      // Professional look: a translucent graphite/slate band with a very subtle vertical gradient and
+      // a blurred backdrop (the designer stays visible through it), one thin accent line at the bottom
+      // and a soft drop shadow. No neon glow, no grid, no rounded card.
       card.style.cssText =
-        "display:flex;align-items:center;justify-content:center;gap:20px;width:100%;box-sizing:border-box;" +
-        "padding:26px 36px;" +
-        // Soft horizontal gradient instead of a flat white bar: a warm grey edge on the left, a wide
-        // white centre for the logo + message, and a slightly cooler/darker grey on the right.
-        "background:linear-gradient(90deg,#efeaea 0%,#ffffff 11%,#ffffff 87%,#e2dedb 98%);" +
-        "border-top:2px solid darkorange;border-bottom:2px solid darkorange;" +
-        "box-shadow:0 18px 50px rgba(0,0,0,.35);opacity:0;" +
+        "position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:18px;width:100%;box-sizing:border-box;" +
+        "padding:24px 36px;" +
+        "background-image:linear-gradient(180deg,rgba(17,29,45,.94) 0%,rgba(9,17,28,.94) 100%);" +
+        "-webkit-backdrop-filter:blur(8px) saturate(1.05);backdrop-filter:blur(8px) saturate(1.05);" +
+        "border-top:1px solid rgba(148,197,255,.22);" +
+        "border-bottom:2px solid rgba(56,189,248,.75);" +
+        "box-shadow:0 10px 30px rgba(2,8,20,.35);opacity:0;" +
         "transform:translateY(10px);transition:opacity .45s ease,transform .45s ease;";
       const logo = document.createElement("img");
       logo.src = `${base}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
       logo.alt = "CodBi";
       logo.style.cssText = "width:64px;height:64px;flex:0 0 auto;";
+      // --- Technical abstract background animation layer --------------------------------
+      // The banner has no Angular SCSS classes (it is built with inline styles + DOM), so the
+      // keyframes/classes for the floating ABSTRACT FORMS (outlined rings, diamonds, rounded
+      // chips, filled dots) and the neon shimmer are injected once via a guarded <style> element.
+      // NOTE: there is deliberately NO vertical scanning bar any more — it crossed the full banner
+      // width and read as a stray loading bar rather than as a background.
+      if (!document.getElementById("codbi-reload-style-v2")) {
+        const st = document.createElement("style");
+        st.id = "codbi-reload-style-v2";
+        st.textContent =
+          "#codbi-reload-tech{position:absolute;inset:0;overflow:hidden;pointer-events:none;}" +
+          ".cb-reload-tech-form{position:absolute;}" +
+          ".cb-reload-tech-shape{display:block;box-sizing:border-box;}" +
+          ".cb-reload-shimmer{position:absolute;top:-10%;bottom:-10%;width:22%;" +
+          "background:linear-gradient(115deg,rgba(34,211,238,0),rgba(103,232,249,.14),rgba(34,211,238,0));" +
+          "transform:skewX(-18deg);}" +
+          // Sliding LINES: each one is a thin, softly faded stroke that travels across the band. `left`
+          // (not `transform`) is animated so the travel is a percentage of the BAND, independent of how
+          // wide the individual line is.
+          ".cb-reload-line{position:absolute;height:2px;border-radius:2px;pointer-events:none;" +
+          "background:linear-gradient(90deg,rgba(56,189,248,0),rgba(125,211,252,.75),rgba(56,189,248,0));}" +
+          "@keyframes cbReloadSlideRL{0%{left:110%}100%{left:-70%}}" +
+          "@keyframes cbReloadSlideLR{0%{left:-70%}100%{left:110%}}" +
+          "@keyframes cbReloadFloatA{0%{transform:translate(0,0)}" +
+          "50%{transform:translate(14px,-20px)}100%{transform:translate(0,0)}}" +
+          "@keyframes cbReloadFloatB{0%{transform:translate(0,0)}" +
+          "50%{transform:translate(-16px,18px)}100%{transform:translate(0,0)}}" +
+          "@keyframes cbReloadShimmer{0%{transform:translateX(-140%) skewX(-18deg)}" +
+          "100%{transform:translateX(560%) skewX(-18deg)}}" +
+          "@keyframes cbReloadPulse{0%,100%{opacity:.16}50%{opacity:.46}}";
+        document.head.appendChild(st);
+      }
+      const tech = document.createElement("div");
+      tech.id = "codbi-reload-tech";
+      // Pure geometry — no text characters: outlined rings, diamonds, rounded "chip" rectangles
+      // and filled dots, each drifting on the float + pulse cycle. An element's fixed orientation
+      // is applied to the INNER shape (`.cb-reload-tech-shape`) so the float keyframes never fight
+      // it, and each shape is sized in px instead of font-size.
+      const shapeCss = (t: "ring" | "diamond" | "chip" | "dot", c: string, s: number, r: number): string => {
+        switch (t) {
+          case "chip":
+            return (
+              `width:${Math.round(s * 1.6)}px;height:${Math.round(s * 1.05)}px;` +
+              `border:2px solid ${c};border-radius:7px;transform:rotate(${r}deg);`
+            );
+          case "diamond":
+            return `width:${s}px;height:${s}px;border:2px solid ${c};border-radius:4px;transform:rotate(${r}deg);`;
+          case "dot":
+            return `width:${s}px;height:${s}px;background:${c};border-radius:50%;`;
+          default:
+            return `width:${s}px;height:${s}px;border:2px solid ${c};border-radius:50%;`;
+        }
+      };
+      // A neon "circuit" palette (cyan → sky → violet → emerald → pink) instead of the former warm
+      // earth tones, so the drifting geometry matches the dark navy/grid band.
+      const forms: Array<{ t: "ring" | "diamond" | "chip" | "dot"; c: string; s: number; r: number }> = [
+        { t: "ring", c: "#22d3ee", s: 22, r: 0 },
+        { t: "diamond", c: "#38bdf8", s: 30, r: 45 },
+        { t: "chip", c: "#a78bfa", s: 26, r: 90 },
+        { t: "ring", c: "#34d399", s: 16, r: 0 },
+        { t: "diamond", c: "#67e8f9", s: 34, r: 45 },
+        { t: "dot", c: "#22d3ee", s: 9, r: 0 },
+        { t: "chip", c: "#818cf8", s: 40, r: 12 },
+        { t: "diamond", c: "#f472b6", s: 18, r: 90 },
+        { t: "ring", c: "#2dd4bf", s: 28, r: 0 },
+        { t: "dot", c: "#a78bfa", s: 12, r: 0 },
+        { t: "chip", c: "#38bdf8", s: 46, r: 30 },
+        { t: "diamond", c: "#67e8f9", s: 14, r: 45 },
+      ];
+      forms.forEach((f, i) => {
+        const wrap = document.createElement("span");
+        wrap.className = "cb-reload-tech-form";
+        wrap.style.left = 3 + ((i * 13) % 90) + "%";
+        wrap.style.top = 10 + ((i * 21) % 72) + "%";
+        wrap.style.animation =
+          (i % 2 === 0 ? "cbReloadFloatA" : "cbReloadFloatB") +
+          " " +
+          (6 + (i % 5)) +
+          "s ease-in-out infinite, cbReloadPulse " +
+          (2.8 + (i % 4)) +
+          "s ease-in-out infinite";
+        const shape = document.createElement("span");
+        shape.className = "cb-reload-tech-shape";
+        shape.style.cssText = shapeCss(f.t, f.c, f.s, f.r);
+        wrap.appendChild(shape);
+        tech.appendChild(wrap);
+      });
+      const shimmer = document.createElement("div");
+      shimmer.className = "cb-reload-shimmer";
+      shimmer.style.animation = "cbReloadShimmer 5s ease-in-out infinite";
+      tech.appendChild(shimmer);
+      // #region Parallax sliding lines — two layers travelling in OPPOSITE directions
+      // Fast, short strokes run right → left, slower and longer ones left → right, which reads as depth.
+      // Every line owns a DISTINCT vertical position (and is only 2px high), so no two can ever overlap.
+      const lines: Array<{ top: number; width: number; seconds: number; rightToLeft: boolean; opacity: number }> = [
+        { top: 7, width: 22, seconds: 4.5, rightToLeft: true, opacity: 0.85 },
+        { top: 15, width: 34, seconds: 6.2, rightToLeft: false, opacity: 0.55 },
+        { top: 24, width: 16, seconds: 3.8, rightToLeft: true, opacity: 0.9 },
+        { top: 33, width: 46, seconds: 9.5, rightToLeft: false, opacity: 0.45 },
+        { top: 44, width: 28, seconds: 5.4, rightToLeft: true, opacity: 0.75 },
+        { top: 55, width: 38, seconds: 12.5, rightToLeft: false, opacity: 0.4 },
+        { top: 64, width: 20, seconds: 4.1, rightToLeft: true, opacity: 0.8 },
+        { top: 73, width: 52, seconds: 16, rightToLeft: false, opacity: 0.35 },
+        { top: 82, width: 26, seconds: 6.8, rightToLeft: true, opacity: 0.7 },
+        { top: 91, width: 30, seconds: 11, rightToLeft: false, opacity: 0.45 },
+      ];
+      for (const line of lines) {
+        const stroke = document.createElement("div");
+        stroke.className = "cb-reload-line";
+        stroke.style.top = `${line.top}%`;
+        stroke.style.width = `${line.width}%`;
+        stroke.style.opacity = String(line.opacity);
+        stroke.style.animation = `${line.rightToLeft ? "cbReloadSlideRL" : "cbReloadSlideLR"} ${line.seconds}s linear infinite`;
+        tech.appendChild(stroke);
+      }
+      // #endregion
+      // Keep the logo + message above the animated background. The logo sits on a quiet "plate" so it
+      // reads on the dark band without a neon halo.
+      logo.style.cssText +=
+        ";position:relative;z-index:1;padding:6px;border-radius:10px;" +
+        "background:rgba(255,255,255,.06);border:1px solid rgba(148,197,255,.22);";
       const label = document.createElement("div");
       label.textContent = text;
+      // Restrained typography: a clean system sans-serif in near-white with light tracking — no glow,
+      // no monospace. Reads as a product dialog, not as a terminal.
       label.style.cssText =
-        "font:700 clamp(18px,2.4vw,30px)/1.25 system-ui,'Segoe UI',Arial,sans-serif;color:#3a2a14;" +
-        "text-align:center;";
-      card.append(logo, label);
+        "font:600 clamp(16px,1.9vw,23px)/1.35 system-ui,'Segoe UI',Arial,sans-serif;" +
+        "color:#eaf3ff;letter-spacing:.015em;" +
+        "text-align:center;position:relative;z-index:1;";
+      card.append(tech, logo, label);
       overlay.appendChild(card);
       document.body.appendChild(overlay);
       // Next frame: fade the backdrop in and lift the banner, so the change is ANIMATED.
@@ -5517,8 +6541,18 @@ export class AiAssistant implements OnInit, OnDestroy {
 
         // The AI needs more information from the user — show the clarification popup and stop.
         // The popup collects the answers and re-runs phase 2 (multi-round) until the AI proceeds.
-        if (p2["clarification"] != null) {
-          const clar = p2["clarification"] as Record<string, unknown>;
+        // A real clarification REQUEST is an OBJECT carrying a "questions" array (or a legacy
+        // single-question key). The successful LOCAL-element draft response ALSO carries a
+        // "clarification" key — but as the answer-HISTORY ARRAY that is threaded to the commit for
+        // the change log. An array must never open the popup, otherwise an answered name would
+        // re-open an empty "asks no question" dialog and swallow the actual draft.
+        const clarificationPayload = p2["clarification"];
+        const isClarificationRequest =
+          clarificationPayload != null &&
+          typeof clarificationPayload === "object" &&
+          !Array.isArray(clarificationPayload);
+        if (isClarificationRequest) {
+          const clar = clarificationPayload as Record<string, unknown>;
           const rawQuestions = Array.isArray(clar["questions"])
             ? (clar["questions"] as Array<Record<string, unknown>>)
             : [];
@@ -5838,6 +6872,11 @@ export class AiAssistant implements OnInit, OnDestroy {
           // cannot click on it while the form is being saved/reloaded.
           this.loading = true;
           this.spinnerText = "Reloading designer\u2026";
+          // Show the "the designer is going to reload" banner NOW — as soon as the run confirms a
+          // reload is coming — so it covers the save/publish and the short delay before the actual
+          // reload, instead of popping up at the very last instant. (Idempotent: revalidateWorkflowAndReload
+          // calls it again right before reloading, which is a no-op when it is already visible.)
+          AiAssistant.showReloadOverlay();
           const dSave = designer as unknown as Record<string, unknown>;
           // Capture the AI-computed standards value now, before anything can consume it.
           // We do NOT write sessionStorage here — an earlier write may be consumed by a
@@ -5946,6 +6985,9 @@ export class AiAssistant implements OnInit, OnDestroy {
           // Keep the dialog busy (inputs/buttons disabled) until the reload happens.
           this.loading = true;
           this.spinnerText = "Reloading designer\u2026";
+          // Show the "the designer is going to reload" banner NOW — as soon as the run confirms a
+          // reload — instead of only at the final reload instant (idempotent, see "both" branch).
+          AiAssistant.showReloadOverlay();
           setTimeout(() => {
             if (sensitive.length > 0) {
               localStorage.setItem("codbi-log-sensitive-elements", JSON.stringify(sensitive));

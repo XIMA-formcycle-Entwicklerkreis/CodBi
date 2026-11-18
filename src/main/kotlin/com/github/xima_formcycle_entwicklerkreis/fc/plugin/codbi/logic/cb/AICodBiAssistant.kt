@@ -14,6 +14,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.salvageTruncatedItems
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.AiMirrorNodeParams
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror.MirrorFormAccess
@@ -2084,6 +2085,27 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
+    // A request that NAMES a kind ("Standardkonfiguration", "EP", "Funktionalität") DEFINES an
+    // element of that kind. When the target round picked an element of a DIFFERENT kind, the
+    // request
+    // merely refers to it as a BUILDING BLOCK — "eine Standardkonfiguration, die die lokale
+    // Rechner-Funktionalität anwendet" — and treating that as a change request would rewrite the
+    // FUNCTIONALITY instead of creating the standard configuration (the reported request). The
+    // kind mismatch therefore means: new element, keep the picked one untouched.
+    val requestedKind = LocalElementKind.inferFromText(prompt)
+    val pickedTarget = targetName
+    if (pickedTarget != null && requestedKind != null) {
+      val pickedKind = existingNames[pickedTarget.lowercase()]
+      if (pickedKind != null && pickedKind != requestedKind) {
+        logger.info(
+            "[AICodBiAssistant] [LocalElement] '{}' is a {} but the request defines a {} — drafting a NEW element",
+            pickedTarget,
+            pickedKind.draftValue,
+            requestedKind.draftValue)
+        targetName = null
+      }
+    }
+
     // The chosen element's CURRENT definition and code — the change-only rule needs both (a
     // separate
     // short-lived EntityManager, so no connection is held across the inference calls above).
@@ -2163,6 +2185,71 @@ class AICodBiAssistant : IPluginServletAction {
               "(- and ÷ before + and +/−) implement a tiny two-pass eval: parse the display into " +
               "tokens, first resolve * and /, then + and -. NEVER hand a concatenated expression " +
               "string to eval(), Function() or their aliases.\n")
+      // ALWAYS-ON contract rules — also when a STORED copy of the contract wins over the bundled
+      // one (the two failures below were reported live and are the ones that cost a whole run):
+      // a repair answered with ANOTHER question, and a `standard` draft that was never told its
+      // prompts are mandatory as well.
+      append(
+          "\nNEVER answer with `need_clarification` once the user turn contains \"ANSWERS ALREADY " +
+              "GIVEN BY THE USER\" or \"RETURN THE COMPLETE DRAFT NOW\": the ONLY valid answer is the " +
+              "complete draft object. `Description`, `Summary` {\"en\":…,\"de\":…,\"it\":…}, " +
+              "`CondensedPrompt` and `DetailedPrompt` are MANDATORY for EVERY kind — a `standard` " +
+              "configuration that applies a functionality included (it also needs `Active`: true and " +
+              "exactly one window.codbi.loadConfig({ … }) call).\n")
+      append(
+          "\nWhen you need the exact parameter names of a functionality or local element you apply, " +
+              "request them with {\"status\":\"codbi_element_need_details\",\"ids\":[…]}. Never ask " +
+              "the user for something the CodBi reference already answers.\n")
+      append(
+          "\nThe HUMAN texts (`Description`, every `Parameter` description, every `globals` and " +
+              "`classes` description) are written in the LANGUAGE OF THE USER'S REQUEST — for the " +
+              "`elementPlaceholder` and `standard` kinds as well, not only for a functionality. " +
+              "`CondensedPrompt` and `DetailedPrompt` are ALWAYS English, and `Summary` always carries " +
+              "en, de and it.\n")
+      append(
+          "\nA `loadConfig({ … })` parameter key is a parameter OF THE APPLIED FUNCTIONALITY (e.g. " +
+              "`extravalue`, `layout`, `Data`) — never the element's own name and never a dotted id; " +
+              "such a key is rejected.\n")
+      // ALWAYS-ON TYPED-PARAMETER rule — the same contract text also lives in the bundled
+      // `codbi-local-element-contract.md`, but a STORED (older, DB-seeded) copy of that contract
+      // wins
+      // over the bundled .jar on a hot deploy (PromptLoader returns the existing row before it ever
+      // reads the classpath resource, and the stored copy is considered "complete" as soon as it
+      // carries the `codbi_element_draft` marker). A stale stored copy therefore never mentions
+      // "enum" for a bounded list and the model answers with `"type":"string"` for a parameter
+      // whose
+      // request names a FIXED set of choices (reported with the calculator layout: "normal or
+      // scientific"). Repeat the typed-enum contract HERE so the instruction reaches the model no
+      // matter which copy of the source contract is used (same intent as the comment at the top of
+      // this always-on block).
+      append(
+          "\n`Parameter` IS ALWAYS A MAP OF TYPED OBJECTS — `{\"type\":…,\"options\":[…],\"default\":…,\"description\":…}`. " +
+              "A parameter whose allowed values are a FIXED LIST named in the request (e.g. the keys are " +
+              "\"normal or scientific\", \"left or right\", \"red|green|blue\") MUST be \"type\":\"enum\" (or " +
+              "\"type\":\"integer\"\"/\"number\" for a bounded NUMERIC range) with the EXACT choices as its " +
+              "\"options\" array — NEVER \"type\":\"string\" plus an enum list. Use \"type\":\"string\" ONLY for " +
+              "genuinely free text. `\"options\"` is omitted unless the type is `enum`, and an enum type MUST " +
+              "carry a non-empty \"options\".\n")
+      // The TWO flavours of a standard configuration and the FORMCYCLE DOM markers that make a
+      // HOLISTIC one actually fire. Reported: a "holistic" configuration targeted an invented class
+      // (`.CodBi_Lokaler_Rechner_Numeric`) that no element ever carries.
+      append(
+          "\nA STANDARD configuration is either PER-ELEMENT (it provides marker `classes`; `targets` is " +
+              "one of THOSE classes) or HOLISTIC (`\"supportedFormelementtypes\":[\"Holistic\"]`, no " +
+              "classes). A HOLISTIC one must select EXISTING elements by their FORMCYCLE DOM markers — " +
+              "`[data-datepicker=\"1\"]` (date fields), `[data-vdt=\"plzDE\"]` / `[data-vdt=\"phone\"]` / " +
+              "`[data-vdt=\"time\"]` (formatted inputs), `[data-vdt=\"formattedNumber\"]` (NUMBER fields " +
+              "— never `data-vdt=\"number\"`), `[data-vdt]` (any validated input), " +
+              "`input[type=\"text\"]`, `textarea`, `fieldset`, " +
+              "`.CXUpload input[type=\"file\"]`, `[data-cb-func]`; several groups joined with `~`. It " +
+              "ALWAYS needs both guards `:not(.CodBi_XCL)` (CodBi's universal marker) and " +
+              "`:not(.CodBi_XCL_<YourFeature>)` — the configuration's own exclusion marker, XCL = " +
+              "eXCLude, e.g. `CodBi_XCL_Rechner_Numeric`. Any other class in a `:not(…)` is rejected, and " +
+              "a bare `.SomeClass` target is never valid: nothing sets that class.\n")
+      append(
+          "\nA local element's `Name` is stored LOWERCASED (the local API-doc manager lowercases every " +
+              "key): write it in lowercase, e.g. `mein.rechner`. A mixed-case name creates an entry the " +
+              "manager cannot show or delete.\n")
       append(LocalElementDrafts.buildElementContext(existingNames, existingEntry, existingCode))
       if (!clarificationContext.isNullOrBlank()) {
         // The user already answered the AI's questions (e.g. the technical name) — the draft must
@@ -2271,7 +2358,13 @@ class AICodBiAssistant : IPluginServletAction {
     val parsedDraft = LocalElementDrafts.extractDraft(answer)
     val modelClarification = parseClarificationRequest(answer)
     if (modelClarification != null) {
-      if (!nameAlreadyAsked && parsedDraft == null) {
+      // A clarification envelope (`{"status":"need_clarification",…}`) PARSES as a JSON object, so
+      // `parsedDraft == null` never detected the model's question: the object was taken as the
+      // draft
+      // and the run continued with a body-less one. The BODY decides whether a question may be
+      // surfaced or the model has to complete the draft.
+      val draftHasBody = parsedDraft != null && LocalElementDrafts.hasDraftBody(parsedDraft)
+      if (!draftHasBody && clarificationHistory.isEmpty()) {
         logger.info(
             "[AICodBiAssistant] Local element: the AI asked {} clarifying question(s)",
             modelClarification.questions.size)
@@ -2302,10 +2395,6 @@ class AICodBiAssistant : IPluginServletAction {
                 ?.trim()
                 ?.trim('"', '\'', '`', '\u201E', '\u201C', '\u2018', '\u2019', ' ', ':')
                 ?.takeIf { it.isNotBlank() }
-    if (!LocalElementDrafts.isUsableName(draft) && answeredName != null) {
-      draft.addProperty("Name", answeredName)
-      logger.info("[AICodBiAssistant] Local element: using the answered name '{}'", answeredName)
-    }
 
     // A model may "help" by slipping a KIND SEGMENT into the name the user answered — reported:
     // the answer `Mein.Wetter` was committed as `Mein.EP.Wetter`. The user's own answer wins
@@ -2324,9 +2413,6 @@ class AICodBiAssistant : IPluginServletAction {
             draftName)
       }
     }
-
-    val draftKind: LocalElementKind? =
-        LocalElementDrafts.kindOf(draft) ?: LocalElementKind.inferFromText(prompt)
 
     // A local helper for the extra rounds below: same system prompt, ONE user message, and its own
     // token accounting so the change log stays exact.
@@ -2369,6 +2455,139 @@ class AICodBiAssistant : IPluginServletAction {
             "[AICodBiAssistant] [LocalElement/{}] CODE (first 3000 chars):\n{}",
             label,
             code.take(3000))
+      }
+    }
+
+    /**
+     * ONE forced COMPLETION round for a draft that has NO BODY AT ALL — the model answered with a
+     * question again, with prose, or with nothing but a `Name`.
+     *
+     * The message carries the request, the answers already given, the exact name to use and the
+     * MANDATORY KEY LIST of the kind, and it forbids any further question. Without it the server
+     * validated an empty object and ended in "The Description is missing. The Summary is missing …"
+     * — even though the model still had everything it needed to generate the element (reported).
+     *
+     * @return the parsed draft (with a body), or `null` when even this round produced none.
+     */
+    fun completionRound(label: String, answeredName: String?): JsonObject? {
+      // The kind comes from the REQUEST (its words name it: "Standardkonfiguration",
+      // "Funktionalität", "EP"), so the key list shown to the model is the right one even before
+      // the
+      // model itself has declared a kind.
+      val forcedKind = LocalElementKind.inferFromText(prompt) ?: LocalElementKind.FUNCTIONALITY
+      val forcedUser = buildString {
+        append(prompt)
+        if (!clarificationContext.isNullOrBlank()) {
+          append("\n\n## ANSWERS ALREADY GIVEN BY THE USER\n\n").append(clarificationContext.trim())
+        }
+        append("\n\n## RETURN THE COMPLETE DRAFT NOW — NO QUESTION IS ALLOWED\n\n")
+        append(
+            "Everything the element needs is generated by YOU from the request above. A clarification ")
+        append(
+            "envelope (`need_clarification`) is NOT an allowed answer here — it is rejected as a ")
+        append("draft that is missing Description/Summary/CondensedPrompt/DetailedPrompt.\n")
+        if (answeredName != null) {
+          append("- \"Name\" must be \"").append(answeredName).append("\" — verbatim, unchanged.\n")
+        }
+        append("- Mandatory keys: ")
+        append(LocalElementDrafts.mandatoryKeyHint(forcedKind))
+        append('\n')
+        append(
+            "- A value that comes from a local element placeholder is written " +
+                "`{ <EP name> > <arg1> ; <arg2> }` and placed in the value parameter the " +
+                "functionality consumes.\n")
+        append("- Answer with the JSON draft object ONLY (no prose, no code fences).")
+      }
+      var forcedAnswer = extraRound(label, forcedUser)
+      // The LEGITIMATE way out of missing knowledge — and the one the reported run should have
+      // taken
+      // instead of asking the USER — is the details envelope. Honour it here: supply exactly those
+      // sections and repeat the request ONCE, still with every question forbidden.
+      LocalElementDrafts.requestedDetailIds(forcedAnswer)?.let { ids ->
+        val details =
+            runCatching { CodbiCapabilities.buildFullSectionFor(ids) }
+                .getOrNull()
+                .orEmpty()
+                .ifBlank { PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}") }
+        logger.info(
+            "[AICodBiAssistant] [LocalElement] the completion round requested details for {} id(s): {}",
+            ids.size,
+            ids)
+        forcedAnswer =
+            extraRound(
+                "$label-details",
+                forcedUser +
+                    "\n\n## CODBI DETAILS YOU REQUESTED\n\n" +
+                    details +
+                    "\n\nNow return the COMPLETE draft JSON for the element.")
+      }
+      val candidate = LocalElementDrafts.extractDraft(forcedAnswer)
+      if (candidate == null || !LocalElementDrafts.hasDraftBody(candidate)) {
+        logger.warn(
+            "[AICodBiAssistant] [LocalElement] the forced completion round '{}' returned no draft body",
+            label)
+        return null
+      }
+      if (answeredName != null && !LocalElementDrafts.isUsableName(candidate)) {
+        candidate.addProperty("Name", answeredName)
+      }
+      return candidate
+    }
+
+    // 1b) NO DRAFT BODY. A question answered with `need_clarification` (again), a prose answer or a
+    // bare `{"Name":…}` object leaves nothing to validate — so ONE round asks for the COMPLETE
+    // draft
+    // with every question forbidden, instead of rejecting an empty object afterwards.
+    if (parsedDraft == null || !LocalElementDrafts.hasDraftBody(draft)) {
+      completionRound("local-element-completion", answeredName)?.let { completed ->
+        draft = completed
+        logger.info(
+            "[AICodBiAssistant] [LocalElement] the completion round supplied the draft ({} keys)",
+            draft.keySet().size)
+      }
+    }
+
+    // 2b) The answer to OUR OWN name question IS the name. Applied AFTER the completion round: a
+    // draft without a body is completed first, otherwise the answered name would be the only member
+    // of an empty draft.
+    if (!LocalElementDrafts.isUsableName(draft) && answeredName != null) {
+      draft.addProperty("Name", answeredName)
+      logger.info("[AICodBiAssistant] Local element: using the answered name '{}'", answeredName)
+    }
+
+    // 2c) THE MANAGER STORES EVERY KEY LOWERCASED, so the assistant writes the same key. A name
+    // typed
+    // with capitals (`Der.Bitcoin`) produced an entry the local API-doc manager could never show —
+    // its
+    // tree is keyed lowercased — and a `fileListing` entry with capitals that outlived the deletion
+    // (reported as an unremovable ghost row). `prepareCode` rewrites the registration id inside the
+    // code to the same key, so the runtime key and the stored key stay identical.
+    val rawDeclaredName = LocalElementDrafts.nameOf(draft)
+    if (rawDeclaredName.any { it.isUpperCase() }) {
+      val lowered = rawDeclaredName.lowercase()
+      draft.addProperty("Name", lowered)
+      logger.info(
+          "[AICodBiAssistant] Local element: the name '{}' is stored as '{}' (the local API doc lowercases every key)",
+          rawDeclaredName,
+          lowered)
+    }
+
+    val draftKind: LocalElementKind? =
+        LocalElementDrafts.kindOf(draft) ?: LocalElementKind.inferFromText(prompt)
+
+    // 2d) A PER-ELEMENT standard configuration without ANY marker class could never be applied: it
+    // has no
+    // row in the element panel, so the functionality's parameters are never offered and the class
+    // can
+    // never reach an element (reported: "create a standard configuration that applies the local
+    // calculator"). Give it the conventional `CodBi_<Name>` class and point `targets` at it. A
+    // HOLISTIC
+    // configuration selects existing elements instead and keeps its selector untouched.
+    if (draftKind == LocalElementKind.STANDARD && !LocalElementDrafts.isHolistic(draft)) {
+      LocalElementDrafts.ensureMarkerClass(draft)?.let { marker ->
+        logger.info(
+            "[AICodBiAssistant] Local element: added the marker class '{}' to the standard configuration",
+            marker)
       }
     }
 
@@ -2548,6 +2767,21 @@ class AICodBiAssistant : IPluginServletAction {
         append("\n\n## YOUR PREVIOUS ANSWER\n\n```json\n").append(draft.toString()).append("\n```")
         append("\n\n## PROBLEMS YOU MUST FIX\n")
         problems.forEach { append("- ").append(it).append('\n') }
+        // A model that answered a REPAIR with another question ("What is the exact parameter name
+        // …?")
+        // has not repaired anything — and its question object carries no body, which is how a run
+        // ended in four "… is missing" problems (reported). Say it explicitly, and name the keys
+        // the
+        // kind really requires, so the correction is guided instead of guessed.
+        append(
+            "\nThis is a REPAIR of YOUR OWN draft — do NOT ask anything. `need_clarification` is NOT " +
+                "an allowed answer here: every value below is generated by YOU from the request, the " +
+                "answers already given and the current definition.\n")
+        append("\nMandatory keys for this `")
+            .append(workingKind.draftValue)
+            .append("`: ")
+            .append(LocalElementDrafts.mandatoryKeyHint(workingKind))
+            .append('\n')
         if (problems.any { it.contains("registration", ignoreCase = true) }) {
           // A concrete, copy-able skeleton beats a description here: the id is the ONLY thing that
           // has to match, and the model must see it written out.
@@ -2608,6 +2842,34 @@ class AICodBiAssistant : IPluginServletAction {
               "(or `toProcess.innerHTML = …`). Creating elements without attaching them renders ")
           append("nothing.")
         }
+        if (problems.any { it.contains("Description", ignoreCase = true) }) {
+          // `Description` is the LONG documentation text — never empty, never just a TSDoc stub.
+          append("\n`Description` must be a NON-EMPTY documentation text (HTML or TSDoc) that ")
+          append(
+              "explains what the element does, which parameters it has and how a form wires it — ")
+          append("e.g. `<p>Applies the calculator functionality …</p>`.")
+        }
+        if (problems.any { it.contains("CondensedPrompt", ignoreCase = true) }) {
+          // Mandatory for EVERY kind (a later AI form run has to FIND the element).
+          append("\n`CondensedPrompt` is a SHORT instruction for a LATER AI form run: what the ")
+          append("element does and when to apply it (one or two imperative sentences). It is ")
+          append("mandatory for every kind — a STANDARD CONFIGURATION included.")
+        }
+        if (problems.any { it.contains("DetailedPrompt", ignoreCase = true) }) {
+          append(
+              "\n`DetailedPrompt` documents every parameter, the wiring syntax and at least one ")
+          append(
+              "complete usage example. It is mandatory for every kind — a STANDARD CONFIGURATION ")
+          append("included.")
+        }
+        if (problems.any { it.contains("no Name", ignoreCase = true) }) {
+          append(
+              "\n`Name` must be a dotted technical id (at least two segments, e.g. `Super.Rechner`)")
+          if (answeredName != null) {
+            append(" — use the user's answer '").append(answeredName).append("' VERBATIM")
+          }
+          append(".")
+        }
         if (problems.any { it.contains("Summary", ignoreCase = true) }) {
           // The local API-doc manager stores the short description PER LANGUAGE.
           append("\n`Summary` must be an OBJECT with all three manager languages: ")
@@ -2620,6 +2882,23 @@ class AICodBiAssistant : IPluginServletAction {
           append(
               "(e.g. [\"XFieldSet\",\"XContainer\"] for a calculator, [\"XTextField\"] for a field ")
           append("behaviour). Without it the element is never offered in the per-element panel.")
+        }
+        if (problems.any { it.contains("NOT parameters", ignoreCase = true) }) {
+          // Name the applied functionality's REAL parameters instead of leaving the model to guess
+          // —
+          // the reported draft invented `"Super.Config"` (the answered element name) for a
+          // functionality whose parameter is `extravalue`.
+          val funcName = LocalElementDrafts.loadConfigFuncName(LocalElementDrafts.codeOf(draft))
+          append("\nA `loadConfig({ … })` key must be one of the parameters of the functionality ")
+          append("named in `FUNC`")
+          if (funcName != null) {
+            append(" ('").append(funcName).append("')")
+            val known = localElementParameterNames(funcName)
+            if (known.isNotEmpty()) {
+              append("; its declared parameters are: ").append(known.joinToString(", "))
+            }
+          }
+          append(". Do NOT invent a key, never use a dotted id and never the element's own name.\n")
         }
         append("\nReturn the CORRECTED draft JSON only (same envelope, complete object).")
       }
@@ -2634,11 +2913,26 @@ class AICodBiAssistant : IPluginServletAction {
       tokensIn += repairUsage?.promptTokens ?: estimateTokens(repairMessages)
       tokensOut += repairUsage?.completionTokens ?: estimateTokens(repairRaw)
       reportTrip("local-element-repair", modelId, repairUsage, repairMessages, repairRaw)
+      val repairedAnswer = extractJson(stripThinkTags(repairRaw)).trim()
       logger.info(
-          "[AICodBiAssistant] [LocalElement] repair round answer:\n{}",
-          extractJson(stripThinkTags(repairRaw)).trim().take(4000))
-      LocalElementDrafts.extractDraft(extractJson(stripThinkTags(repairRaw)).trim())?.let { repaired
-        ->
+          "[AICodBiAssistant] [LocalElement] repair round answer:\n{}", repairedAnswer.take(4000))
+      // A model that answers the repair with ANOTHER question has repaired NOTHING. Its envelope
+      // (`{"status":"need_clarification",…}`) must never take the place of the draft: it validates
+      // as
+      // "no Name + no prompts" and would throw the generated part away — the reported run ended in
+      // exactly the problems the repair was supposed to fix.
+      val repairAskedAgain = parseClarificationRequest(repairedAnswer) != null
+      if (repairAskedAgain) {
+        logger.info(
+            "[AICodBiAssistant] [LocalElement] the repair round asked a question again — ignoring that answer")
+      }
+      val repairedCandidate =
+          if (repairAskedAgain) null
+          else
+              LocalElementDrafts.extractDraft(repairedAnswer)?.takeIf {
+                LocalElementDrafts.hasDraftBody(it)
+              }
+      repairedCandidate?.let { repaired ->
         // The repaired answer runs through the SAME preparation — it must never skip it.
         val repairedKind = LocalElementDrafts.kindOf(repaired) ?: workingKind
         val repairedName = LocalElementDrafts.nameOf(repaired)
@@ -2656,6 +2950,30 @@ class AICodBiAssistant : IPluginServletAction {
           draft = repaired
           workingKind = repairedKind
           problems = repairedProblems
+        }
+      }
+      // 5b) STILL nothing with a body (the completion round of step 1b produced none, and the
+      // repair
+      // only asked again): ONE last forced completion round — it cannot ask anything, and the
+      // better
+      // of the two candidates is kept.
+      if (!LocalElementDrafts.hasDraftBody(draft)) {
+        completionRound("local-element-completion-2", answeredName)?.let { forced ->
+          val forcedKind = LocalElementDrafts.kindOf(forced) ?: workingKind
+          val forcedName = LocalElementDrafts.nameOf(forced)
+          if (forcedName.isNotBlank()) {
+            val prepared =
+                LocalElementDrafts.prepareCode(
+                    forcedKind, forcedName, LocalElementDrafts.codeOf(forced))
+            if (prepared != LocalElementDrafts.codeOf(forced)) forced.addProperty("Code", prepared)
+          }
+          val forcedProblems = validateWith(forced, forcedKind)
+          debugDump("completion", forced, forcedProblems)
+          if (forcedProblems.size <= problems.size) {
+            draft = forced
+            workingKind = forcedKind
+            problems = forcedProblems
+          }
         }
       }
     }
@@ -2702,6 +3020,31 @@ class AICodBiAssistant : IPluginServletAction {
     val clarificationJson = clarificationTurnsToJson(clarificationHistory)
     if (clarificationJson.size() > 0) response.add("clarification", clarificationJson)
     return jsonResponse(gson.toJson(response))
+  }
+
+  /**
+   * The `Parameter` names a LOCAL element declares (`[]` when it is not a local element or cannot
+   * be read). Used to TELL the model the applied functionality's real parameter names in a repair
+   * round instead of letting it invent one (reported: `"Super.Config"` instead of `extravalue`).
+   */
+  private fun localElementParameterNames(name: String): List<String> {
+    if (name.isBlank()) return emptyList()
+    return try {
+      val em = CodbiEntities.entityManagerFactory?.createEntityManager() ?: return emptyList()
+      try {
+        val kind = LocalElementStore.existingNames(em)[name.lowercase()] ?: return emptyList()
+        val entry = LocalElementStore.loadEntry(em, kind, name) ?: return emptyList()
+        entry.get("Parameter")?.takeIf { it.isJsonObject }?.asJsonObject?.keySet()?.toList()
+            ?: emptyList()
+      } finally {
+        try {
+          em.close()
+        } catch (_: Exception) {}
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not read the parameters of '{}': {}", name, e.message)
+      emptyList()
+    }
   }
 
   /**
@@ -3221,6 +3564,14 @@ class AICodBiAssistant : IPluginServletAction {
             })
     val imageFileMap = imageService.collectImageData(params)
     val imageParts = imageService.prepareImageParts(imageFileMap, null)
+    // BUILD DOCUMENT vs. CLARIFICATION ATTACHMENT: a document the user attaches to a CLARIFICATION
+    // ANSWER only answers a question - it is not the document the form is built from. The frontend
+    // marks those attachments with [ImageProcessingService.CLARIFICATION_IMAGE_PREFIX], and only a
+    // real build document may switch the DOCUMENT PARSING rules on (FILE UPLOAD OVERRIDE, one page
+    // per image, ...). Both kinds still reach the model as vision context - only the RULES are
+    // gated.
+    val hasBuildDocument =
+        imageFileMap.keys.any { !it.startsWith(ImageProcessingService.CLARIFICATION_IMAGE_PREFIX) }
 
     // Phase 1 â€” classify intent
     if (phase == "1") {
@@ -4088,7 +4439,8 @@ class AICodBiAssistant : IPluginServletAction {
                   chatAnswerResult?.sections ?: emptySet(),
                   getUserContext(params),
                   formListContext,
-                  formElementsContext)
+                  formElementsContext,
+                  buildDocumentAttached = hasBuildDocument)
             }
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
@@ -5682,7 +6034,11 @@ class AICodBiAssistant : IPluginServletAction {
       // The foreign form's form list and element digest, so the build pass can emit `_copyElements`
       // with the EXACT form key / element id / element name instead of inventing them.
       foreignFormList: String? = null,
-      foreignFormElements: String? = null
+      foreignFormElements: String? = null,
+      // Whether this run carries the DOCUMENT THE FORM IS BUILT FROM, as opposed to an attachment
+      // that only answers a clarification question. Drives the DOCUMENT PARSING rules; the default
+      // preserves the previous behaviour (any image counts) for callers that carry no distinction.
+      buildDocumentAttached: Boolean = imageParts.isNotEmpty()
   ): Triple<String, String?, TokenUsage> {
     // PASSWORD SECURITY (highest priority, deterministic — see runWorkflowCreation): a password
     // VALUE in the prompt is never processed, in ANY pass. Checking here as well means a combined
@@ -5719,8 +6075,9 @@ class AICodBiAssistant : IPluginServletAction {
     // [PromptCachingMode]): an external provider may serve the shared prefix from its prompt cache,
     // a local llama.cpp server cannot. `off` keeps the request-dependent section gating.
     runCacheFriendly.set(cacheFriendlyFor(modelId))
-    // Document-parsing rules are only included when the request references an attached document.
-    val hasAttachedDocument = imageParts.isNotEmpty()
+    // Document-parsing rules are only included when the request references an attached document -
+    // and a clarification attachment does NOT count (see [buildDocumentAttached]).
+    val hasAttachedDocument = buildDocumentAttached
     // Pass-1 section gating: keep the always-on decision core and ONLY the instruction blocks this
     // request can need (the AI's `sections` ∪ the deterministic detectors; a tag matched by neither
     // fails OPEN — the block is kept). See [PromptSectionGate] and
@@ -5855,6 +6212,27 @@ class AICodBiAssistant : IPluginServletAction {
               "section headings, and buttons on EVERY page must appear in the output." +
               multiPageSuffix
         } else ""
+    // THE BUILD PASSES NEED THE DOCUMENT TOO. Pass-1 receives the attached page images but is
+    // forbidden from creating widgets (REMINDER 4: it may only answer with a need_codbi_details
+    // request whenever a widget is not already present in the form). Every element is therefore
+    // created in a LATER pass -- the targeted rerun, the blind rethink or the forced final pass.
+    // Those passes used to build plain text-only messages, so the model saw only the request text
+    // ("Erstelle ein Formular aus der angehaengten PDF") and no page image at all. For a new form
+    // from a document that degenerates into a handful of invented demo fields (observed: a 2-page
+    // PDF with dozens of inputs/checkboxes/spacers became 3 text fields plus one empty container).
+    // The images are therefore re-attached to EVERY build pass and this hint is appended to their
+    // user content.
+    val buildImageHint =
+        if (imageParts.isEmpty()) ""
+        else
+            imageHint +
+                "\n\nREMINDER - THE SOURCE DOCUMENT IS ATTACHED TO THIS MESSAGE AS WELL. The form is " +
+                "EMPTY: every field must be CREATED here. Walk the document page by page, top to " +
+                "bottom, and create ONE widget per visible input control (text field, text area, " +
+                "select/dropdown, checkbox, radio group, date field, file upload, signature) and ONE " +
+                "element per static text / heading / spacer block, preserving the document order and " +
+                "the visible labels. Do NOT summarise or sample the document, do NOT invent fields " +
+                "that are not on the page, and do NOT stop after the first page."
     val clarificationInstruction =
         if (clarificationContext.isNullOrBlank()) ""
         else
@@ -5907,7 +6285,7 @@ class AICodBiAssistant : IPluginServletAction {
         "[AICodBiAssistant] Form data sent to AI (model={}): {}",
         modelId,
         slimPersistJson(persistJson))
-    val rawResponse = instance.performFormAssist(modelId, messagesJson)
+    val rawResponse = instance.performFormAssist(modelId, messagesJson, buildPass = true)
     val assistUsage = instance.takeLastAssistUsage()
     tokensIn += assistUsage?.promptTokens ?: estimateTokens(messagesJson)
     tokensOut += assistUsage?.completionTokens ?: estimateTokens(rawResponse)
@@ -5958,7 +6336,7 @@ class AICodBiAssistant : IPluginServletAction {
         append("""{"role":"user","content":${buildUserContent(repairUserContent, imageParts)}}""")
         append("]")
       }
-      val repairRaw = instance.performFormAssist(repairModel, repairMessages)
+      val repairRaw = instance.performFormAssist(repairModel, repairMessages, buildPass = true)
       val repairUsage = instance.takeLastAssistUsage()
       tokensIn += repairUsage?.promptTokens ?: estimateTokens(repairMessages)
       tokensOut += repairUsage?.completionTokens ?: estimateTokens(repairRaw)
@@ -6008,7 +6386,8 @@ class AICodBiAssistant : IPluginServletAction {
         append("]")
       }
       val emptyRepairModel = auxModelFor(AuxRole.REPAIR, modelId)
-      val emptyRepairRaw = instance.performFormAssist(emptyRepairModel, emptyRepairMessages)
+      val emptyRepairRaw =
+          instance.performFormAssist(emptyRepairModel, emptyRepairMessages, buildPass = true)
       val emptyRepairUsage = instance.takeLastAssistUsage()
       tokensIn += emptyRepairUsage?.promptTokens ?: estimateTokens(emptyRepairMessages)
       tokensOut += emptyRepairUsage?.completionTokens ?: estimateTokens(emptyRepairRaw)
@@ -6137,6 +6516,19 @@ class AICodBiAssistant : IPluginServletAction {
       val datasourceSection =
           (if (availableDatasources.isNullOrBlank()) "" else "\n\n" + availableDatasources.trim()) +
               (if (ldapConfig.isNullOrBlank()) "" else "\n\n" + ldapConfig.trim())
+      // The DOCUMENT PARSING rules (FILE UPLOAD OVERRIDE, multiple pages, ...) used to be added to
+      // the PASS-1 system prompt ONLY. The passes that actually BUILD the form from a document -
+      // the
+      // blind rethink and the forced final pass - never received them, so a from-document build
+      // that
+      // fell through to one of those passes silently reverted to the default widget mapping.
+      // Observed on a 2-page PDF: pass-2 emitted the correct address group AND the correct upload,
+      // its answer was then discarded because the JSON was truncated, and the forced final pass -
+      // which had no document rules at all - rebuilt the form with a merged "Strasse, Hausnummer" /
+      // "PLZ, Ort" pair (all OpenPLZ classes gone) and a checkbox plus the sentence beside it for a
+      // line demanding two photos. The rules are language-agnostic and small, so every build prompt
+      // gets them whenever a document is attached.
+      val docRulesSection = if (hasAttachedDocument) attachedDocumentRules() else ""
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
@@ -6181,7 +6573,8 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationSection +
                 chatSection +
                 controlTypesSection +
-                datasourceSection
+                datasourceSection +
+                docRulesSection
 
         logger.info(
             "[AICodBiAssistant] Blind rethink pass â€” sending {} item(s) with compact CodBi reference (system-only)",
@@ -6222,7 +6615,7 @@ class AICodBiAssistant : IPluginServletAction {
               else
                   "\n\nUser's clarification answers (treat as part of the instruction):\n$clarificationContext"
           val userContent =
-              "Original user request: $prompt$foreignCopyContext$clarificationLine\n\n" +
+              "Original user request: $prompt$foreignCopyContext$clarificationLine$buildImageHint\n\n" +
                   "Current form (IPersistJson):\n$blindFormDump\n\n" +
                   blindSlicingNote +
                   "Modify the form according to that request. If the user asked to REMOVE or DELETE " +
@@ -6244,7 +6637,7 @@ class AICodBiAssistant : IPluginServletAction {
                   "<style>/<script> block, and markup EXACTLY as before. What the user names in the request " +
                   "is only the PART of that HTML property they want changed — NEVER \"replace the whole " +
                   "rtevalue with a brand-new, unrelated piece of HTML\"."
-          append("""{"role":"user","content":${gson.toJson(userContent)}}""")
+          append("""{"role":"user","content":${buildUserContent(userContent, imageParts)}}""")
           append("]")
         }
       } else {
@@ -6441,7 +6834,48 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationSection +
                 chatSection +
                 controlTypesSection +
-                datasourceSection
+                datasourceSection +
+                // The targeted rerun is a BUILD pass, and the truncation continuation reuses this
+                // prompt verbatim - so the DOCUMENT PARSING rules belong here too. Without them a
+                // continuation that finishes a from-document build falls back to the naive mapping
+                // (observed: the "E Anlagen" line demanding two photos became an XCheckbox with the
+                // sentence beside it, although the earlier part of the answer was correct).
+                docRulesSection
+
+        // (1) PER-PAGE BUILD for a document that produces a form FROM SCRATCH.
+        // A multi-page document turns into dozens to hundreds of elements. Asking for ALL of them
+        // in
+        // ONE answer overruns the output budget, and we have now seen every failure mode of that
+        // single shot: a truncated JSON (salvaged), a runaway reasoning channel with EMPTY content,
+        // and a repetition loop. Each of them loses the answer and hands the work to the forced
+        // COMPLETE-form rebuild, which merges structure. Building ONE PAGE PER INFERENCE cannot
+        // overrun: every answer is small, the page order is the document's own order, and each page
+        // is
+        // spliced onto the previous ones - so the result is complete AND ordered.
+        if (docRulesSection.isNotEmpty() && imageParts.size in 2..12 && allItems.size() <= 3) {
+          val pageMerged =
+              buildFormPerDocumentPage(
+                  instance = instance,
+                  modelId = modelId,
+                  systemPrompt = applySystemPrompt,
+                  pageImages = imageParts,
+                  prompt = prompt,
+                  useCodbi = useCodbi,
+                  onPageUsage = { pageNo, pageUsage, pageMessages, pageRaw ->
+                    tokensIn += pageUsage?.promptTokens ?: estimateTokens(pageMessages)
+                    tokensOut += pageUsage?.completionTokens ?: estimateTokens(pageRaw)
+                    reportTrip("form-page-$pageNo", modelId, pageUsage, pageMessages, pageRaw)
+                  })
+          if (pageMerged != null) {
+            logger.info(
+                "[AICodBiAssistant] Per-page document build done: {} item(s) from {} page(s) - skipping the single-shot pass-2",
+                itemNamesOf(pageMerged).size,
+                imageParts.size)
+            return splicePass2IntoPass1(formBase, pageMerged)
+          }
+          logger.warn(
+              "[AICodBiAssistant] Per-page document build produced nothing usable - falling back to the single-shot pass-2")
+        }
 
         val clarificationLine2 =
             if (clarificationContext.isNullOrBlank()) ""
@@ -6467,7 +6901,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val pass2UserContent =
-            "Original user request: $prompt$foreignCopyContext$clarificationLine2\n\n" +
+            "Original user request: $prompt$foreignCopyContext$clarificationLine2$buildImageHint\n\n" +
                 "Complete current form (IPersistJson):\n$pass2FormDump\n\n" +
                 pass2SlicingNote +
                 (if (candidateClause.isNotBlank())
@@ -6532,21 +6966,22 @@ class AICodBiAssistant : IPluginServletAction {
             modelId,
             gson.toJson(targetItems))
         logger.info(
-            "[AICodBiAssistant] Pass-2 payload sizes: system={} chars, user={} chars (form dump={} chars, {}/{} items in full)",
+            "[AICodBiAssistant] Pass-2 payload sizes: system={} chars, user={} chars (form dump={} chars, {}/{} items in full, {} image(s) attached)",
             applySystemPrompt.length,
             pass2UserContent.length,
             pass2FormDump.length,
             targetItems.size(),
-            allItems.size())
+            allItems.size(),
+            imageParts.size)
         retryMessagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(applySystemPrompt)}},""")
-          append("""{"role":"user","content":${gson.toJson(pass2UserContent)}}""")
+          append("""{"role":"user","content":${buildUserContent(pass2UserContent, imageParts)}}""")
           append("]")
         }
       }
 
-      val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
+      val retryRaw = instance.performFormAssist(modelId, retryMessagesJson, buildPass = true)
       val assistUsage = instance.takeLastAssistUsage()
       tokensIn += assistUsage?.promptTokens ?: estimateTokens(retryMessagesJson)
       tokensOut += assistUsage?.completionTokens ?: estimateTokens(retryRaw)
@@ -6555,8 +6990,22 @@ class AICodBiAssistant : IPluginServletAction {
       // very often drops the opening `{` of the NEXT item (`}},"className":…` instead of
       // `}},{"className":…`). Without the repair such a payload counts as "non-JSON prose" and
       // triggers the entire forced final pass (a whole extra inference). See [repairAiJson].
-      val pass2Extracted = extractJson(stripThinkTags(retryRaw))
-      val pass2Cleaned = repairAiJson(pass2Extracted)
+      // A raw chat-completion ENVELOPE must never be treated as model content.
+      // `ChatCompletionService`
+      // normally unwraps `choices[0].message.content` already, so an envelope reaching this point
+      // means the content was EMPTY and only the reasoning channel produced text (observed: a
+      // reasoning model burned its whole output budget in a looping analysis,
+      // `finish_reason="length"`, `content` empty). Without this guard the envelope is fed to
+      // [repairAiJson], which "repairs" its unterminated reasoning string and the run logs a
+      // recoverable JSON slip that never existed - and a salvaged `items` array could in principle
+      // be
+      // picked out of that prose. There is nothing to salvage in that case; the pass simply
+      // produced
+      // no answer.
+      val rawPass2 =
+          chatCompletionContentOrNull(stripThinkTags(retryRaw)) ?: stripThinkTags(retryRaw)
+      val pass2Extracted = extractJson(rawPass2)
+      var pass2Cleaned = repairAiJson(pass2Extracted)
       // Same measurement for the pass that actually builds the form (see [logReEmissionStats]).
       logReEmissionStats("form-pass-${rerunCount + 2}", pass2Cleaned, persistJson)
       if (pass2Cleaned != pass2Extracted) {
@@ -6581,7 +7030,108 @@ class AICodBiAssistant : IPluginServletAction {
         return pass2Cleaned
       }
       // Whether pass-2 actually produced JSON (a form) or only prose. Prose is never a form.
-      val pass2IsJson = isJsonObjectOrArray(pass2Cleaned)
+      var pass2IsJson = isJsonObjectOrArray(pass2Cleaned)
+      // Guard for the single "answer now" retry below.
+      var retriedPass2 = false
+      // OUTPUT-BUDGET TRUNCATION. A build that has to transcribe a whole document produces a long
+      // answer; the model then runs out of output tokens MID-ITEM and the payload is not valid JSON
+      // (observed: "Unterminated string at line 1 column 11155 path
+      // $.items[42].properties.fullwidth" on a 2-page PDF with ~85 elements). [repairAiJson]
+      // refuses
+      // such a payload by design, and discarding it loses CORRECT work - everything before the cut
+      // is
+      // a complete, self-contained item (in the observed run: the whole address group WITH its
+      // OpenPLZ classes). So: salvage the complete leading items and then ask the model for ONLY
+      // the
+      // elements that are still missing, instead of paying for a complete rebuild that starts over
+      // and
+      // simplifies the structure. Bounded to ONE extra inference per rerun.
+      if (!pass2IsJson && extractCodbiDetailsRequest(pass2Cleaned) == null) {
+        val salvaged = salvageTruncatedItems(pass2Extracted)
+        if (salvaged != null) {
+          val salvagedNames = itemNamesOf(salvaged)
+          logger.warn(
+              "[AICodBiAssistant] Pass-{} answer was TRUNCATED by the output budget - salvaged {} complete item(s) [{}] and asking for the MISSING elements only",
+              rerunCount + 2,
+              salvagedNames.size,
+              salvagedNames.joinToString(", "))
+          // POSITION/ORDER CURSOR: the model writes a container's COMPLETE child list before it
+          // writes the children, so the salvaged payload already carries the authoritative document
+          // order for every container - only some children are still missing. Feeding that list
+          // back
+          // makes the continuation continue IN PLACE and in DOCUMENT ORDER instead of inventing a
+          // new
+          // page and shifting everything after it.
+          val pending = pendingChildNames(salvaged)
+          val pendingBlock =
+              if (pending.isEmpty()) ""
+              else
+                  "\n\nPOSITION AND ORDER - the truncated answer already declared each container's " +
+                      "COMPLETE child list IN DOCUMENT ORDER, and these children are still MISSING:\n" +
+                      pending.joinToString("\n") { (container, names) ->
+                        "- '" + container + "' -> [" + names.joinToString(", ") + "]"
+                      } +
+                      "\nCreate the items for EXACTLY these names, IN THE ORDER LISTED, and keep " +
+                      "them in the container named on that line - do NOT open a new page/container " +
+                      "for them, do NOT renumber or reorder what you already produced, and add a " +
+                      "further page/container ONLY where the attached document itself starts one."
+          val continuationUserContent =
+              "YOUR PREVIOUS ANSWER WAS CUT OFF BY THE OUTPUT LIMIT. The elements you already " +
+                  "produced are KEPT VERBATIM and are shown to you as your own previous answer.\n" +
+                  "The containers in it already reference their children by NAME. Create EXACTLY " +
+                  "the items whose names are still MISSING from the document, and nothing else.\n" +
+                  "RULES FOR THIS CONTINUATION: (1) do NOT re-emit, patch, rename or restyle any " +
+                  "element you already produced - it is already saved; (2) do NOT re-emit a " +
+                  "container/page whose structure and \"elements\" array you already produced; " +
+                  "(3) keep the same naming scheme, labels, widget types, rowids and CodBi standard " +
+                  "classes you used before, so the parts join seamlessly; (4) apply the document " +
+                  "rules exactly as before (an address group stays its separate fields, a line " +
+                  "demanding documents/photos becomes an upload); (5) answer ONLY with the diff JSON " +
+                  "- a top-level \"items\" array with the new elements - and emit it COMPACTLY so " +
+                  "this answer fits the budget too." +
+                  pendingBlock
+          // The original system+user turn is reused as-is (so all widget templates, CodBi details
+          // and the attached document stay in context); the salvaged answer is appended as the
+          // model's own previous turn and the instruction above as the follow-up. No image is
+          // re-sent - it is already in the first user turn.
+          val baseMessages = retryMessagesJson.trimEnd()
+          val continuationMessages =
+              baseMessages.substring(0, baseMessages.length - 1) +
+                  ",{\"role\":\"assistant\",\"content\":" +
+                  gson.toJson(salvaged) +
+                  "}" +
+                  ",{\"role\":\"user\",\"content\":" +
+                  gson.toJson(continuationUserContent) +
+                  "}]"
+          val contRaw = instance.performFormAssist(modelId, continuationMessages, buildPass = true)
+          val contUsage = instance.takeLastAssistUsage()
+          tokensIn += contUsage?.promptTokens ?: estimateTokens(continuationMessages)
+          tokensOut += contUsage?.completionTokens ?: estimateTokens(contRaw)
+          reportTrip(
+              "form-pass-${rerunCount + 2}-continue",
+              modelId,
+              contUsage,
+              continuationMessages,
+              contRaw)
+          val contCleaned = repairAiJson(extractJson(stripThinkTags(contRaw)))
+          logger.info(
+              "[AICodBiAssistant] Pass-{}-continue raw result: {}",
+              rerunCount + 2,
+              truncateForLog(compactJsonForLog(contCleaned)))
+          pass2Cleaned =
+              if (isJsonObjectOrArray(contCleaned) &&
+                  extractCodbiDetailsRequest(contCleaned) == null) {
+                // The continuation is itself a diff: splice it onto the salvaged items so nothing
+                // that was already produced is ever replaced by it.
+                splicePass2IntoPass1(salvaged, contCleaned)
+              } else salvaged
+          pass2IsJson = isJsonObjectOrArray(pass2Cleaned)
+          logger.info(
+              "[AICodBiAssistant] Pass-{}-continue merged: {} item(s) in the pass-2 result (salvaged items kept, only missing ones added)",
+              rerunCount + 2,
+              itemNamesOf(pass2Cleaned).size)
+        }
+      }
       // The AI may ask for even MORE details in the rerun (a second `need_codbi_details`, e.g. for
       // widget types it only names in pass-2). Loop once more with the new request so the widgets
       // the user asked for are not silently dropped. Bounded by [MAX_FORM_RERUNS] to avoid looping
@@ -6642,6 +7192,76 @@ class AICodBiAssistant : IPluginServletAction {
       // unchanged/empty - while a workflow could still be created from it. Force ONE final pass
       // that
       // forbids a details request AND any question, and requires the complete form JSON.
+      // (2) ONE RETRY OF THE IDENTICAL REQUEST before the forced COMPLETE-form rebuild.
+      // A rebuild from scratch is the most damaging fallback we have: it re-derives the whole form
+      // and
+      // demonstrably simplifies structure - observed a four-part address group collapsed into
+      // "Strasse, Hausnummer" / "PLZ, Ort" (losing every OpenPLZ class) and a `codbiVerdict` of
+      // "none", so the MultipleUpload wiring was never applied either. Retrying the SAME request
+      // once,
+      // with an explicit "answer now, no analysis" demand, costs one inference and normally yields
+      // the
+      // form the model was already building.
+      if (!pass2IsJson && !retriedPass2 && clarificationFromProse(pass2Cleaned) == null) {
+        retriedPass2 = true
+        logger.warn(
+            "[AICodBiAssistant] Pass-{} returned no usable form ({} chars) - retrying the SAME request once before the complete-form rebuild",
+            rerunCount + 2,
+            pass2Cleaned.length)
+        val answerNowTurn =
+            "ANSWER NOW. Your previous attempt produced no form JSON (its output budget was consumed " +
+                "before the JSON was written). Do NOT analyse, plan, think out loud or explain. " +
+                "Answer IMMEDIATELY with the diff JSON only: a top-level \"_diff\": true marker and " +
+                "an \"items\" array. Emit it COMPACTLY. If you cannot finish everything, stop after " +
+                "the items you completed - a partial array is fine and is completed in the next step."
+        // Reuse the EXACT request pass-2 already sent (system + user + the attached images) and
+        // only
+        // append the follow-up turn - that whole request is in scope as `retryMessagesJson`.
+        val baseAnswerNow = retryMessagesJson.trimEnd()
+        val answerNowMessages =
+            baseAnswerNow.substring(0, baseAnswerNow.length - 1) +
+                ",{\"role\":\"user\",\"content\":" +
+                gson.toJson(answerNowTurn) +
+                "}]"
+        val answerNowRaw = instance.performFormAssist(modelId, answerNowMessages, buildPass = true)
+        val answerNowUsage = instance.takeLastAssistUsage()
+        tokensIn += answerNowUsage?.promptTokens ?: estimateTokens(answerNowMessages)
+        tokensOut += answerNowUsage?.completionTokens ?: estimateTokens(answerNowRaw)
+        reportTrip(
+            "form-pass-${rerunCount + 2}-answer-now",
+            modelId,
+            answerNowUsage,
+            answerNowMessages,
+            answerNowRaw)
+        val answerNowText =
+            chatCompletionContentOrNull(stripThinkTags(answerNowRaw))
+                ?: stripThinkTags(answerNowRaw)
+        var answerNowJson = repairAiJson(extractJson(answerNowText))
+        if (!isJsonObjectOrArray(answerNowJson)) {
+          val salvagedAnswer = salvageTruncatedItems(answerNowText)
+          if (salvagedAnswer != null) {
+            logger.warn(
+                "[AICodBiAssistant] Pass-{}-answer-now was truncated as well - salvaged {} complete item(s)",
+                rerunCount + 2,
+                itemNamesOf(salvagedAnswer).size)
+            answerNowJson = salvagedAnswer
+          }
+        }
+        logger.info(
+            "[AICodBiAssistant] Pass-{}-answer-now raw result: {}",
+            rerunCount + 2,
+            truncateForLog(compactJsonForLog(answerNowJson)))
+        if (isJsonObjectOrArray(answerNowJson) &&
+            extractCodbiDetailsRequest(answerNowJson) == null &&
+            parseClarificationRequest(answerNowJson) == null) {
+          pass2Cleaned = answerNowJson
+          pass2IsJson = true
+          logger.info(
+              "[AICodBiAssistant] Pass-{}-answer-now produced a usable form ({} item(s)) - the complete-form rebuild is NOT used",
+              rerunCount + 2,
+              itemNamesOf(pass2Cleaned).size)
+        }
+      }
       if (extractCodbiDetailsRequest(pass2Cleaned) != null || !pass2IsJson) {
         if (!pass2IsJson) {
           // Prose pass-2 is normally a failure, but the AI occasionally answers a form-build pass
@@ -6694,7 +7314,8 @@ class AICodBiAssistant : IPluginServletAction {
                 chatSection +
                 "\n\n" +
                 (loadPromptWithClasspathFallback("codbi.retry_form") ?: "") +
-                datasourceSection
+                datasourceSection +
+                docRulesSection
         // The final forced pass re-sends the whole form and is a major token sink when a preceding
         // pass-2 degenerated to prose. Slice it just like pass-2: containers/pages stay FULL while
         // the untouched leaf majority collapses to structural stubs (the _unchangedItems hint below
@@ -6712,7 +7333,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "full items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val finalUserContent =
-            "Original user request: $prompt$foreignCopyContext\n\n" +
+            "Original user request: $prompt$foreignCopyContext$buildImageHint\n\n" +
                 "Complete current form (IPersistJson):\n$finalFormDump\n\n" +
                 finalSlicingNote +
                 // The previous rerun requested details and then re-requested the SAME set (a
@@ -6735,15 +7356,36 @@ class AICodBiAssistant : IPluginServletAction {
                 "NOT re-emit is kept VERBATIM by the server, so omission is SAFE and means UNCHANGED. " +
                 "ALSO — AN EXISTING ELEMENT'S OWN HTML (properties.rtevalue) OFTEN HOLDS SEVERAL PARTS AT ONCE (static text/headings/bullets ABOVE OR BELOW an interactive widget such as a calculator). When the request modifies something INSIDE that HTML (e.g. \"change the calculator\"), EDIT ONLY THAT PART and return the element's rtevalue COMPLETE — target part changed plus EVERY other paragraph, list, <style>/<script> block, and markup EXACTLY as before. What the user names in the request is only the PART of that HTML property they want changed — NEVER \"replace the whole rtevalue with a brand-new, unrelated piece of HTML\". " +
                 "TOKEN SAVING — UNCHANGED ITEMS (BIGGEST COST SAVER — USE IT AGGRESSIVELY): emit the top-level \"_diff\": true marker and OMIT from your output entirely every leaf element (widget/field) AND every container/page whose BODY and whose ENTIRE STRUCTURE are NOT changing — every one of its properties INCLUDING its complete \"elements\" array identical to the current form. You do NOT name the omitted items anywhere: everything you do not re-emit is kept VERBATIM from the current form; omission means UNCHANGED, NOT removal. You MUST still emit IN FULL — with the complete \"elements\" array — every container/page whose structure actually changed in this request (e.g. the container into which you nest a new field) and every NEW or MODIFIED item. A container/page whose position changed, whose order of children changed, or that gained or lost a child must be re-emitted in full. An element you are REMOVING goes in \"_removedItems\" — that is the ONLY way an existing element leaves the form."
+        // A COMPLETE-form rebuild under document pressure silently SIMPLIFIES structure unless it
+        // is
+        // forbidden explicitly. Observed on a 2-page PDF: a four-part address group was collapsed
+        // into the combined fields "Strasse, Hausnummer" and "PLZ, Ort" - which also dropped every
+        // OpenPLZ class - and an annex line demanding two photos became a checkbox. This pass is
+        // the
+        // last chance to build the form, so the invariant is stated once here.
+        val finalUserContentFull =
+            finalUserContent +
+                "\n\nSTRUCTURAL INVARIANTS - NEVER SIMPLIFY THESE AWAY: every widget that an earlier " +
+                "pass already produced stays its OWN item; never merge separate fields into one " +
+                "combined field (an address group is FOUR separate fields - street, house number, " +
+                "postal code, locality - never a single 'street, house number' or 'postal code, " +
+                "locality' field), and every CodBi standard class those fields carried stays in " +
+                "their cssclasses array. A line that demands the applicant hand in documents, " +
+                "photos or other files is an XUpload labelled with that line, never an XCheckbox " +
+                "with the sentence next to it."
         val finalMessagesJson =
             "[{\"role\":\"system\",\"content\":${gson.toJson(finalSystemPrompt)}}," +
-                "{\"role\":\"user\",\"content\":${gson.toJson(finalUserContent)}}]"
-        val finalRaw = instance.performFormAssist(modelId, finalMessagesJson)
+                "{\"role\":\"user\",\"content\":${buildUserContent(finalUserContentFull, imageParts)}}]"
+        val finalRaw = instance.performFormAssist(modelId, finalMessagesJson, buildPass = true)
         val assistUsage = instance.takeLastAssistUsage()
         tokensIn += assistUsage?.promptTokens ?: estimateTokens(finalMessagesJson)
         tokensOut += assistUsage?.completionTokens ?: estimateTokens(finalRaw)
         reportTrip("form-forced-final", modelId, assistUsage, finalMessagesJson, finalRaw)
-        val finalCleaned = repairAiJson(extractJson(stripThinkTags(finalRaw)))
+        // Same envelope guard as pass-2: never let the provider envelope be "repaired" into a
+        // pseudo-form.
+        val finalText =
+            chatCompletionContentOrNull(stripThinkTags(finalRaw)) ?: stripThinkTags(finalRaw)
+        val finalCleaned = repairAiJson(extractJson(finalText))
         // Measure this pass's re-transmission exactly like pass-1/pass-2, so a forced final (which
         // uses the same _diff/_unchangedItems + sliceFormForPass2 protocol) is observable in the
         // `re-emission stats` log and any regression that re-emits unchanged items is caught.
@@ -7102,9 +7744,15 @@ class AICodBiAssistant : IPluginServletAction {
       // FULL, so a class the model set in pass-1 is overwritten by pass-2's version. The net only
       // mirrors the datatype the MODEL chose (never a name/label wording — see
       // [applyPeopleClassesToForm]) and is skipped when the request explicitly asks for Cleave
-      // formatting. There is deliberately NO equivalent net for the OpenPLZ.AC.SET address classes:
-      // deciding whether a request is about an address/locality is the AI's job, not a keyword
-      // match's.
+      // formatting. There is deliberately NO deterministic net for the OpenPLZ.AC.SET address
+      // classes, and none for "is this a checkbox or an upload": whether a field IS a postal code /
+      // locality / street / building number, and whether a line asks for a DECISION or for a
+      // DOCUMENT, are semantic decisions in the user's language. A name/label/group heuristic
+      // cannot make them across languages (a "Wort in Grossbuchstaben" field contains "ort" too,
+      // and "hand in the annexes" exists in unbounded phrasings), so those decisions belong to the
+      // model and are carried by the prompts - see codbi-general.md,
+      // codbi-form-task-instruction.md, codbi-form-structure-rules.md, codbi-document-parsing.md
+      // and codbi-core-elements-compact.md.
       val peopleForm = applyPeopleClassesToForm(dedupedForm, prompt, useCodbi)
       // Financial standard classes (CodBi_Currency) on the FINISHED form: same re-emission problem
       // and same datatype-driven safety net as the People one, so a money/currency field the model
@@ -8597,6 +9245,242 @@ class AICodBiAssistant : IPluginServletAction {
    * detected either by its AI receiver CSS class or by its `data-cb-Question` attribute (both the
    * flattened property and the attributes array).
    */
+  /**
+   * The DOCUMENT PARSING rules (`codbi.document_parsing`: FILE UPLOAD OVERRIDE, the multiple-pages
+   * mapping, ...) as a system-prompt section, or `""` when they cannot be loaded.
+   *
+   * These rules are the language-agnostic description of how an attached document maps onto
+   * Formcycle widgets. They must accompany EVERY pass that builds from a document - not only pass-1
+   * - because a build can fall through to the blind rethink or the forced final pass (a truncated
+   *   pass-2 answer is enough to trigger that), and a build pass without them falls back to a naive
+   *   one-widget-per-line mapping: a tick that demands evidence documents becomes an XCheckbox with
+   *   the sentence beside it, instead of an XUpload labelled with that sentence.
+   */
+  /**
+   * Builds a form from a multi-page document ONE PAGE PER INFERENCE and returns the merged diff
+   * JSON (`null` when not a single page produced usable items).
+   *
+   * Each call gets the ENTIRE build system prompt but **only that page's image**, so the answer can
+   * never exceed the output budget and the model physically cannot wander into another page. The
+   * page order is enforced by the caller (`p1`, `p2`, ...) and by the order of the merges, which is
+   * the document's own order - the reason the single-shot rebuild kept reordering/merging sections.
+   *
+   * A page whose answer is truncated is salvaged like pass-2; a page that yields nothing is skipped
+   * so one bad page cannot lose the whole form.
+   */
+  private fun buildFormPerDocumentPage(
+      instance: Standard,
+      modelId: String,
+      systemPrompt: String,
+      pageImages: List<String>,
+      prompt: String,
+      useCodbi: Boolean,
+      onPageUsage:
+          (pageNo: Int, usage: Standard.AssistUsage?, messagesJson: String, raw: String) -> Unit
+  ): String? {
+    val total = pageImages.size
+    var merged: String? = null
+    var pagesBuilt = 0
+    for (index in 0 until total) {
+      val pageNo = index + 1
+      val pageItem = "p$pageNo"
+      // NAVIGATION between the pages this build produces. Each page is built in its own inference,
+      // so
+      // the model cannot see the other pages and must be told which navigation elements THIS page
+      // carries. `action.page` uses the LOGICAL keywords next/previous - the server resolves the
+      // concrete target, so no page name is ever written and renaming stays safe. The LABELS are
+      // the
+      // words the document's own language uses; they are never translated into a fixed wording.
+      val navigationRule =
+          if (total <= 1) ""
+          else
+              "NAVIGATION - THIS DOCUMENT HAS $total PAGES AND THIS IMAGE IS PAGE $pageNo:\n" +
+                  (if (pageNo > 1)
+                      "- at the START of this page add ONE XButtonList with a single button whose action.page is the LOGICAL keyword \"previous\" and action.check=false, labelled with the word THIS DOCUMENT'S LANGUAGE uses for going back.\n"
+                  else "") +
+                  (if (pageNo < total)
+                      "- at the END of this page add ONE XButtonList with a single button whose action.page is the LOGICAL keyword \"next\" and action.check=true, labelled with the word THIS DOCUMENT'S LANGUAGE uses for continuing / going forward.\n"
+                  else
+                      "- at the END of this page add the SUBMIT XButtonList: a single button whose action is exactly {\"page\":\"submit\",\"check\":true,\"customAction\":\"\",\"customClassNames\":\"\",\"displayName\":\"\",\"optionId\":\"submit + check\",\"value\":\"\"}, labelled with the word THIS DOCUMENT'S LANGUAGE uses for sending / submitting the form.\n") +
+                  "- NEVER write a page NAME into action.page (use the logical keyword) and never leave it empty. List each of these button lists in this page's \"elements\" array at the position it belongs (start / end).\n"
+      val pageInstruction =
+          "Instruction: $prompt\n\n" +
+              "ATTACHED DOCUMENT - THE ATTACHED IMAGE IS EXACTLY PAGE $pageNo OF $total.\n" +
+              "Transcribe THIS PAGE ONLY, top to bottom, in the exact order it is printed.\n" +
+              (if (pageNo == 1)
+                  "Use the EXISTING page item 'p1' for this page and give it this page's complete \"elements\" array.\n"
+              else
+                  "Create ONE NEW page item named '$pageItem' (className XPage) for this page and give it this page's complete \"elements\" array.\n") +
+              // The rules are a NUMBERED CHECKLIST, each one its own line: as a single run-on
+              // sentence the model reliably dropped the tail of it (observed losses: the whole
+              // address pair of section A, and the upload conversion of the annex lines).
+              "RULES FOR THIS PAGE - apply ALL of them, they are not alternatives:\n" +
+              "(1) ONLY THIS PAGE: create only elements that are visible on THIS image, never elements of another page.\n" +
+              "(2) COMPLETE, THEN SPLIT: EVERY printed entry on this page must end up in the form - count the printed boxes/values on the page and make sure you created an element for each; a skipped entry is a FAIL. When ONE printed box carries two independently meaningful values, emit TWO elements - one per value - never one element for the combination: a box printed as street + building number becomes one field for the street and one for the building number, and a box printed as postal code + locality becomes one for the postal code and one for the locality. Give the pair the SAME rowid so it still reads as one line." +
+              (if (useCodbi)
+                  " With the CodBi switch on, each of those part-fields carries its own OpenPLZ standard class (postal code, locality, street, building number)."
+              else "") +
+              "\n(3) DECISION vs ARTEFACT: for every tick/checkbox line decide whether it asks the applicant to DECIDE something or to HAND OVER a document (a photo, image, scan, copy, certificate, proof, plan, or any other file). DECISION -> XCheckbox. ARTEFACT -> XUpload whose label is that whole line (never a checkbox, and never an extra text element beside it). When the line asks for MORE THAN ONE file, apply the multiple-upload functionality on that ONE upload AND set its maximum (data-cb-Maximum): a count you choose yourself is correct, omitting the functionality is not.\n" +
+              "(4) ORDER AND OWNERSHIP: list every element you create in the page's \"elements\" array in document order and set its parentid.\n" +
+              navigationRule +
+              "ANSWER NOW with the diff JSON only: a top-level \"_diff\": true marker and an \"items\" array holding the page item plus this page's elements. " +
+              "Do NOT analyse or plan in prose and do NOT explain anything. Emit the JSON COMPACTLY."
+      val messages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+        append(
+            """{"role":"user","content":${buildUserContent(pageInstruction, listOf(pageImages[index]))}}""")
+        append("]")
+      }
+      val raw = instance.performFormAssist(modelId, messages, buildPass = true)
+      val usage = instance.takeLastAssistUsage()
+      // The token bookkeeping of THIS run lives in the caller's scope, so it is reported there.
+      onPageUsage(pageNo, usage, messages, raw)
+      val text = chatCompletionContentOrNull(stripThinkTags(raw)) ?: stripThinkTags(raw)
+      var pageJson = repairAiJson(extractJson(text))
+      if (!isJsonObjectOrArray(pageJson)) {
+        val salvaged = salvageTruncatedItems(text)
+        if (salvaged != null) {
+          logger.warn(
+              "[AICodBiAssistant] Per-page build page {}/{} was truncated - salvaged {} complete item(s)",
+              pageNo,
+              total,
+              itemNamesOf(salvaged).size)
+          pageJson = salvaged
+        }
+      }
+      if (!isJsonObjectOrArray(pageJson) || extractCodbiDetailsRequest(pageJson) != null) {
+        logger.warn(
+            "[AICodBiAssistant] Per-page build page {}/{} produced no usable form JSON ({} chars) - skipping this page",
+            pageNo,
+            total,
+            pageJson.length)
+        continue
+      }
+      val current = merged
+      merged = if (current == null) pageJson else splicePass2IntoPass1(current, pageJson)
+      pagesBuilt++
+      logger.info(
+          "[AICodBiAssistant] Per-page build page {}/{}: {} item(s) ({} cumulative)",
+          pageNo,
+          total,
+          itemNamesOf(pageJson).size,
+          itemNamesOf(merged ?: pageJson).size)
+    }
+    logger.info(
+        "[AICodBiAssistant] Per-page document build: {}/{} page(s) built, {} item(s) total",
+        pagesBuilt,
+        total,
+        merged?.let { itemNamesOf(it).size } ?: 0)
+    return if (pagesBuilt > 0) merged else null
+  }
+
+  private fun attachedDocumentRules(): String {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager() ?: return ""
+    return try {
+      val rules = PromptLoader.loadDocumentParsingRules(em)
+      if (rules.isNullOrBlank()) ""
+      else "\n\n## DOCUMENT PARSING RULES (attached document)\n\n$rules"
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load the document parsing rules: {}", e.message)
+      ""
+    } finally {
+      runCatching { em.close() }
+    }
+  }
+
+  /**
+   * When [raw] is a chat-completion ENVELOPE (`{"id":"chatcmpl-…","choices":[{"message":{…}}]}`),
+   * returns the model CONTENT it carries - which is `""` when the model put everything into a
+   * separate `reasoning` channel and/or hit the output limit there.
+   *
+   * Returns `null` when [raw] is not an envelope at all (the normal case: the content was already
+   * unwrapped by the chat-completion service), so the caller keeps using [raw] unchanged.
+   */
+  private fun chatCompletionContentOrNull(raw: String): String? {
+    if (!raw.contains("\"choices\"")) return null
+    return try {
+      val root = JsonParser.parseString(raw).asJsonObject
+      val choices = root.getAsJsonArray("choices") ?: return null
+      val choice = choices.firstOrNull { it.isJsonObject }?.asJsonObject ?: return null
+      val message = choice.getAsJsonObject("message")
+      val content = message?.get("content")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      val reasoning = message?.get("reasoning")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      val finish = choice.get("finish_reason")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      if (content.isNotBlank()) {
+        logger.info(
+            "[AICodBiAssistant] Unwrapped the model content from a chat-completion envelope ({} chars, finish_reason={})",
+            content.length,
+            finish)
+      } else {
+        logger.warn(
+            "[AICodBiAssistant] The model returned NO content - only an envelope with finish_reason={}, content=0 chars, reasoning={} chars. The output budget was consumed by the reasoning channel, so this pass produced no form JSON at all (nothing to salvage)",
+            finish,
+            reasoning.length)
+      }
+      content
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /**
+   * For a form/diff payload: every container/page (in payload order) together with the child NAMES
+   * its `properties.elements` array references although no item with that name exists yet.
+   *
+   * A model writes a container's COMPLETE child list BEFORE it writes the children, so after a
+   * truncation this is the exact remaining work IN DOCUMENT ORDER. It is what lets a continuation
+   * append in place instead of opening a new page and shifting the rest of the form.
+   */
+  private fun pendingChildNames(json: String): List<Pair<String, List<String>>> =
+      try {
+        val items: Iterable<com.google.gson.JsonElement> =
+            JsonParser.parseString(json).asJsonObject.getAsJsonArray("items") ?: emptyList()
+        val existing =
+            items
+                .mapNotNull { el ->
+                  el.takeIf { it.isJsonObject }
+                      ?.asJsonObject
+                      ?.getAsJsonObject("properties")
+                      ?.get("name")
+                      ?.takeIf { it.isJsonPrimitive }
+                      ?.asString
+                }
+                .toSet()
+        val out = mutableListOf<Pair<String, List<String>>>()
+        for (el in items) {
+          if (!el.isJsonObject) continue
+          val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+          val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+          val elements = props.getAsJsonArray("elements") ?: continue
+          val missing = mutableListOf<String>()
+          for (e in elements) {
+            if (!e.isJsonPrimitive) continue
+            val child = e.asString
+            if (child.isNotBlank() && child !in existing) missing.add(child)
+          }
+          if (missing.isNotEmpty()) out.add(name to missing)
+        }
+        out
+      } catch (_: Exception) {
+        emptyList()
+      }
+
+  /** Element names of a form/diff payload, in payload order (empty when it is not parseable). */
+  private fun itemNamesOf(json: String): List<String> =
+      try {
+        JsonParser.parseString(json).asJsonObject.getAsJsonArray("items")?.mapNotNull { el ->
+          el.takeIf { it.isJsonObject }
+              ?.asJsonObject
+              ?.getAsJsonObject("properties")
+              ?.get("name")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+        } ?: emptyList()
+      } catch (_: Exception) {
+        emptyList()
+      }
+
   private fun isAiAnswerField(props: JsonObject): Boolean {
     val existingCss = props.get("cssclasses")?.takeIf { it.isJsonArray }?.asJsonArray
     val hasAiReceiverClass =

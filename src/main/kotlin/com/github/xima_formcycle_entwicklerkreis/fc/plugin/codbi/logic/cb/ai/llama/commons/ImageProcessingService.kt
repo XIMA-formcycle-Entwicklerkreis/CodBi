@@ -27,6 +27,20 @@ internal class ImageProcessingService(
     private val log: (LogLevel, String) -> Unit
 ) {
 
+  companion object {
+    /**
+     * Param-name prefix the frontend puts in front of a document attached to a CLARIFICATION ANSWER
+     * (appended as `codbi-base64:clarification:<name>`).
+     *
+     * Such an attachment only ANSWERS a question; it is not the document the form is built from.
+     * The form assistant must therefore never switch the DOCUMENT PARSING rules on because of it -
+     * and, conversely, must still send it to the model as vision context. Keeping the distinction
+     * in the param NAME is the only place the client can express it, and it needs no language or
+     * content analysis on the server.
+     */
+    const val CLARIFICATION_IMAGE_PREFIX = "clarification:"
+  }
+
   /**
    * Collects image data from both multipart upload files and base64 data-URL parameters.
    *

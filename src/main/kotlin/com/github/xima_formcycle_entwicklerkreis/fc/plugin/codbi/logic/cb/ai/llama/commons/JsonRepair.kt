@@ -1,5 +1,7 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons
 
+import com.google.gson.JsonParser
+
 /**
  * Repairs the common JSON slips LLMs make when emitting JSON, so a single bad token does not lose
  * an entire AI build (form or workflow). Only invoked when the initial strict parse fails. The
@@ -599,3 +601,110 @@ private class JsonRecoverer(private val raw: String) {
     return result
   }
 }
+
+/**
+ * Salvages the COMPLETE leading element objects of a `"items": [...]` array from a payload the
+ * model cut off mid-token because it ran out of output budget.
+ *
+ * [repairAiJson] deliberately refuses such a payload ("fails loudly instead of silently publishing
+ * a partial form"). That is right for a COMPLETE-form answer, where a silently shortened form is a
+ * corrupt result. An ADD-ITEMS answer is different: every element of `items` is a self-contained,
+ * complete item, so the elements the model finished are valid form elements and only the tail is
+ * lost. Throwing them away throws away correct work - observed on a 2-page PDF: the build pass
+ * emitted a complete, correctly classed address group and was cut at
+ * `$.items[42].properties.fullwidth`; the whole answer was discarded and a much weaker "complete
+ * form" pass rebuilt the form with merged address fields and no OpenPLZ classes.
+ *
+ * Only the top-level `"items"` array is considered, and an element is kept ONLY when it closes
+ * cleanly and parses as a JSON object on its own - a half-written item can never leak into a form.
+ * The caller is expected to ask the model for the still-missing elements and merge them onto this
+ * result.
+ *
+ * @return `{"_diff":true,"items":[...]}` holding only the complete leading items, or `null` when
+ *   the payload is not a truncated `items` array (a payload whose array DID close is never
+ *   shortened, and prose is not salvaged either).
+ */
+internal fun salvageTruncatedItems(raw: String): String? {
+  if (raw.isBlank()) return null
+  val itemsStart = findTopLevelItemsArray(raw) ?: return null
+  val elements = mutableListOf<String>()
+  var depth = 0
+  var inString = false
+  var escaped = false
+  var elementStart = -1
+  var i = itemsStart + 1
+  while (i < raw.length) {
+    val c = raw[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (c == '\\') escaped = true else if (c == '"') inString = false
+      i++
+      continue
+    }
+    when (c) {
+      '"' -> inString = true
+      '{',
+      '[' -> {
+        if (depth == 0) elementStart = i
+        depth++
+      }
+      '}',
+      ']' -> {
+        if (depth > 0) {
+          depth--
+          if (depth == 0) {
+            if (c == '}' && elementStart >= 0) {
+              val element = raw.substring(elementStart, i + 1)
+              if (isJsonObjectText(element)) elements.add(element)
+            }
+            elementStart = -1
+          }
+        } else if (c == ']') {
+          // The items array closed normally: this answer is NOT truncated. Never shorten it.
+          return null
+        }
+      }
+    }
+    i++
+  }
+  if (elements.isEmpty()) return null
+  return "{\"_diff\":true,\"items\":[" + elements.joinToString(",") + "]}"
+}
+
+/** Index of the `[` that opens the FIRST top-level `"items"` member, or `null`. String-aware. */
+private fun findTopLevelItemsArray(raw: String): Int? {
+  var i = 0
+  while (i < raw.length) {
+    if (raw[i] != '"') {
+      i++
+      continue
+    }
+    val start = i + 1
+    var j = start
+    var esc = false
+    while (j < raw.length) {
+      val ch = raw[j]
+      if (esc) esc = false else if (ch == '\\') esc = true else if (ch == '"') break
+      j++
+    }
+    val text = if (j > start) raw.substring(start, j) else ""
+    if (text == "items") {
+      var k = j + 1
+      while (k < raw.length && raw[k].isWhitespace()) k++
+      if (k < raw.length && raw[k] == ':') {
+        k++
+        while (k < raw.length && raw[k].isWhitespace()) k++
+        if (k < raw.length && raw[k] == '[') return k
+      }
+    }
+    i = j + 1
+  }
+  return null
+}
+
+private fun isJsonObjectText(text: String): Boolean =
+    try {
+      JsonParser.parseString(text).isJsonObject
+    } catch (_: Exception) {
+      false
+    }

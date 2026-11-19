@@ -7,7 +7,7 @@ import { parseString } from "@de-xima/xima-common-js-lang";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 // #region CodBi
-import { notifyFormPreviewChanged } from "./CodbiElementMarkers.js";
+import { notifyFormPreviewChanged, refreshCodbiElementMarkers } from "./CodbiElementMarkers.js";
 import { i18n } from "./i18n.js";
 // #endregion CodBi
 // #endregion Imports
@@ -151,6 +151,11 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     // RUNNING element previews. The preview renders the server-side draft, which needs a moment to
     // sync the changed form property before its iframe is reloaded.
     notifyFormPreviewChanged();
+    // The on-canvas CodBi marker DIMS the class sub-badges of a not-yet-activated configuration and
+    // folds the state into its re-render signature. Without this refresh, ticking the configuration
+    // off/on here left the badge folded/faded until the next unrelated redraw (reported: still
+    // dimmed after activating it in the form-level listing).
+    refreshCodbiElementMarkers();
   };
   /**
    * Creates a new {@link MultiSelect } by retrieving the available options from
@@ -197,8 +202,22 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     checked: boolean,
     detStandards: Record<string, { Active?: boolean }>,
   ): void {
-    if (detStandards[configuration]) {
-      DEFINED.tsCheck(detStandards[configuration]).Active = checked;
+    // CASE-INSENSITIVE on purpose: the registry keys are LOWERCASED (`mein.rechner`) while the values
+    // in this editor come from the file listing and keep the ORIGINAL casing (`Paul.Saul`). An exact
+    // match silently skipped every configuration whose casing differed — the checkbox of a config
+    // activated from the element panel therefore stayed unchecked (reported).
+    const wanted = String(configuration ?? "")
+      .trim()
+      .toLowerCase();
+    if (wanted === "") {
+      return;
+    }
+    const key =
+      detStandards[configuration] !== undefined
+        ? configuration
+        : Object.keys(detStandards).find((candidate) => candidate.toLowerCase() === wanted);
+    if (key !== undefined && detStandards[key] !== undefined) {
+      DEFINED.tsCheck(detStandards[key]).Active = checked;
     }
   }
   /**
@@ -578,15 +597,19 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     }
     // #endregion Clear marked standards globally
     // #region Set according to [data].
+    // Lowercased comparison: the CSV holds the ids in the casing the server/manager stored them in,
+    // while the checkbox values come from the file listing (original casing). Comparing exactly left a
+    // genuinely active configuration UNCHECKED (reported: activating from the element panel never
+    // showed up here).
     const selected = new Set(
       parseString(data)
         .split(",")
-        .map((value) => value.trim())
+        .map((value) => value.trim().toLowerCase())
         .filter(Boolean),
     );
 
     for (const element of this._inputs) {
-      if (selected.has(element.value)) {
+      if (selected.has(element.value.trim().toLowerCase())) {
         element.checked = true;
       }
     }

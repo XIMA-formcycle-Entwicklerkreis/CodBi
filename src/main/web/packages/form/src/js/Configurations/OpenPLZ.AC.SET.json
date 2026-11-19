@@ -3,15 +3,38 @@
   "classes": {
     "CodBi_OpenPLZ_AC_SET_PLZ": {
       "description": "Apply to an XTextField representing a postal code in an OpenPLZ address autocomplete set. Must be grouped with related address fields (Locality, Street, BuildingNumber).",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Country": "{ V > CodBi_OpenPLZ_Country }",
+        "TargetData": "PostalCodes",
+        "Dependent": ".CodBi_OpenPLZ_AC_SET_Locality",
+        "FocusOnAutocomplete": ".CodBi_OpenPLZ_AC_SET_Street",
+        "MsgNotKnown": "Nur bekannte Postleitzahlen sind erlaubt.",
+        "config": "^${JSON.stringify({\n        numeral: true,\n        numeralIntegerScale: 5,\n        delimiter: \"\",\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_OpenPLZ_AC_SET_Locality": {
       "description": "Apply to an XTextField representing a locality/city in an OpenPLZ address autocomplete set.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Country": "{ V > CodBi_OpenPLZ_Country }",
+        "TargetData": "Localities",
+        "Dependent": ".CodBi_OpenPLZ_AC_SET_PLZ",
+        "FocusOnAutocomplete": ".CodBi_OpenPLZ_AC_SET_Street",
+        "MsgNotKnown": "Nur bekannte Örtlichkeiten sind erlaubt."
+      }
     },
     "CodBi_OpenPLZ_AC_SET_Street": {
       "description": "Apply to an XTextField representing a street in an OpenPLZ address autocomplete set.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Country": "{ V > CodBi_OpenPLZ_Country }",
+        "TargetData": "Streets",
+        "DependentLocality": ".CodBi_OpenPLZ_AC_SET_Locality",
+        "DependentPLZ": ".CodBi_OpenPLZ_AC_SET_PLZ",
+        "FocusOnAutocomplete": ".CodBi_OpenPLZ_AC_SET_BuildingNumber",
+        "MsgNotKnown": "Nur bekannte Straßen für den Ort, falls angegeben, oder das Land sind erlaubt."
+      }
     },
     "CodBi_OpenPLZ_AC_SET_BuildingNumber": {
       "description": "Apply to an XTextField representing a building number in an OpenPLZ address autocomplete set.",

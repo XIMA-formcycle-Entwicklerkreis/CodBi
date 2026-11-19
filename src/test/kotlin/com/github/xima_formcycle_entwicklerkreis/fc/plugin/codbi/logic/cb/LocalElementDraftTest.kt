@@ -541,6 +541,282 @@ class LocalElementDraftTest {
   }
 
   /**
+   * A clarification envelope PARSES as a JSON object, so "the answer was JSON" never meant "the
+   * answer was a draft". A live run took `{"status":"need_clarification",…}` for the draft and
+   * ended in four "… is missing" problems ([LocalElementDrafts.hasDraftBody] is what tells the two
+   * apart, and what triggers the forced completion round).
+   */
+  @Test
+  fun `a clarification envelope carries no draft body`() {
+    val question =
+        draft(
+            """
+            {"status":"need_clarification",
+             "questions":[{"id":"q1","question":"Wie heißt der Rechner?","options":[],"allowFreeText":true}]}
+            """)
+    assertFalse(LocalElementDrafts.hasDraftBody(question))
+    assertFalse(LocalElementDrafts.hasDraftBody(draft("""{"status":"codbi_element_draft"}""")))
+    assertFalse(LocalElementDrafts.hasDraftBody(draft("""{"Name":"Super.Rechner"}""")))
+    assertFalse(LocalElementDrafts.hasDraftBody(draft("""{"Description":""}""")))
+    assertTrue(LocalElementDrafts.hasDraftBody(draft(functionalityDraft)))
+    assertTrue(LocalElementDrafts.hasDraftBody(draft(epDraft)))
+    assertTrue(LocalElementDrafts.hasDraftBody(draft(standardDraft)))
+  }
+
+  /**
+   * The completion/repair prompts are derived from the rules [`LocalElementDrafts.validate`]
+   * enforces — so a `standard` draft is asked for the SAME mandatory prompts as the other kinds.
+   * The reported dead end repaired a standard configuration twice without ever naming them.
+   */
+  @Test
+  fun `the mandatory key hint names the keys validation requires`() {
+    for (kind in LocalElementKind.values()) {
+      val hint = LocalElementDrafts.mandatoryKeyHint(kind)
+      for (key in listOf("Name", "Description", "Summary", "CondensedPrompt", "DetailedPrompt")) {
+        assertTrue(hint.contains(key), "$kind hint must name $key: $hint")
+      }
+    }
+    assertTrue(
+        LocalElementDrafts.mandatoryKeyHint(LocalElementKind.STANDARD).contains("Active"),
+        "a standard configuration is stored switched OFF without Active:true")
+    assertTrue(
+        LocalElementDrafts.mandatoryKeyHint(LocalElementKind.FUNCTIONALITY)
+            .contains("supportedFormelementtypes"))
+    // The hint and validate() must not drift apart: prompts are mandatory for a standard too.
+    val standardWithoutPrompts =
+        draft(
+            """
+            {"kind":"standard","Name":"Super.Rechner","Description":"<p>Rechner-Vorgabe.</p>",
+             "Summary":{"en":"a","de":"b","it":"c"}}
+            """)
+    assertTrue(
+        LocalElementDrafts.validate(
+                standardWithoutPrompts, LocalElementKind.STANDARD, emptyMap(), false)
+            .any { it.contains("CondensedPrompt") })
+  }
+
+  /**
+   * A generated standard configuration must be USABLE: stored `Active:true` (a missing flag used to
+   * be written as `false`, so the configuration was listed everywhere but never applied) and with
+   * `classes` in the object shape the element panel reads (`description`, optional
+   * `formelementtypes` / `params`).
+   */
+  @Test
+  fun `a standard configuration is stored active and with object class entries`() {
+    val generated =
+        draft(
+            """
+            {"kind":"standard","Name":"Mein.LokalerRechnerBitcoin",
+             "Description":"<p>Wendet die lokale Rechner-Funktionalität an.</p>",
+             "Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"Applies the local calculator.",
+             "DetailedPrompt":"Wiring: add the class.",
+             "classes":{"CodBi_LokalerRechner_Bitcoin":"Markiert ein Textfeld."},
+             "globals":{},
+             "Code":"window.codbi.loadConfig({\n  targets: '.CodBi_LokalerRechner_Bitcoin',\n  FUNC: \"Lokaler.Rechner\",\n  extravalue: \"{ Der.Bitcoin > EUR }\"\n});"}
+            """)
+    val entry = LocalElementDrafts.documentationEntry(LocalElementKind.STANDARD, generated)
+    assertTrue(entry.get("Active").asBoolean, "a generated configuration must be ACTIVE")
+    assertEquals(
+        "Markiert ein Textfeld.",
+        entry
+            .getAsJsonObject("classes")
+            .getAsJsonObject("CodBi_LokalerRechner_Bitcoin")
+            .get("description")
+            .asString)
+    assertNull(
+        entry.get("supportedFormelementtypes"),
+        "a local config is applied per element — it must never be published as holistic")
+  }
+
+  /**
+   * Reported: "create a standard configuration that applies the local calculator" produced a
+   * configuration WITHOUT any marker class — it could never be applied and the element panel had no
+   * row to offer. The class is derived from the name (`mein.rechner` → `CodBi_Mein_Rechner`) and
+   * `targets` is pointed at it.
+   */
+  @Test
+  fun `a per-element standard configuration without classes gets a CodBi marker class`() {
+    val withoutClass =
+        draft(
+            """
+            {"kind":"standard","Name":"mein.rechner.klasse",
+             "Description":"<p>Wendet den lokalen Rechner an.</p>",
+             "Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d",
+             "Code":"window.codbi.loadConfig({ targets: '.Irgendwas', FUNC: \"lokaler.rechner\", extravalue: \"x\" });"}
+            """)
+    val marker = LocalElementDrafts.ensureMarkerClass(withoutClass)
+    assertEquals("CodBi_Mein_Rechner_Klasse", marker)
+    assertTrue(
+        LocalElementDrafts.codeOf(withoutClass).contains("targets: '.CodBi_Mein_Rechner_Klasse'"),
+        LocalElementDrafts.codeOf(withoutClass))
+    assertEquals(
+        "Wendet den lokalen Rechner an.",
+        withoutClass
+            .getAsJsonObject("classes")
+            .getAsJsonObject(marker!!)
+            .get("description")
+            .asString)
+    assertTrue(
+        LocalElementDrafts.validate(withoutClass, LocalElementKind.STANDARD, emptyMap(), false)
+            .isEmpty(),
+        LocalElementDrafts.validate(withoutClass, LocalElementKind.STANDARD, emptyMap(), false)
+            .toString())
+
+    // A draft that already provides a class is left untouched.
+    val withClass =
+        draft(
+            """
+            {"kind":"standard","Name":"mein.rechner.klasse","Description":"<p>x</p>",
+             "Summary":{"en":"a","de":"b","it":"c"},"CondensedPrompt":"c","DetailedPrompt":"d",
+             "classes":{"CodBi_Eigen":"Markiert ein Feld."},
+             "Code":"window.codbi.loadConfig({ targets: '.CodBi_Eigen', FUNC: \"lokaler.rechner\" });"}
+            """)
+    assertNull(LocalElementDrafts.ensureMarkerClass(withClass))
+    assertEquals(1, withClass.getAsJsonObject("classes").size())
+  }
+
+  /**
+   * A local PER-ELEMENT configuration must behave like a built-in one in the element CodBi panel:
+   * the panel offers the applied functionality's parameters, pre-filled with the values the
+   * configuration sets (`funcs[cssClass]` + `classes[cssClass].params`, generated at build time for
+   * built-ins). Both maps are derived here from the stored `loadConfig` call.
+   */
+  @Test
+  fun `a standard configuration entry publishes funcs and the configured parameter values`() {
+    val generated =
+        draft(
+            """
+            {"kind":"standard","Name":"mein.rechner.klasse",
+             "Description":"<p>Wendet den lokalen Rechner auf ein Feld an.</p>",
+             "Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d",
+             "classes":{"CodBi_Rechner":"Markiert ein Rechner-Feld."},
+             "Code":"window.codbi.loadConfig({\n  targets: '.CodBi_Rechner',\n  FUNC: \"lokaler.rechner\",\n  extravalue: \"{ der.bitcoin > EUR }\",\n  layout: 'scientific'\n});"}
+            """)
+    val entry = LocalElementDrafts.documentationEntry(LocalElementKind.STANDARD, generated)
+    assertEquals("lokaler.rechner", entry.getAsJsonObject("funcs").get("CodBi_Rechner").asString)
+    val params =
+        entry.getAsJsonObject("classes").getAsJsonObject("CodBi_Rechner").getAsJsonObject("params")
+    assertEquals("{ der.bitcoin > EUR }", params.get("extravalue").asString)
+    assertEquals("scientific", params.get("layout").asString)
+    // The reserved keys of the call are parameters of the RUNTIME, not of the functionality.
+    assertNull(params.get("targets"))
+    assertNull(params.get("FUNC"))
+  }
+
+  /**
+   * The reported defect: the configuration used `"Super.Config"` (the answered element name) as the
+   * parameter key instead of the applied functionality's `extravalue`, so the value never arrived.
+   */
+  @Test
+  fun `a loadConfig key that is not a functionality parameter is rejected`() {
+    assertEquals(
+        listOf("Super.Config"),
+        LocalElementDrafts.loadConfigKeys(
+            "window.codbi.loadConfig({\n  targets: '.X',\n  FUNC: \"Lokaler.Rechner\",\n  \"Super.Config\": \"{ Der.Bitcoin > }\"\n});"))
+    assertEquals(
+        listOf("extravalue"),
+        LocalElementDrafts.loadConfigKeys(
+            "window.codbi.loadConfig({\n  targets: '.X',\n  FUNC: \"Lokaler.Rechner\",\n  extravalue: \"{ Der.Bitcoin > EUR }\"\n});"))
+
+    val wrong =
+        draft(
+            """
+            {"kind":"standard","Name":"Mein.LokalerRechnerBitcoin",
+             "Description":"<p>x</p>","Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d",
+             "classes":{"CodBi_X":"Markiert ein Textfeld."},
+             "Code":"window.codbi.loadConfig({ targets: '.CodBi_X', FUNC: \"Lokaler.Rechner\", \"Super.Config\": \"{ Der.Bitcoin > }\" });"}
+            """)
+    assertTrue(
+        LocalElementDrafts.validate(wrong, LocalElementKind.STANDARD, emptyMap(), false).any {
+          it.contains("NOT parameters of the applied functionality")
+        })
+    val fixed =
+        draft(
+            """
+            {"kind":"standard","Name":"Mein.LokalerRechnerBitcoin",
+             "Description":"<p>x</p>","Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d",
+             "classes":{"CodBi_X":"Markiert ein Textfeld."},
+             "Code":"window.codbi.loadConfig({ targets: '.CodBi_X', FUNC: \"Lokaler.Rechner\", extravalue: \"{ Der.Bitcoin > EUR }\" });"}
+            """)
+    assertEquals(
+        emptyList<String>(),
+        LocalElementDrafts.validate(fixed, LocalElementKind.STANDARD, emptyMap(), false))
+  }
+
+  /**
+   * A HOLISTIC local configuration selects EXISTING elements by their FORMCYCLE DOM markers — an
+   * invented class (reported: `.CodBi_Lokaler_Rechner_Numeric`, which no element ever carries) can
+   * never fire, and without the `:not(…)` guards the same element would be configured twice.
+   */
+  @Test
+  fun `a holistic local standard configuration needs a marker selector with exclusion guards`() {
+    val inventedClass =
+        draft(
+            """
+            {"kind":"standard","Name":"mein.rechner.holistic",
+             "Description":"<p>x</p>","Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d","supportedFormelementtypes":["Holistic"],
+             "Code":"window.codbi.loadConfig({ targets: '.CodBi_Lokaler_Rechner_Numeric', FUNC: \"lokaler.rechner\" });"}
+            """)
+    val problems =
+        LocalElementDrafts.validate(inventedClass, LocalElementKind.STANDARD, emptyMap(), false)
+    assertTrue(
+        problems.any { it.contains("must select EXISTING form elements") }, problems.toString())
+    assertFalse(
+        LocalElementDrafts.validate(inventedClass, LocalElementKind.STANDARD, emptyMap(), false)
+            .any { it.contains("never offered") })
+
+    val withoutGuards =
+        draft(
+            """
+            {"kind":"standard","Name":"mein.rechner.holistic",
+             "Description":"<p>x</p>","Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d","supportedFormelementtypes":["Holistic"],
+             "Code":"window.codbi.loadConfig({ targets: '[data-vdt=\"plzDE\"]', FUNC: \"lokaler.rechner\" });"}
+            """)
+    assertTrue(
+        LocalElementDrafts.validate(withoutGuards, LocalElementKind.STANDARD, emptyMap(), false)
+            .any { it.contains("must exclude CodBi's universal") })
+
+    // The configuration's OWN exclusion marker follows the CodBi convention `CodBi_XCL_<Feature>`
+    // (XCL = eXCLude) — a free-form class name is rejected.
+    val wrongMarkerName =
+        draft(
+            """
+            {"kind":"standard","Name":"mein.rechner.holistic",
+             "Description":"<p>x</p>","Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d","supportedFormelementtypes":["Holistic"],
+             "Code":"window.codbi.loadConfig({ targets: '[data-vdt=\"plzDE\"]:not(.CodBi_XCL):not(.RechnerNumeric)', FUNC: \"lokaler.rechner\" });"}
+            """)
+    assertTrue(
+        LocalElementDrafts.validate(wrongMarkerName, LocalElementKind.STANDARD, emptyMap(), false)
+            .any { it.contains("does not follow the CodBi naming convention") })
+
+    // A marker selector WITH both guards is accepted, and the stored entry publishes the marker so
+    // the
+    // designer excludes it from the per-element listing (like every built-in `Holistic.*` config).
+    val valid =
+        draft(
+            """
+            {"kind":"standard","Name":"mein.rechner.holistic",
+             "Description":"<p>Wendet den Rechner auf alle Zahlenfelder an.</p>",
+             "Summary":{"en":"a","de":"b","it":"c"},
+             "CondensedPrompt":"c","DetailedPrompt":"d","supportedFormelementtypes":["Holistic"],
+             "Code":"window.codbi.loadConfig({ targets: '[data-vdt=\"formattedNumber\"]:not(.CodBi_XCL):not(.CodBi_XCL_Rechner_Numeric)', FUNC: \"lokaler.rechner\", extravalue: \"{ der.bitcoin > EUR }\" });"}
+            """)
+    assertEquals(
+        emptyList<String>(),
+        LocalElementDrafts.validate(valid, LocalElementKind.STANDARD, emptyMap(), false))
+    val entry = LocalElementDrafts.documentationEntry(LocalElementKind.STANDARD, valid)
+    assertEquals("Holistic", entry.getAsJsonArray("supportedFormelementtypes")[0].asString)
+  }
+
+  /**
    * Live runs answer in the model's OWN key spelling (`script`, `description`, `parameters`,
    * `attributes`). `extractDraft` canonicalises it, so the information is not thrown away — the
    * reported "The Description is missing. The Code is missing" came from exactly such a draft.
@@ -796,6 +1072,12 @@ class LocalElementDraftTest {
     assertTrue(text.contains("supportedFormelementtypes"), "the applicability must be documented")
     assertTrue(text.contains("\"enum\""), "the enum parameter type must be documented")
     assertTrue(text.contains("\"de\"") && text.contains("\"it\""), "Summary must be per language")
+    // A parameter with a FIXED set of choices (e.g. the calculator keys "normal or scientific")
+    // must become an enum with an options array, NEVER a plain string. This is the exact rule the
+    // user surfaced: the model used to produce `"type":"string"` for such a parameter.
+    assertTrue(
+        text.contains("NEVER \"type\":\"string\"") || text.contains("NEVER `\"type\":\"string\"`"),
+        "the fixed-list parameter MUST become an enum with options, never a plain string")
   }
 
   /**

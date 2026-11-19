@@ -704,6 +704,9 @@ cb-ai-assistant {
     align-items: center;
     gap: 0.4rem;
     flex-wrap: wrap;
+    /* Never shrink away: `.cb-ai-main` clips its overflow, and the prompt textarea above takes all
+       the free height. */
+    flex: 0 0 auto;
 }
 
 .cb-ai-attachment-name {
@@ -717,6 +720,78 @@ cb-ai-assistant {
     color: #444;
 }
 
+/* Rasterise switch (slider) inside the attachment row, next to the attach button. */
+.cb-ai-rasterize-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: 0.5rem;
+    font-size: 0.85em;
+    color: #555;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* The switch IS the checkbox: `appearance: none` turns the native box into the track and the
+   `::after` pseudo element into the knob. One element, so no stacking/positioning tricks can hide
+   it, and it degrades to a plain checkbox rather than to nothing. */
+.cb-ai-rasterize-input {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    flex: 0 0 auto;
+    width: 34px;
+    height: 18px;
+    margin: 0;
+    border: 1px solid #b6bcc6;
+    border-radius: 999px;
+    background: #d9dde2;
+    cursor: pointer;
+    transition: background 0.15s ease-in-out, border-color 0.15s ease-in-out;
+
+    &::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        transition: transform 0.15s ease-in-out;
+    }
+
+    &:checked {
+        background: #65b22e;
+        border-color: #55981f;
+    }
+
+    &:checked::after {
+        transform: translateX(16px);
+    }
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+    }
+
+    &:focus-visible {
+        outline: 2px solid #007ad9;
+        outline-offset: 2px;
+    }
+}
+
+.cb-ai-rasterize-label {
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.cb-ai-rasterize-hint {
+    white-space: nowrap;
+    color: #8a8f98;
+}
+
 .cb-ai-prompt-wrapper {
     position: relative;
     width: 100%;
@@ -726,6 +801,19 @@ cb-ai-assistant {
     min-height: 0;
     display: flex;
     flex-direction: column;
+}
+
+/* Drag & drop feedback: the prompt area is the drop target for attachments. Drawn as an overlay so
+   nothing shifts while a file hovers over the dialog. */
+.cb-ai-prompt-wrapper--drop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px dashed #65b22e;
+    border-radius: 8px;
+    background: rgba(101, 178, 46, 0.08);
+    pointer-events: none;
+    z-index: 5;
 }
 
 .cb-ai-mic-btn {
@@ -814,9 +902,19 @@ cb-ai-assistant {
  * this adds the panel styling and a subtle entrance animation.
  * ------------------------------------------------------------------------- */
 .cb-ai-clarification-dialog {
-    width: min(520px, calc(100vw - 16px));
-    max-width: calc(100vw - 16px);
-    max-height: calc(100vh - 16px);
+    /* Wide enough for the review dialog's parameter table and code panel, still fully inside the
+       designer window on a small screen. */
+    width: min(760px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    /* THE DIALOG USES 80 % OF THE WINDOW HEIGHT. A content-driven height kept it small (the review
+       body is short — the code panel was pinned to 52vh), so the panel is given an explicit 80vh box;
+       the content area flexes inside it and scrolls, and the code panel grows into the free space
+       (see the overrides below). The mask centres it vertically. */
+    height: 80vh;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    margin: 0 !important;
     animation: cbClarificationIn 0.22s ease-out;
     /* Dark-orange frame so the popup reads unmistakably as "the AI needs input". */
     border: 2px solid #e67e22 !important;
@@ -825,7 +923,39 @@ cb-ai-assistant {
         0 2px 8px rgba(230, 126, 34, 0.25) !important;
 
     .p-dialog-content {
-        padding: 1.25rem 1.5rem;
+        /* Bottom padding is one step larger than the rest: the last row is the SEND button, and it
+           must never sit on the dialog border (reported: "no padding between the button and the
+           border"). */
+        padding: 1.25rem 1.5rem 1.75rem;
+        display: flex;
+        flex-direction: column;
+        /* Take the room left under the header inside the 80vh box and scroll INSIDE the panel — the
+           title bar stays in place instead of the whole popup shrinking to its content. */
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        /* NOT `justify-content: center`: with `overflow: auto` that clamps the overflow at BOTH ends,
+           so a body taller than the box loses its top AND the last row ends up glued to the border.
+           The body centres itself through `margin-block: auto` instead (see below), which yields the
+           same look for a short question and simply collapses when the content is taller. */
+        justify-content: flex-start;
+    }
+
+    /* The review dialog's code panel fills the remaining height instead of being pinned to 52vh. */
+    &:has(.cb-ai-code-panel) .p-dialog-content {
+        justify-content: flex-start;
+    }
+
+    .cb-ai-code-panel,
+    .cb-ai-code-view {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .cb-ai-code-view {
+        height: auto;
+        min-height: 240px;
+        max-height: none;
     }
 
     /* The empty PrimeNG header bar (`header=" "` in the markup) is also a move-drag handle — show
@@ -929,9 +1059,14 @@ cb-ai-assistant {
     }
 
     .cb-ai-clarification-body {
+        flex: 1 1 auto;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 1rem;
+        /* Centre a SHORT question in the tall box without the flexbox overflow clamp; a long body
+           simply fills the space and scrolls. */
+        margin-block: auto;
     }
 
     .cb-ai-clarification-intro {
@@ -1163,6 +1298,8 @@ cb-ai-assistant {
         display: flex;
         justify-content: flex-end;
         padding-top: 0.15rem;
+        /* Keep a visible gap between the send button and the dialog border, also while scrolled. */
+        padding-bottom: 0.15rem;
 
         .p-button {
             background: #e67e22;
@@ -1220,6 +1357,14 @@ cb-ai-assistant {
    and given an extreme z-index on both its overlay mask and the dialog panel. */
 .cb-ai-clarification-mask {
     z-index: 1000000 !important;
+    /* CENTRE the popup in the designer window — horizontally AND vertically — and leave a uniform
+       margin around it. The dialog itself decides the height (content, capped at 80vh), so a small
+       "technical name" question stays compact while the review dialog grows. */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 24px;
+    box-sizing: border-box;
 }
 
 .cb-ai-clarification-dialog {
@@ -2233,13 +2378,52 @@ body.cb-dialog-transparent .p-dialog {
  * component uses ViewEncapsulation.None, so these rules reach those spans.
  * ------------------------------------------------------------------------- */
 .cb-ai-code-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    /* The panel is a normal (content-sized) block inside the dialog body's flex column: never let
+       it shrink below its content and get clipped by `overflow:hidden` (a collapsed panel hides
+       the whole editor). Fullscreen mode is `position:fixed`, where this value is inert. */
+    flex: 0 0 auto;
     margin: 0.5rem 0;
     border: 1px solid #1e293b;
     border-radius: 10px;
     overflow: hidden;
     background: #0f172a;
-    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.25);
+    /* A clear, layered shadow so the code editor reads as a distinct raised box inside the dialog:
+       a soft ambient drop plus a tighter contact shadow underneath. */
+    box-shadow:
+        0 6px 20px rgba(15, 23, 42, 0.35),
+        0 2px 6px rgba(15, 23, 42, 0.28);
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    /* Maximized / fullscreen mode: the code panel escapes the dialog, is pinned to all four
+       edges of the viewport and is raised above every other element (dialog, PrimeNG overlays…). */
+    &--fullscreen {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 1000000;
+        margin: 0;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        display: flex;
+        flex-direction: column;
+    }
+
+    &--fullscreen .cb-ai-code-findbar {
+        flex: 0 0 auto;
+    }
+
+    /* The code area itself fills the rest of the designer window and the editor scrolls on its own. */
+    &--fullscreen .cb-ai-code-view {
+        flex: 1 1 auto;
+        height: auto;
+        max-height: none;
+    }
 }
 
 .cb-ai-code-toolbar {
@@ -2314,12 +2498,105 @@ body.cb-dialog-transparent .p-dialog {
         min-width: 4.6rem;
         text-align: center;
     }
+
+    &--active {
+        background: #334155;
+        border-color: #60a5fa;
+        color: #ffffff;
+    }
+
+    &--close {
+        color: #fca5a5;
+    }
 }
 
+/* In-dialog find bar (Ctrl+F / Strg+F): input, match counter and prev/next/close buttons. */
+.cb-ai-code-findbar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
+    background: #16233c;
+    border-bottom: 1px solid #1e293b;
+    font-size: 0.72rem;
+    color: #cbd5e1;
+
+    &-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        appearance: none;
+        border: 1px solid #334155;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 6px;
+        padding: 0.15rem 0.5rem;
+        font-size: 0.75rem;
+        font-family: inherit;
+
+        &:focus {
+            outline: none;
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+        }
+    }
+
+    &-count {
+        flex: 0 0 auto;
+        min-width: 2.6rem;
+        text-align: center;
+        color: #94a3b8;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+/* The code area is a stacked pair: a highlighted, read-only underlay behind a transparent editable
+   <textarea>. Both must share EXACT metrics (font, size, line-height, padding, box-sizing) so the
+   coloured text stays perfectly aligned with what the user types. The view itself has a fixed
+   height in the dialog and is a flex child that fills the designer window in fullscreen. */
 .cb-ai-code-view {
-    max-height: 320px;
-    overflow: auto;
-    padding: 0.35rem 0;
+    position: relative;
+    /* An EXPLICIT height (clamped). The editor + underlay are `position:absolute`, so this view has
+       NO intrinsic height — without an explicit height it collapses in the dialog's flex column and
+       the panel's `overflow:hidden` clips the whole editor (seen when reviewing a fresh, short
+       element). Fullscreen overrides these below via `&--fullscreen .cb-ai-code-view`. */
+    height: min(52vh, 480px);
+    min-height: 320px;
+    max-height: none;
+    overflow: hidden;
+    background: #0f172a;
+    /* A faint inner top shadow deepens the "sunken editor" look inside the panel frame. */
+    box-shadow: inset 0 2px 6px rgba(2, 6, 23, 0.45);
+    scrollbar-color: #475569 transparent;
+    scrollbar-width: thin;
+}
+
+/* While the code panel is maximized, the review dialog must not act as a transformed containing
+   block. Its entrance animation (`cbClarificationIn`) ends on `transform: translateY(0) scale(1)`
+   and — depending on how the animation settles — can leave a non-`none` transform on the dialog.
+   A transformed ancestor would cap `position: fixed; inset: 0` on `.cb-ai-code-panel--fullscreen`
+   to the dialog box instead of the whole window. Strip it for the duration of fullscreen so the
+   panel truly pins to all four edges of the viewport. */
+.p-dialog.cb-ai-clarification-dialog:has(.cb-ai-code-panel--fullscreen) {
+    animation: none !important;
+    transform: none !important;
+    transition: none !important;
+}
+
+.cb-ai-code-underlay,
+.cb-ai-code-editor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    margin: 0;
+    border: 0;
+    padding: 0.6rem 0.8rem;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre;
+    tab-size: 4;
+    box-sizing: border-box;
     scrollbar-color: #475569 transparent;
     scrollbar-width: thin;
 
@@ -2336,18 +2613,41 @@ body.cb-dialog-transparent .p-dialog {
     &::-webkit-scrollbar-thumb:hover {
         background: #475569;
     }
+}
 
-    /* Soft wrap: a minified one-liner would otherwise be a single endless row. `anywhere` breaks the
-       long unbroken runs a minified answer produces, so nothing can overflow the panel. */
-    &--wrap .cb-ai-code-line {
-        white-space: pre-wrap;
-    }
+/* The underlay is never interactive; it is scrolled programmatically to mirror the editor. It has a
+   FIXED height (100% of the view) — not a content height — so its scrollHeight exceeds its
+   clientHeight and it becomes programmatically scrollable. If it fitted its full content it could
+   never be scrolled, and the coloured text would stay put while the transparent textarea scrolled
+   (the bug where only the scroll bar moved but the text did not). */
+.cb-ai-code-underlay {
+    overflow: hidden;
+    pointer-events: none;
+    color: #e2e8f0;
+    height: 100%;
+}
 
-    &--wrap .cb-ai-code-src {
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-    }
+/* The textarea IS the scroll container; its text is transparent so the highlighted underlay shows
+   through, while the caret and selection stay visible. */
+.cb-ai-code-editor {
+    width: 100%;
+    height: 100%;
+    resize: none;
+    background: transparent;
+    color: transparent;
+    caret-color: #e2e8f0;
+    outline: none;
+    overflow: auto;
+    z-index: 1;
+}
+
+/* Soft wrap: a minified one-liner would otherwise be a single endless row. `anywhere` breaks the
+   long unbroken runs a minified answer produces, so nothing can overflow the panel. */
+.cb-ai-code-underlay--wrap,
+.cb-ai-code-editor--wrap {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .cb-ai-code-line {
@@ -2366,6 +2666,18 @@ body.cb-dialog-transparent .p-dialog {
     /* The line that carries a collapsed block. */
     &--folded {
         background: rgba(56, 189, 248, 0.07);
+    }
+
+    /* A line that contains the current find query (all matches get a light tint). */
+    &--match {
+        background: rgba(250, 204, 21, 0.12);
+    }
+
+    /* The active / currently navigated find match. */
+    &--current {
+        background: rgba(250, 204, 21, 0.24);
+        outline: 1px solid rgba(250, 204, 21, 0.5);
+        outline-offset: -1px;
     }
 }
 
@@ -2464,4 +2776,14 @@ body.cb-dialog-transparent .p-dialog {
     font-weight: 600;
     background: rgba(255, 107, 107, 0.14);
     border-radius: 3px;
+}
+
+/* IDE-style "references highlight": every other occurrence of the word currently selected in the
+   editor gets this faint background. The class is ADDED next to the token colour class (e.g.
+   `cb-ai-code-ident cb-ai-code-selmatch`) so the lexical colour is preserved — only the backdrop
+   and a soft outline are added. Rounded to mimic the editor's native selection pill. */
+.cb-ai-code-selmatch {
+    background: rgba(96, 165, 250, 0.22);
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.35);
 }

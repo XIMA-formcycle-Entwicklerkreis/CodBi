@@ -59,8 +59,9 @@ export class LDAP_Autocomplete {
   @ParameterTypes({
     Property: { type: "string", default: "The LDAP-Property that shall be autocompleted." },
     CSSProposals: {
-      type: "string",
+      type: "css",
       default: "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+      cssKind: "declarations",
     },
     URL: { type: "string", default: "The URL of the Formcycle predefined LDAP-Query to use." },
     MsgNotInLDAP: {

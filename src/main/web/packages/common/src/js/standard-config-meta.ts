@@ -60,6 +60,12 @@ export type TStandardConfigClassSpec =
       descriptionDe?: string;
       descriptionIt?: string;
       formelementtypes?: readonly string[];
+      /**
+       * The literal parameter values the class's `loadConfig` object applies (e.g.
+       * `{ CSSHeaderUnfolded: "padding:2em;" }`). The element CodBi panel PRE-FILLS the parameter rows of
+       * the configuration's functionality with them and persists only the values the author changes.
+       */
+      params?: Readonly<Record<string, string>>;
     }>;
 
 /**

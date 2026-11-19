@@ -623,6 +623,68 @@ internal object LocalElementDrafts {
     return name.isNotEmpty() && name.length <= MAX_NAME_LENGTH && NAME_PATTERN.matches(name)
   }
 
+  /** Members that carry generated CONTENT (as opposed to the envelope's `status`/`kind`/`Name`). */
+  private val BODY_KEYS =
+      listOf(
+          "Description",
+          "Summary",
+          "CondensedPrompt",
+          "DetailedPrompt",
+          "Parameter",
+          "Signature",
+          "Code",
+          "classes",
+          "globals",
+          "Usage")
+
+  /**
+   * Whether [draft] carries ANY generated content.
+   *
+   * A clarification envelope (`{"status":"need_clarification",…}`) PARSES as a JSON object — and
+   * [canonicalize] keeps every member — so "the answer was JSON" never meant "the answer was a
+   * draft". Treating such an object as a draft made the server validate an empty one and reject the
+   * run with four "… is missing" problems (reported) although the model still owed a real draft.
+   * Everything that has to be generated lives in [BODY_KEYS]; nothing of it means "no draft".
+   */
+  fun hasDraftBody(draft: JsonObject): Boolean =
+      BODY_KEYS.any { key ->
+        val value = draft.get(key)
+        when {
+          value == null || value.isJsonNull -> false
+          value.isJsonPrimitive -> value.asString.isNotBlank()
+          value.isJsonArray -> value.asJsonArray.size() > 0
+          value.isJsonObject -> value.asJsonObject.size() > 0
+          else -> false
+        }
+      }
+
+  /**
+   * The keys a draft of [kind] MUST carry, as one line for the completion / repair prompts.
+   *
+   * Derived from the very rules [validate] enforces, so a prompt can never again ask for less than
+   * validation requires. The reported dead end: a `standard` draft was repaired without ever being
+   * told that `Description`, `CondensedPrompt` and `DetailedPrompt` are mandatory for it too
+   * ([LocalElementKind.requiresPrompts] is `true` for all three kinds).
+   */
+  fun mandatoryKeyHint(kind: LocalElementKind): String {
+    val common =
+        "`Name` (dotted id), `Description` (non-empty), " +
+            "`Summary` {\"en\":…,\"de\":…,\"it\":…}, `CondensedPrompt`, `DetailedPrompt`"
+    return when (kind) {
+      LocalElementKind.FUNCTIONALITY ->
+          "$common, `Parameter`, `supportedFormelementtypes` (never empty), `Code` (exactly one " +
+              "registerFunctionality call), `Usage`"
+      LocalElementKind.ELEMENT_PLACEHOLDER ->
+          "$common, `Parameter`, `Signature`, `Code` (exactly one registerEP call)"
+      LocalElementKind.STANDARD ->
+          "$common, `Active` (true), `Code` (exactly one window.codbi.loadConfig({ … }) call), " +
+              "`Usage`; plus either `classes` (PER-ELEMENT configuration, `targets` = one of those " +
+              "classes) or `\"supportedFormelementtypes\":[\"Holistic\"]` (HOLISTIC configuration, " +
+              "`targets` = a FORMCYCLE marker selector such as `[data-datepicker=\"1\"]` / " +
+              "`[data-vdt=\"plzDE\"]` / `[data-vdt=\"formattedNumber\"]` with `:not(.CodBi_XCL)` guards)"
+    }
+  }
+
   /**
    * The segments a model likes to slip into a name it was given, because they describe the KIND of
    * element rather than the element itself ("Mein.Wetter" → "Mein.EP.Wetter"). Only used to
@@ -687,6 +749,183 @@ internal object LocalElementDrafts {
 
   /** The generated JavaScript of a draft (empty string when the draft carries none). */
   fun codeOf(draft: JsonObject): String = optionString(draft, "Code")?.trim().orEmpty()
+
+  /** Keys of a `window.codbi.loadConfig({ … })` object that are NOT functionality parameters. */
+  private val LOAD_CONFIG_RESERVED = setOf("targets", "func", "funcs", "classes", "globals")
+
+  /** A quoted object key (`"Value": …`, `'value': …`). */
+  private val QUOTED_KEY = Regex("""(["'])([A-Za-z0-9_.\-]+)\1\s*:""")
+
+  /**
+   * An unquoted object key at the start of a line (how the generated `loadConfig` is formatted).
+   */
+  private val BARE_KEY = Regex("""(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:""")
+
+  /**
+   * The parameter keys a standard configuration's `loadConfig({ … })` object sets — i.e. the keys
+   * that must be parameters **of the applied functionality**.
+   *
+   * Reported live: a generated configuration carried `"Super.Config": "{ der.bitcoin > }"` — the
+   * element's own name, not a parameter — so the value never reached the calculator, whose
+   * parameter is `extravalue`. The keys are read with two deliberately narrow patterns (quoted keys
+   * anywhere, unquoted keys at a line start) so nothing is ever invented from a value: a
+   * `https://…` URL or an EP placeholder (`{ Der.Bitcoin > EUR }`) never yields a key.
+   */
+  fun loadConfigKeys(code: String): List<String> {
+    if (code.isBlank()) return emptyList()
+    val keys = LinkedHashSet<String>()
+    QUOTED_KEY.findAll(code).forEach { match ->
+      val key = match.groupValues[2].trim()
+      if (key.isNotEmpty() && key.lowercase() !in LOAD_CONFIG_RESERVED) keys.add(key)
+    }
+    BARE_KEY.findAll(code).forEach { match ->
+      val key = match.groupValues[1].trim()
+      if (key.isNotEmpty() && key.lowercase() !in LOAD_CONFIG_RESERVED) keys.add(key)
+    }
+    return keys.toList()
+  }
+
+  /**
+   * The `targets` value of the single `window.codbi.loadConfig({ … })` call.
+   *
+   * The value is captured up to its OWN closing quote (back-reference), because a marker selector
+   * contains quotes itself — `'[data-vdt="plzDE"]:not(.CodBi_XCL)'` — which a "any quote ends the
+   * value" pattern truncated at the first `"`.
+   */
+  private val TARGETS_SELECTOR =
+      Regex("""targets\s*:\s*(['"`])(.*?)\1""", RegexOption.DOT_MATCHES_ALL)
+
+  /**
+   * Prefix of CodBi's **exclusion** marker classes — `XCL` = e**XCL**ude.
+   *
+   * The universal "already processed" marker is `CodBi_XCL`; a configuration's OWN marker appends
+   * its feature (`CodBi_XCL_Rechner_Numeric`, `CodBi_XCL_Cleave_Date`). Every `:not(…)` class of a
+   * holistic `targets` selector uses this convention, which is what keeps the marker recognisable
+   * to the designer and the runtime.
+   */
+  private const val EXCLUSION_PREFIX = "CodBi_XCL"
+
+  /** A `:not(.<class>)` exclusion inside a `targets` selector. */
+  private val EXCLUSION_CLASS = Regex(""":not\(\s*\.([A-Za-z0-9_-]+)""")
+
+  /** The `targets: '<selector>'` part of a `loadConfig({ … })` call. */
+  private val CODE_TARGETS = Regex("""targets\s*:\s*(['"`])(.*?)\1""", RegexOption.DOT_MATCHES_ALL)
+
+  /** Whether a draft declares itself a **HOLISTIC** standard configuration. */
+  fun isHolistic(draft: JsonObject): Boolean =
+      stringList(draft.get("supportedFormelementtypes")).any {
+        it.equals("Holistic", ignoreCase = true)
+      }
+
+  /**
+   * Gives a **PER-ELEMENT** standard configuration a marker class when the draft defines none, and
+   * points its `targets` selector at that class.
+   *
+   * A class-based configuration is applied by putting one of ITS classes onto an element, so a
+   * draft without `classes` (reported: "create a standard configuration that applies the local
+   * calculator") could never be applied — and the element panel consequently showed no
+   * functionality parameters for it. The class follows the built-in naming convention
+   * `CodBi_<ElementName>` (`mein.rechner` → `CodBi_Mein_Rechner`), and its description reuses the
+   * draft's own (already localized) description.
+   *
+   * @return The added class name, or `null` when the draft already provides classes.
+   */
+  fun ensureMarkerClass(draft: JsonObject): String? {
+    val existing = draft.get("classes")?.takeIf { it.isJsonObject }?.asJsonObject
+    if (existing != null && existing.size() > 0) return null
+    val name = nameOf(draft)
+    if (name.isEmpty()) return null
+    val marker =
+        "CodBi_" +
+            name
+                .split('.')
+                .filter { it.isNotBlank() }
+                .joinToString("_") { segment ->
+                  segment.replaceFirstChar { ch -> ch.uppercaseChar() }
+                }
+    val description =
+        optionString(draft, "Description")
+            .orEmpty()
+            .replace(Regex("<[^>]+>"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(160)
+            .ifBlank { "Marks an element configured by the standard configuration '$name'." }
+    val classes = JsonObject()
+    val spec = JsonObject()
+    spec.addProperty("description", description)
+    classes.add(marker, spec)
+    draft.add("classes", classes)
+    // The selector must address that class, otherwise nothing ever matches it.
+    val code = codeOf(draft)
+    val match = CODE_TARGETS.find(code)
+    if (match != null) {
+      val quote = match.groupValues[1]
+      draft.addProperty("Code", code.replaceRange(match.range, "targets: $quote.$marker$quote"))
+    }
+    return marker
+  }
+
+  /**
+   * Whether a `targets` selector can match **EXISTING** form elements: an attribute marker
+   * (`[data-vdt="plzDE"]`, `[data-datepicker="1"]`, `[data-cb-func]`), a native control/container
+   * tag (`input`, `textarea`, `select`, `fieldset`, `form`, `body`, `head`) or a combination of
+   * those.
+   *
+   * A bare `.SomeClass` alone is NOT one: nothing sets that class, so a "holistic" configuration
+   * built that way can never fire (reported: `.CodBi_Lokaler_Rechner_Numeric`).
+   */
+  private val EXISTING_ELEMENT_SELECTOR =
+      Regex("""\[|(^|[\s,~>])(input|textarea|select|fieldset|form|body|head)\b""")
+
+  /**
+   * A `key: value` pair of a `loadConfig` object literal (quoted or bare key, quoted or bare
+   * value).
+   */
+  private val CONFIG_KEY_VALUE =
+      Regex(
+          """(?:^|[,{]\s*)(?:(['"])([^'"]+)\1|([A-Za-z_][A-Za-z0-9_]*))\s*:\s*(?:(["'])([^"']*)\4|([^,}\n]+))""")
+
+  /**
+   * The literal parameter values of a `loadConfig({ … })` call (`key → value`), the reserved
+   * metadata keys excluded.
+   *
+   * The per-element CodBi panel PRE-FILLS the parameter rows of the applied functionality with
+   * these values and persists only a value the author CHANGES — that is exactly what
+   * `classes[cssClass].params` is for (published for the built-in configurations by their
+   * generator). Deriving it from the stored code gives a generated configuration the same
+   * behaviour.
+   */
+  fun loadConfigParamValues(code: String): Map<String, String> {
+    val out = LinkedHashMap<String, String>()
+    if (code.isBlank()) return out
+    for (match in CONFIG_KEY_VALUE.findAll(code)) {
+      val key =
+          (match.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() }
+                  ?: match.groupValues.getOrNull(3))
+              ?.trim()
+              .orEmpty()
+      if (key.isEmpty() || key.lowercase() in LOAD_CONFIG_RESERVED) continue
+      val value =
+          (match.groupValues.getOrNull(5)?.takeIf { it.isNotEmpty() }
+                  ?: match.groupValues.getOrNull(6))
+              ?.trim()
+              .orEmpty()
+      out[key] = value
+    }
+    return out
+  }
+
+  /** The first functionality a `loadConfig({ … })` call applies (`FUNC`), or `null`. */
+  fun loadConfigFuncName(code: String): String? =
+      Regex("""\bFUNC\s*:\s*["']([^"']*)["']""")
+          .find(code)
+          ?.groupValues
+          ?.getOrNull(1)
+          ?.split(',')
+          ?.firstOrNull()
+          ?.trim()
+          ?.takeIf { it.isNotEmpty() }
 
   /**
    * Validates a draft against the runtime's rules.
@@ -758,30 +997,91 @@ internal object LocalElementDrafts {
           }
     }
 
-    // A configuration that PROVIDES classes is applied by the per-element standard-configuration
-    // listing through exactly those classes, so its `targets` selector must reference one of them.
-    // Reported: the class `CodBi_GOOSE_Input` was defined, but the code targeted `.Mein_GOOSE`,
-    // which
-    // nothing ever sets — the configuration could never fire.
+    // A STANDARD configuration has TWO flavours, and its `targets` must match the flavour:
+    //
+    // 1. PER-ELEMENT — the configuration PROVIDES CSS classes; the element listing applies exactly
+    // those
+    //    classes, so `targets` must reference one of them (reported: class `CodBi_GOOSE_Input`
+    // defined,
+    //    code targeting `.Mein_GOOSE`, which nothing ever sets).
+    // 2. HOLISTIC (`supportedFormelementtypes: ["Holistic"]`) — it applies to EXISTING elements and
+    // must
+    //    select them by their FORMCYCLE DOM markers (`[data-datepicker="1"]`, `[data-vdt="plzDE"]`,
+    // …),
+    //    never by a marker class nothing sets (reported: a "holistic" configuration targeting
+    //    `.CodBi_Lokaler_Rechner_Numeric`, which no element ever carries, so it never fired).
     if (kind == LocalElementKind.STANDARD) {
+      val configCode = codeOf(draft)
+      val targets = TARGETS_SELECTOR.find(configCode)?.groupValues?.getOrNull(2)?.trim().orEmpty()
       val providedClasses =
           draft.get("classes")?.takeIf { it.isJsonObject }?.asJsonObject?.keySet().orEmpty()
-      val code = codeOf(draft)
-      if (providedClasses.isNotEmpty() && code.isNotBlank()) {
-        val targets =
-            Regex("targets\\s*:\\s*['\"`]([^'\"`]*)['\"`]")
-                .find(code)
-                ?.groupValues
-                ?.getOrNull(1)
-                .orEmpty()
-                .trim()
-        if (targets.isNotEmpty() &&
+      val isHolistic =
+          stringList(draft.get("supportedFormelementtypes")).any {
+            it.equals("Holistic", ignoreCase = true)
+          }
+      if (configCode.isNotBlank()) {
+        if (targets.isEmpty()) {
+          problems.add(
+              "The `Code` must be one `window.codbi.loadConfig({ … })` call with a `targets` selector.")
+        } else if (isHolistic) {
+          if (!EXISTING_ELEMENT_SELECTOR.containsMatchIn(targets)) {
+            problems.add(
+                "A HOLISTIC standard configuration must select EXISTING form elements by their " +
+                    "FORMCYCLE DOM markers, not by a class nothing sets: `[data-datepicker=\"1\"]` for " +
+                    "date fields, `[data-vdt=\"plzDE\"]` / `[data-vdt=\"phone\"]` / `[data-vdt=\"time\"]` " +
+                    "for formatted inputs, `[data-vdt=\"formattedNumber\"]` for NUMBER fields " +
+                    "(never `data-vdt=\"number\"`), optionally combined with `textarea`, `select` or " +
+                    "`fieldset` (groups may be joined with `~`). The selector '$targets' cannot match " +
+                    "any element, so the configuration would never fire.")
+          }
+          if (!targets.contains(":not(.$EXCLUSION_PREFIX)", ignoreCase = true)) {
+            problems.add(
+                "A HOLISTIC standard configuration's `targets` must exclude CodBi's universal " +
+                    "\"already processed\" marker: add `:not(.$EXCLUSION_PREFIX)`.")
+          }
+          if (!Regex(""":not\(\.${EXCLUSION_PREFIX}_""", RegexOption.IGNORE_CASE)
+              .containsMatchIn(targets)) {
+            problems.add(
+                "A HOLISTIC standard configuration needs its OWN exclusion marker " +
+                    "`:not(.<marker>)` with a marker class that follows the CodBi naming convention " +
+                    "`${EXCLUSION_PREFIX}_<Feature>` (XCL = eXCLude), e.g. " +
+                    "`:not(.${EXCLUSION_PREFIX}_Rechner_Numeric)`. That class is the configuration's " +
+                    "run-time marker and must never be applied by hand.")
+          }
+          val wronglyNamed =
+              EXCLUSION_CLASS.findAll(targets)
+                  .map { it.groupValues[1] }
+                  .firstOrNull { !it.startsWith(EXCLUSION_PREFIX, ignoreCase = true) }
+          if (wronglyNamed != null) {
+            problems.add(
+                "The `:not(….)` exclusion class '$wronglyNamed' does not follow the CodBi naming " +
+                    "convention: every exclusion marker starts with `$EXCLUSION_PREFIX` " +
+                    "(e.g. `${EXCLUSION_PREFIX}`, `${EXCLUSION_PREFIX}_Rechner_Numeric`).")
+          }
+        } else if (providedClasses.isNotEmpty() &&
             providedClasses.none { targets.contains(it, ignoreCase = true) }) {
           problems.add(
               "The `targets` selector '$targets' does not use any of the classes this configuration " +
                   "provides (${providedClasses.joinToString(", ")}) — the per-element listing applies " +
                   "THOSE classes, so the configuration would never match.")
         }
+      }
+    }
+
+    // The parameter keys a configuration sets must BE parameters of the functionality it applies
+    // (reported: `"Super.Config": "{ der.bitcoin > }"` instead of the calculator's `extravalue`).
+    if (kind == LocalElementKind.STANDARD) {
+      val configCode = codeOf(draft)
+      val suspicious =
+          loadConfigKeys(configCode).filter { key ->
+            key.contains('.') || (name.isNotEmpty() && key.equals(name, ignoreCase = true))
+          }
+      if (suspicious.isNotEmpty()) {
+        problems.add(
+            "The loadConfig key(s) ${suspicious.joinToString(", ")} are NOT parameters of the applied " +
+                "functionality — a `loadConfig({ … })` key is that functionality's OWN parameter name " +
+                "with the `data-cb-` prefix dropped (e.g. `extravalue`, `layout`, `Data`). Never use a " +
+                "dotted id and never the configuration's own name.")
       }
     }
 
@@ -1326,17 +1626,100 @@ internal object LocalElementDrafts {
         signature?.let { entry.add("Signature", it) }
       }
       LocalElementKind.STANDARD -> {
+        // A HOLISTIC configuration publishes its marker, exactly like the built-in `Holistic.*`
+        // ones: the
+        // designer then EXCLUDES it from the per-element standard-configuration listings (it
+        // selects its
+        // targets by FORMCYCLE DOM markers at runtime and is activated form-wide instead).
+        if (stringList(draft.get("supportedFormelementtypes")).any {
+          it.equals("Holistic", ignoreCase = true)
+        }) {
+          val holisticMarker = JsonArray()
+          holisticMarker.add("Holistic")
+          entry.add("supportedFormelementtypes", holisticMarker)
+        }
+        // ACTIVE BY DEFAULT. A stored `Active:false` keeps the configuration in every list but
+        // never
+        // applies it (the contract requires `Active:true`; a model that omits the flag produced a
+        // configuration that "is listed but does nothing"). An explicit value still wins.
         entry.add(
             "Active",
             draft.get("Active")?.takeIf { it.isJsonPrimitive }
-                ?: com.google.gson.JsonPrimitive(false))
-        entry.add("classes", draft.get("classes")?.takeIf { it.isJsonObject } ?: JsonObject())
+                ?: com.google.gson.JsonPrimitive(true))
+        // #region funcs / params — parity with the built-in configurations.
+        // The per-element CodBi panel offers the parameters of the functionalities a standard
+        // configuration applies, PRE-FILLED with the values the configuration sets (only a changed
+        // value
+        // is persisted). It reads that from `funcs[cssClass]` and `classes[cssClass].params`, which
+        // the
+        // build-time generator publishes for the built-in configs. For a LOCAL element those two
+        // maps do
+        // not exist yet, so it silently showed nothing — deriving them from the stored `loadConfig`
+        // call
+        // gives a generated configuration the same behaviour.
+        val configCode = code.ifBlank { codeOf(draft) }
+        val configTargets =
+            TARGETS_SELECTOR.find(configCode)?.groupValues?.getOrNull(2)?.trim().orEmpty()
+        val appliedFunc = loadConfigFuncName(configCode)
+        val configuredValues = loadConfigParamValues(configCode)
+        val classEntries = normalisedClassEntries(draft.get("classes"))
+        if (appliedFunc != null && classEntries.size() > 0) {
+          val funcsOut = JsonObject()
+          for (cssClass in classEntries.keySet()) {
+            // Only a class the SELECTOR targets really receives the functionality.
+            if (configTargets.isEmpty() ||
+                configTargets.split("~", ",").any { it.contains(cssClass, ignoreCase = true) }) {
+              funcsOut.addProperty(cssClass, appliedFunc)
+            }
+          }
+          if (funcsOut.size() > 0) {
+            entry.add("funcs", funcsOut)
+            if (configuredValues.isNotEmpty()) {
+              for (cssClass in funcsOut.keySet()) {
+                val spec =
+                    classEntries.get(cssClass)?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+                val params = JsonObject()
+                for ((key, value) in configuredValues) params.addProperty(key, value)
+                spec.add("params", params)
+              }
+            }
+          }
+        }
+        entry.add("classes", classEntries)
+        // #endregion
         entry.add("globals", draft.get("globals")?.takeIf { it.isJsonObject } ?: JsonObject())
       }
     }
     if (code.isNotBlank()) entry.addProperty("Code", code)
     entry.addProperty("local", true)
     return entry
+  }
+
+  /**
+   * A standard configuration's `classes` map in the shape the DESIGNER reads it in: every entry is
+   * an object carrying at least its `description` (`{ "description": …, "formelementtypes": […],
+   * "params": {…} }`).
+   *
+   * The AI (and the manager's own legacy trees) may write a class entry as a plain description
+   * STRING. The per-element standard-configuration listing renders its tooltip and its per-class
+   * `formelementtypes` from the object shape, so a bare string left the class effectively
+   * undocumented there. A string is therefore wrapped, never dropped.
+   */
+  private fun normalisedClassEntries(source: JsonElement?): JsonObject {
+    val out = JsonObject()
+    val classes = source?.takeIf { it.isJsonObject }?.asJsonObject ?: return out
+    for ((cssClass, value) in classes.entrySet()) {
+      when {
+        value.isJsonNull -> {}
+        value.isJsonPrimitive -> {
+          val wrapped = JsonObject()
+          wrapped.addProperty("description", value.asString)
+          out.add(cssClass, wrapped)
+        }
+        else -> out.add(cssClass, value)
+      }
+    }
+    return out
   }
 
   /** The "how a form run wires it" object, returned to the review dialog (never stored). */

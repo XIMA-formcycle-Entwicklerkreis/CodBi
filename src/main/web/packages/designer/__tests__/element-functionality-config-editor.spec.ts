@@ -147,6 +147,42 @@ describe("ElementFunctionalityConfigEditor functionality lists", () => {
     ).toBe(false);
   });
 
+  it("pre-fills parameter values from the Code of a LOCAL config (string `classes`, no `funcs`)", () => {
+    TestState.language = "en";
+    (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {
+      detFunctionalities: {
+        "Html.Panel": {
+          Parameter: { CSSHeaderUnfolded: "The unfolded header style." },
+        },
+      },
+      detStandards: {
+        // A local API-doc-manager config: `classes` is a plain DESCRIPTION STRING map (no structured
+        // `params`), `funcs` is ABSENT, and only `Code` (the `loadConfig` call) carries the literal
+        // values the configuration applies. Both the functionality-to-class mapping (`funcs`) AND the
+        // per-class parameter VALUES must be derived from `Code` so the panel pre-fills the inputs.
+        "UI.Panels": {
+          classes: {
+            CodBi_HTML_Panel_Standard: "Panel.",
+          },
+          Code: 'CodBi.loadConfig({ targets: ".CodBi_HTML_Panel_Standard", FUNC: "Html.Panel", CSSHeaderUnfolded: "background:#eee;" })',
+        },
+      },
+    };
+
+    const rootEl = buildEditor("XFieldSet", { cssclasses: ["CodBi_HTML_Panel_Standard"], attributes: [] });
+
+    const groups = Array.from(rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__param-group"));
+    expect(groups.some((group) => (group.textContent ?? "").includes("Html.Panel"))).toBe(true);
+
+    // The row is pre-filled with the value the configuration's `loadConfig` applies.
+    const row = Array.from(rootEl.querySelectorAll<HTMLElement>(".codbi-func-config__param-row")).find(
+      (candidate) => candidate.querySelector(".codbi-func-config__param-label")?.textContent === "CSSHeaderUnfolded",
+    );
+    expect(row).toBeDefined();
+    const input = row?.querySelector<HTMLInputElement>(".codbi-func-config__value");
+    expect(input?.value).toBe("background:#eee;");
+  });
+
   it("shows a boolean parameter as a CHECKBOX even when the configuration writes it UPPERCASE", () => {
     TestState.language = "en";
     (window as unknown as { CodbiPluginData?: unknown }).CodbiPluginData = {

@@ -824,9 +824,10 @@ export class DQ_Table_View {
       default: "REQUIRED - The name of the Datasource-Query on the Formcycle server whose result shall be displayed.",
     },
     CSS: {
-      type: "string",
+      type: "css",
       default:
         "Optional string of one or more (space separated) CSS classes to apply to both the tagged container and the injected table.",
+      cssKind: "classes",
     },
     FileName: {
       type: "string",

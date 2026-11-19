@@ -452,7 +452,8 @@ USE WHEN LDAP autocompletion is applied.
 
 ### OpenPLZ.AC.SET
 The four address-part classes of a German address group: CodBi_OpenPLZ_AC_SET_PLZ (postal code), CodBi_OpenPLZ_AC_SET_Locality (locality/city), CodBi_OpenPLZ_AC_SET_Street (street), CodBi_OpenPLZ_AC_SET_BuildingNumber (building number).
-USE WHEN the request builds an ADDRESS group — decide by MEANING (any language), then put the matching class on the field that IS that address part. NEVER on a field whose name/label merely contains an address word (a "Wort in Großbuchstaben" capitalisation field, a "Report", an e-mail "...-Adresse"). If the group lacks a street / house-number field, CREATE it. No server-side net does this for you.
+WHY ALL FOUR: they do not format a field each — they JOIN one address's parts into ONE group wired to the German OpenPLZ service, which fills the parts from each other. Every part must be tagged and in the same container, otherwise the group does nothing at all (a postal code alone has no street to fill).
+USE WHEN the request builds an ADDRESS group — decide by MEANING (any language: it designates where a person lives / is reachable / is registered), then put the matching class on the field that IS that address part — ALL FOUR of them. NEVER on a field whose name/label merely contains an address word (a "Wort in Großbuchstaben" capitalisation field, a "Report", an e-mail "...-Adresse"). If the group lacks a street / house-number field, CREATE it. No server-side net does this for you.
 
 ### People
 Registers the standard classes for people data (first/last name, e-mail, phone, postal code, building number).

@@ -67,7 +67,7 @@ internal object LocalApiDocPrompts {
         val condensed = getJsonString(element, "CondensedPrompt")?.trim() ?: ""
         val detailedPrompt = getJsonString(element, "DetailedPrompt")?.trim() ?: ""
         if (condensed.isEmpty() || detailedPrompt.isEmpty()) continue
-        if (!hasCode(em, name, config.third)) continue
+        val code = loadCode(em, name, config.third) ?: continue
         result.add(
             LocalElement(
                 name = name,
@@ -75,7 +75,7 @@ internal object LocalApiDocPrompts {
                 detail = config.third,
                 condensed = condensed,
                 detailedPrompt = detailedPrompt,
-                composedDetailed = composeDetailedPrompt(element),
+                composedDetailed = composeDetailedPrompt(element, code),
                 usageHint = buildUsageHint(element, name, config.second)))
       }
     }
@@ -98,16 +98,15 @@ internal object LocalApiDocPrompts {
   }
 
   /**
-   * Determines whether the given element has code stored in the local API-Doc storage. Code is
-   * stored separately from the documentation JSON via the `UPDATE CODE` action under the key
-   * `${detail}_${element}`.
+   * Loads the element's code from the local API-Doc storage. Code is stored separately from the
+   * documentation JSON via the `UPDATE CODE` action under the key `${detail}_${element}`.
    *
    * @param em The {@link EntityManager} to use.
    * @param element The element's name (dotted path, lower case).
    * @param detail The element's type detail (e.g. `Functionality`).
-   * @return **True** if a non-empty code entry exists, otherwise **false**.
+   * @return The non-empty code body, or `null` when none is stored.
    */
-  private fun hasCode(em: EntityManager, element: String, detail: String): Boolean {
+  private fun loadCode(em: EntityManager, element: String, detail: String): String? {
     return try {
       val results =
           em.createQuery(
@@ -115,27 +114,114 @@ internal object LocalApiDocPrompts {
                   String::class.java)
               .setParameter("key", "$detail" + "_" + element)
               .resultList
-      if (results.isEmpty()) false else (results[0]?.trim()?.isNotEmpty() == true)
+      if (results.isEmpty()) null else results[0]?.trim()?.takeIf { it.isNotEmpty() }
     } catch (_: Exception) {
-      false
+      null
     }
   }
 
   /**
-   * Composes the element's detailed prompt from its **DetailedPrompt** plus the detailed prompts of
-   * its parameters, global parameters and CSS classes.
+   * Composes the element's detailed prompt from its **DetailedPrompt**, the detailed prompts of its
+   * parameters, global parameters and CSS classes, and the documentation comment embedded in its
+   * code.
+   *
+   * <p>The code's documentation comment is the **single source of truth** for the element's
+   * parameter names, enum values and wiring (`data-cb-*` attributes). Some manually-managed local
+   * elements keep ALL of their parameter detail (e.g. `data-cb-layout` "normal"|"scientific") only
+   * in that comment — feeding just the structured prompts leaves the form-run AI blind to it, so
+   * applying such an element sets `data-cb-func` but drops the parameter attributes. Appending the
+   * comment (NOT the executable JavaScript) closes that gap without bloating the prompt.
    *
    * @param element The element's JSON object.
+   * @param code The element's code body (used only for its documentation comment).
    * @return The composed detailed prompt (trimmed), or an empty string if nothing is set.
    */
-  private fun composeDetailedPrompt(element: JsonObject): String {
+  private fun composeDetailedPrompt(element: JsonObject, code: String?): String {
     val sb = StringBuilder()
     val detailed = getJsonString(element, "DetailedPrompt")?.trim() ?: ""
     if (detailed.isNotEmpty()) sb.append(detailed)
     appendPromptSection(sb, element, "Parameter", "ParameterPrompts", "Parameters")
     appendPromptSection(sb, element, "globals", "GlobalPrompts", "Global Variables")
     appendPromptSection(sb, element, "classes", "ClassPrompts", "CSS Classes")
+    appendCodeDocumentation(sb, code)
     return sb.toString().trim()
+  }
+
+  /**
+   * Appends the documentation comment from the element's code to **sb**. The executable JavaScript
+   * is deliberately NOT included — only the leading comment (if any) that documents the parameters,
+   * wiring and a usage example.
+   *
+   * @param sb The {@link StringBuilder} to append to.
+   * @param code The element's code body, or `null`.
+   */
+  private fun appendCodeDocumentation(sb: StringBuilder, code: String?) {
+    if (code.isNullOrBlank()) return
+    val doc = extractDocumentationComment(code)?.trim()
+    if (doc.isNullOrEmpty()) return
+    if (sb.isNotEmpty()) sb.append("\n\n")
+    sb.append("Element code documentation:\n").append(doc)
+  }
+
+  /**
+   * Extracts the documentation comment (TSDoc / `@`/`Parameters:`/`Wiring:`/`Example:` style) that
+   * leads the element's code body, without any executable JavaScript.
+   *
+   * <p>Only the comment that begins the code (before the first non-comment statement) is returned;
+   * any block or line comments in the middle of the script are ignored, so the AI never sees
+   * runnable code.
+   *
+   * @param code The element's code body, or `null`.
+   * @return The extracted documentation comment, or `null` when the code has no leading comment.
+   */
+  internal fun extractDocumentationComment(code: String?): String? {
+    if (code.isNullOrBlank()) return null
+    val result = StringBuilder()
+    var i = 0
+    val n = code.length
+    var state = 0 // 0 = before any comment; 1 = in /* ... */; 2 = in // line comment
+    while (i < n) {
+      val c = code[i]
+      when (state) {
+        0 ->
+            when {
+              c == '/' && i + 1 < n && code[i + 1] == '*' -> {
+                state = 1
+                i += 2
+                result.append("/*")
+              }
+              c == '/' && i + 1 < n && code[i + 1] == '/' -> {
+                // Line comment — only a leading one counts as documentation; keep accumulating.
+                state = 2
+                i += 2
+                result.append("//")
+              }
+              !c.isWhitespace() ->
+                  // First real code statement → the leading documentation ends here.
+                  return if (result.isBlank()) null else result.toString()
+              else -> result.append(c)
+            }
+        1 ->
+            if (c == '*' && i + 1 < n && code[i + 1] == '/') {
+              state = 0
+              i += 2
+              result.append("*/")
+            } else if (c == '/') {
+              result.append(c)
+            } else {
+              result.append(c)
+            }
+        2 ->
+            if (c == '\n') {
+              state = 0
+              result.append('\n')
+            } else {
+              result.append(c)
+            }
+      }
+      i++
+    }
+    return if (result.isBlank()) null else result.toString()
   }
 
   /**

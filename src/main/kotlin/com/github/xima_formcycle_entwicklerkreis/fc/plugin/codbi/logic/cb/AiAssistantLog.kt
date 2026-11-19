@@ -363,15 +363,7 @@ object AiAssistantLog {
         query.firstResult = safeOffset
         query.maxResults = safeLimit
         val rows = query.resultList as List<CodbiAiAssistantLog>
-        var totalTokensIn = 0L
-        var totalTokensOut = 0L
         val out = JsonArray()
-        // Full (page-independent) token totals derived from the aggregate query over ALL matching
-        // entries — the reported `totals` stay stable while paging up and down the log.
-        for ((_, tokens) in tokensByModel) {
-          totalTokensIn += tokens.first
-          totalTokensOut += tokens.second
-        }
         for (entry in rows) {
           val e = JsonObject()
           e.addProperty("id", entry.id?.toString() ?: "")
@@ -624,24 +616,7 @@ object AiAssistantLog {
               }
           out.add(e)
         }
-        // Total cost per currency derived from summed tokens per model × price per 1M (no per-entry
-        // cost sums). Entries whose model has no configured price contribute no cost.
-        val costByCurrency = linkedMapOf<String, Double>()
-        val standard = Standard.instance
-        for ((model, tokens) in tokensByModel) {
-          val price = standard?.priceForModel(model) ?: continue
-          val cost = price.costFor(tokens.first, tokens.second) ?: continue
-          val currency = price.currency ?: continue
-          costByCurrency[currency] = (costByCurrency[currency] ?: 0.0) + cost
-        }
-        val totals = JsonObject()
-        totals.addProperty("tokensIn", totalTokensIn)
-        totals.addProperty("tokensOut", totalTokensOut)
-        val costObj = JsonObject()
-        for ((currency, cost) in costByCurrency) {
-          costObj.addProperty(currency, cost)
-        }
-        totals.add("costByCurrency", costObj)
+        val totals = totalsFor(tokensByModel)
         val root = JsonObject()
         root.add("entries", out)
         // Pagination metadata: `total` is the OVERALL number of matching inferences (independent of
@@ -654,6 +629,13 @@ object AiAssistantLog {
         root.addProperty("offset", safeOffset)
         root.addProperty("limit", safeLimit)
         root.add("totals", totals)
+        // The change log has TWO views: the edited form's inferences and the API-DOC view (local
+        // CodBi elements). The latter are INSTALLATION-WIDE rows (no form key) whose summary must
+        // be
+        // computed over their own scope — showing the form's token/cost totals there was reported
+        // as
+        // wrong. The second aggregate answers exactly that, page-independent like `totals`.
+        root.add("totalsLocalElement", totalsFor(apiDocTokensByModel(em)))
         // The current set of configured sensitive elements (AI_Log_SensitiveElements). The frontend
         // uses this to mark every node that matches a sensitive element with an always-on red
         // border.
@@ -684,6 +666,72 @@ object AiAssistantLog {
       logger.warn("[AiAssistantLog] Failed to load inference log: {}", e.message)
       EMPTY_LOG_RESPONSE
     }
+  }
+
+  /** The change-log intent of a local CodBi element inference (see `LocalElementDrafts.INTENT`). */
+  private const val API_DOC_INTENT = "codbi-local-element"
+
+  /**
+   * `{ tokensIn, tokensOut, costByCurrency }` for the given per-model token sums.
+   *
+   * The cost is derived from summed tokens per model × the configured price per 1M (never from
+   * per-entry cost sums). Entries whose model has no configured price contribute no cost.
+   */
+  private fun totalsFor(tokensByModel: Map<String, Pair<Long, Long>>): JsonObject {
+    var tokensIn = 0L
+    var tokensOut = 0L
+    val costByCurrency = linkedMapOf<String, Double>()
+    val standard = Standard.instance
+    for ((model, tokens) in tokensByModel) {
+      tokensIn += tokens.first
+      tokensOut += tokens.second
+      val price = standard?.priceForModel(model) ?: continue
+      val cost = price.costFor(tokens.first, tokens.second) ?: continue
+      val currency = price.currency ?: continue
+      costByCurrency[currency] = (costByCurrency[currency] ?: 0.0) + cost
+    }
+    val totals = JsonObject()
+    totals.addProperty("tokensIn", tokensIn)
+    totals.addProperty("tokensOut", tokensOut)
+    val costObj = JsonObject()
+    for ((currency, cost) in costByCurrency) {
+      costObj.addProperty(currency, cost)
+    }
+    totals.add("costByCurrency", costObj)
+    return totals
+  }
+
+  /**
+   * Per-model token sums of the **API-DOC** view: every inference that defined or changed a local
+   * CodBi element (`intent = "codbi-local-element"`).
+   *
+   * Those rows are INSTALLATION-WIDE (they carry no form key) and the change log shows them in
+   * their own view, so that view must summarise exactly them — showing the edited form's totals
+   * there was reported as wrong. Page-independent, like the form totals.
+   */
+  private fun apiDocTokensByModel(em: EntityManager): Map<String, Pair<Long, Long>> {
+    val sums = linkedMapOf<String, Pair<Long, Long>>()
+    runCatching {
+          val query =
+              em.createQuery(
+                  "SELECT l.modelId, COALESCE(SUM(l.tokensIn), 0), COALESCE(SUM(l.tokensOut), 0) " +
+                      "FROM CodbiAiAssistantLog l WHERE l.intent = :intent GROUP BY l.modelId")
+          query.setParameter("intent", API_DOC_INTENT)
+          @Suppress("UNCHECKED_CAST") val rows = query.resultList as? List<*> ?: emptyList<Any>()
+          for (row in rows) {
+            val cols = row as? Array<*> ?: continue
+            val model = cols.getOrNull(0) as? String ?: ""
+            val inTokens = (cols.getOrNull(1) as? Number)?.toLong() ?: 0L
+            val outTokens = (cols.getOrNull(2) as? Number)?.toLong() ?: 0L
+            val known = sums[model]
+            sums[model] = (known?.first ?: 0L) + inTokens to (known?.second ?: 0L) + outTokens
+          }
+        }
+        .onFailure {
+          logger.warn(
+              "[AiAssistantLog] Failed to aggregate the API-doc token totals: {}", it.message)
+        }
+    return sums
   }
 
   /**

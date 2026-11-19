@@ -2494,6 +2494,48 @@ function isBooleanFlagValue(value: string): boolean {
   return raw === "" || raw === "false" || raw === "0" || raw === "no" || raw === "off" || TRUTHY_FLAG_VALUES.has(raw);
 }
 
+/** What a standard configuration's stored `loadConfig({ … })` call defines. */
+interface IStandardConfigCodeInfo {
+  /** The `targets` selector (empty when the code carries none). */
+  targets: string;
+  /** The `FUNC` (first entry of a comma-separated list). */
+  func: string;
+  /** The literal parameter values (`extravalue`, `layout`, …), reserved keys excluded. */
+  params: Record<string, string>;
+}
+
+/** Keys of a `loadConfig` object that are runtime/metadata, never functionality parameters. */
+const STANDARD_CONFIG_RESERVED_KEYS = new Set(["targets", "func", "funcs", "classes", "globals"]);
+
+/**
+ * Reads `targets`, `FUNC` and the literal parameter values out of a standard configuration's stored
+ * `Code`.
+ *
+ * The built-in configurations publish all of it as build-time metadata (`targets`, `func`,
+ * `funcs[cssClass]`, `classes[cssClass].params`). A LOCAL element (assistant / local API-doc manager)
+ * carries only the `loadConfig({ … })` call, so the element panel had nothing to offer — applying such a
+ * class showed no functionality parameters at all (reported). Derived here so both flavours behave
+ * identically.
+ */
+function standardConfigCodeInfo(code: string): IStandardConfigCodeInfo {
+  const text = String(code ?? "").replace(/<\|>/g, '"');
+  const targets = /targets\s*:\s*(['"`])(.*?)\1/s.exec(text)?.[2]?.trim() ?? "";
+  const func = (/FUNC\s*:\s*(['"`])(.*?)\1/s.exec(text)?.[2] ?? "").split(",")[0]?.trim() ?? "";
+  const params: Record<string, string> = {};
+  const pair = /(?:^|[,{]\s*)(?:(['"])([^'"]+)\1|([A-Za-z_][A-Za-z0-9_]*))\s*:\s*(?:(["'])([^"']*)\4|([^,}\n]+))/g;
+
+  for (const match of text.matchAll(pair)) {
+    const key = (match[2] || match[3] || "").trim();
+
+    if (key === "" || STANDARD_CONFIG_RESERVED_KEYS.has(key.toLowerCase())) {
+      continue;
+    }
+    params[key] = (match[5] ?? match[6] ?? "").trim();
+  }
+
+  return { targets, func, params };
+}
+
 /**
  * The AVAILABLE (non-holistic) CodBi standard configurations as
  * `[id, classes, funcs, spec]` tuples.
@@ -2533,9 +2575,52 @@ function activeStandardConfigs(): Array<
       ]
     > = [];
     for (const [id, def] of Object.entries(entries)) {
-      if (def && !standardConfigIsHolistic(def.supportedFormelementtypes)) {
-        result.push([id, def.classes, def.funcs, def.supportedFormelementtypes]);
+      if (!def || standardConfigIsHolistic(def.supportedFormelementtypes)) {
+        continue;
       }
+      const codeInfo = standardConfigCodeInfo(String((def as { Code?: string }).Code ?? ""));
+      const classes = def.classes;
+      // `funcs` (class → FUNC) may be MISSING on a local element: derive it from the code, restricted to
+      // the classes the selector really targets.
+      let funcs = def.funcs;
+
+      if ((funcs == null || Object.keys(funcs).length === 0) && codeInfo.func !== "" && classes != null) {
+        const derived: Record<string, string> = {};
+
+        for (const cssClass of Object.keys(classes)) {
+          if (codeInfo.targets === "" || codeInfo.targets.split("~").some((part) => part.includes(cssClass))) {
+            derived[cssClass] = codeInfo.func;
+          }
+        }
+        if (Object.keys(derived).length > 0) {
+          funcs = derived;
+        }
+      }
+      // `classes[…].params` may be missing as well: pre-fill the values the configuration sets.
+      let classesOut: Record<string, TStandardConfigClassSpec> | undefined = classes;
+
+      if (classes != null && Object.keys(codeInfo.params).length > 0) {
+        const merged: Record<string, TStandardConfigClassSpec> = {};
+
+        for (const [cssClass, spec] of Object.entries(classes)) {
+          if (spec != null && typeof spec === "object") {
+            // Optimised shape: description + widget list live in the class entry. Add the values ONLY
+            // when the published metadata carries none (`spec.params == null`).
+            merged[cssClass] =
+              spec.params == null ? { ...(spec as Record<string, unknown>), params: { ...codeInfo.params } } : spec;
+          } else {
+            // Legacy / local API-doc manager shape: the class entry is a plain DESCRIPTION STRING
+            // (no structured `params`). Convert it so the values the `loadConfig` applies reach the
+            // per-element panel as pre-filled defaults while the description is kept.
+            merged[cssClass] = {
+              description: spec != null ? String(spec) : undefined,
+              params: { ...codeInfo.params },
+            } as unknown as TStandardConfigClassSpec;
+          }
+        }
+        classesOut = merged;
+      }
+      result.push([id, classesOut, funcs, def.supportedFormelementtypes]);
     }
     return result.sort((a, b) => a[0].localeCompare(b[0]));
   } catch {

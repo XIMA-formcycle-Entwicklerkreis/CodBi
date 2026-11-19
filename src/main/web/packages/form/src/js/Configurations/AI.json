@@ -3,7 +3,11 @@
   "classes": {
     "AI_OCR_Receiver": {
       "description": "Apply to an XUpload field that should receive OCR-extracted text. The OCR result is placed into the element matching data-cb-Field.",
-      "formelementtypes": ["XTextField", "XTextArea"]
+      "formelementtypes": ["XTextField", "XTextArea"],
+      "params": {
+        "Extractor": ".*",
+        "Replacements": "$&"
+      }
     },
     "AI_LLAMA_CHAT_Input": {
       "description": "Apply to the text input field of an AI LLAMA chat widget.",
@@ -73,7 +77,11 @@
     },
     "AI_LLAMA_STANDARD_QA_Question": {
       "description": "Apply to an XTextField that receives AI responses to questions specified in data-cb-Question.",
-      "formelementtypes": ["XTextField", "XTextArea"]
+      "formelementtypes": ["XTextField", "XTextArea"],
+      "params": {
+        "Extractor": ".*",
+        "Replacements": "$&"
+      }
     },
     "AI_LLAMA_STANDARD_TXTQA_Question": {
       "description": "Apply to an XTextField that receives AI responses to questions based on source fields.",

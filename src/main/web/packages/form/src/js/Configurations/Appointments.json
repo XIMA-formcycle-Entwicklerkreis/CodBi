@@ -3,11 +3,22 @@
   "classes": {
     "CodBi_NoFutureDate": {
       "description": "Apply to an XTextField with datatype='dateDE'. Prevents selecting future dates.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Minimum": "0",
+        "Reverse": "false",
+        "Unit": "d",
+        "MsgHigher": "Das Datum darf nicht in der Zukunft liegen."
+      }
     },
     "CodBi_DateFrame_1_Begin": {
       "description": "Apply to the BEGIN (minimum) date field of a date range pair. Reference the end date via MaxField parameter.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_DateFrame_1_End",
+        "MsgMinInvalid": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+        "MsgMaxInvalid": "Das Enddatum darf nicht vor dem Startdatum liegen."
+      }
     },
     "CodBi_DateFrame_1_End": {
       "description": "Apply to the END (maximum) date field of a date range pair.",
@@ -15,7 +26,12 @@
     },
     "CodBi_DateFrame_2_Begin": {
       "description": "Apply to the BEGIN date field of a second date range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_DateFrame_2_End",
+        "MsgMinInvalid": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+        "MsgMaxInvalid": "Das Enddatum darf nicht vor dem Startdatum liegen."
+      }
     },
     "CodBi_DateFrame_2_End": {
       "description": "Apply to the END date field of a second date range pair.",
@@ -23,7 +39,12 @@
     },
     "CodBi_DateFrame_3_Begin": {
       "description": "Apply to the BEGIN date field of a third date range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_DateFrame_3_End",
+        "MsgMinInvalid": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+        "MsgMaxInvalid": "Das Enddatum darf nicht vor dem Startdatum liegen."
+      }
     },
     "CodBi_DateFrame_3_End": {
       "description": "Apply to the END date field of a third date range pair.",
@@ -31,7 +52,12 @@
     },
     "CodBi_DateFrame_4_Begin": {
       "description": "Apply to the BEGIN date field of a fourth date range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_DateFrame_4_End",
+        "MsgMinInvalid": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+        "MsgMaxInvalid": "Das Enddatum darf nicht vor dem Startdatum liegen."
+      }
     },
     "CodBi_DateFrame_4_End": {
       "description": "Apply to the END date field of a fourth date range pair.",
@@ -39,7 +65,12 @@
     },
     "CodBi_DateFrame_5_Begin": {
       "description": "Apply to the BEGIN date field of a fifth date range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_DateFrame_5_End",
+        "MsgMinInvalid": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+        "MsgMaxInvalid": "Das Enddatum darf nicht vor dem Startdatum liegen."
+      }
     },
     "CodBi_DateFrame_5_End": {
       "description": "Apply to the END date field of a fifth date range pair.",
@@ -47,43 +78,90 @@
     },
     "CodBi_TimeFrame_1_Begin": {
       "description": "Apply to the BEGIN (minimum) time field of a time range pair. Reference the end time via MaxField parameter.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_TimeFrame_1_End",
+        "MsgMinInvalid": "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+        "MsgMaxInvalid": "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_1_End": {
       "description": "Apply to the END (maximum) time field of a time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_2_Begin": {
       "description": "Apply to the BEGIN time field of a second time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_TimeFrame_2_End",
+        "MsgMinInvalid": "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+        "MsgMaxInvalid": "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_2_End": {
       "description": "Apply to the END time field of a second time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_3_Begin": {
       "description": "Apply to the BEGIN time field of a third time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_TimeFrame_3_End",
+        "MsgMinInvalid": "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+        "MsgMaxInvalid": "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_3_End": {
       "description": "Apply to the END time field of a third time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_4_Begin": {
       "description": "Apply to the BEGIN time field of a fourth time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_TimeFrame_4_End",
+        "EqualityPermitted": "false",
+        "MsgMinInvalid": "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+        "MsgMaxInvalid": "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_4_End": {
       "description": "Apply to the END time field of a fourth time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_5_Begin": {
       "description": "Apply to the BEGIN time field of a fifth time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "MaxField": ".CodBi_TimeFrame_5_End",
+        "EqualityPermitted": "false",
+        "MsgMinInvalid": "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+        "MsgMaxInvalid": "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TimeFrame_5_End": {
       "description": "Apply to the END time field of a fifth time range pair.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n        time: true,\n        timePattern: [\"h\", \"m\"],\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_Date_Time_Join_Date": {
       "description": "Apply to the DATE input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
@@ -123,7 +201,11 @@
     },
     "CodBi_Holidays_Listing": {
       "description": "Apply to an XSelect that should be filled with holidays for current and next years. The state is specified in global variable CodBi_Holidays_States.",
-      "formelementtypes": ["XSelect"]
+      "formelementtypes": ["XSelect"],
+      "params": {
+        "Values": "{ Date.Holidays > { V > CodBi_Holidays_States }; this_year ; this_year + 1 }",
+        "ReClean": "TRUE"
+      }
     }
   },
   "globals": {

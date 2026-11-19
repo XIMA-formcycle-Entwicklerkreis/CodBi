@@ -170,40 +170,49 @@ export class HTML_Panel {
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
     Folded: { type: "boolean", default: "true" },
-    CSSHeaderHover: { type: "string", default: "The optional header's CSS:hover (defaults to { scale : 1.1 ;})." },
-    CSSHeaderFoldedHover: {
-      type: "string",
-      default:
-        "The optional header's CSS:hover to be applied instead of CSSHeaderHover while the panel is FOLDED. Overrides the generic hover style when the panel has been collapsed; falls back to CSSHeaderHover otherwise.",
+    CSSHeaderHover: {
+      type: "css",
+      default: "The optional header's CSS:hover (defaults to { scale : 1.1 ;}).",
+      cssKind: "declarations",
     },
-    CSSHeaderActive: { type: "string", default: "The optional header's CSS:active (defaults to { scale : .9 ;})." },
+    CSSHeaderActive: {
+      type: "css",
+      default: "The optional header's CSS:active (defaults to { scale : .9 ;}).",
+      cssKind: "declarations",
+    },
     CSSHeaderFolded: {
-      type: "string",
+      type: "css",
       default:
         "The optional CSS to be applied onto the header when the panel is FOLDED. Without it a panel that is (or starts) folded would lose the header look set via CSSHeaderUnfolded.",
+      cssKind: "declarations",
     },
     CSSHeaderUnfolded: {
-      type: "string",
+      type: "css",
       default: "The optional CSS to be applied onto the header when the panel is unfolded.",
+      cssKind: "declarations",
     },
     DCSSHeaderUnfolded: {
-      type: "string",
+      type: "css",
       default: "The optional Darkmode CSS to be applied onto the header when the panel is unfolded.",
+      cssKind: "declarations",
     },
     CSSAnimFadeINPanel: {
-      type: "string",
+      type: "css",
       default: "The optional animation to be applied onto the panel whenever the panel is unfolded.",
+      cssKind: "declarations",
     },
     CSSAnimFadeINPanelDuration: { type: "string", default: "0s" },
     CSSAnimFadeINPanelEasing: { type: "string", default: "ease-in-out" },
     CSSAfterHeader: {
-      type: "string",
+      type: "css",
       default: "The CSS:after to be applied onto the header when the panel is folded.",
+      cssKind: "declarations",
     },
     CSSBeforeHeader: {
-      type: "string",
+      type: "css",
       default:
         "The CSS:before to be applied onto the header when the panel is folded (will be overwritten when required fields are contained by the panel).",
+      cssKind: "declarations",
     },
     CSSAfterHeaderContent: {
       type: "string",
@@ -228,8 +237,9 @@ export class HTML_Panel {
       default: "The CSS:before content to be applied onto the header if it contains a validation sensitive field.",
     },
     CSSRequiredFields: {
-      type: "string",
+      type: "css",
       default: "The CSS:before to be applied onto the header if it contains a validation sensitive field.",
+      cssKind: "declarations",
     },
     AutoHeaderTitle: { type: "string", default: "The string the automatically generated header shall display." },
     AutoHeaderTitleSupplementsSpacer: {
@@ -257,6 +267,12 @@ export class HTML_Panel {
       type: "string",
       default:
         "If set, this panel becomes part of an accordion. All panels sharing the same accordion name will be folded when one of them is unfolded.",
+    },
+    CSSHeaderFoldedHover: {
+      type: "css",
+      default:
+        "The optional header's CSS:hover to be applied instead of CSSHeaderHover while the panel is FOLDED. Overrides the generic hover style when the panel has been collapsed; falls back to CSSHeaderHover otherwise.",
+      cssKind: "declarations",
     },
   })
   public static functionality(

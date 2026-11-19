@@ -79,9 +79,26 @@ export interface LogFormOption {
   current: boolean;
 }
 
+/**
+ * The token/cost summary of ONE change-log view.
+ *
+ * The log has two views (`showApiDocLogs`): the edited FORM's inferences and the API-DOC inferences
+ * (local CodBi element definitions). They are different scopes — a local element is
+ * installation-wide catalogue data — so each view carries its own totals.
+ */
+interface LogViewTotals {
+  tokensIn: number;
+  tokensOut: number;
+  cost: Map<string, number>;
+}
+
 let logEntriesCache: {
   formKey: string;
   raw: Array<Record<string, unknown>>;
+  /** Page-independent totals of the FORM view (backend `totals`). */
+  formTotals?: LogViewTotals;
+  /** Page-independent totals of the API-DOC view (backend `totalsLocalElement`). */
+  apiDocTotals?: LogViewTotals;
   /** Overall number of recorded inferences for the cached form (from the backend `total`). */
   total?: number;
   /** Whether the cached form still has older entries to load (backend `hasMore`). */
@@ -184,7 +201,11 @@ export class AiAssistantLog implements OnInit, OnDestroy {
    *  the backend returns the list for a FOREIGN form (that list omits the current form when it has
    *  no log entries of its own). */
   private knownCurrentOption: LogFormOption | null = null;
-  /** Total tokens used by all recorded inferences of the current form (input / output / total). */
+  /** Totals of the FORM view (the edited form's inferences). */
+  private formTotals: LogViewTotals = { tokensIn: 0, tokensOut: 0, cost: new Map<string, number>() };
+  /** Totals of the API-DOC view (local CodBi element inferences). */
+  private apiDocTotals: LogViewTotals = { tokensIn: 0, tokensOut: 0, cost: new Map<string, number>() };
+  /** Total tokens used by the inferences of the ACTIVE view (input / output / total). */
   totalTokensIn = 0;
   totalTokensOut = 0;
   totalTokens = 0;
@@ -588,6 +609,11 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         this.rawEntries = logEntriesCache.raw;
         this.totalInferences = logEntriesCache.total ?? logEntriesCache.raw.length;
         this.hasMoreInferences = logEntriesCache.hasMore === true;
+        // The cached entries carry no backend totals — restore the ones stored with the cache, so a
+        // reopen shows the same numbers and the ACTIVE view's own summary.
+        this.formTotals = logEntriesCache.formTotals ?? AiAssistantLog.totalsFrom(undefined);
+        this.apiDocTotals = logEntriesCache.apiDocTotals ?? AiAssistantLog.totalsFrom(undefined);
+        this.applyViewTotals();
         this.logs = this.buildTree(this.applyFilter(logEntriesCache.raw));
         this.expandSearchMatches();
         this.applyHighlights();
@@ -678,18 +704,16 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             acknowledged: [...this.acknowledgedSensitive],
           });
           // The backend derives the totals from the summed tokens per model × configured price per 1M,
-          // so we prefer those over summing per-entry values.
-          this.totalTokensIn = Number(
-            totals["tokensIn"] ?? raw.reduce((sum, entry) => sum + (Number(entry["tokensIn"]) || 0), 0),
+          // so we prefer those over summing per-entry values. TWO scopes are returned: the edited
+          // form and the API-DOC view (local CodBi element inferences, installation-wide). The view
+          // switch decides which one is DISPLAYED (see applyViewTotals).
+          this.formTotals = AiAssistantLog.totalsFrom(totals);
+          this.apiDocTotals = AiAssistantLog.totalsFrom(
+            !Array.isArray(payload)
+              ? (payload?.["totalsLocalElement"] as Record<string, unknown> | undefined)
+              : undefined,
           );
-          this.totalTokensOut = Number(
-            totals["tokensOut"] ?? raw.reduce((sum, entry) => sum + (Number(entry["tokensOut"]) || 0), 0),
-          );
-          this.totalTokens = this.totalTokensIn + this.totalTokensOut;
-          const costObj = (totals["costByCurrency"] as Record<string, unknown> | undefined) ?? {};
-          this.costByCurrency = new Map<string, number>(
-            Object.entries(costObj).map(([currency, cost]) => [currency, Number(cost) || 0]),
-          );
+          this.applyViewTotals();
           this.rawEntries = raw;
           // Infinite-scroll metadata from the page-independent backend aggregate: `total` is the
           // TRUE number of recorded inferences for the form (not just this page's loaded count), and
@@ -707,6 +731,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             hasMore: this.hasMoreInferences,
             forms: this.formOptions,
             isSyncUser: this.isSyncUser,
+            formTotals: this.formTotals,
+            apiDocTotals: this.apiDocTotals,
           };
           this.logs = this.buildTree(this.applyFilter(raw));
           this.expandSearchMatches();
@@ -1326,6 +1352,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   toggleApiDocLogs(): void {
     this.showApiDocLogs = !this.showApiDocLogs;
     this.rebuildLogs();
+    // The token/cost summary belongs to the VIEW: the API-doc inferences are their own scope, so the
+    // header must switch with it (reported: the API-doc view kept showing the form's totals).
+    this.applyViewTotals();
+    this.cdr.markForCheck();
   }
 
   /**
@@ -1534,6 +1564,34 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       minute: "2-digit",
       second: "2-digit",
     });
+  }
+
+  /**
+   * Reads one view's `{ tokensIn, tokensOut, costByCurrency }` block from a backend response.
+   *
+   * The backend aggregates page-independently, per model (tokens × configured price per 1M), so the
+   * numbers never change while scrolling. A missing block yields zero totals instead of falling back
+   * to the OTHER view's numbers — mixing the two scopes is exactly the reported defect.
+   */
+  private static totalsFrom(totals?: Record<string, unknown>): LogViewTotals {
+    const costObj = (totals?.["costByCurrency"] as Record<string, unknown> | undefined) ?? {};
+    return {
+      tokensIn: Number(totals?.["tokensIn"] ?? 0) || 0,
+      tokensOut: Number(totals?.["tokensOut"] ?? 0) || 0,
+      cost: new Map<string, number>(Object.entries(costObj).map(([currency, value]) => [currency, Number(value) || 0])),
+    };
+  }
+
+  /**
+   * Points the displayed totals at the ACTIVE view: the edited form's inferences or the API-doc
+   * (local CodBi element) inferences. Called after every (re)load and whenever the view is toggled.
+   */
+  private applyViewTotals(): void {
+    const active = this.showApiDocLogs ? this.apiDocTotals : this.formTotals;
+    this.totalTokensIn = active.tokensIn;
+    this.totalTokensOut = active.tokensOut;
+    this.totalTokens = active.tokensIn + active.tokensOut;
+    this.costByCurrency = active.cost;
   }
 
   /** Formats a token count for display (e.g. "1,234 tokens"). Empty when there is no count. */

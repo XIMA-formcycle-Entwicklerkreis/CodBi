@@ -11,8 +11,10 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.localize
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.DocumentIngestion
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.IngestedPart
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.salvageTruncatedItems
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
@@ -3484,6 +3486,10 @@ class AICodBiAssistant : IPluginServletAction {
     // previously aborted run is cleared too) so the change-log entry records only this run's calls.
     runTrips.get().clear()
     runTripPrefix.set("")
+    // A page layout left over from a previously aborted from-document build must never be applied
+    // to
+    // THIS run's form.
+    documentPageLayout.remove()
     // Fail-open diagnostic: the model each inference role will ACTUALLY use this run. With no
     // `AI_Assistant_AuxModel*` configured, every value equals the selected `modelId` — so the
     // server log alone proves the routing is inert until it is deliberately configured.
@@ -3548,9 +3554,12 @@ class AICodBiAssistant : IPluginServletAction {
     val useBuergerserviceNaming =
         params.requestParameters["useBuergerserviceNaming"]?.firstOrNull()?.toBoolean() ?: false
 
-    // Collect image attachments sent as `codbi-base64:<name>` data-URL params (the same format
-    // used by ai.llama.standard.qa). PDF pages are rendered to images client-side via PDF.js
-    // before upload, so the backend only ever receives PNG/JPEG data URIs here.
+    // Collect attachments sent as `codbi-base64:<name>` data-URL params (the same format used by
+    // ai.llama.standard.qa). A PDF is rasterised client-side via PDF.js, but EVERY other supported
+    // format arrives as-is and is turned into pages HERE by [DocumentIngestion]: a Word/ODT/Excel/
+    // PowerPoint/HTML/CSV file becomes TEXT pages (exact labels and checkbox glyphs instead of
+    // guesses), a scan is split per page (multi-page TIFF), and an archive is expanded entry by
+    // entry.
     val imageService =
         ImageProcessingService(
             maxPixels = 3_211_264L,
@@ -3562,8 +3571,61 @@ class AICodBiAssistant : IPluginServletAction {
                 LogLevel.ERROR -> logger.error("[AICodBiAssistant] {}", msg)
               }
             })
-    val imageFileMap = imageService.collectImageData(params)
-    val imageParts = imageService.prepareImageParts(imageFileMap, null)
+    val imageFileMap = imageService.collectAttachmentData(params)
+    val documentPages =
+        DocumentIngestion.ingestAll(imageFileMap) { msg ->
+              logger.warn("[AICodBiAssistant] Attachment: {}", msg)
+            }
+            .mapNotNull { part ->
+              when (part) {
+                is IngestedPart.Image ->
+                    imageService
+                        .prepareImageParts(mapOf(part.name to part.bytes), null)
+                        .firstOrNull()
+                        ?.let { DocumentPageInput(it, null) }
+                is IngestedPart.Text -> DocumentPageInput(null, part.text)
+                is IngestedPart.Unsupported -> {
+                  logger.warn(
+                      "[AICodBiAssistant] Attachment '{}' cannot be used: {}",
+                      part.name,
+                      part.reason)
+                  null
+                }
+              }
+            }
+    if (documentPages.isNotEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Attachment pages: {} ({} with an image, {} as text)",
+          documentPages.size,
+          documentPages.count { it.image != null },
+          documentPages.count { it.text != null })
+    }
+    // THE SERVER ALREADY KNOWS THE DOCUMENT. Its page count is derived here, so no inference may
+    // ask
+    // the user for it again (observed: with rasterisation off the pages arrive as TEXT, so the
+    // clarify pass saw no image and asked "how many pages does the PDF have?"). Appended to the
+    // clarify prompt and to every build hint.
+    val documentSummary =
+        if (documentPages.isEmpty()) ""
+        else
+            buildString {
+              append(
+                  "\n\nATTACHED DOCUMENT - ALREADY RECEIVED, DO NOT ASK FOR IT AGAIN: this document has ")
+              append(documentPages.size)
+              append(" page(s) - page 1 to ")
+              append(documentPages.size)
+              append(" - and the server already knows every one of them (delivered as ")
+              append(
+                  if (documentPages.any { it.image != null }) "page images"
+                  else "the extracted text of each page")
+              append(
+                  "). NEVER ask how many pages the document has, how many further pages should become " +
+                      "form pages, or whether more pages exist, and never ask the user to send the " +
+                      "document or parts of it again: build from the pages that are attached.")
+            }
+    // The vision parts of the same pages - every existing pass (pass-1, clarification, repair)
+    // keeps working unchanged.
+    val imageParts = documentPages.mapNotNull { it.image }
     // BUILD DOCUMENT vs. CLARIFICATION ATTACHMENT: a document the user attaches to a CLARIFICATION
     // ANSWER only answers a question - it is not the document the form is built from. The frontend
     // marks those attachments with [ImageProcessingService.CLARIFICATION_IMAGE_PREFIX], and only a
@@ -4172,6 +4234,7 @@ class AICodBiAssistant : IPluginServletAction {
                 useCodbi,
                 askAllQuestions,
                 imageParts,
+                documentSummary = documentSummary,
                 clarificationCompletionPages,
                 clarificationFormVariables,
                 clarificationWorkflowMails,
@@ -4440,7 +4503,8 @@ class AICodBiAssistant : IPluginServletAction {
                   getUserContext(params),
                   formListContext,
                   formElementsContext,
-                  buildDocumentAttached = hasBuildDocument)
+                  buildDocumentAttached = hasBuildDocument,
+                  documentPages = documentPages)
             }
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
@@ -4594,6 +4658,21 @@ class AICodBiAssistant : IPluginServletAction {
       val orphanRepairedForm = resolvedFormJson?.let { repairOrphanedFormElements(it) }
       if (orphanRepairedForm != null) {
         resolvedFormJson = orphanRepairedForm
+      }
+      // The page order a from-document build decided is re-asserted LAST, after every structural
+      // normalization: those steps reorder `items` (header to the front, pages in front of the
+      // footer, tree order, orphan repair) and one of them silently undid the decision, leaving the
+      // form's own first page behind the page the document was mapped onto.
+      val layoutEnforcedJson =
+          resolvedFormJson?.let { json ->
+            runCatching {
+                  val obj = JsonParser.parseString(json).asJsonObject
+                  if (enforcePageLayout(obj)) gson.toJson(obj) else json
+                }
+                .getOrDefault(json)
+          }
+      if (layoutEnforcedJson != null) {
+        resolvedFormJson = layoutEnforcedJson
       }
       // The "_removeAll" marker is an instruction to the backend, not a form element — strip it
       // from
@@ -6038,7 +6117,12 @@ class AICodBiAssistant : IPluginServletAction {
       // Whether this run carries the DOCUMENT THE FORM IS BUILT FROM, as opposed to an attachment
       // that only answers a clarification question. Drives the DOCUMENT PARSING rules; the default
       // preserves the previous behaviour (any image counts) for callers that carry no distinction.
-      buildDocumentAttached: Boolean = imageParts.isNotEmpty()
+      buildDocumentAttached: Boolean = imageParts.isNotEmpty(),
+      // The attachment as PAGES (see [DocumentIngestion]): a page carries an image, its TEXT, or
+      // both. Text pages are what makes a Word/Excel/HTML/CSV attachment usable WITHOUT vision -
+      // the
+      // labels and checkbox glyphs arrive verbatim.
+      documentPages: List<DocumentPageInput> = emptyList()
   ): Triple<String, String?, TokenUsage> {
     // PASSWORD SECURITY (highest priority, deterministic — see runWorkflowCreation): a password
     // VALUE in the prompt is never processed, in ANY pass. Checking here as well means a combined
@@ -6233,6 +6317,29 @@ class AICodBiAssistant : IPluginServletAction {
                 "element per static text / heading / spacer block, preserving the document order and " +
                 "the visible labels. Do NOT summarise or sample the document, do NOT invent fields " +
                 "that are not on the page, and do NOT stop after the first page."
+    // The TEXT of every text page, page by page. Only text pages are listed - an image page is
+    // covered by the attached images - and the numbering matches the document so the model can put
+    // each page's content on the right form page.
+    val documentTextBlock =
+        if (documentPages.none { it.text != null }) ""
+        else
+            buildString {
+              append("\n\n## ATTACHED DOCUMENT TEXT (page by page, verbatim - the document has ")
+              append(documentPages.size)
+              append(" page(s); never ask how many it has)\n\n")
+              documentPages.forEachIndexed { index, page ->
+                val pageText = page.text ?: return@forEachIndexed
+                append("--- PAGE ")
+                append((index + 1).toString())
+                append(" ---\n")
+                append(pageText)
+                append("\n\n")
+              }
+              append(
+                  "Every entry of a page above must appear in the form; the text is EXACT - use its " +
+                      "labels verbatim and treat a printed tick/box glyph as the checkbox or upload " +
+                      "decision it marks.")
+            }
     val clarificationInstruction =
         if (clarificationContext.isNullOrBlank()) ""
         else
@@ -6242,7 +6349,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "\n\nRESOLVE CROSS-ANSWER REFERENCES: an answer that refers to another answer (e.g. \"same address as 1.\", \"gleiche Adresse wie bei Frage 1\", \"wie in Antwort 1\") means USE that referenced answer's value verbatim — copy it, do not ask again and do not leave it empty." +
                 "\n\nAnswers:\n$clarificationContext"
     val userContent =
-        "Instruction: $prompt$foreignCopyContext$imageHint$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
+        "Instruction: $prompt$foreignCopyContext$imageHint$documentTextBlock$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
             "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt.\n" +
             "REMINDER 2: when the request is a WHOLE-FORM TRANSLATION that adds another language, your JSON MUST ALSO end with the " +
             "top-level \"_workflowMailLanguages\": [\"<baseLanguageCode>\", \"<addedLanguageCode>\", ...] marker (base language first) " +
@@ -6852,26 +6959,75 @@ class AICodBiAssistant : IPluginServletAction {
         // overrun: every answer is small, the page order is the document's own order, and each page
         // is
         // spliced onto the previous ones - so the result is complete AND ordered.
-        if (docRulesSection.isNotEmpty() && imageParts.size in 2..12 && allItems.size() <= 3) {
-          val pageMerged =
+        // The form may ALREADY have pages (e.g. "Hinweise" + "Angaben", with the request saying
+        // that
+        // the document's FIRST page belongs on "Angaben"). The model can only RE-USE such a page
+        // when
+        // it is told its NAME **and its ID** - without the id it cannot emit a patch and fabricates
+        // a
+        // new page instead, which is exactly how the designated page ended up LAST in the page
+        // order.
+        // A multi-page document is therefore built per page for an EMPTY form and for an existing
+        // one.
+        // The pages of the attachment: an image page, a TEXT page (Word/Excel/HTML/CSV/PDF with a
+        // text layer) or both. A text page needs no vision, which is why an office document can be
+        // built per page exactly like a scan.
+        val buildPages =
+            if (documentPages.isNotEmpty()) documentPages
+            else imageParts.map { DocumentPageInput(it, null) }
+        if (docRulesSection.isNotEmpty() && buildPages.size in 2..12) {
+          val existingPageItems =
+              allItems.mapNotNull { el ->
+                val o = el.takeIf { it.isJsonObject }?.asJsonObject
+                val isPage =
+                    o != null &&
+                        o.get("className")?.takeIf { it.isJsonPrimitive }?.asString == "XPage"
+                if (o == null || !isPage) null
+                else {
+                  val props = o.getAsJsonObject("properties")
+                  val pageName = props?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+                  if (pageName.isNullOrBlank()) null
+                  else pageName to (props.get("id")?.takeIf { it.isJsonPrimitive }?.asString ?: "")
+                }
+              }
+          val pageBuild =
               buildFormPerDocumentPage(
                   instance = instance,
                   modelId = modelId,
                   systemPrompt = applySystemPrompt,
-                  pageImages = imageParts,
+                  pages = buildPages,
                   prompt = prompt,
                   useCodbi = useCodbi,
+                  existingPages = existingPageItems,
                   onPageUsage = { pageNo, pageUsage, pageMessages, pageRaw ->
                     tokensIn += pageUsage?.promptTokens ?: estimateTokens(pageMessages)
                     tokensOut += pageUsage?.completionTokens ?: estimateTokens(pageRaw)
                     reportTrip("form-page-$pageNo", modelId, pageUsage, pageMessages, pageRaw)
                   })
-          if (pageMerged != null) {
+          if (pageBuild != null) {
             logger.info(
                 "[AICodBiAssistant] Per-page document build done: {} item(s) from {} page(s) - skipping the single-shot pass-2",
-                itemNamesOf(pageMerged).size,
-                imageParts.size)
-            return splicePass2IntoPass1(formBase, pageMerged)
+                itemNamesOf(pageBuild.json).size,
+                buildPages.size)
+            // The page layout is the build's DECISION and has to survive the post-processing chain,
+            // which reorders `items` several times - so it is captured here and re-asserted at the
+            // very end of the run (see enforcePageLayout).
+            documentPageLayout.set(
+                desiredPageLayout(
+                    existingPageItems.map { it.first },
+                    pageBuild.pageOrder,
+                    pageBuild.placement,
+                    pageBuild.requestedOrder))
+            logger.info(
+                "[AICodBiAssistant] Document page layout for this build: {}",
+                documentPageLayout.get()?.joinToString(" -> ") ?: "")
+            // The page order is applied to the SPLICED form: only there does the anchor page exist
+            // together with its own children, so the document's pages can be put behind it.
+            return placeDocumentPages(
+                splicePass2IntoPass1(formBase, pageBuild.json),
+                pageBuild.pageOrder,
+                pageBuild.placement,
+                existingPageItems.map { it.first }.toSet())
           }
           logger.warn(
               "[AICodBiAssistant] Per-page document build produced nothing usable - falling back to the single-shot pass-2")
@@ -6901,7 +7057,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val pass2UserContent =
-            "Original user request: $prompt$foreignCopyContext$clarificationLine2$buildImageHint\n\n" +
+            "Original user request: $prompt$foreignCopyContext$clarificationLine2$buildImageHint$documentTextBlock\n\n" +
                 "Complete current form (IPersistJson):\n$pass2FormDump\n\n" +
                 pass2SlicingNote +
                 (if (candidateClause.isNotBlank())
@@ -7333,7 +7489,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "full items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val finalUserContent =
-            "Original user request: $prompt$foreignCopyContext$buildImageHint\n\n" +
+            "Original user request: $prompt$foreignCopyContext$buildImageHint$documentTextBlock\n\n" +
                 "Complete current form (IPersistJson):\n$finalFormDump\n\n" +
                 finalSlicingNote +
                 // The previous rerun requested details and then re-requested the SAME set (a
@@ -7744,15 +7900,15 @@ class AICodBiAssistant : IPluginServletAction {
       // FULL, so a class the model set in pass-1 is overwritten by pass-2's version. The net only
       // mirrors the datatype the MODEL chose (never a name/label wording — see
       // [applyPeopleClassesToForm]) and is skipped when the request explicitly asks for Cleave
-      // formatting. There is deliberately NO deterministic net for the OpenPLZ.AC.SET address
-      // classes, and none for "is this a checkbox or an upload": whether a field IS a postal code /
-      // locality / street / building number, and whether a line asks for a DECISION or for a
-      // DOCUMENT, are semantic decisions in the user's language. A name/label/group heuristic
-      // cannot make them across languages (a "Wort in Grossbuchstaben" field contains "ort" too,
-      // and "hand in the annexes" exists in unbounded phrasings), so those decisions belong to the
-      // model and are carried by the prompts - see codbi-general.md,
-      // codbi-form-task-instruction.md, codbi-form-structure-rules.md, codbi-document-parsing.md
-      // and codbi-core-elements-compact.md.
+      // formatting. Whether a field IS a postal code / locality / street / building number, and
+      // whether a line asks for a DECISION or for a DOCUMENT, are semantic decisions in the user's
+      // language - a name/label heuristic cannot make them across languages (a "Wort in
+      // Grossbuchstaben" field contains "ort" too), so recognising an address part and grouping its
+      // four fields is the MODEL's decision, carried by the prompts (codbi-general.md,
+      // codbi-form-task-instruction.md, codbi-form-structure-rules.md, codbi-document-parsing.md,
+      // codbi-core-elements-compact.md). There is deliberately NO deterministic net for the OpenPLZ
+      // address classes: a positional guess mislabels a name next to a postal code, and the cost of
+      // one wrong autocomplete group is higher than a missing class the model can be taught to set.
       val peopleForm = applyPeopleClassesToForm(dedupedForm, prompt, useCodbi)
       // Financial standard classes (CodBi_Currency) on the FINISHED form: same re-emission problem
       // and same datatype-driven safety net as the People one, so a money/currency field the model
@@ -9272,18 +9428,33 @@ class AICodBiAssistant : IPluginServletAction {
       instance: Standard,
       modelId: String,
       systemPrompt: String,
-      pageImages: List<String>,
+      pages: List<DocumentPageInput>,
       prompt: String,
       useCodbi: Boolean,
+      existingPages: List<Pair<String, String>> = emptyList(),
       onPageUsage:
           (pageNo: Int, usage: Standard.AssistUsage?, messagesJson: String, raw: String) -> Unit
-  ): String? {
-    val total = pageImages.size
+  ): DocumentPageBuild? {
+    val total = pages.size
     var merged: String? = null
     var pagesBuilt = 0
+    // The page item each PDF page ended up in, in PDF order. Used at the end to put the pages in
+    // the
+    // document's order, independently of where the model happened to emit them.
+    val pageOrder = mutableListOf<String>()
+    // Where the model decided the document's pages belong ("beforeAll" / "afterAll" /
+    // "replacePage:<name>"), read from page 1's `_documentPagePlacement` marker.
+    var placement: String? = null
+    // The page order the model READ OUT OF THE REQUEST ("the notes must stay the first page", in
+    // any
+    // language), from page 1's optional `_pageOrder` marker.
+    var requestedPageOrder: List<String> = emptyList()
     for (index in 0 until total) {
       val pageNo = index + 1
-      val pageItem = "p$pageNo"
+      // The page NAME is dictated by the server, never invented by the model: the page order is
+      // enforced structurally after the merge, so a page under an unexpected name would break it.
+      // `pdfP<n>` also keeps the document's pages apart from the `p1` page of an EMPTY form.
+      val pageItem = if (pageNo == 1 && existingPages.isEmpty()) "p1" else "pdfP$pageNo"
       // NAVIGATION between the pages this build produces. Each page is built in its own inference,
       // so
       // the model cannot see the other pages and must be told which navigation elements THIS page
@@ -9291,6 +9462,18 @@ class AICodBiAssistant : IPluginServletAction {
       // concrete target, so no page name is ever written and renaming stays safe. The LABELS are
       // the
       // words the document's own language uses; they are never translated into a fixed wording.
+      // NAMES ALREADY IN USE. Every page is a SEPARATE inference, so a later page cannot know that
+      // an
+      // earlier one already created `tfStrasse` - and a duplicated element name is DROPPED by the
+      // sanitizer, which silently lost a whole address pair in a real run (present on the page that
+      // was built later, gone on the page built first). Hand the model the accumulated names.
+      val usedNames = merged?.let { itemNamesOf(it) }.orEmpty()
+      val usedNamesRule =
+          if (usedNames.isEmpty()) ""
+          else
+              "(5) UNIQUE NAMES: these element names ALREADY EXIST in this form - " +
+                  usedNames.joinToString(", ") +
+                  ". Every element you create MUST carry a name that is NOT in that list (give it this page's own suffix, e.g. the page number). A duplicated name makes the server drop the element and its fields vanish from the form.\n"
       val navigationRule =
           if (total <= 1) ""
           else
@@ -9305,57 +9488,200 @@ class AICodBiAssistant : IPluginServletAction {
                   "- NEVER write a page NAME into action.page (use the logical keyword) and never leave it empty. List each of these button lists in this page's \"elements\" array at the position it belongs (start / end).\n"
       val pageInstruction =
           "Instruction: $prompt\n\n" +
-              "ATTACHED DOCUMENT - THE ATTACHED IMAGE IS EXACTLY PAGE $pageNo OF $total.\n" +
+              (if (pages[index].image != null)
+                  "ATTACHED DOCUMENT - THE ATTACHED IMAGE IS EXACTLY PAGE $pageNo OF $total.\n"
+              else "ATTACHED DOCUMENT - THE TEXT BELOW IS EXACTLY PAGE $pageNo OF $total.\n") +
+              (pages[index].text?.let { "\nPAGE TEXT (verbatim):\n$it\n" } ?: "") +
               "Transcribe THIS PAGE ONLY, top to bottom, in the exact order it is printed.\n" +
               (if (pageNo == 1)
-                  "Use the EXISTING page item 'p1' for this page and give it this page's complete \"elements\" array.\n"
+                  if (existingPages.isEmpty())
+                      "Use the EXISTING page item 'p1' for this page and give it this page's complete \"elements\" array.\n"
+                  else
+                      "The form ALREADY has these page items: " +
+                          existingPages.joinToString(", ") { (n, id) ->
+                            "'" + n + "'" + (if (id.isBlank()) "" else " (id '" + id + "')")
+                          } +
+                          ".\n" +
+                          "Decide from the REQUEST where this document's pages belong, and SAY SO in a TOP-LEVEL key \"_documentPagePlacement\" NEXT TO \"_diff\" (never inside an item):\n" +
+                          "- the request says the document's FIRST page is shown on one of those pages - even when it words it softly (\"can be\", \"may be\", \"should be\", \"kann\", \"soll\", \"könnte\") -> put this page's complete \"elements\" array into exactly that page: re-emit that page item as a PATCH carrying its EXACT existing name AND id, and set \"_documentPagePlacement\":\"replacePage:<that page's EXACT name>\". This case ALWAYS wins over the two below whenever the request mentions one of those pages.\n" +
+                          "- the request says the document's pages go BEFORE every existing page -> create ONE NEW page item named 'pdfP1' and set \"_documentPagePlacement\":\"beforeAll\".\n" +
+                          "- the request says they go AFTER every existing page, OR says nothing about where they belong -> do NOT touch any existing page: create ONE NEW page item named 'pdfP1' and set \"_documentPagePlacement\":\"afterAll\".\n" +
+                          "IF THE REQUEST ALSO SAYS WHERE A PAGE BELONGS IN THE FINISHED FORM - \"the notes must be the first page\", \"put the confirmation last\", \"the summary belongs after the data\", \"x is page 2\" - in whatever words and in ANY language, then ALSO write the COMPLETE page order of the finished form into a TOP-LEVEL \"_pageOrder\" array next to \"_diff\": every page in the order the finished form must SHOW it, the existing pages by their EXACT names above and the document's own pages by the names this build gives them (the existing page you designated for the document's FIRST page, then 'pdfP2' … 'pdfP$total'; or 'pdfP1' … 'pdfP$total' when you create them). YOUR READING OF THE REQUEST decides that order - never the order the pages happen to have above, and never the order of the document. It must AGREE with your \"_documentPagePlacement\". When the request says nothing about the page order, omit \"_pageOrder\" entirely and the form keeps its current order.\n" +
+                          "Never invent an id, never create a second page for the document's first page, and never empty or delete a page that already exists.\n"
               else
-                  "Create ONE NEW page item named '$pageItem' (className XPage) for this page and give it this page's complete \"elements\" array.\n") +
+                  "Create ONE NEW page item named '$pageItem' (className XPage) for this page and give it this page's complete \"elements\" array. The server places it DIRECTLY AFTER the page that carries the document's first page.\n") +
               // The rules are a NUMBERED CHECKLIST, each one its own line: as a single run-on
               // sentence the model reliably dropped the tail of it (observed losses: the whole
               // address pair of section A, and the upload conversion of the annex lines).
               "RULES FOR THIS PAGE - apply ALL of them, they are not alternatives:\n" +
               "(1) ONLY THIS PAGE: create only elements that are visible on THIS image, never elements of another page.\n" +
-              "(2) COMPLETE, THEN SPLIT: EVERY printed entry on this page must end up in the form - count the printed boxes/values on the page and make sure you created an element for each; a skipped entry is a FAIL. When ONE printed box carries two independently meaningful values, emit TWO elements - one per value - never one element for the combination: a box printed as street + building number becomes one field for the street and one for the building number, and a box printed as postal code + locality becomes one for the postal code and one for the locality. Give the pair the SAME rowid so it still reads as one line." +
+              "(2) COMPLETE, THEN SPLIT: EVERY printed entry on this page must end up in the form - count the printed boxes/values on the page and make sure you created an element for each; a skipped entry is a FAIL. When ONE printed box carries two independently meaningful values, emit TWO elements - one per value - never one element for the combination: a box printed as street + building number becomes one field for the street and one for the building number, and a box printed as postal code + locality becomes one for the postal code and one for the locality. Give each such pair the SAME rowid so it still reads as one line. The SAME applies when ONE printed label names a whole GROUP of values the applicant fills in separately - then emit one element per COMPONENT, never one free-text field for the group: a box printed only as a person's full name becomes one field per name part, and a box printed only as an address becomes one field each for the street, the building number, the postal code and the locality (laid out as the two pairs above)." +
               (if (useCodbi)
                   " With the CodBi switch on, each of those part-fields carries its own OpenPLZ standard class (postal code, locality, street, building number)."
               else "") +
-              "\n(3) DECISION vs ARTEFACT: for every tick/checkbox line decide whether it asks the applicant to DECIDE something or to HAND OVER a document (a photo, image, scan, copy, certificate, proof, plan, or any other file). DECISION -> XCheckbox. ARTEFACT -> XUpload whose label is that whole line (never a checkbox, and never an extra text element beside it). When the line asks for MORE THAN ONE file, apply the multiple-upload functionality on that ONE upload AND set its maximum (data-cb-Maximum): a count you choose yourself is correct, omitting the functionality is not.\n" +
+              "\n(3) DECISION vs ARTEFACT: for every tick/checkbox line decide whether it asks the applicant to DECIDE something or to HAND OVER a document (a photo, image, scan, copy, certificate, proof, plan, or any other file). DECISION -> XCheckbox. ARTEFACT -> XUpload whose label is that whole line (never a checkbox, and never an extra text element beside it).\n" +
+              "(3b) SEVERAL FILES = THE MULTIPLE-UPLOAD FUNCTIONALITY, WIRED COMPLETELY: when such a line asks for MORE THAN ONE file, that ONE XUpload must carry all three parts - (i) in its \"attributes\" array {\"text\":\"data-cb-func\",\"value\":\"Media.MultipleUpload\"}, (ii) in the same array {\"text\":\"data-cb-Maximum\",\"value\":\"<N>\"}, and (iii) the DIRECT property \"uploadMultiple\":\"1\". Choose N yourself when the line states no number. An upload that should take several files but carries no Media.MultipleUpload wiring is a FAIL, and so is dropping the functionality to avoid choosing N.\n" +
               "(4) ORDER AND OWNERSHIP: list every element you create in the page's \"elements\" array in document order and set its parentid.\n" +
+              usedNamesRule +
               navigationRule +
+              // Every CodBi detail this page can need is ALREADY in the system prompt (the full
+              // apply prompt with the requested standard configurations and widgets). Saying so
+              // here stops the most expensive failure mode of the per-page build: the model
+              // answers a page with a `need_codbi_details` request, which the caller used to treat
+              // as "no page" and silently dropped that whole printed page.
+              "EVERY CodBi detail this page can need is ALREADY in your system prompt (the requested standard configurations and widgets are included) - NEVER answer with a request for more details.\n" +
               "ANSWER NOW with the diff JSON only: a top-level \"_diff\": true marker and an \"items\" array holding the page item plus this page's elements. " +
               "Do NOT analyse or plan in prose and do NOT explain anything. Emit the JSON COMPACTLY."
-      val messages = buildString {
-        append("[")
-        append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
-        append(
-            """{"role":"user","content":${buildUserContent(pageInstruction, listOf(pageImages[index]))}}""")
-        append("]")
-      }
-      val raw = instance.performFormAssist(modelId, messages, buildPass = true)
-      val usage = instance.takeLastAssistUsage()
-      // The token bookkeeping of THIS run lives in the caller's scope, so it is reported there.
-      onPageUsage(pageNo, usage, messages, raw)
-      val text = chatCompletionContentOrNull(stripThinkTags(raw)) ?: stripThinkTags(raw)
-      var pageJson = repairAiJson(extractJson(text))
-      if (!isJsonObjectOrArray(pageJson)) {
-        val salvaged = salvageTruncatedItems(text)
-        if (salvaged != null) {
-          logger.warn(
-              "[AICodBiAssistant] Per-page build page {}/{} was truncated - salvaged {} complete item(s)",
-              pageNo,
-              total,
-              itemNamesOf(salvaged).size)
-          pageJson = salvaged
+      // ONE RETRY per page. A page answer can come back as a `need_codbi_details` request (the
+      // apply
+      // system prompt invites it) or as prose, and the old code SKIPPED the page in both cases -
+      // which silently lost a whole printed page (observed: "only the first page of the PDF was
+      // generated"). The retry does not simply repeat the call: it states the reason, so the model
+      // either learns that it already HAS the details or that its prose was unusable.
+      var pageJson: String? = null
+      var retryNote = ""
+      for (attempt in 0..1) {
+        val pageMessages = buildString {
+          append("[")
+          append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+          append(
+              """{"role":"user","content":${buildUserContent(pageInstruction + retryNote, listOfNotNull(pages[index].image))}}""")
+          append("]")
         }
-      }
-      if (!isJsonObjectOrArray(pageJson) || extractCodbiDetailsRequest(pageJson) != null) {
+        val pageRaw = instance.performFormAssist(modelId, pageMessages, buildPass = true)
+        val pageUsage = instance.takeLastAssistUsage()
+        // The token bookkeeping of THIS run lives in the caller's scope, so it is reported there.
+        onPageUsage(pageNo, pageUsage, pageMessages, pageRaw)
+        val pageText =
+            chatCompletionContentOrNull(stripThinkTags(pageRaw)) ?: stripThinkTags(pageRaw)
+        var candidate = repairAiJson(extractJson(pageText))
+        if (!isJsonObjectOrArray(candidate)) {
+          val salvaged = salvageTruncatedItems(pageText)
+          if (salvaged != null) {
+            logger.warn(
+                "[AICodBiAssistant] Per-page build page {}/{} was truncated - salvaged {} complete item(s)",
+                pageNo,
+                total,
+                itemNamesOf(salvaged).size)
+            candidate = salvaged
+          }
+        }
+        val detailsRequest = extractCodbiDetailsRequest(candidate)
+        if (isJsonObjectOrArray(candidate) && detailsRequest == null) {
+          pageJson = candidate
+          break
+        }
+        val requestedDetail =
+            (detailsRequest?.elements.orEmpty() + detailsRequest?.widgets.orEmpty())
         logger.warn(
-            "[AICodBiAssistant] Per-page build page {}/{} produced no usable form JSON ({} chars) - skipping this page",
+            "[AICodBiAssistant] Per-page build page {}/{} attempt {} produced no usable form JSON " +
+                "({} chars{}){}",
             pageNo,
             total,
-            pageJson.length)
+            attempt + 1,
+            candidate.length,
+            if (detailsRequest != null)
+                ", asked for CodBi details that this run already delivered" +
+                    requestedDetail
+                        .takeIf { it.isNotEmpty() }
+                        ?.joinToString(", ", " (", ")")
+                        .orEmpty()
+            else "",
+            if (attempt == 0) " - retrying this page once" else "")
+        retryNote =
+            if (detailsRequest != null)
+                "\n\nTHE CODBI DETAILS YOU JUST ASKED FOR ARE ALREADY IN YOUR SYSTEM PROMPT - they were " +
+                    "sent with this very request" +
+                    requestedDetail
+                        .takeIf { it.isNotEmpty() }
+                        ?.joinToString(", ", " (", ")")
+                        .orEmpty() +
+                    ". Do NOT ask for them again. Build THIS page now with exactly those structures: " +
+                    "answer with the diff JSON only - a top-level \"_diff\": true marker and an " +
+                    "\"items\" array holding the page item plus this page's elements.\n"
+            else
+                "\n\nYOUR PREVIOUS ANSWER WAS NOT USABLE. Answer with the diff JSON ONLY: a top-level " +
+                    "\"_diff\": true marker and an \"items\" array holding the page item plus this page's " +
+                    "elements. No prose, no reasoning, no markdown, no explanation, no plan.\n"
+      }
+      if (pageJson == null) {
+        logger.warn(
+            "[AICodBiAssistant] Per-page build page {}/{} produced nothing usable even after a retry - " +
+                "this page is MISSING from the generated form",
+            pageNo,
+            total)
         continue
+      }
+      // Page 1 decides (semantically, from the request) where the document's pages go. The marker
+      // is
+      // read AND removed here so it can never be spliced into the form.
+      // WHICH PAGE THIS PDF PAGE WENT INTO IS KNOWN - it is never inferred from the answer. The
+      // existing pages are named (with their id) in the prompt, so the model can designate one, but
+      // the two are then joined STRUCTURALLY: whether the answer patched that page, created a page
+      // of its own, or emitted only the elements, the content ends up INSIDE the designated page.
+      // That is what keeps a page-1 answer from being orphaned onto some other page (observed: the
+      // whole first section was auto-attached to the LAST page).
+      // The model's own PAGE ORDER, when the request's intent stated one. Read on every page (so a
+      // stray marker can never reach the form) and kept from page 1, which is the inference that
+      // sees
+      // the whole request together with the existing pages.
+      val (askedOrder, withoutPageOrder) = takeDocumentPageOrder(pageJson)
+      pageJson = withoutPageOrder
+      if (askedOrder.isNotEmpty() && pageNo == 1) {
+        requestedPageOrder = askedOrder
+        logger.info(
+            "[AICodBiAssistant] Document page order decided by the model: {}",
+            askedOrder.joinToString(" -> "))
+      }
+      if (pageNo == 1) {
+        val (mode, withoutMarker) = takeDocumentPlacement(pageJson)
+        placement = mode
+        pageJson = withoutMarker
+        if (mode != null) {
+          logger.info("[AICodBiAssistant] Document page placement decided by the model: {}", mode)
+        }
+        val existingByName = existingPages.associate { it.first to it.second }
+        val anchoredPage =
+            if (existingByName.isEmpty()) null
+            else
+                mode
+                    ?.trim()
+                    ?.takeIf { it.lowercase().startsWith("replacepage:") }
+                    ?.substringAfter(':')
+                    ?.trim()
+                    ?.takeIf { it in existingByName }
+        if (anchoredPage != null) {
+          pageJson =
+              adoptIntoExistingPage(
+                  pageJson,
+                  anchoredPage,
+                  existingByName[anchoredPage].orEmpty(),
+                  existingByName.keys)
+          placement = "replacePage:$anchoredPage"
+          pageOrder.add(anchoredPage)
+          logger.info(
+              "[AICodBiAssistant] Per-page build - the document's page 1 goes into the existing page '{}'",
+              anchoredPage)
+        } else {
+          // No usable placement (blank form, or the request said nothing about where the pages
+          // belong): the page this build created keeps its DICTATED name so the page order can
+          // still
+          // be enforced, and no existing page is touched. A replacePage marker that named a page
+          // the
+          // form does not have is a hallucination and is dropped with it.
+          // No page was designated, so the document's first page must be a NEW page: an answer page
+          // that happens to carry an existing page's name is renamed, never merged onto that page
+          // (an existing page is only ever touched through the `replacePage` designation above).
+          pageJson = forceCreatedPageName(pageJson, pageItem, emptySet())
+          val normalizedMode = mode?.trim()?.lowercase().orEmpty()
+          if (normalizedMode != "beforeall" && normalizedMode != "afterall") placement = null
+          pageOrder.add(pageItem)
+        }
+      } else {
+        // The page name is DICTATED, so a deviating name is corrected before the splice - otherwise
+        // the structural page-order step would look for a page that does not exist.
+        pageJson = forceCreatedPageName(pageJson, pageItem, emptySet())
+        pageOrder.add(pageItem)
       }
       val current = merged
       merged = if (current == null) pageJson else splicePass2IntoPass1(current, pageJson)
@@ -9372,7 +9698,501 @@ class AICodBiAssistant : IPluginServletAction {
         pagesBuilt,
         total,
         merged?.let { itemNamesOf(it).size } ?: 0)
-    return if (pagesBuilt > 0) merged else null
+    val result = if (pagesBuilt > 0) merged else null
+    if (result == null) return null
+    logger.info(
+        "[AICodBiAssistant] Per-page build - pages [{}] placed as '{}' (document order kept inside the group)",
+        pageOrder.joinToString(" -> "),
+        placement ?: "in place")
+    // The page order is NOT applied here: the pages are spliced onto the existing form first, and
+    // only there does the anchor page (with its own subtree) exist as a real item to move them
+    // behind. Applying it to this fragment alone moved the pages behind a page that the splice then
+    // re-appended at the END of the form.
+    return DocumentPageBuild(result, pageOrder, placement, requestedPageOrder)
+  }
+
+  /**
+   * ONE page of an attachment, in document order: a raster page (sent to the vision model), the
+   * page's EXTRACTED TEXT (a Word/Excel/HTML/CSV page or a PDF page with a text layer - cheaper and
+   * exact), or both.
+   */
+  private data class DocumentPageInput(val image: String?, val text: String?)
+
+  /**
+   * The result of the per-page document build: the merged pages, the page names in document order,
+   * the placement the model decided on page 1 and - when the request's intent stated one - the page
+   * order the model read out of it.
+   */
+  private data class DocumentPageBuild(
+      val json: String,
+      val pageOrder: List<String>,
+      val placement: String?,
+      val requestedOrder: List<String>
+  )
+
+  /** Names of the XPage items an answer carries, in answer order. */
+  private fun pageNamesInAnswer(json: String): List<String> {
+    return try {
+      val root = JsonParser.parseString(json).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return emptyList()
+      items.mapNotNull { el ->
+        val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+        if (o.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XPage")
+            return@mapNotNull null
+        o.getAsJsonObject("properties")
+            ?.get("name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  /**
+   * True when the answer already patches the existing page [pageName] (or the page carrying
+   * [pageId]), i.e. it re-emitted that page as a page item - the shape the model is asked for.
+   */
+  private fun answerPatchesPage(json: String, pageName: String, pageId: String): Boolean {
+    return try {
+      val root = JsonParser.parseString(json).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return false
+      items.any { el ->
+        val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@any false
+        if (o.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XPage") return@any false
+        val props = o.getAsJsonObject("properties") ?: return@any false
+        val id = props.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+        val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+        (pageId.isNotBlank() && id == pageId) || name == pageName
+      }
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
+   * Puts page 1's content onto the EXISTING page [pageName]/[pageId] the model designated.
+   *
+   * The model can express that in three ways and all of them end in the same structural page patch,
+   * so the splice merges the content INTO that page:
+   * - it already re-emitted the page as a patch (name or id match) - the answer is left untouched;
+   * - it created a page of its own under a different name - that page is renamed to the designated
+   *   name (and id), so the patch lands on the existing page;
+   * - it emitted only the elements, without any page item - they are wrapped into a page patch.
+   *
+   * Nothing is ever deleted and nothing is guessed: when the answer carries several pages and none
+   * is the designated one, the answer is returned unchanged.
+   */
+  private fun adoptIntoExistingPage(
+      json: String,
+      pageName: String,
+      pageId: String,
+      existing: Set<String>
+  ): String {
+    if (answerPatchesPage(json, pageName, pageId)) return json
+    val pages = pageNamesInAnswer(json)
+    if (pages.isEmpty()) return wrapInNewPage(json, pageName, pageId)
+    val created = pages.filter { it !in existing }
+    if (created.size == 1) return renamePage(json, created.first(), pageName, pageId)
+    logger.warn(
+        "[AICodBiAssistant] Per-page build - the page-1 answer carries {} page item(s) but none is the designated page '{}' - left as it is",
+        pages.size,
+        pageName)
+    return json
+  }
+
+  /**
+   * Makes sure the page this answer created carries the DICTATED name [wanted].
+   * - the answer already has a page called [wanted] - unchanged;
+   * - it created exactly one page under another name - that page is renamed (children included);
+   * - it carries no page item at all - its elements are wrapped into a page called [wanted] (which
+   *   is what prevents them from being orphaned onto whatever page happens to be last).
+   *
+   * Anything ambiguous is left untouched.
+   */
+  private fun forceCreatedPageName(json: String, wanted: String, existing: Set<String>): String {
+    val pages = pageNamesInAnswer(json)
+    if (pages.isEmpty()) return wrapInNewPage(json, wanted, "")
+    if (wanted in pages) return json
+    val created = pages.filter { it !in existing }
+    if (created.size != 1) return json
+    return renamePage(json, created.first(), wanted, "")
+  }
+
+  /**
+   * Renames the page item [from] to [to] (and [toId], when given) and re-points the `parentid` of
+   * the items that named it. The page NAME is a server-side decision, because the page order is
+   * enforced structurally on it.
+   */
+  private fun renamePage(json: String, from: String, to: String, toId: String): String =
+      try {
+        val root = JsonParser.parseString(json).asJsonObject
+        val items = root.getAsJsonArray("items") ?: return json
+        for (el in items) {
+          val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+          val props = o.getAsJsonObject("properties") ?: continue
+          val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+          val isPage = o.get("className")?.takeIf { it.isJsonPrimitive }?.asString == "XPage"
+          if (isPage && name == from) {
+            props.addProperty("name", to)
+            if (toId.isNotBlank()) props.addProperty("id", toId)
+          }
+          // Children are recognised by THEIR parent reference, not by their own name - a child that
+          // still points at the old page name would otherwise be orphaned by the parent.
+          val parentId = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+          if (parentId == from) props.addProperty("parentid", to)
+        }
+        logger.info(
+            "[AICodBiAssistant] Per-page build - page '{}' renamed to '{}' (page names are dictated by the server)",
+            from,
+            to)
+        root.toString()
+      } catch (e: Exception) {
+        logger.warn("[AICodBiAssistant] renamePage failed: {}", e.message)
+        json
+      }
+
+  /**
+   * Wraps the items of an answer that carried NO page item into a page called [pageName] (with
+   * [pageId], when given), so they keep their page instead of being orphaned.
+   */
+  private fun wrapInNewPage(json: String, pageName: String, pageId: String): String {
+    return try {
+      val root = JsonParser.parseString(json).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return json
+      val childNames =
+          items.mapNotNull { el ->
+            val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+            o.getAsJsonObject("properties")
+                ?.get("name")
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString
+                ?.takeIf { it.isNotBlank() }
+          }
+      if (childNames.isEmpty()) return json
+      val pageProps = JsonObject()
+      pageProps.addProperty("name", pageName)
+      if (pageId.isNotBlank()) pageProps.addProperty("id", pageId)
+      val elements = JsonArray()
+      childNames.forEach { elements.add(it) }
+      pageProps.add("elements", elements)
+      val pageItem = JsonObject()
+      pageItem.addProperty("className", "XPage")
+      pageItem.add("properties", pageProps)
+      val elementNames = childNames.toSet()
+      val out = JsonArray()
+      out.add(pageItem)
+      for (el in items) {
+        val props = el.takeIf { it.isJsonObject }?.asJsonObject?.getAsJsonObject("properties")
+        // Only the TOP-level elements of the answer are owned by the page that was just created for
+        // them; an element that already names a container of this answer keeps that container as
+        // its
+        // parent, so nothing is flattened.
+        val parentId = props?.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+        if (props != null && (parentId.isNullOrBlank() || parentId !in elementNames)) {
+          props.addProperty("parentid", pageName)
+        }
+        out.add(el)
+      }
+      root.add("items", out)
+      root.addProperty("_diff", true)
+      logger.warn(
+          "[AICodBiAssistant] Per-page build - the answer carried no page item, its {} element(s) were put on the page '{}'",
+          childNames.size,
+          pageName)
+      root.toString()
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] wrapInNewPage failed: {}", e.message)
+      json
+    }
+  }
+
+  /**
+   * Reads AND REMOVES the `_documentPagePlacement` marker a page-1 answer may carry, so it can
+   * never be spliced into the form.
+   *
+   * @return the mode (`beforeAll` / `afterAll` / `replacePage:<name>`) and the JSON without the
+   *   key.
+   */
+  private fun takeDocumentPlacement(json: String): Pair<String?, String> =
+      try {
+        val root = JsonParser.parseString(json).asJsonObject
+        val raw = root.remove("_documentPagePlacement")?.takeIf { it.isJsonPrimitive }?.asString
+        val mode = raw?.trim()?.takeIf { it.isNotEmpty() }
+        mode to (if (raw == null) json else root.toString())
+      } catch (_: Exception) {
+        null to json
+      }
+
+  /**
+   * Puts the pages built from the document where the MODEL decided they belong (the placement is a
+   * semantic decision taken from the request on page 1), while keeping the document's own page
+   * order inside the group - which is what a per-page build cannot leave to chance.
+   *
+   * This runs on the SPLICED form (the document pages are already merged into the existing one), so
+   * the anchor page exists there together with its own children:
+   * - `replacePage:<name>` - the document's first page WAS that existing page, so the remaining
+   *   document pages follow it (the replaced page itself never moves).
+   * - `beforeAll` - the document pages go in front of the first existing page.
+   * - `afterAll` - they go behind the last existing page.
+   * - no marker - the pages follow the page this build created.
+   *
+   * No-op on any unexpected payload.
+   */
+  /**
+   * The page layout a from-document build DECIDED: the form's OWN pages in their original relative
+   * order, with the document's pages placed where the model's `_documentPagePlacement` decision put
+   * them.
+   *
+   * This is captured as a plain list of page names because the layout has to survive the WHOLE post
+   * processing chain: several later steps reorder `items` (header to the front, pages in front of
+   * the footer, tree order, the orphan repair) and one of them silently undid the decision
+   * (observed: the form's own first page ended up behind the document page it was supposed to
+   * precede).
+   */
+  private fun desiredPageLayout(
+      existing: List<String>,
+      pageOrder: List<String>,
+      placement: String?,
+      requested: List<String> = emptyList()
+  ): List<String> {
+    val pre = existing.filter { it.isNotBlank() }.distinct()
+    val docPages = pageOrder.filter { it.isNotBlank() && it !in pre }.distinct()
+    val normalized = placement?.trim()?.lowercase().orEmpty()
+    val anchor =
+        if (normalized.startsWith("replacepage:"))
+            placement!!.substringAfter(':').trim().takeIf { it in pre }
+        else null
+    // The model's OWN reading of the request wins whenever it stated one: it is the only place the
+    // intent (in whatever language) was understood. The server only places the pages it named into
+    // that order; pages it did not mention follow, so nothing is ever dropped.
+    val byModel = requested.filter { it.isNotBlank() }.distinct()
+    if (byModel.isNotEmpty()) {
+      val missingDocPages = docPages.filter { it !in byModel }
+      val ordered =
+          when {
+            missingDocPages.isEmpty() -> byModel
+            anchor != null && anchor in byModel ->
+                byModel.flatMap { if (it == anchor) listOf(it) + missingDocPages else listOf(it) }
+            else -> byModel + missingDocPages
+          }
+      return ordered + (pre + docPages).filter { it !in ordered }
+    }
+    if (docPages.isEmpty()) return pre
+    return when {
+      anchor != null -> pre.flatMap { if (it == anchor) listOf(it) + docPages else listOf(it) }
+      normalized == "beforeall" -> docPages + pre
+      else -> pre + docPages
+    }
+  }
+
+  /**
+   * Reads AND REMOVES the `_pageOrder` marker a page-1 answer may carry: the page names in the
+   * order the request's intent wants them.
+   */
+  private fun takeDocumentPageOrder(json: String): Pair<List<String>, String> =
+      try {
+        val root = JsonParser.parseString(json).asJsonObject
+        val array = root.remove("_pageOrder")?.takeIf { it.isJsonArray }?.asJsonArray
+        val order =
+            array
+                ?.mapNotNull { el -> el.takeIf { it.isJsonPrimitive }?.asString?.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+        order to (if (array == null) json else root.toString())
+      } catch (_: Exception) {
+        emptyList<String>() to json
+      }
+
+  /** The page layout of the running from-document build (see [desiredPageLayout]). */
+  private val documentPageLayout = ThreadLocal<List<String>?>()
+
+  /**
+   * Re-asserts the page order of a from-document build: the XPage items are put back into the
+   * captured layout, so no later normalization can leave the form's own pages behind the document's
+   * pages (or vice versa). Only the XPage items are permuted - every other item keeps its slot, and
+   * the children follow their page through `parentid`/`elements`.
+   *
+   * @return true when the `items` array changed.
+   */
+  private fun enforcePageLayout(root: JsonObject): Boolean {
+    val layout = documentPageLayout.get()
+    documentPageLayout.remove()
+    if (layout.isNullOrEmpty()) return false
+    val items = root.getAsJsonArray("items") ?: return false
+    fun nameOf(el: com.google.gson.JsonElement): String? =
+        el.takeIf { it.isJsonObject }
+            ?.asJsonObject
+            ?.getAsJsonObject("properties")
+            ?.get("name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+    val slots = mutableListOf<Int>()
+    val pageByName = mutableMapOf<String, JsonObject>()
+    for (i in 0 until items.size()) {
+      val el = items[i]
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XPage")
+          continue
+      val name = nameOf(el) ?: continue
+      slots.add(i)
+      pageByName[name] = el.asJsonObject
+    }
+    if (slots.size < 2) return false
+    val current = slots.mapNotNull { nameOf(items[it]) }
+    val desired = mutableListOf<String>()
+    for (name in layout) if (name in pageByName && name !in desired) desired.add(name)
+    for (name in current) if (name !in desired) desired.add(name)
+    if (desired == current) return false
+    for ((slot, name) in slots.zip(desired)) {
+      pageByName[name]?.let { items.set(slot, it) }
+    }
+    // Regroup the children under their (possibly moved) page so the designer shows them with it.
+    reorderItemsByTreeOrder(root)
+    logger.info(
+        "[AICodBiAssistant] Restored the page order of the document build: {} (was {})",
+        desired.joinToString(" -> "),
+        current.joinToString(" -> "))
+    return true
+  }
+
+  private fun placeDocumentPages(
+      json: String,
+      pageNames: List<String>,
+      mode: String?,
+      keepInPlace: Set<String> = emptySet()
+  ): String {
+    val names = pageNames.filter { it.isNotBlank() }
+    if (names.isEmpty()) return json
+    val normalized = mode?.trim()?.lowercase().orEmpty()
+    val replacedPage =
+        if (normalized.startsWith("replacepage:")) mode!!.substringAfter(':').trim() else null
+    // Only pages this build actually CREATED are moved. A pre-existing page can only appear here as
+    // the `replacePage:<name>` anchor, which never moves - so a placement can never drag an
+    // existing
+    // page across the form. `keepInPlace` (the pages that already existed BEFORE this build) makes
+    // that a hard guarantee: an answer page that happens to carry an existing page's name was
+    // merged
+    // INTO that page by the splice, and moving it would relocate a page the user never asked to
+    // move (observed: the form's first page ended up last).
+    val movedNames =
+        (if (replacedPage != null) names.drop(1) else names).filter {
+          it.isNotBlank() && it !in keepInPlace
+        }
+    if (movedNames.isEmpty()) return json
+    return when {
+      replacedPage != null -> relocatePages(json, movedNames, replacedPage)
+      normalized == "beforeall" -> relocatePages(json, movedNames, null, beforeAll = true)
+      normalized == "afterall" -> relocatePages(json, movedNames, null)
+      // No marker: the pages follow the page this build created. That page is the ANCHOR, so it is
+      // not moved itself (dropping it is what makes the move idempotent and keeps an existing page
+      // untouched).
+      else -> relocatePages(json, names.drop(1), names.first())
+    }
+  }
+
+  /**
+   * Moves the page items named in [pages] inside the flat `items` array - DIRECTLY BEHIND the
+   * SUBTREE of [anchor] when one is given, otherwise in front of the first / behind the last page
+   * item.
+   *
+   * This is what keeps the document's page order when the pages are produced by SEPARATE
+   * inferences: the splice appends a new page at the END of the flat `items` array, which put
+   * "Angaben" (the document's first page, written into an EXISTING page) behind the pages that came
+   * after it. The order is a property of the document, so it is enforced structurally here instead
+   * of being left to the model.
+   *
+   * The insertion point follows the anchor's SUBTREE (its `elements` references, resolved
+   * recursively), so the moved pages never land between a page and its own children. No-op on any
+   * unexpected payload.
+   */
+  private fun relocatePages(
+      json: String,
+      pages: List<String>,
+      anchor: String?,
+      beforeAll: Boolean = false
+  ): String {
+    return try {
+      val root = JsonParser.parseString(json).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return json
+      fun nameOf(el: com.google.gson.JsonElement): String? =
+          el.takeIf { it.isJsonObject }
+              ?.asJsonObject
+              ?.getAsJsonObject("properties")
+              ?.get("name")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+      fun isPage(el: com.google.gson.JsonElement): Boolean =
+          el.takeIf { it.isJsonObject }
+              ?.asJsonObject
+              ?.get("className")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString == "XPage"
+      val wanted = pages.toSet()
+      val moved = pages.mapNotNull { name -> items.firstOrNull { nameOf(it) == name } }
+      if (moved.isEmpty()) return json
+      val remaining = JsonArray()
+      for (el in items) {
+        val n = nameOf(el)
+        if (n != null && n in wanted) continue
+        remaining.add(el)
+      }
+      val childrenByName =
+          remaining
+              .mapNotNull { el ->
+                val n = nameOf(el) ?: return@mapNotNull null
+                val elems =
+                    el.takeIf { it.isJsonObject }
+                        ?.asJsonObject
+                        ?.getAsJsonObject("properties")
+                        ?.getAsJsonArray("elements") ?: JsonArray()
+                n to elems
+              }
+              .toMap()
+      fun subtreeOf(name: String?): Set<String> {
+        if (name.isNullOrBlank()) return emptySet()
+        val out = LinkedHashSet<String>()
+        val stack = mutableListOf(name)
+        while (stack.isNotEmpty()) {
+          val cur = stack.removeAt(stack.size - 1)
+          if (!out.add(cur)) continue
+          childrenByName[cur]?.forEach { ref -> if (ref.isJsonPrimitive) stack.add(ref.asString) }
+        }
+        return out
+      }
+      fun lastIndexOfSubtree(name: String?): Int {
+        val tree = subtreeOf(name)
+        if (tree.isEmpty()) return -1
+        return remaining.indexOfLast { el -> nameOf(el)?.let { it in tree } == true }
+      }
+      val insertAt: Int =
+          when {
+            anchor != null -> {
+              val last = lastIndexOfSubtree(anchor)
+              if (last < 0) return json
+              last + 1
+            }
+            beforeAll -> remaining.indexOfFirst { isPage(it) }.takeIf { it >= 0 } ?: return json
+            else -> {
+              val lastPage = remaining.indexOfLast { isPage(it) }
+              if (lastPage < 0) return json
+              val last = lastIndexOfSubtree(nameOf(remaining[lastPage]))
+              (if (last < 0) lastPage else last) + 1
+            }
+          }
+      val out = JsonArray()
+      remaining.forEachIndexed { idx, el ->
+        if (idx == insertAt) moved.forEach { out.add(it) }
+        out.add(el)
+      }
+      if (insertAt >= remaining.size()) moved.forEach { out.add(it) }
+      root.add("items", out)
+      root.toString()
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] relocatePages failed: {}", e.message)
+      json
+    }
   }
 
   private fun attachedDocumentRules(): String {
@@ -32042,6 +32862,9 @@ When NO configured specialist sensibly matches the user's request:
       useCodbi: Boolean,
       askAllQuestions: Boolean,
       imageParts: List<String>,
+      // What the server already knows about the attached document (page count + delivery form). It
+      // is appended to the clarify user message so the model can never ask for it.
+      documentSummary: String = "",
       completionPages: String? = null,
       formVariables: String? = null,
       workflowMails: String? = null,
@@ -32078,7 +32901,8 @@ When NO configured specialist sensibly matches the user's request:
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(system)}},""")
-      append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}}""")
+      append(
+          """{"role":"user","content":${buildUserContent(prompt + documentSummary, imageParts)}}""")
       append("]")
     }
     val raw = instance.performFormAssist(modelId, messagesJson)

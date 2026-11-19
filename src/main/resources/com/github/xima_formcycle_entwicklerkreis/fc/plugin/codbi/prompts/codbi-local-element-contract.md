@@ -60,12 +60,23 @@ Emit ONLY the keys that apply to the chosen `kind`:
   `supportedFormelementtypes` (**mandatory**, never empty), `Code`, `Usage`
 - `elementPlaceholder` → `Description`, `Summary`, `CondensedPrompt`, `DetailedPrompt`, `Parameter`,
   `Signature`, `Code`
-- `standard` → `Description`, `Summary`, `CondensedPrompt`, `DetailedPrompt`, `classes`, `globals`,
-  `Code` (optional), `Usage`
+- `standard` → `Description`, `Summary`, `CondensedPrompt`, `DetailedPrompt`, `Active` (`true`),
+  `classes` and/or `globals` (a HOLISTIC configuration provides NO classes), `Code` (exactly one
+  `loadConfig({ … })` call), `Usage`, and — only when the request asks for a HOLISTIC / form-wide
+  configuration — `"supportedFormelementtypes":["Holistic"]`
 
 **`Summary` IS AN OBJECT IN THREE LANGUAGES.** The local API-doc manager stores the short description
 per language, so `Summary` must always be `{"en":"…","de":"…","it":"…"}` — one sentence per language,
 actually translated (a plain string, or an English text repeated three times, is rejected).
+
+**THE HUMAN TEXTS FOLLOW THE LANGUAGE OF THE REQUEST — FOR ALL THREE KINDS.** `Description`, every
+`Parameter` description, every `globals` description and every `classes` description are the HUMAN
+documentation of the local API doc: write them in the language of the user's request (a German
+request ⇒ GERMAN `Description` / parameter / global / class texts, an English request ⇒ English
+ones). A `standard` configuration or an `elementPlaceholder` with an English `Description` for a
+German request is a DEFECT — only the `functionality` kind gets this right by accident today.
+**`CondensedPrompt` and `DetailedPrompt` ARE ALWAYS ENGLISH**: they are the machine-facing teaching a
+later AI form run reads, whatever the request language. `Summary` still carries all three languages.
 
 **`"options"` IS OMITTED UNLESS THE TYPE IS `enum`** — never emit an empty `options` array (a live
 run produced `"options":[]"` with a stray quote, which made the WHOLE answer unparsable and the
@@ -119,14 +130,24 @@ THE NAME — READ IT OUT OF THE REQUEST FIRST (any language, any punctuation):
 - AFTER the user has answered (the answers are given to you as "ANSWERS ALREADY GIVEN BY THE USER"),
   the answer IS the name: return the COMPLETE draft with it. NEVER ask the same question a second
   time, and never ask again for anything that was already answered.
+- **ONCE ANSWERS EXIST, `need_clarification` IS FORBIDDEN.** When the user turn contains
+  "ANSWERS ALREADY GIVEN BY THE USER" (or the request says "RETURN THE COMPLETE DRAFT NOW — NO
+  QUESTION IS ALLOWED"), the ONLY valid answer is the complete draft object. A question in that turn
+  is discarded and the run fails as "The Description is missing. The Summary is missing …". If you
+  need the exact parameter names of a functionality or of a local element placeholder, use the
+  details envelope (`codbi_element_need_details`) BEFORE the answers, and afterwards generate the
+  draft — never ask the user for a parameter name you can derive from the reference you were given.
 
 **HARD RULES — a draft that breaks one of them is rejected.**
 
 1. **`Name` is a dotted technical id** — letters, digits and `.` only, at least two segments
-   (`Mein.Rechner`, `Mein.Wetter`, `JOJO.Rechner`). NEVER reuse a BUILT-IN CodBi name listed in your
-   instructions (a built-in id wins at runtime and your definition would be silently discarded).
-   Choose a namespace the request names; when it names none, prefix the suggested name with the
-   form's topic.
+   (`mein.rechner`, `mein.wetter`, `jojo.rechner`). **Write it in LOWERCASE**: the local API-doc manager
+   stores every key lowercased, so a mixed-case name (`Der.Bitcoin`) creates an entry the manager
+   cannot display or delete and a stale `fileListing` row that survives deletion. A name typed with
+   capitals is accepted but stored lowercased (the registration id in `Code` is rewritten accordingly).
+   NEVER reuse a BUILT-IN CodBi name listed in your instructions (a built-in id wins at runtime and
+   your definition would be silently discarded). Choose a namespace the request names; when it names
+   none, prefix the suggested name with the form's topic.
 2. **Write the `Code` as READABLE, multi-line JavaScript** (2-space indentation, one statement per
    line) — never minified into a single line. It is reviewed by a human before it is stored.
    **Keep it COMPACT and COMPLETE** (aim for ≈1500 characters, never more than 4000): build repeated
@@ -173,6 +194,12 @@ THE NAME — READ IT OUT OF THE REQUEST FIRST (any language, any punctuation):
    `Date.Frame`, `HTML.Input.REGEX`, …) or a LOCAL functionality listed under LOCAL CODBI ELEMENTS.
    NEVER invent an id from the configuration's own name (`"Mein.WetterLog.Func"`, `"<Config>.Func"`):
    such an id does not exist at runtime and the configuration does nothing.
+   **NEVER KEY A CONFIGURATION PARAMETER WITH THE ELEMENT'S OWN NAME OR A DOTTED ID.** A
+   `loadConfig({ … })` key is a PARAMETER of the applied functionality — `"Super.Config": "{ der.bitcoin
+   > }"` is not one and is REJECTED. The applied functionality's parameters are the only valid keys
+   (`extravalue`, `layout`, `Data`, `toset`, …); when you do not know them exactly, request them with
+   `{"status":"codbi_element_need_details","ids":["<the functionality you apply>"]}` and NEVER ask the
+   user for a parameter name.
    **THE PARAMETER KEYS ARE THE FUNCTIONALITY'S OWN PARAMETERS**, with the `data-cb-` prefix DROPPED:
    the attribute `data-cb-Data` (Sys.Log.Console) is the key `Data`, `data-cb-replacement` is
    `replacement`, `data-cb-Values` is `Values`, `data-cb-toset` is `toset`, and so on. These
@@ -202,13 +229,61 @@ THE NAME — READ IT OUT OF THE REQUEST FIRST (any language, any punctuation):
    applies to; `FUNC` — the functionality (or comma-separated functionality list) applied to those
    targets; then ONE KEY PER PARAMETER of that functionality, with the value the configuration sets;
    `classes` / `globals` only for a configuration that PROVIDES CSS classes or global variables.
-   **`targets` MUST SELECT THE CONFIGURATION'S OWN MARKER CLASS.** When the configuration provides
-   classes (`classes: { "CodBi_GOOSE_Input": "…" }`), the per-element standard-configuration listing
-   applies exactly that class to the field, so the selector must be that class —
-   `targets: '.CodBi_GOOSE_Input'`, optionally narrowed (`'.CodBi_GOOSE_Input'`) — and NEVER a class the
-   configuration does not provide (`'.Mein_GOOSE'`): nothing would ever set it and the configuration
-   would never fire (reported). When the configuration provides NO class, `targets` is a stable
-   selector of the tagged field's own class and every match is configured.
+   **`targets` HAS TWO SHAPES — pick the one that matches the kind of configuration:**
+
+   **(a) PER-ELEMENT configuration** (it provides marker `classes`). The per-element listing applies
+   exactly those classes, so `targets` MUST be one of them — `targets: '.CodBi_GOOSE_Input'` — and
+   NEVER a class the configuration does not provide (`'.Mein_GOOSE'`): nothing would ever set it and
+   the configuration would never fire (reported).
+   **A MARKER CLASS IS MANDATORY for this flavour**: it is the row the author ticks on an element, and
+   it is what the element panel offers the functionality's parameters for. When the request names no
+   class (the usual case — "create a standard configuration that applies the local calculator"),
+   derive it from the `Name`: `CodBi_` + the name segments, each capitalised
+   (`mein.rechner` → `CodBi_Mein_Rechner`), and use it as `targets: '.CodBi_Mein_Rechner'`. The server
+   adds exactly that class automatically when a draft carries none, so a configuration without a class
+   can no longer be committed.
+
+   **(b) HOLISTIC configuration** (`"supportedFormelementtypes":["Holistic"]`, NO `classes`). It must
+   apply to EXISTING elements the author never tags by hand, so it selects them by their **FORMCYCLE
+   DOM markers** and always carries exclusion guards:
+   ```js
+   window.codbi.loadConfig({
+     targets: '[data-datepicker="1"]:not(.CodBi_XCL):not(.CodBi_XCL_MyDateFeature)',
+     FUNC: "Lokaler.Rechner",
+     extravalue: "{ Der.Bitcoin > EUR }",
+   });
+   ```
+   **VERIFIED MARKERS — language-agnostic, they never depend on labels, translations or locale:**
+
+   | what to target | selector |
+   | :--- | :--- |
+   | every date field | `[data-datepicker="1"]` |
+   | German PLZ (postal code) input | `[data-vdt="plzDE"]` |
+   | phone input | `[data-vdt="phone"]` |
+   | time input | `[data-vdt="time"]` |
+   | **number field** (the one to use for "all number inputs") | `[data-vdt="formattedNumber"]` |
+   | any validated/formatted input | `[data-vdt]` |
+   | native numeric input | `input[type="number"]` |
+   | native text input / multiline | `input[type="text"]`, `textarea` |
+   | containers (fieldsets) | `fieldset` |
+   | upload widgets | `.CXUpload input[type="file"]` |
+   | an element already tagged with CodBi | `[data-cb-func]` |
+
+   Several groups are joined with `~` (CodBi splits `targets` on `~`), e.g.
+   `'[data-vdt="plzDE"]~input[type="number"]'`.
+   To find "all NUMBER input fields" use the FORMCYCLE number marker, NOT a native type guess:
+   `'[data-vdt="formattedNumber"]:not(.CodBi_XCL):not(.CodBi_XCL_MyNumberFeature)'`. A field whose
+   number formatting is configured in FORMCYCLE carries exactly that marker; `input[type="number"]` only
+   matches fields whose HTML type was set to `number` and is therefore the exception, not the rule.
+   **EVERY HOLISTIC `targets` NEEDS BOTH GUARDS**: `:not(.CodBi_XCL)` (CodBi's universal
+   "already processed" marker) and `:not(.CodBi_XCL_<Feature>)` — the configuration's OWN marker class,
+   which you define (e.g. `CodBi_XCL_MyNumberFeature`). **`XCL` stands for eXCLude**: every exclusion
+   marker starts with `CodBi_XCL` (the universal one) resp. `CodBi_XCL_` + the feature name
+   (`CodBi_XCL_Cleave_Date`, `CodBi_XCL_Rechner_Numeric`). Any other class name in a `:not(…)` of a
+   holistic selector is rejected. With the two guards an element can never be configured twice.
+   A selector that is ONLY `.SomeClass` is always WRONG here: nothing sets that class. If the
+   requested element group has no verified marker above, choose the closest verified selector and say
+   in `Notes` which one you used and why — never invent a marker.
    **EVERY GLOBAL VARIABLE NEEDS A DESCRIPTION** — never an empty string: `globals` is the manager's
    `name → description` map, and that description is what a later AI form run (and the editor in the
    local API doc) sees. Give each entry a SHORT sentence saying WHAT the variable holds and WHICH
@@ -255,9 +330,11 @@ THE NAME — READ IT OUT OF THE REQUEST FIRST (any language, any punctuation):
    `const days = parseInt(params[1], 10) || 1;`.
 5. **Never generate a form element.** A local element is a definition, not an instance. The
    `Usage` object only describes how a later form run wires it.
-6. **`CondensedPrompt` and `DetailedPrompt` are MANDATORY** for `functionality` and
-   `elementPlaceholder`: they are what later AI form runs receive. Without both (and without code)
-   the element stays invisible to the AI.
+6. **`CondensedPrompt` and `DetailedPrompt` are MANDATORY for EVERY kind — the `standard` kind
+   included** (a standard configuration is exactly what a later AI form run has to find and
+   activate). They are what later AI form runs receive; without both the element stays invisible to
+   the AI and the draft is rejected. The same applies to `Description` (the long documentation) and
+   to `Summary` in all three manager languages.
 7. **No invented CodBi APIs.** Use only `window.codbi.registerFunctionality`,
    `window.codbi.extendFunctionality`, `window.codbi.registerEP`, `window.codbi.extendEP`,
    `window.codbi.loadConfig`, `window.codbi.resolveEP` and plain DOM/fetch. Anything else does not

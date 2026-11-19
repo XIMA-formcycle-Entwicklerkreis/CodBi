@@ -2863,10 +2863,313 @@ export class AiAssistant implements OnInit, OnDestroy {
   // #endregion Open / close
 
   // #region Attachment
+  /**
+   * What the attachment picker accepts. The BACKEND decides what it can actually read (see
+   * `DocumentIngestion`); this list only spares the user a pointless upload. Word/Excel/PowerPoint
+   * files are ZIP+XML and are converted to text server-side, images and PDFs are rasterised, and an
+   * archive is expanded entry by entry.
+   */
+  private static readonly ATTACHMENT_ACCEPT = [
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".docx",
+    ".odt",
+    ".rtf",
+    ".xlsx",
+    ".ods",
+    ".pptx",
+    ".txt",
+    ".md",
+    ".csv",
+    ".tsv",
+    ".json",
+    ".xml",
+    ".xsd",
+    ".html",
+    ".htm",
+    ".svg",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".tgz",
+    "image/*",
+    "application/pdf",
+  ].join(",");
+
+  /** The MIME types the backend reads directly. An empty/misleading type falls back to the extension. */
+  private static readonly ATTACHMENT_MIME_TYPES = [
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+    "image/x-ms-bmp",
+    "image/tiff",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.oasis.opendocument.text",
+    "application/rtf",
+    "text/rtf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "text/tab-separated-values",
+    "application/json",
+    "application/xml",
+    "text/xml",
+    "text/html",
+    "image/svg+xml",
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-tar",
+    "application/x-gtar",
+  ];
+
+  /** The extensions the backend reads, used when the browser reports no usable MIME type. */
+  private static readonly ATTACHMENT_EXTENSIONS = [
+    "pdf",
+    "png",
+    "jpg",
+    "jpeg",
+    "webp",
+    "gif",
+    "bmp",
+    "tif",
+    "tiff",
+    "docx",
+    "odt",
+    "rtf",
+    "xlsx",
+    "ods",
+    "pptx",
+    "txt",
+    "md",
+    "csv",
+    "tsv",
+    "json",
+    "xml",
+    "xsd",
+    "html",
+    "htm",
+    "svg",
+    "zip",
+    "tar",
+    "gz",
+    "tgz",
+  ];
+
+  /** True when [file] is something the backend can turn into form information. */
+  private static isSupportedAttachment(file: File): boolean {
+    if (AiAssistant.ATTACHMENT_MIME_TYPES.includes(file.type)) return true;
+    const extension = file.name.includes(".") ? file.name.split(".").pop()!.toLowerCase() : "";
+    return AiAssistant.ATTACHMENT_EXTENSIONS.includes(extension);
+  }
+
+  /**
+   * True when the BROWSER can render the document to page images.
+   *
+   * That is PDF (PDF.js, one image per page) and SVG (drawn onto a canvas). Nothing else: a
+   * Word/Excel/ODT/ZIP/TIFF file cannot be rendered by a browser, so for those the server decides
+   * per page (text extraction, archive expansion, TIFF splitting) and the rasterise switch has no
+   * meaning - which is why it switches itself off and is locked.
+   */
+  private static isRasterizable(file: File): boolean {
+    if (file.type === "application/pdf" || file.type === "image/svg+xml") return true;
+    return /\.(pdf|svg)$/i.test(file.name);
+  }
+
+  /**
+   * Whether a rasterisable attachment is uploaded as PAGE IMAGES.
+   *
+   * ON  - the page is rendered in the browser and the AI sees the layout (vision).
+   * OFF - the document is uploaded unchanged and the SERVER extracts its TEXT per page
+   *       (exact labels/checkbox glyphs, a fraction of the tokens) and only rasterises the pages
+   *       that have no text layer.
+   */
+  rasterizeAttachment = false;
+
+  /** The switch is only usable while a document the browser can render is attached. */
+  get canRasterizeAttachment(): boolean {
+    return !!this.attachedFile && AiAssistant.isRasterizable(this.attachedFile);
+  }
+
+  /**
+   * Turns rasterisation on/off. Turning it ON is only accepted while a rasterisable document is
+   * attached - otherwise the UI would promise something the browser cannot do.
+   */
+  onRasterizeToggle(value: boolean): void {
+    this.rasterizeAttachment = value && this.canRasterizeAttachment;
+    this.cdr.markForCheck();
+  }
+
+  /** Label of the rasterise switch. */
+  get rasterizeLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Rastern";
+      case "it":
+        return "Rasterizza";
+      case "nl":
+        return "Rasteren";
+      default:
+        return "Rasterise";
+    }
+  }
+
+  /**
+   * Short state hint next to the switch: the formats it currently applies to, or why it cannot be
+   * used for the attached file. Empty while nothing is attached.
+   */
+  get rasterizeHint(): string {
+    if (this.canRasterizeAttachment) return "PDF, SVG";
+    if (!this.attachedFile) return "";
+    switch (this.uiLang) {
+      case "de":
+        return "für dieses Format nicht möglich";
+      case "it":
+        return "non possibile per questo formato";
+      case "nl":
+        return "niet mogelijk voor dit formaat";
+      default:
+        return "not possible for this format";
+    }
+  }
+
+  /** Tooltip of the rasterise switch: which formats it converts, and what happens without it. */
+  get rasterizeTooltip(): string {
+    switch (this.uiLang) {
+      case "de":
+        return (
+          "Rastern: PDF- und SVG-Seiten werden im Browser in Bilder umgewandelt (eine Bildseite pro " +
+          "Druckseite) und als Bilder an die KI geschickt – sie sieht dann das Layout. " +
+          "Ohne Rastern wird das Dokument unverändert hochgeladen und der Server liest die TEXTschicht " +
+          "seiner Seiten aus (exakte Beschriftungen, deutlich weniger Tokens); Seiten ohne Textschicht " +
+          "rastet der Server selbst. " +
+          "Nicht rastern lassen sich Word/ODT, Excel/ODS, PowerPoint, Archive (ZIP/TAR/GZ), TIFF und " +
+          "Textdateien – für sie ist der Schalter deshalb aus und gesperrt."
+        );
+      case "it":
+        return (
+          "Rasterizza: le pagine PDF e SVG vengono convertite in immagini nel browser (una immagine " +
+          "per pagina stampata) e inviate all'IA, che ne vede il layout. " +
+          "Senza rasterizzazione il documento viene caricato invariato e il server estrae il TESTO " +
+          "delle pagine (etichette esatte, molti meno token); le pagine senza livello di testo le " +
+          "rasterizza il server. " +
+          "Word/ODT, Excel/ODS, PowerPoint, archivi (ZIP/TAR/GZ), TIFF e file di testo non possono " +
+          "essere rasterizzati: per questi l'interruttore è disattivato e bloccato."
+        );
+      case "nl":
+        return (
+          "Rasteren: PDF- en SVG-pagina's worden in de browser omgezet naar afbeeldingen (één " +
+          "afbeelding per afgedrukte pagina) en als afbeelding naar de AI gestuurd, die dan de " +
+          "opmaak ziet. " +
+          "Zonder rasteren wordt het document ongewijzigd geüpload en leest de server de TEKSTlaag " +
+          "van de pagina's uit (exacte labels, veel minder tokens); pagina's zonder tekstlaag " +
+          "rastert de server zelf. " +
+          "Word/ODT, Excel/ODS, PowerPoint, archieven (ZIP/TAR/GZ), TIFF en tekstbestanden kunnen " +
+          "niet gerasterd worden: daarvoor staat de schakelaar uit en is hij vergrendeld."
+        );
+      default:
+        return (
+          "Rasterise: PDF and SVG pages are converted to images in the browser (one image per " +
+          "printed page) and sent to the AI as images, so it sees the layout. " +
+          "Without rasterising the document is uploaded unchanged and the server extracts the TEXT " +
+          "layer of its pages (exact labels, far fewer tokens); pages without a text layer are " +
+          "rasterised by the server. " +
+          "Word/ODT, Excel/ODS, PowerPoint, archives (ZIP/TAR/GZ), TIFF and text files cannot be " +
+          "rasterised, so the switch is off and locked for them."
+        );
+    }
+  }
+
+  /** Localised label of the attach button (the dialog used a hardcoded English one). */
+  get attachFileLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Datei anhängen";
+      case "it":
+        return "Allega file";
+      case "nl":
+        return "Bestand toevoegen";
+      default:
+        return "Attach file";
+    }
+  }
+
+  /** Localised tooltip of the attach button: accepted formats + the drag & drop hint. */
+  get attachFileTooltip(): string {
+    switch (this.uiLang) {
+      case "de":
+        return (
+          "PDF, Bild (PNG/JPG/WebP/GIF/BMP/TIFF), Word/ODT, Excel/ODS, PowerPoint, " +
+          "Text/CSV/JSON/XML/HTML oder ein Archiv (ZIP/TAR/GZ) anhängen – oder die Datei einfach " +
+          "in das Eingabefeld ziehen."
+        );
+      case "it":
+        return (
+          "Allega un PDF, un'immagine (PNG/JPG/WebP/GIF/BMP/TIFF), Word/ODT, Excel/ODS, PowerPoint, " +
+          "testo/CSV/JSON/XML/HTML o un archivio (ZIP/TAR/GZ) – oppure trascina il file nel campo " +
+          "di input."
+        );
+      case "nl":
+        return (
+          "Voeg een PDF, afbeelding (PNG/JPG/WebP/GIF/BMP/TIFF), Word/ODT, Excel/ODS, PowerPoint, " +
+          "tekst/CSV/JSON/XML/HTML of een archief (ZIP/TAR/GZ) toe – of sleep het bestand gewoon in " +
+          "het invoerveld."
+        );
+      default:
+        return (
+          "Attach a PDF, an image (PNG/JPG/WebP/GIF/BMP/TIFF), Word/ODT, Excel/ODS, PowerPoint, " +
+          "text/CSV/JSON/XML/HTML or an archive (ZIP/TAR/GZ) – or simply drag the file into the " +
+          "input field."
+        );
+    }
+  }
+
+  /** Localised title of the remove-attachment button. */
+  get removeAttachmentTitle(): string {
+    switch (this.uiLang) {
+      case "de":
+        return "Anhang entfernen";
+      case "it":
+        return "Rimuovi allegato";
+      case "nl":
+        return "Bijlage verwijderen";
+      default:
+        return "Remove attachment";
+    }
+  }
+
+  /** Localised label of the change-log toggle (it doubles as the section title). */
+  get changeLogToggleLabel(): string {
+    switch (this.uiLang) {
+      case "de":
+        return this.showLog ? "Protokoll ausblenden" : "Änderungsprotokoll";
+      case "it":
+        return this.showLog ? "Nascondi registro" : "Registro modifiche";
+      case "nl":
+        return this.showLog ? "Logboek verbergen" : "Wijzigingslogboek";
+      default:
+        return this.showLog ? "Hide log" : "Change log";
+    }
+  }
+
   triggerFileInput(): void {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/jpeg,image/webp,image/gif,application/pdf";
+    input.accept = AiAssistant.ATTACHMENT_ACCEPT;
     input.style.display = "none";
     input.addEventListener("change", (e) => this.onFileSelected(e));
     document.body.appendChild(input);
@@ -2879,10 +3182,24 @@ export class AiAssistant implements OnInit, OnDestroy {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    this.acceptAttachment(file);
+  }
 
-    const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"];
-    if (!allowed.includes(file.type)) {
-      this.setError("Unsupported file type. Please attach an image (PNG, JPG, WebP, GIF) or a PDF.");
+  /** True while a file is dragged over the prompt area (drives the drop highlight). */
+  attachmentDragActive = false;
+
+  /**
+   * Shared acceptance path for the file picker AND drag & drop: validates type/size and attaches the
+   * document. Rasterisation is NEVER enabled implicitly - a rasterisable document starts with the
+   * switch OFF and the user decides whether the AI should see images or the extracted text.
+   */
+  private acceptAttachment(file: File): void {
+    if (!AiAssistant.isSupportedAttachment(file)) {
+      this.setError(
+        "Unsupported file type. Attach a PDF, an image (PNG, JPG, WebP, GIF, BMP, TIFF), " +
+          "a Word/ODT/Excel/ODS/PowerPoint file, a text/CSV/JSON/XML/HTML file, or an archive " +
+          "(ZIP, TAR, GZ).",
+      );
       return;
     }
     const maxBytes = 10 * 1024 * 1024; // 10 MB
@@ -2890,14 +3207,40 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.setError("File is too large. The maximum supported size is 10\u00a0MB.");
       return;
     }
-
     this.attachedFile = file;
     this.errorText = null;
+    // Deliberately OFF: the switch turns itself on for nothing, the user decides (see
+    // canRasterizeAttachment for which formats can be rasterised at all).
+    this.rasterizeAttachment = false;
     this.cdr.markForCheck();
+  }
+
+  /** Highlights the prompt area while a FILE is dragged over it (text drags are left alone). */
+  onAttachmentDragOver(event: DragEvent): void {
+    const types = event.dataTransfer?.types;
+    if (!types || !Array.from(types).includes("Files")) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    this.attachmentDragActive = true;
+  }
+
+  onAttachmentDragLeave(): void {
+    this.attachmentDragActive = false;
+  }
+
+  /** Dropping a file onto the prompt input attaches it exactly like the paperclip button. */
+  onAttachmentDrop(event: DragEvent): void {
+    this.attachmentDragActive = false;
+    const files = event.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    event.preventDefault();
+    this.acceptAttachment(files[0]);
   }
 
   clearAttachment(): void {
     this.attachedFile = null;
+    // Nothing selected means nothing to rasterise; a later document starts from "off" as well.
+    this.rasterizeAttachment = false;
     this.cdr.markForCheck();
   }
   // #endregion Attachment
@@ -3037,11 +3380,60 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Converts a file to a list of {name, dataUrl} entries ready for codbi-base64 params. */
   private async fileToImageParams(file: File | null): Promise<Array<{ name: string; dataUrl: string }>> {
     if (!file) return [];
-    if (file.type === "application/pdf") {
-      return this.processPdfFile(file);
+    if (this.rasterizeAttachment && AiAssistant.isRasterizable(file)) {
+      const rasterized = await this.rasterizeFile(file);
+      // A failed render falls through: the document is sent unchanged and the SERVER extracts its
+      // pages, so an attachment is never lost because of a browser problem.
+      if (rasterized.length > 0) return rasterized;
     }
     const dataUrl = await this.blobToDataUrl(file);
     return [{ name: file.name, dataUrl }];
+  }
+
+  /** Renders a rasterisable document to page images (PDF via PDF.js, SVG via a canvas). */
+  private async rasterizeFile(file: File): Promise<Array<{ name: string; dataUrl: string }>> {
+    try {
+      if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+        return await this.processPdfFile(file);
+      }
+      if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name)) {
+        return await this.processSvgFile(file);
+      }
+    } catch {
+      // reported by the caller's normal error path; the document is still sent unchanged
+    }
+    return [];
+  }
+
+  /**
+   * Draws an SVG onto a canvas (2x, white background so a transparent drawing stays readable) and
+   * returns it as ONE image page - the same contract the PDF path produces.
+   */
+  private async processSvgFile(file: File): Promise<Array<{ name: string; dataUrl: string }>> {
+    const source = await this.blobToDataUrl(file);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        const width = Math.max(1, Math.round((image.naturalWidth || 1024) * 2));
+        const height = Math.max(1, Math.round((image.naturalHeight || 1024) * 2));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Failed to get canvas 2D context"));
+          return;
+        }
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        this.canvasToBlob(canvas).then(resolve, reject);
+      };
+      image.onerror = () => reject(new Error("Failed to load the SVG"));
+      image.src = source;
+    });
+    const baseName = file.name.replace(/\.svg$/i, "");
+    return [{ name: `${baseName}_page_1.png`, dataUrl: await this.blobToDataUrl(blob) }];
   }
 
   /** Converts the attached file to a list of {name, dataUrl} entries ready for codbi-base64 params. */

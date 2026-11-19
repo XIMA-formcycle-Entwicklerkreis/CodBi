@@ -54,7 +54,7 @@ export class HTML_CSS {
    *  - Destination:  The selector pointing to the "CSS"-Destination. */
   @DBC.ParamvalueProvider
   @ParameterTypes({
-    CSS: { type: "string", default: "The CSS to inject." },
+    CSS: { type: "css", default: "The CSS to inject.", cssKind: "stylesheet" },
     Replacements: {
       type: "string",
       default:
@@ -64,7 +64,7 @@ export class HTML_CSS {
       type: "string",
       default: "The Darkmode replacements that replace all placeholders ending with '_DM' in the provided CSS.",
     },
-    Destination: { type: "string", default: "The selector pointing to the CSS destination." },
+    Destination: { type: "selector", default: "The selector pointing to the CSS destination." },
   })
   public static functionality(
     @TYPE.PRE("string", "destination") toLoad: { [key: string]: string | Array<string> },

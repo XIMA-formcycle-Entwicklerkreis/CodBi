@@ -47,6 +47,24 @@ export class HTML_Text_Mapper {
       type: "string",
       default: "The property of the tagged element that contains the string to replace the placeholders in.",
     },
+    // A bare declaration list applied to the element's `style` attribute (no selector, no braces).
+    CSS: {
+      type: "css",
+      cssKind: "declarations",
+      default:
+        "The CSS-Rules to apply onto the tagged element when replacement has been completed, e.g. to hide it until the placeholders are replaced.",
+    },
+  })
+  @ParameterTypes({
+    Replacements: {
+      type: "string",
+      default:
+        "The object containing the properties which's values will be used to replace the placeholders. If it is an array the string containing the placeholders will be replicated for each entry, allowing it to be used as a template.",
+    },
+    Property: {
+      type: "string",
+      default: "The property of the tagged element that contains the string to replace the placeholders in.",
+    },
     CSS: {
       type: "string",
       default:

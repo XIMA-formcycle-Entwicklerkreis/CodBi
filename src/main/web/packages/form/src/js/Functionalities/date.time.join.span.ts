@@ -64,22 +64,22 @@ export class Date_Time_Join_Span {
   @SupportedFormelementtype(["XContainer", "XContainerInvisible", "XFieldSet"])
   @ParameterTypes({
     Begin: {
-      type: "string",
+      type: "selector",
       default:
         "Optional CSS selector selecting the input that provides the begin date. Takes precedence over the CodBi_Date_Time_Join_Span_Begin CSS class.",
     },
     BeginTime: {
-      type: "string",
+      type: "selector",
       default:
         "Optional CSS selector selecting the input that provides the begin time. Takes precedence over the CodBi_Date_Time_Join_Span_Begin_Time CSS class.",
     },
     End: {
-      type: "string",
+      type: "selector",
       default:
         "Optional CSS selector selecting the input that provides the end date. Takes precedence over the CodBi_Date_Time_Join_Span_End CSS class.",
     },
     EndTime: {
-      type: "string",
+      type: "selector",
       default:
         "Optional CSS selector selecting the input that provides the end time. Takes precedence over the CodBi_Date_Time_Join_Span_End_Time CSS class.",
     },

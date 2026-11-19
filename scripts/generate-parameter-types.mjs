@@ -495,6 +495,19 @@ function normalizeExplicit(value) {
       }
     }
   }
+  if (spec.type === "css" || spec.type === "selector") {
+    // A CSS parameter declares WHICH of the four CSS meanings it has (`cssKind`) plus optional
+    // per-parameter snippets for the CSS editor.
+    const kind = String(value?.cssKind ?? "")
+      .trim()
+      .toLowerCase();
+    if (["stylesheet", "declarations", "classes", "selector"].includes(kind)) {
+      spec.cssKind = kind;
+    }
+    if (Array.isArray(value?.snippets)) {
+      spec.snippets = value.snippets.map((snippet) => String(snippet));
+    }
+  }
   return spec;
 }
 
@@ -548,6 +561,12 @@ function specLiteral(spec) {
   }
   if (spec.fieldSeparator !== undefined) {
     parts.push(`fieldSeparator: ${JSON.stringify(spec.fieldSeparator)}`);
+  }
+  if (spec.cssKind !== undefined) {
+    parts.push(`cssKind: ${JSON.stringify(spec.cssKind)}`);
+  }
+  if (Array.isArray(spec.snippets) && spec.snippets.length > 0) {
+    parts.push(`snippets: ${JSON.stringify(spec.snippets)}`);
   }
   return `{ ${parts.join(", ")} }`;
 }

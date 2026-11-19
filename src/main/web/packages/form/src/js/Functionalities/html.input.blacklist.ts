@@ -73,7 +73,7 @@ export class HTML_Input_Blacklist {
     }
     // #region Check and react properly
     const check = (toCheck: string, blacklist: Array<string>, target: HTMLInputElement) => {
-      if (blacklist.includes(toCheck)) {
+      if (blacklist.includes(toCheck.trim())) {
         const errorMessage = `${toLoad.prefix ? toLoad.prefix : ""}${toLoad.showblacklist && typeof TYPE.tsCheck<string | boolean>(toLoad.showblacklist, "string | boolean") === "string" ? (toLoad.showblacklist as string).toLowerCase() === "true" : toLoad.showblacklist ? blacklist.join(toLoad.separator ? TYPE.tsCheck<string>(toLoad.separator, "string") : "") : ""}${toLoad.postfix ? toLoad.postfix : ""}`;
 
         $(target).error(errorMessage.length > 0 ? errorMessage : "The entered value is not allowed.");
@@ -82,11 +82,29 @@ export class HTML_Input_Blacklist {
       }
     };
     // #endregion Check and react properly
-    const blacklist: Array<string> = toLoad.list
-      ? typeof toLoad.list === "string"
-        ? (toLoad.list as string).split(",")
-        : (toLoad.list as Array<string>)
-      : new Array<string>();
+    // Normalize the list regardless of its source. The value may arrive as
+    //  - a "string"  (CSV, e.g. a `{ V > NINA }` result holding "bad,worse") or
+    //  - an "array"  (e.g. `{ Date.Holidays > ... }` returns an array of dates, or
+    //                  `{ Array.Wrap > ... }` wraps a value into a single-element array).
+    // The array branch may itself contain CSV-strings (Array.Wrap of a CSV), so EVERY entry is
+    // split on "," and trimmed — making both sources behave identically and whitespace-agnostic.
+    const blacklist: Array<string> = new Array<string>();
+    const rawList: Array<unknown> = Array.isArray(toLoad.list)
+      ? (toLoad.list as Array<unknown>)
+      : typeof toLoad.list === "string"
+        ? [toLoad.list as string]
+        : [];
+    for (const entry of rawList) {
+      if (typeof entry !== "string") {
+        continue;
+      }
+      for (const item of (entry as string).split(",")) {
+        const trimmed = (item as string).trim();
+        if (trimmed.length > 0) {
+          blacklist.push(trimmed);
+        }
+      }
+    }
     // #region Bind to appropriate events ( HTMLInputElement & JQuery Datepicker supported )
     // #region Prevent input of blacklisted items via <input> and picker.
     const formerDatepickerChangeEvent: (event: Event) => undefined = $(toProcess).datepicker("option", "onSelect");

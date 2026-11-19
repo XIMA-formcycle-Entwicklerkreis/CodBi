@@ -8,6 +8,7 @@ import { Constants } from "codbi-common";
 
 import { refreshCodbiElementMarkers, resumeElementPreviews } from "../src/js/CodbiElementMarkers.js";
 import {
+  activateStandardConfig,
   activeStandardConfigIds,
   requestStandardConfigActivation,
   standardConfigClassIsInactive,
@@ -116,6 +117,63 @@ describe("standard-configuration activation resolution", () => {
 
     expect(activeStandardConfigIds()).toEqual(["Appointments"]);
     expect(standardConfigClassIsInactive("CodBi_NoFutureDate")).toBe(false);
+  });
+
+  /**
+   * Reported: activating a configuration from the ELEMENT panel left it unchecked in the form-level
+   * "Standard Configurations" listing (and the canvas badge kept dimming its class). The standards
+   * editor is the only reliable writer — its `setStandardsValue` updates the checkboxes AND persists
+   * `codbi-prop-standards` — so it is resolved through the designer's property view and used.
+   */
+  it("persists through the resolved form-level standards editor", () => {
+    setPluginData({
+      detStandards: { Appointments: { Active: false, classes: { CodBi_NoFutureDate: { description: "x" } } } },
+      pendingStandards: undefined,
+    });
+    // The real editor flips the `Active` flags while applying the CSV — the mock mirrors that, so the
+    // assertion below proves the badge reads the SAME state the editor produced.
+    const detStandards = (
+      window as unknown as { CodbiPluginData: { detStandards: Record<string, { Active?: boolean }> } }
+    ).CodbiPluginData.detStandards;
+    const setStandardsValue = jest.fn(() => {
+      detStandards.Appointments.Active = true;
+    });
+    TestState.designerInstance = {
+      getFormPropertyValueForCurrentLang: () => "",
+      getPropertyView: () => ({
+        getEditorForProperty: (property: string) =>
+          property === STANDARDS_PROPERTY ? { config: { property }, setStandardsValue } : undefined,
+      }),
+    };
+
+    expect(activateStandardConfig("Appointments")).toBe(true);
+    expect(setStandardsValue).toHaveBeenCalledWith("Appointments");
+    // Nothing is queued for a later panel — it was persisted right away.
+    expect(sessionStorage.getItem("codbi-pending-standards")).toBeNull();
+    expect(standardConfigClassIsInactive("CodBi_NoFutureDate")).toBe(false);
+  });
+
+  /**
+   * While the form's CodBi options were never opened, no standards editor exists. The activation must
+   * then QUEUE the new CSV in the channel that editor consumes on construction (and flag the
+   * configuration ACTIVE), instead of firing `set-property` with a foreign sender — which persisted
+   * nothing (reported).
+   */
+  it("queues the activated id for a later form-level standards editor and flags the configuration active", () => {
+    setPluginData({
+      detStandards: { Appointments: { Active: false, classes: { CodBi_NoFutureDate: { description: "x" } } } },
+      // No `setStandardsValue` and no mounted editor in this session.
+      pendingStandards: undefined,
+    });
+    TestState.designerInstance = { getFormPropertyValueForCurrentLang: () => "" };
+
+    expect(activateStandardConfig("Appointments")).toBe(true);
+    // The MultiSelect consumes exactly this queue in its constructor.
+    expect(sessionStorage.getItem("codbi-pending-standards")).toBe("Appointments");
+    // The settings registry now reports the configuration as active, so the badge stops dimming it.
+    expect(standardConfigClassIsInactive("CodBi_NoFutureDate")).toBe(false);
+
+    sessionStorage.removeItem("codbi-pending-standards");
   });
 });
 

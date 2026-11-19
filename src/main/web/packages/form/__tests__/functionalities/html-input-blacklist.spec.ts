@@ -86,6 +86,59 @@ describe("HTML_Input_Blacklist.functionality", () => {
     expect(($(input) as any).error()).not.toBe("");
   });
 
+  it("blocks each word of a CSV-typed list (simulating a { V > NINA } result)", async () => {
+    const { HTML_Input_Blacklist } = await import("../../src/js/Functionalities/html.input.blacklist.js");
+    const input = createInput();
+
+    HTML_Input_Blacklist.functionality({ list: "bad,evil,wrong" }, input);
+
+    for (const word of ["bad", "evil", "wrong"]) {
+      input.value = word;
+      input.dispatchEvent(new Event("input"));
+      expect(($(input) as any).error()).not.toBe(`"${word}" should be blocked`);
+    }
+  });
+
+  it('blocks words when the CSV-typed list contains spaces (NINA = "bad, evil")', async () => {
+    const { HTML_Input_Blacklist } = await import("../../src/js/Functionalities/html.input.blacklist.js");
+    const input = createInput();
+
+    HTML_Input_Blacklist.functionality({ list: "bad, evil" }, input);
+
+    input.value = "evil";
+    input.dispatchEvent(new Event("input"));
+    expect(($(input) as any).error()).not.toBe("");
+
+    input.value = "evil ";
+    input.dispatchEvent(new Event("input"));
+    expect(($(input) as any).error()).not.toBe("");
+  });
+
+  it("blocks each word when the list arrives as an array containing a CSV-string (array.wrap of a V result)", async () => {
+    const { HTML_Input_Blacklist } = await import("../../src/js/Functionalities/html.input.blacklist.js");
+    const input = createInput();
+
+    // `Array.Wrap` of `{ V > NINA }` yields a single-element array holding the whole CSV.
+    HTML_Input_Blacklist.functionality({ list: ["bad,evil,wrong"] as unknown as string }, input);
+
+    for (const word of ["bad", "evil", "wrong"]) {
+      input.value = word;
+      input.dispatchEvent(new Event("input"));
+      expect(($(input) as any).error()).not.toBe("");
+    }
+  });
+
+  it("blocks a single value supplied as a one-element array (array.wrap of a single V result)", async () => {
+    const { HTML_Input_Blacklist } = await import("../../src/js/Functionalities/html.input.blacklist.js");
+    const input = createInput();
+
+    HTML_Input_Blacklist.functionality({ list: ["badword"] as unknown as string }, input);
+
+    input.value = "badword";
+    input.dispatchEvent(new Event("input"));
+    expect(($(input) as any).error()).not.toBe("");
+  });
+
   it("adds beforeShowDay filter for date blacklisting", async () => {
     const { HTML_Input_Blacklist } = await import("../../src/js/Functionalities/html.input.blacklist.js");
     const input = createInput();

@@ -49,14 +49,20 @@ export class Form_Navigator {
       default:
         "whether the navigator permits switching to every page even if it wasn't visited before (true) or not (false). defaults to false.",
     },
-    CSSNavButtons: { type: "string", default: "Additional CSS applied to the navigator's navigation buttons." },
+    CSSNavButtons: {
+      type: "css",
+      default: "Additional CSS applied to the navigator's navigation buttons.",
+      cssKind: "declarations",
+    },
     CSSHoverNavButtons: {
-      type: "string",
+      type: "css",
       default: "Additional CSS applied to the navigator's navigation buttons when hovering them.",
+      cssKind: "declarations",
     },
     CSSBlockedNavButton: {
-      type: "string",
+      type: "css",
       default: "Additional CSS applied to the navigator's navigation buttons that are blocked for any reason.",
+      cssKind: "declarations",
     },
   })
   public static functionality(

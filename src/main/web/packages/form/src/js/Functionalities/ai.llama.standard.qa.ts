@@ -239,7 +239,7 @@ export class AI_LLAMA_STANDARD_QA {
       default: "The question to ask the AI about the uploaded document. May reference fields/symbols.",
     },
     QuestionRoot: {
-      type: "string",
+      type: "selector",
       default: "Optional CSS selector specifying an alternate root element from which to search for question elements.",
     },
   })

@@ -1688,37 +1688,11 @@ export class Manager implements AfterViewInit {
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
 
-    for (const key in localNodeData.detFunctionalities) {
-      if (localNodeData.detFunctionalities[key].Description === "") {
-        delete localNodeData.detFunctionalities[key];
-
-        continue;
-      }
-
-      localNodeData.detFunctionalities[key].Code = window.CodbiPluginData.detFunctionalities[key].Code;
-    }
-
-    for (const key in localNodeData.detElementplaceholder) {
-      if (localNodeData.detElementplaceholder[key].Description === "") {
-        delete localNodeData.detElementplaceholder[key];
-
-        continue;
-      }
-
-      localNodeData.detElementplaceholder[key].Code = window.CodbiPluginData.detElementplaceholder[key].Code;
-    }
-
-    for (const key in localNodeData.detStandards) {
-      if (localNodeData.detStandards[key].Description === "") {
-        delete localNodeData.detStandards[key];
-
-        continue;
-      }
-
-      localNodeData.detStandards[key].Code = window.CodbiPluginData.detStandards[key].Code;
-    }
-    // #region Remove entries without description.
-    // #endregion Remove entries without description.
+    // Attach the JavaScript of every element from the live registry (mirroring `enSync`), then drop
+    // the entries that still have none — parent / container path segments such as the `Lokaler` of
+    // `Lokaler.Rechner` have no code and must not be exported (applying them is senseless).
+    this.preserveCodeInSync(localNodeData);
+    this.dropCodeLess(localNodeData);
     const filelistings = this.enrichData(window[this.docPath], localNodeData);
     const toExport = JSON.stringify({
       fslFunctionalities: filelistings.fslFunctionalities,
@@ -2179,6 +2153,41 @@ export class Manager implements AfterViewInit {
     merge(localNodeData.detElementplaceholder, "detElementplaceholder");
     merge(localNodeData.detStandards, "detStandards");
   }
+
+  /**
+   * Removes every entry of the converted (yet to be stored/exported) documentation that carries no
+   * code body.
+   *
+   * A local element is only applicable to a form element if it REALLY contains JavaScript — the parent
+   * / container nodes (e.g. the `Lokaler` of `Lokaler.Rechner`) are pure path segments without code and
+   * must not be stored, exported or listed as an applicable functionality.
+   *
+   * @param localNodeData The freshly converted entries that are about to be stored / exported.
+   */
+  private dropCodeLess(localNodeData: {
+    detFunctionalities: object;
+    detElementplaceholder: object;
+    detStandards: object;
+  }): void {
+    const drop = (entries: object | undefined): void => {
+      if (entries === undefined) {
+        return;
+      }
+      const record = entries as Record<string, Record<string, unknown>>;
+      for (const key of Object.keys(record)) {
+        // The record is reached through an index signature, so `Code` must be read with bracket
+        // access (TS4111) even though the rest of the codebase sometimes uses dot-notation.
+        const code = record[key]?.["Code"];
+        if (typeof code !== "string" || code.trim() === "") {
+          delete record[key];
+        }
+      }
+    };
+
+    drop(localNodeData.detFunctionalities);
+    drop(localNodeData.detElementplaceholder);
+    drop(localNodeData.detStandards);
+  }
   /**
    *  Loads {@link Manager.items }, {@link Manager.itemsElementplaceholder } & {@link Manager.itemsStandard } up to
    *  the CodBi-Plugin's storage using its middleware prior to setting {@link Manager.synchronized } and
@@ -2190,6 +2199,11 @@ export class Manager implements AfterViewInit {
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
+
+    // A local element is only applicable to a form element if it REALLY carries a code body. Parent
+    // / container nodes (e.g. the `Lokaler` of `Lokaler.Rechner`) are pure path segments without code
+    // and must not be stored, exported or listed as an applicable functionality — see `dropCodeLess`.
+    this.dropCodeLess(localNodeData);
 
     // The stored documentation must keep the JavaScript of every element, otherwise the manager's code
     // editor (and Export) lose it on the next sync — see `preserveCodeInSync`.
@@ -3351,6 +3365,13 @@ export class Manager implements AfterViewInit {
             // #endregion Merge filelistings
             // #region Merge API-Doc entries.
             for (const key in parsedData.detFunctionalities) {
+              // A local functionality is only applicable to a form element if it REALLY carries a code
+              // body. Parent / container nodes (e.g. the `Lokaler` of `Lokaler.Rechner`) are pure path
+              // segments without code and must not enter the live registry.
+              const importedCode = parsedData.detFunctionalities[key]?.Code;
+              if (typeof importedCode !== "string" || importedCode.trim() === "") {
+                continue;
+              }
               if (window.CodbiPluginData.detFunctionalities[key] === undefined) {
                 // The allowed widget classes, under the CANONICAL key the designer's applicability
                 // checks read (the legacy `formElements` alias of an older sync is still honored).

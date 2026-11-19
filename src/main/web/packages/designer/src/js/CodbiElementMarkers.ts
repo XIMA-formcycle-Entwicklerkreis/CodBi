@@ -1251,6 +1251,12 @@ interface IStandardConfigDef {
    * `targets` selector resolves to. Its parameter table is shown in the green sub-badge.
    */
   func?: string;
+  /**
+   * The stored script of the configuration. Built-in descriptors publish `targets`/`func` directly;
+   * a LOCAL element (assistant / local API-doc manager) carries only this `loadConfig({ … })` call, so
+   * `targets` and `func` are read from here (see {@link standardConfigTargets}).
+   */
+  Code?: string;
 }
 
 /** @returns the CodBi standard-configuration data injected by the designer resource plugin. */
@@ -1498,6 +1504,56 @@ const GLOBAL_HOLISTIC_TARGETS = new Set(["head", "body", "html", "form", "body >
 const HOLISTIC_STANDARD_PREFIX = "Holistic.";
 
 /**
+ * Whether a descriptor is a HOLISTIC standard configuration.
+ *
+ * Either it is explicitly MARKED (`supportedFormelementtypes` contains `"Holistic"` — this is what a
+ * local API-doc element publishes) or it is one of the built-in `Holistic.*` configurations.
+ */
+function isHolisticStandardConfig(id: string, def: IStandardConfigDef | undefined): boolean {
+  if (id.startsWith(HOLISTIC_STANDARD_PREFIX)) {
+    return true;
+  }
+  const spec = def?.supportedFormelementtypes;
+  const values = Array.isArray(spec) ? spec : typeof spec === "string" ? [spec] : [];
+  return values.some(
+    (entry) =>
+      String(entry ?? "")
+        .trim()
+        .toLowerCase() === "holistic",
+  );
+}
+
+/**
+ * The `targets` selector of a standard configuration.
+ *
+ * Built-in descriptors publish it as `targets`; a LOCAL element stores only its `Code`, so the selector
+ * is read from the `loadConfig({ … })` call. Without this a local holistic configuration applied in the
+ * runtime but never produced a badge in the designer (reported).
+ */
+function standardConfigTargets(def: IStandardConfigDef | undefined): string {
+  const explicit = String(def?.targets ?? "").trim();
+
+  if (explicit !== "") {
+    return explicit;
+  }
+  const match = /targets\s*:\s*(['"`])(.*?)\1/s.exec(String(def?.Code ?? ""));
+
+  return (match?.[2] ?? "").trim();
+}
+
+/** The single `FUNC` of a holistic configuration (published `func`, else parsed from its `Code`). */
+function standardConfigFunc(def: IStandardConfigDef | undefined): string {
+  const explicit = String(def?.func ?? "").trim();
+
+  if (explicit !== "") {
+    return explicit;
+  }
+  const match = /FUNC\s*:\s*(['"`])(.*?)\1/s.exec(String(def?.Code ?? ""));
+
+  return (match?.[2] ?? "").split(",")[0]?.trim() ?? "";
+}
+
+/**
  * The currently-ACTIVE holistic standard-configurations (`detStandards[*].Active === true` whose id
  * starts with `Holistic.` and that carry a real `targets` selector resolving to per-element widgets).
  * Global-target configs (`Holistic.CSS.Standard` → `head`, `Holistic.Matomo.Tracking` → `body`) are
@@ -1508,17 +1564,19 @@ function activeHolisticConfigs(): IActiveHolisticConfig[] {
   if (!standards) {
     return [];
   }
-  const holisticIds = Object.keys(standards).filter((id) => id.startsWith(HOLISTIC_STANDARD_PREFIX));
   const result: IActiveHolisticConfig[] = [];
-  for (const id of holisticIds) {
+  for (const id of Object.keys(standards)) {
     const def = standards[id];
-    const active = Boolean(def?.Active);
-    const hasTargets = Boolean(def?.targets);
-    const skippedGlobal = hasTargets && GLOBAL_HOLISTIC_TARGETS.has((def?.targets ?? "").trim());
-    if (!active || !hasTargets || skippedGlobal) {
+    if (!def || !isHolisticStandardConfig(id, def)) {
       continue;
     }
-    result.push({ id, def: def as IStandardConfigDef });
+    // Resolved from the descriptor OR — for a LOCAL element — from its stored `loadConfig` code.
+    const targets = standardConfigTargets(def);
+    if (!def.Active || targets === "" || GLOBAL_HOLISTIC_TARGETS.has(targets)) {
+      continue;
+    }
+    // Downstream reads `def.targets` / `def.func`, so hand out a NORMALISED descriptor.
+    result.push({ id, def: { ...def, targets, func: standardConfigFunc(def) } });
   }
   return result;
 }

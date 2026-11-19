@@ -13,8 +13,9 @@
   },
   "parameters": {
     "CSS": {
-      "type": "string",
-      "default": "The CSS to inject."
+      "type": "css",
+      "default": "The CSS to inject.",
+      "cssKind": "stylesheet"
     },
     "Replacements": {
       "type": "string",
@@ -25,7 +26,7 @@
       "default": "The Darkmode replacements that replace all placeholders ending with '_DM' in the provided CSS."
     },
     "Destination": {
-      "type": "string",
+      "type": "selector",
       "default": "The selector pointing to the CSS destination."
     }
   }

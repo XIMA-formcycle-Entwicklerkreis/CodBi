@@ -3,6 +3,7 @@
 import { DBC } from "xdbc/src/DBC";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
+import { getJQuery } from "@de-xima/fc-form-renderer";
 import { CodBiError } from "../global-scope";
 import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
 // #endregion Imports
@@ -19,6 +20,42 @@ import { ParameterTypes, SupportedFormelementtype } from "codbi-common";
  * Maintainer: Salvatore Callari (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class SV {
+  /**
+   * Remembers the latest URL-parameter value assigned to each destination global variable so it can be
+   * re-asserted whenever Formcycle (re-)hydrates the form data. This is the defence against the race that
+   * made the reported SV value intermittent: {@code c.xutil.load(XM_FORM_SAVEVALUES)} (and any later
+   * {@code afterLoadFormData} refresh) can overwrite the hidden {@code input.XVariable} with the
+   * server-persisted (original) value *after* {@link SV.functionality } has already written the value from
+   * the URL. By re-applying the URL-value through the {@code afterLoadFormData} hook we guarantee the
+   * backend sees the URL-parameter value no matter when Formcycle restores the form. */
+  private static readonly urlValues = new Map<string, string>();
+  /** Guards the single registration of the {@code afterLoadFormData} re-assertion hook. */
+  private static hooksRegistered = false;
+
+  /**
+   * Registers (once) a Formcycle {@code afterLoadFormData} hook that re-asserts every destination
+   * recorded in {@link SV.urlValues } right after the form data has been (re-)loaded. Because Formcycle
+   * fires {@code afterLoadFormData} synchronously at the end of every {@code c.xutil.load()}, this makes
+   * the SV value win the race against any hydration that would otherwise overwrite it. */
+  private static ensureReassertHook(): void {
+    if (SV.hooksRegistered) {
+      return;
+    }
+    SV.hooksRegistered = true;
+    try {
+      getJQuery().xutil.on("afterLoadFormData", () => {
+        for (const [destinationName, value] of SV.urlValues) {
+          // Re-apply silently: the destination was already validated (and the missing case reported) when
+          // SV.functionality first ran, so re-asserting must not spam ERROR logs if the element vanished.
+          SV.setGlobalVariable(destinationName, value, destinationName, document.body, true);
+        }
+      });
+    } catch {
+      // Formcycle's `xutil` registry isn't available (e.g. offline preview / unit tests) — the initial
+      // synchronous write in `functionality` still applies, just without the re-hydration guard.
+    }
+  }
+
   /**
    * This functionality sets the global variables named in "Destinations" to the values of the
    * URL-parameters named in "Sources".
@@ -99,6 +136,11 @@ export class SV {
         );
       }
 
+      // Remember the URL-value per destination so the afterLoadFormData hook can re-assert it if Formcycle
+      // later re-hydrates the form and overwrites the variable with its server-persisted (original) value.
+      SV.urlValues.set(destinationName, value);
+      SV.ensureReassertHook();
+
       SV.setGlobalVariable(destinationName, value, sourceName, container);
     }
   }
@@ -118,16 +160,21 @@ export class SV {
    * create one — it logs an explicit {@code ERROR} so the form author knows the destination must be
    * declared as a global variable in the designer for the workflow to receive it.
    *
-   * @param variableName The name of the global variable to set.
-   * @param value        The value to assign to the global variable.
-   * @param sourceName   The name of the URL-parameter that provided the value (for logging).
-   * @param container    The {@link HTMLElement } to scope the declared-variable lookup to ({@link HTMLFormElement }
-   *                     when available, otherwise the document body). */
+   * @param variableName         The name of the global variable to set.
+   * @param value                The value to assign to the global variable.
+   * @param sourceName           The name of the URL-parameter that provided the value (for logging).
+   * @param container            The {@link HTMLElement } to scope the declared-variable lookup to
+   *                             ({@link HTMLFormElement } when available, otherwise the document body).
+   * @param suppressMissingWarning When {@code true}, a missing/undeclared destination is skipped silently
+   *                             instead of logging an {@code ERROR}. Used by the {@code afterLoadFormData}
+   *                             re-assertion hook, where the destination was already validated (and the
+   *                             missing case reported) when {@link SV.functionality } first ran. */
   private static setGlobalVariable(
     variableName: string,
     value: string,
     sourceName: string,
     container: HTMLElement,
+    suppressMissingWarning = false,
   ): void {
     // Keep the historical `data-name` lookup first (identical result as before) and only fall back to
     // the `XVariable`/native `name` variants when Formcycle rendered the variable without `data-name`.
@@ -147,13 +194,15 @@ export class SV {
     }
 
     if (!target) {
-      window.codbi.log(
-        "ERROR",
-        `Global variable "${variableName}" is not defined anywhere in the form, so the workflow will never receive
+      if (!suppressMissingWarning) {
+        window.codbi.log(
+          "ERROR",
+          `Global variable "${variableName}" is not defined anywhere in the form, so the workflow will never receive
 it. Create it in the form designer (as a global variable / Formularvariable) first, then this functionality can
 assign the value from URL-parameter "${sourceName}" to it.`,
-        "SV / UNDEFINED GLOBAL",
-      );
+          "SV / UNDEFINED GLOBAL",
+        );
+      }
       return;
     }
 

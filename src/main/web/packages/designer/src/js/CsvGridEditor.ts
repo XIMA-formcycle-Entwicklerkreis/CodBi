@@ -12,6 +12,10 @@ import type { ICsvSubpartSpec, IFunctionalityParameterSpec } from "./Functionali
  * name. This module renders a proper table (one row per element, one type-appropriate input per
  * subpart) and serializes the grid back into the CSV on apply.
  *
+ * Rows can be **added**, **removed** and **reordered**: every row carries a `⠿` grip handle at its
+ * left edge that is draggable with the pointer (or movable with Arrow Up / Arrow Down while
+ * focused). The CSV **order is the row order**, so reordering directly changes the serialized value.
+ *
  * The editor is opened as a modal popup because such a nested grid does not fit inside the compact
  * parameter row of the functionality/component config panel.
  */
@@ -61,6 +65,16 @@ const GRID_CSS = `
 .codbi-csvg-boolean{flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:transparent}
 .codbi-csvg-rowdel{border:0;background:transparent;color:#de350b;font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
 .codbi-csvg-rowdel:hover{color:#bf2600}
+/* Row reordering: the ⠿ grip handle, the "lifted" state of the dragged row and the drop-position
+   markers (drawn with inset shadows so highlighting never changes the row's box size). */
+.codbi-csvg-grip{display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#b07d1a;font-size:14px;line-height:1;padding:0;cursor:grab;touch-action:none;user-select:none}
+.codbi-csvg-grip:hover{color:var(--csvg-accent)}
+.codbi-csvg-grip:active{cursor:grabbing}
+.codbi-csvg-grip:focus-visible{outline:2px solid var(--csvg-accent);outline-offset:1px;border-radius:3px}
+.codbi-csvg-row--dragging{opacity:.45}
+.codbi-csvg-row--dragging td{background:rgba(255,165,0,.12)}
+.codbi-csvg-row--drop-before td{box-shadow:inset 0 2px 0 var(--csvg-accent)}
+.codbi-csvg-row--drop-after td{box-shadow:inset 0 -2px 0 var(--csvg-accent)}
 .codbi-csvg-add{display:inline-flex;align-items:center;gap:6px;margin-top:10px;border:1px dashed var(--csvg-accent);background:#fff;color:var(--csvg-accent);border-radius:4px;padding:5px 10px;font:inherit;cursor:pointer}
 .codbi-csvg-add:hover{background:#fff4e0}
 .codbi-csvg-foot{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid #f0d3a4}
@@ -387,6 +401,17 @@ function createSubpartInput(
   return { input: cell, read: () => input.value, on: subscribe };
 }
 
+/**
+ * The row-reordering hooks handed to every rendered grid row: the `⠿` grip handle starts a pointer
+ * drag and the Arrow keys nudge the row up / down while the grip is focused.
+ */
+interface IRowDragApi {
+  /** Starts a pointer drag session for the row at `rowIndex`. */
+  start: (event: PointerEvent, rowIndex: number) => void;
+  /** Moves the row at `rowIndex` by `delta` positions (used by Arrow Up / Arrow Down). */
+  step: (rowIndex: number, delta: number) => void;
+}
+
 /** Builds one grid row (tr) for the element at `rowIndex`, bound to the live `rows` model. */
 function buildRow(
   doc: Document,
@@ -395,23 +420,37 @@ function buildRow(
   normalized: INormalizedSubpart[],
   itemName: string,
   rerender: () => void,
+  drag: IRowDragApi,
 ): HTMLElement {
   const tr = doc.createElement("tr");
+  // The DOM order mirrors the `rows` model, so the drag logic resolves drop targets by this index.
+  tr.dataset.rowIndex = String(rowIndex);
   const fields = rows[rowIndex];
 
-  // Delete-cell.
-  const delTd = doc.createElement("td");
-  const delBtn = doc.createElement("button");
-  delBtn.type = "button";
-  delBtn.className = "codbi-csvg-rowdel";
-  delBtn.textContent = "✕";
-  delBtn.title = `Remove ${itemName}`;
-  delBtn.addEventListener("click", () => {
-    rows.splice(rowIndex, 1);
-    rerender();
+  // Grip-cell: the drag handle used to reorder this element (pointer drag or Arrow Up / Arrow Down).
+  const gripTd = doc.createElement("td");
+  gripTd.style.width = "24px";
+  const grip = doc.createElement("button");
+  grip.type = "button";
+  grip.className = "codbi-csvg-grip";
+  grip.textContent = "⠿";
+  grip.title = `Drag to reorder this ${itemName} (or press Arrow Up / Arrow Down)`;
+  grip.setAttribute("aria-label", `Reorder ${itemName} ${rowIndex + 1}`);
+  grip.addEventListener("pointerdown", (event) => {
+    drag.start(event, rowIndex);
   });
-  delTd.appendChild(delBtn);
-  tr.appendChild(delTd);
+  grip.addEventListener("keydown", (event) => {
+    const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+    if (delta === 0 || rowIndex + delta < 0 || rowIndex + delta >= rows.length) {
+      return;
+    }
+    event.preventDefault();
+    // Keep a host designer from interpreting the arrow key as an element/canvas nudge.
+    event.stopPropagation();
+    drag.step(rowIndex, delta);
+  });
+  gripTd.appendChild(grip);
+  tr.appendChild(gripTd);
 
   if (normalized.length === 0) {
     // Fall back to a single free-text field (no subpart definition present).
@@ -441,6 +480,20 @@ function buildRow(
       tr.appendChild(td);
     });
   }
+
+  // Delete-cell (last column, so the ⠿ handle sits at the start and the destructive action at the end).
+  const delTd = doc.createElement("td");
+  const delBtn = doc.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "codbi-csvg-rowdel";
+  delBtn.textContent = "✕";
+  delBtn.title = `Remove ${itemName}`;
+  delBtn.addEventListener("click", () => {
+    rows.splice(rowIndex, 1);
+    rerender();
+  });
+  delTd.appendChild(delBtn);
+  tr.appendChild(delTd);
 
   return tr;
 }
@@ -766,9 +819,11 @@ export function openCsvGridEditor(options: ICsvGridEditorOptions): void {
   // Header row (subpart column names).
   const thead = doc.createElement("thead");
   const headerRow = doc.createElement("tr");
-  const cornerTh = doc.createElement("th");
-  cornerTh.style.width = "28px";
-  headerRow.appendChild(cornerTh);
+  // Drag-handle column: every row's ⠿ grip sits here (mirrors the first cell of every row).
+  const gripTh = doc.createElement("th");
+  gripTh.style.width = "24px";
+  gripTh.title = `Drag the ⠿ handle to reorder ${itemName}s`;
+  headerRow.appendChild(gripTh);
 
   if (normalized.length === 0) {
     const singleTh = doc.createElement("th");
@@ -788,17 +843,144 @@ export function openCsvGridEditor(options: ICsvGridEditorOptions): void {
       headerRow.appendChild(th);
     }
   }
+
+  // Trailing delete column header (mirrors the ✕ cell at the END of every row).
+  const cornerTh = doc.createElement("th");
+  cornerTh.style.width = "28px";
+  headerRow.appendChild(cornerTh);
+
   thead.appendChild(headerRow);
   table.appendChild(thead);
 
   // Body: one row per element.
   const tbody = doc.createElement("tbody");
+
+  // #region Row reordering (drag & drop)
+  // Every row can be moved with its ⠿ grip (pointer drag) or with Arrow Up / Arrow Down while the
+  // grip is focused. The DOM order mirrors the `rows` model, so a drop target is resolved by
+  // comparing the pointer's Y coordinate with the row midpoints — no separate model is needed.
+  /** Class of the row currently being dragged ("lifted" look). */
+  const DRAGGING_CLASS = "codbi-csvg-row--dragging";
+  /** Marks the row ABOVE which the dragged row would be inserted. */
+  const DROP_BEFORE_CLASS = "codbi-csvg-row--drop-before";
+  /** Marks the row BELOW which the dragged row would be inserted (dropping at the very end). */
+  const DROP_AFTER_CLASS = "codbi-csvg-row--drop-after";
+
+  /** All rendered element rows in DOM order (which matches the `rows` model). */
+  const dataRows = (): HTMLTableRowElement[] =>
+    Array.from(tbody.querySelectorAll<HTMLTableRowElement>("tr[data-row-index]"));
+
+  /** Removes the drop-position markers from every row. */
+  const clearDropMarkers = (): void => {
+    for (const row of dataRows()) {
+      row.classList.remove(DROP_BEFORE_CLASS, DROP_AFTER_CLASS);
+    }
+  };
+
+  /** Resolves the insertion index (`0..rows.length`) for a pointer Y coordinate. */
+  const dropIndexAt = (clientY: number): number => {
+    const trs = dataRows();
+    for (let i = 0; i < trs.length; i += 1) {
+      const rect = trs[i].getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        return i;
+      }
+    }
+    return trs.length;
+  };
+
+  /** Highlights the insertion position resolved for `index`. */
+  const markDropIndex = (index: number): void => {
+    clearDropMarkers();
+    const trs = dataRows();
+    if (trs.length === 0) {
+      return;
+    }
+    if (index >= trs.length) {
+      trs[trs.length - 1].classList.add(DROP_AFTER_CLASS);
+    } else {
+      trs[index].classList.add(DROP_BEFORE_CLASS);
+    }
+  };
+
+  /** Focuses the grip of the row at `index` (after a re-render) so keyboard reordering can go on. */
+  const focusGrip = (index: number): void => {
+    tbody.querySelector<HTMLElement>(`tr[data-row-index="${index}"] .codbi-csvg-grip`)?.focus();
+  };
+
+  /** Moves the element at `from` to `to` and re-renders the grid. */
+  const moveRow = (from: number, to: number): void => {
+    if (from === to || from < 0 || from >= rows.length || to < 0 || to >= rows.length) {
+      return;
+    }
+    const [moved] = rows.splice(from, 1);
+    rows.splice(to, 0, moved);
+    render();
+    focusGrip(to);
+  };
+
+  /** The reordering hooks handed to every row (see {@link buildRow}). */
+  const dragApi: IRowDragApi = {
+    start: (event, rowIndex) => {
+      const grip = event.currentTarget as HTMLElement;
+      const tr = grip.closest("tr") as HTMLTableRowElement | null;
+      if (!tr || rowIndex < 0 || rowIndex >= rows.length) {
+        return;
+      }
+      // Never let the pointer drag reach the popup's own window-move handler.
+      event.preventDefault();
+      event.stopPropagation();
+
+      tr.classList.add(DRAGGING_CLASS);
+      try {
+        grip.setPointerCapture(event.pointerId);
+      } catch {
+        /* not supported (e.g. jsdom) — the document listeners below still receive the events */
+      }
+
+      const onMove = (moveEvent: PointerEvent): void => {
+        moveEvent.preventDefault();
+        markDropIndex(dropIndexAt(moveEvent.clientY));
+      };
+
+      const onEnd = (endEvent: PointerEvent): void => {
+        doc.removeEventListener("pointermove", onMove, true);
+        doc.removeEventListener("pointerup", onEnd, true);
+        doc.removeEventListener("pointercancel", onEnd, true);
+        try {
+          grip.releasePointerCapture(endEvent.pointerId);
+        } catch {
+          /* ignore */
+        }
+        tr.classList.remove(DRAGGING_CLASS);
+        clearDropMarkers();
+
+        if (endEvent.type !== "pointerup") {
+          return;
+        }
+        // The drop index refers to the ORIGINAL order: removing the dragged row first shifts every
+        // position after it down by one.
+        const target = dropIndexAt(endEvent.clientY);
+        moveRow(rowIndex, target > rowIndex ? target - 1 : target);
+      };
+
+      // Listen on the DOCUMENT (capture phase) rather than on the grip: the pointer routinely leaves
+      // the narrow handle while dragging, and `setPointerCapture` is not available everywhere.
+      doc.addEventListener("pointermove", onMove, true);
+      doc.addEventListener("pointerup", onEnd, true);
+      doc.addEventListener("pointercancel", onEnd, true);
+    },
+    step: (rowIndex, delta) => moveRow(rowIndex, rowIndex + delta),
+  };
+  // #endregion Row reordering (drag & drop)
+
   const render = (): void => {
     tbody.replaceChildren();
     if (rows.length === 0) {
       const emptyRow = doc.createElement("tr");
       const emptyCell = doc.createElement("td");
-      emptyCell.colSpan = (normalized.length > 0 ? normalized.length : 1) + 1;
+      // +2 because the grid now has TWO non-value columns (the ⠿ grip and the ✕ delete).
+      emptyCell.colSpan = (normalized.length > 0 ? normalized.length : 1) + 2;
       emptyCell.className = "codbi-csvg-empty";
       emptyCell.textContent = `No ${itemName}s defined yet. Click "Add ${itemName}" below.`;
       emptyRow.appendChild(emptyCell);
@@ -806,7 +988,7 @@ export function openCsvGridEditor(options: ICsvGridEditorOptions): void {
       return;
     }
     rows.forEach((_fields, rowIndex) => {
-      tbody.appendChild(buildRow(doc, rows, rowIndex, normalized, itemName, render));
+      tbody.appendChild(buildRow(doc, rows, rowIndex, normalized, itemName, render, dragApi));
     });
   };
   table.appendChild(tbody);

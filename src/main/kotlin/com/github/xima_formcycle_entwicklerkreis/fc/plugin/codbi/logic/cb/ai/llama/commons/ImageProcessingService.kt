@@ -42,6 +42,62 @@ internal class ImageProcessingService(
   }
 
   /**
+   * Collects ATTACHMENT data of ANY type from multipart uploads and base64 data-URL parameters.
+   *
+   * Unlike [collectImageData] - which only accepts `data:image/...` and is used by the vision
+   * pipeline - this accepts every type, because the form assistant feeds its attachments through
+   * [`DocumentIngestion`] first (Word/Excel/ODT/ZIP/TIFF/PDF → pages, which may be TEXT rather than
+   * an image). The decoding is unchanged: base64 after the comma.
+   *
+   * @param params The servlet action parameters containing upload files and headers.
+   * @return A map of attachment name → raw bytes (any type).
+   */
+  fun collectAttachmentData(params: IPluginServletActionParams): Map<String, ByteArray> {
+    val fileDataMap = mutableMapOf<String, ByteArray>()
+
+    params.uploadFiles?.forEach { (inputName, fileDataList) ->
+      val combinedBytes =
+          fileDataList.fold(byteArrayOf()) { acc, fd -> acc + (fd.data ?: byteArrayOf()) }
+
+      if (combinedBytes.isNotEmpty()) {
+        fileDataMap[inputName] = combinedBytes
+
+        log(LogLevel.INFO, "Upload attachment '$inputName': ${combinedBytes.size} bytes")
+      }
+    }
+
+    params.requestParameters?.forEach { (key, values) ->
+      if (key.startsWith("codbi-base64:")) {
+        val attachmentName = key.removePrefix("codbi-base64:")
+        val dataUrl = values.firstOrNull() ?: return@forEach
+
+        if (!dataUrl.startsWith("data:")) {
+          log(LogLevel.WARNING, "Skipping non-data-URL parameter for '$attachmentName'")
+
+          return@forEach
+        }
+
+        try {
+          val bytes = java.util.Base64.getDecoder().decode(dataUrl.substringAfter(","))
+
+          if (bytes.isNotEmpty()) {
+            fileDataMap[attachmentName] = bytes
+
+            log(
+                LogLevel.INFO,
+                "Base64 param attachment '$attachmentName': ${bytes.size} bytes " +
+                    "(type '${dataUrl.substringAfter("data:").substringBefore(';')}')")
+          }
+        } catch (e: IllegalArgumentException) {
+          log(LogLevel.WARNING, "Failed to decode base64 for '$attachmentName': ${e.message}")
+        }
+      }
+    }
+
+    return fileDataMap
+  }
+
+  /**
    * Collects image data from both multipart upload files and base64 data-URL parameters.
    *
    * @param params The servlet action parameters containing upload files and headers.

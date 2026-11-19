@@ -318,6 +318,15 @@ const DOM_FIELD_PATH_PROPERTIES: ReadonlySet<string> = new Set([
 /** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
   /**
+   * Upper bound for resolving ONE functionality's parameters (element placeholders included).
+   *
+   * The resolution waits for every referenced placeholder; a placeholder whose own request never
+   * settles (a hanging `fetch`, an unresolvable nested placeholder) used to keep the CodBi loading
+   * animation over the tagged field forever (reported). After this window the loader is removed and
+   * the condition is logged.
+   */
+  private static readonly EP_RESOLUTION_TIMEOUT_MS = 20_000;
+  /**
    * Safely loads and executes code returned by the CodBi_LocalAPIDoc as an ES module.
    * This avoids direct eval and reduces bundler warnings.
    *
@@ -328,6 +337,30 @@ export class CodBi implements CodbiGlobal {
    *
    * @param rawCode The stored code as returned by the API-doc's `Code` action.
    */
+  /**
+   * The registered **E**lement **P**laceholder generator for [id] (case-insensitive), or `undefined`
+   * when nothing callable is registered under it.
+   *
+   * Reported live: applying a standard configuration whose parameter referenced a local EP threw
+   * `TypeError: this.availableEPs[…] is not a function` — the EP's stored code had been imported, but
+   * it did not register that id (empty or renamed `registerEP` call), so the direct call dereferenced
+   * `undefined` and aborted the WHOLE configuration. Callers use this helper and keep the raw value.
+   */
+  private registeredEP(
+    id: string,
+  ): ((params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>) | undefined {
+    const fn = this.availableEPs[id.toLowerCase()];
+    return typeof fn === "function" ? fn : undefined;
+  }
+
+  /** Reports that a loaded EP code did not register the placeholder it was fetched for. */
+  private reportUnregisteredEP(id: string): void {
+    this.reportInfo(
+      `Element-Placeholder (${id}) was loaded but did not register itself — check its stored code ` +
+        `(exactly one registerEP('${id}', …) call). The parameter keeps its raw value.`,
+    );
+  }
+
   private async importRemoteModule(rawCode: string): Promise<void> {
     const code = rawCode.replace(/<\|>/g, '"');
     const blob = new Blob([code], { type: "text/javascript" });
@@ -431,6 +464,17 @@ export class CodBi implements CodbiGlobal {
   protected pendingFunctionalityMeta: { [k: string]: FunctionalityMeta } = {};
   /** Stores all active CSS-Classes that're references to CodBi Standard-Configurations. */
   protected configs: Array<string> = new Array<string>();
+  /**
+   * The loading animation per TARGET element.
+   *
+   * Removal must never depend on the DOM position or on the `data-name` attribute: a functionality may
+   * MOVE its element into a wrapper of its own (the generated calculators do
+   * `parent.insertBefore(wrapper, toProcess)`), and a standard configuration writes its `data-cb-*`
+   * attributes onto an inner CARRIER element — both made the `cbFOR` selector miss the loader that had
+   * been injected, so the CodBi spinner stayed over the field (reported: only when the functionality
+   * came from a standard configuration).
+   */
+  protected loaderByTarget: WeakMap<Element, HTMLElement> = new WeakMap<Element, HTMLElement>();
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   protected functionalities: Map<string, (toLoad: any, toProcess: Element) => any> = new Map<
     string,
@@ -873,7 +917,15 @@ export class CodBi implements CodbiGlobal {
         },
         success: async (response) => {
           if (response.result !== "NONE") {
-            await this.importRemoteModule(response.result);
+            try {
+              await this.importRemoteModule(response.result);
+            } catch (error) {
+              // A stored EP code that does not even evaluate must never leave this promise pending:
+              // the caller AWAITS it before it can invoke the placeholder and remove the element's
+              // loader — a failed import used to hang the whole resolution and the CodBi spinner
+              // stayed over the field forever (reported).
+              console.warn(`[CodBi] The stored code of the element placeholder '${epId}' could not be loaded`, error);
+            }
           }
 
           resolve();
@@ -1617,9 +1669,20 @@ export class CodBi implements CodbiGlobal {
 
                 this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string), reference)
                   .then((real) => {
-                    const epResult = DEFINED.tsCheck<
-                      (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
-                    >(this.availableEPs[outermostEP.keyPlaceholder])(real);
+                    // The imported code MUST have registered this placeholder (the id is lowercased
+                    // at registration, the key here was not — the reported `… is not a function`).
+                    const ep = this.registeredEP(outermostEP.keyPlaceholder);
+                    if (ep === undefined) {
+                      this.reportUnregisteredEP(outermostEP.keyPlaceholder);
+                      result.splice(i, 0, candidate);
+
+                      if (--cntPromises === 0) {
+                        resolve(result);
+                      }
+
+                      return;
+                    }
+                    const epResult = ep(real);
                     // If the element placeholder is asynchronous...
                     if (epResult instanceof Promise) {
                       epResult
@@ -1713,7 +1776,7 @@ export class CodBi implements CodbiGlobal {
                     }
 
                     if (outermostEP !== null) {
-                      if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {
+                      if (this.registeredEP(outermostEP.keyPlaceholder) !== undefined) {
                         cntPromises++;
 
                         this.checkEPOverride(outermostEP.keyPlaceholder.toLowerCase()).then(() => {
@@ -1777,9 +1840,17 @@ export class CodBi implements CodbiGlobal {
                             // Promises counter for this already set in advance 'cause of asynchronous download of EP code.
                             this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference)
                               .then((real) => {
-                                const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
-                                  outermostEP.params === "" ? new Array<string>() : real,
-                                );
+                                const ep = this.registeredEP(outermostEP.keyPlaceholder);
+                                if (ep === undefined) {
+                                  this.reportUnregisteredEP(outermostEP.keyPlaceholder);
+
+                                  if (--cntPromises === 0) {
+                                    resolve(config);
+                                  }
+
+                                  return;
+                                }
+                                const epResult = ep(outermostEP.params === "" ? new Array<string>() : real);
 
                                 if (epResult instanceof Promise) {
                                   epResult
@@ -1835,36 +1906,49 @@ export class CodBi implements CodbiGlobal {
               }
 
               if (outermostEP !== null) {
-                if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {
+                if (this.registeredEP(outermostEP.keyPlaceholder) !== undefined) {
                   cntPromises++;
 
                   this.checkEPOverride(outermostEP.keyPlaceholder.toLowerCase()).then(() => {
-                    this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference).then((real) => {
-                      const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
-                        outermostEP.params === "" ? new Array<string>() : real,
-                      );
-                      // If parameter is a single element placeholder...
-                      if (epResult instanceof Promise) {
-                        epResult
-                          .then((real) => {
-                            config[key] = real;
+                    this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference)
+                      .then((real) => {
+                        const ep = this.registeredEP(outermostEP.keyPlaceholder);
+                        if (ep === undefined) {
+                          this.reportUnregisteredEP(outermostEP.keyPlaceholder);
 
-                            if (--cntPromises === 0) {
-                              resolve(config);
-                            }
-                          })
-                          .catch((X: unknown) => {
-                            reject(X);
-                          });
-                      } else {
-                        // If parameter is not an array and contains no element placeholder...
-                        config[key] = epResult;
+                          if (--cntPromises === 0) {
+                            resolve(config);
+                          }
 
-                        if (--cntPromises === 0) {
-                          resolve(config);
+                          return;
                         }
-                      }
-                    });
+                        const epResult = ep(outermostEP.params === "" ? new Array<string>() : real);
+                        // If parameter is a single element placeholder...
+                        if (epResult instanceof Promise) {
+                          epResult
+                            .then((real) => {
+                              config[key] = real;
+
+                              if (--cntPromises === 0) {
+                                resolve(config);
+                              }
+                            })
+                            .catch((X: unknown) => {
+                              reject(X);
+                            });
+                        } else {
+                          // If parameter is not an array and contains no element placeholder...
+                          config[key] = epResult;
+
+                          if (--cntPromises === 0) {
+                            resolve(config);
+                          }
+                        }
+                      })
+                      // A failing parameter resolution (an unresolvable NESTED placeholder) must reject
+                      // this promise instead of leaving it pending — a pending promise kept the
+                      // element's CodBi loader forever.
+                      .catch((X: unknown) => reject(X));
                   });
                 } else {
                   // #region Fix CSS recognized as an element placeholder bug.
@@ -1899,9 +1983,19 @@ export class CodBi implements CodbiGlobal {
                       await this.importRemoteModule(response.result);
 
                       this.resolveEPParams(this.splitUnbracedParams(outermostEP.params), reference).then((real) => {
-                        const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
-                          outermostEP.params === "" ? new Array<string>() : real,
-                        );
+                        // The imported code must have registered the placeholder; a code row that is
+                        // empty or registers a different id used to throw here (reported).
+                        const ep = this.registeredEP(outermostEP.keyPlaceholder);
+                        if (ep === undefined) {
+                          this.reportUnregisteredEP(outermostEP.keyPlaceholder);
+
+                          if (--cntPromises === 0) {
+                            resolve(config);
+                          }
+
+                          return;
+                        }
+                        const epResult = ep(outermostEP.params === "" ? new Array<string>() : real);
                         // If parameter is a single element placeholder...
                         if (epResult instanceof Promise) {
                           epResult
@@ -2480,11 +2574,17 @@ export class CodBi implements CodbiGlobal {
    *
    * @param destination The {@link Element } that shall precede the {@link CodBiLogo }. */
   public injectLoadingAnim(destination: Element): void {
+    const loaderSelector = `.cCodBiLoader[cbFOR="${(destination as HTMLElement).getAttribute("data-name")}"]`;
+    // Already animated? The per-element map is authoritative (position-independent).
+    if (this.loaderByTarget.get(destination)?.isConnected === true) {
+      return;
+    }
     if (
       XFC_METADATA.requestType === "print" ||
-      destination.parentElement?.querySelector(
-        `.cCodBiLoader[cbFOR="${(destination as HTMLElement).getAttribute("data-name")}"]`,
-      ) !== null
+      // Document-wide on purpose: a functionality may have MOVED the element into a wrapper, so the
+      // loader of a previous run is no longer a sibling. Without this a second run injected a SECOND
+      // loader into the new wrapper.
+      document.querySelector(loaderSelector) !== null
     ) {
       return; // Don't inject a loader if there is already one present for this element.
     }
@@ -2536,13 +2636,25 @@ export class CodBi implements CodbiGlobal {
   public removeLoaderAnim(toRemoveFrom: Element): void {
     const selector = `.cCodBiLoader[cbFOR="${toRemoveFrom.getAttribute("data-name")}"]`;
 
-    // Remove all matching loaders (handles duplicates from multi-functionality elements or DOM cloning).
-    const loaders = toRemoveFrom.parentElement?.querySelectorAll(selector);
+    // 1) The loader registered for THIS element — works no matter where the element (or its loader)
+    //    was moved to. A standard configuration targets an inner CARRIER element, so `data-name` can
+    //    even be missing; the map still resolves it.
+    const mapped = this.loaderByTarget.get(toRemoveFrom);
 
-    if (loaders && loaders.length > 0) {
-      for (const loader of loaders) {
-        loader.remove();
-      }
+    if (mapped !== undefined) {
+      mapped.remove();
+      this.loaderByTarget.delete(toRemoveFrom);
+    }
+
+    // 2) Selector sweep: also clears duplicates left by multi-functionality elements or DOM cloning.
+    //    Searched in the WHOLE DOCUMENT, not only in `parentElement`, because a functionality may MOVE
+    //    the element into a wrapper of its own (`parent.insertBefore(wrapper, toProcess);
+    //    wrapper.appendChild(toProcess)`), which made the old parent-only lookup miss the loader.
+    const loaders = (toRemoveFrom.parentElement ?? document).querySelectorAll(selector);
+    const fallback = loaders.length === 0 ? document.querySelectorAll(selector) : loaders;
+
+    for (const loader of Array.from(fallback)) {
+      loader.remove();
     }
   }
   /**
@@ -2552,9 +2664,13 @@ export class CodBi implements CodbiGlobal {
    *
    * @param toMarkError The {@link Element } whose loader shall be marked as erroneous. */
   public markLoaderError(toMarkError: Element): void {
-    const loaderAnimation = toMarkError.parentElement?.querySelector(
-      `.cCodBiLoader[cbFOR="${toMarkError.getAttribute("data-name")}"]`,
-    );
+    const selector = `.cCodBiLoader[cbFOR="${toMarkError.getAttribute("data-name")}"]`;
+    // Same reasoning as removeLoaderAnim: the element may have been MOVED into a wrapper (or the
+    // configuration applied it to an inner carrier), so the registered loader is the reliable handle.
+    const loaderAnimation =
+      this.loaderByTarget.get(toMarkError) ??
+      toMarkError.parentElement?.querySelector(selector) ??
+      document.querySelector(selector);
 
     if (loaderAnimation === null || loaderAnimation === undefined) {
       return;
@@ -2655,7 +2771,16 @@ export class CodBi implements CodbiGlobal {
                   },
                   success: async (response) => {
                     if (response.result !== "NONE") {
-                      await this.importRemoteModule(response.result);
+                      try {
+                        await this.importRemoteModule(response.result);
+                      } catch (error) {
+                        // Never leave this promise pending — the whole element would stay in its
+                        // "Processing" state (and keep its loader) without a single error message.
+                        console.warn(
+                          `[CodBi] The stored code of the functionality '${funcKey}' could not be loaded`,
+                          error,
+                        );
+                      }
                     }
 
                     resolve();
@@ -2679,8 +2804,31 @@ export class CodBi implements CodbiGlobal {
             //            if not deactivated.
             toProcess.classList.add("Processing", "CodBi");
 
+            // SAFETY NET for the loader: the resolution below WAITS for element placeholders, and a
+            // placeholder whose own request never settles (e.g. a hanging `fetch` in an offline
+            // designer preview) left the CodBi spinner over the field indefinitely (reported). The
+            // timer removes it and reports the condition; a settled resolution clears the timer.
+            let loaderTimer: number | undefined;
+            const clearLoaderTimer = (): void => {
+              if (loaderTimer !== undefined) {
+                window.clearTimeout(loaderTimer);
+                loaderTimer = undefined;
+              }
+            };
+            loaderTimer = window.setTimeout(() => {
+              loaderTimer = undefined;
+              const stuckElement = this.reQueryIfDetached(toProcess);
+              console.warn(
+                `[CodBi] Resolving the parameters of '${functionality}' did not finish within ` +
+                  `${CodBi.EP_RESOLUTION_TIMEOUT_MS} ms — removing the loading animation. Check the element placeholders it references.`,
+              );
+              this.removeLoaderAnim(stuckElement);
+              stuckElement.classList?.remove("Processing");
+            }, CodBi.EP_RESOLUTION_TIMEOUT_MS);
+
             this.resolveEP(codbiAttributes, toProcess)
               .then((real) => {
+                clearLoaderTimer();
                 codbiAttributes = real;
                 const currentElement = this.reQueryIfDetached(toProcess);
                 toInvoke(codbiAttributes, currentElement);
@@ -2704,6 +2852,7 @@ export class CodBi implements CodbiGlobal {
                 }
               })
               .catch((X: unknown) => {
+                clearLoaderTimer();
                 const failedElement = this.reQueryIfDetached(toProcess);
                 this.reportFunctionalityError(failedElement, functionality, codbiAttributes, X, "");
                 this.markLoaderError(failedElement);

@@ -9,11 +9,15 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { Constants } from "codbi-common";
 
-// `MultiSelect.ts` imports `notifyFormPreviewChanged` from CodbiElementMarkers, which pulls in a lot
-// of designer-side machinery (EPBuilder, MirrorSelect, badge painting, MutationObservers ...) that is
-// irrelevant here. Stub the whole module so the editor under test loads in isolation.
+// `MultiSelect.ts` imports `notifyFormPreviewChanged` / `refreshCodbiElementMarkers` from
+// CodbiElementMarkers, which pulls in a lot of designer-side machinery (EPBuilder, MirrorSelect,
+// badge painting, MutationObservers ...) that is irrelevant here. Stub the whole module so the editor
+// under test loads in isolation. BOTH exports must be present: a toggle re-renders the on-canvas
+// badges (they dim the classes of a not-activated configuration), so the module is called on every
+// change.
 jest.mock("../src/js/CodbiElementMarkers.js", () => ({
   notifyFormPreviewChanged: jest.fn(),
+  refreshCodbiElementMarkers: jest.fn(),
 }));
 
 import { Callbacks } from "@de-xima/fc-form-designer";
@@ -129,5 +133,29 @@ describe("MultiSelect standard-configuration tree", () => {
     // re-render re-checked the config the user had just turned OFF.
     expect(checkboxFor(element, HOLISTIC)!.checked).toBe(false);
     expect(editor.getValue()).toBe("");
+  });
+
+  /**
+   * Reported: a standard configuration activated from the PER-ELEMENT CodBi panel was persisted (the
+   * runtime applied it) but its row stayed UNCHECKED here. The registry keys are lowercased while the
+   * checkbox values come from the file listing (`Paul.Saul`) — the comparison was exact.
+   */
+  it("checks a configuration whose stored id differs from the file-listing casing", () => {
+    const local = "paul.saul";
+    setPluginData({
+      fileListing: ["Paul.Saul.js"],
+      detStandards: { [local]: { Active: false } },
+      pendingStandards: undefined,
+    });
+    const { editor, element } = buildEditor();
+
+    // What `setStandardsValue` receives from an activation (the stored, lowercased id).
+    editor.setValue(local);
+
+    expect(checkboxFor(element, "Paul.Saul")!.checked).toBe(true);
+    expect(
+      (window as unknown as { CodbiPluginData: { detStandards: Record<string, { Active?: boolean }> } }).CodbiPluginData
+        .detStandards[local].Active,
+    ).toBe(true);
   });
 });

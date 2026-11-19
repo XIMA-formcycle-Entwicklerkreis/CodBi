@@ -29,8 +29,9 @@ export class LDAP_Autocomplete_Set {
       default: "The LDAP-Property used by the autocompleting inputs within the tagged container to look-up the match.",
     },
     CSSProposals: {
-      type: "string",
+      type: "css",
       default: "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+      cssKind: "declarations",
     },
     URL: { type: "string", default: "The URL of the Formcycle predefined LDAP-Query to use." },
   })

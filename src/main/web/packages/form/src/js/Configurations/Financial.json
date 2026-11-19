@@ -3,11 +3,19 @@
   "classes": {
     "CodBi_Currency": {
       "description": "Apply to an XTextField with datatype='money' or 'formattedNumber' that represents a currency/monetary amount. Formats input using Cleave with currency format.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n        numeral: true,\n        numeralThousandsGroupStyle: \"thousand\",\n        numeralDecimalMark: \",\",\n        delimiter: \"\",\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_TRANS_NTW": {
       "description": "Apply to an XTextField that represents a net/tax amount (NTW = Netto). Transforms input for net value calculations.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "// HTML.Input.Trans.NTW — NOT HTML.Input.Cleave": "Cleave has no NumberWords parameter",
+        "and a\n      // Cleave without a Config/Date falls back to a DATE mask, so binding this class to Cleave\n      // turned the field into a date input instead of writing the digits out as words.\n      FUNC": "HTML.Input.Trans.NTW",
+        "NumberWords": "[\"Null\", \"Eins\", \"Zwei\", \"Drei\", \"Vier\", \"Fünf\", \"Sechs\", \"Sieben\", \"Acht\", \"Neun\"]"
+      }
     }
   },
   "funcs": {

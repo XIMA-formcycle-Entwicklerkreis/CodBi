@@ -1,5 +1,5 @@
 // #region Imports
-import { Callbacks, instance } from "@de-xima/fc-form-designer";
+import { instance } from "@de-xima/fc-form-designer";
 import { Constants, type TStandardConfigClassSpec } from "codbi-common";
 
 import {
@@ -90,6 +90,65 @@ export function formatMessage(message: string, ...values: string[]): string {
  *
  * @param extra Ids to treat as active in addition to the persisted/flagged ones.
  */
+/**
+ * Queues a standards CSV for the form-level "Standard Configurations" editor.
+ *
+ * The editor (`MultiSelect`) reads `window.CodbiPluginData.pendingStandards` / the
+ * `codbi-pending-standards` session key **in its constructor** and applies the value through its own
+ * `setStandardsValue`, which persists `codbi-prop-standards`. Writing the queue is therefore the
+ * reliable way to make an activation performed ELSEWHERE (the per-element panel, a marker badge)
+ * show up CHECKED in that listing.
+ *
+ * @param csv The complete standards CSV (existing ids plus the newly activated one).
+ */
+/**
+ * The **form-level** standards editor instance (`MultiSelect` of `codbi-prop-standards`), or
+ * `undefined` while that panel has not been built (it is created lazily when the form's CodBi
+ * options are opened).
+ *
+ * Its `setStandardsValue` is the ONLY reliable writer of the persisted standards CSV: it updates the
+ * checkboxes AND fires the designer's `set-property` callback with the correct sender.
+ */
+function resolveStandardsEditor():
+  | { setStandardsValue?: (csv: string) => void; config?: { property?: string } }
+  | undefined {
+  try {
+    const designer = instance() as unknown as
+      | {
+          getPropertyView?: () =>
+            | {
+                getEditorForProperty?: (property: string) => unknown;
+                getPropertyEditors?: () => ReadonlyArray<{ config?: { property?: string } }>;
+              }
+            | undefined;
+        }
+      | undefined;
+    const view = designer?.getPropertyView?.();
+    const property = Constants["designer.property.standards"];
+    const candidate =
+      (view?.getEditorForProperty?.(property) as { setStandardsValue?: (csv: string) => void } | undefined) ??
+      (view?.getPropertyEditors?.().find((entry) => entry?.config?.property === property) as
+        | { setStandardsValue?: (csv: string) => void }
+        | undefined);
+    return candidate ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function queuePendingStandards(csv: string): void {
+  try {
+    window.CodbiPluginData.pendingStandards = csv;
+  } catch {
+    /* registry not writable — the sessionStorage channel below still applies */
+  }
+  try {
+    sessionStorage.setItem("codbi-pending-standards", csv);
+  } catch {
+    /* storage unavailable — nothing can be queued */
+  }
+}
+
 export function activeStandardConfigIds(extra: readonly string[] = []): string[] {
   const result: string[] = [];
   const add = (raw: unknown): void => {
@@ -311,14 +370,17 @@ export function standardConfigClassEntries(configId: string): IStandardConfigCla
  * Makes the standard CONFIGURATION `configId` active for the edited form, so its script is injected
  * for the form and every class it provides does what it promises.
  *
- * Three paths, most reliable first:
+ * Four paths, most reliable first:
  *
  * 1. `CodbiPluginData.setStandardsValue` — the form-level standards editor, which persists
  *    `codbi-prop-standards`, updates the `Active` flags and re-applies running element previews.
- * 2. The designer's own `set-property` callback (the very callback the standards tree fires) plus
- *    the `Active` flag — needed because the standards editor only publishes path 1 once it has been
- *    MOUNTED, i.e. after the CodBi form options were opened.
- * 3. The standards tree's checkbox, if it happens to be rendered.
+ * 2. That same editor, resolved through the designer's property view (`getEditorForProperty`) — it
+ *    exists even when the plugin hook was never published.
+ * 3. The QUEUE the editor consumes in its constructor (`pendingStandards` / sessionStorage) plus the
+ *    `Active` flag — the case where the form's CodBi options were never opened, so no editor exists
+ *    yet. Firing the designer's `set-property` callback instead does NOT work: it acts on the SENDER
+ *    editor's own property (reported as "the configuration stays unchecked").
+ * 4. The standards tree's checkbox, if it happens to be rendered.
  *
  * @param configId The standard-configuration id to activate.
  * @param options  Optional extra active ids, callback sender and success hook.
@@ -342,33 +404,56 @@ export function activateStandardConfig(configId: string, options: IStandardConfi
       refreshCodbiElementMarkers();
       return true;
     }
+    // The standards EDITOR instance resolved through the designer — the same object that publishes
+    // `setStandardsValue`, but reachable even when that plugin hook was not set (an older bundle).
+    const editor = resolveStandardsEditor();
+    if (editor && typeof editor.setStandardsValue === "function") {
+      editor.setStandardsValue(next);
+      options.onActivated?.(id);
+      notifyFormPreviewChanged();
+      refreshCodbiElementMarkers();
+      return true;
+    }
     // No standards editor instance this session: persist the property through the designer's own
     // callback and mark the configuration ACTIVE (the canvas badges read that flag).
     const standardsDef = window.CodbiPluginData?.detStandards?.[id];
     if (standardsDef) {
       standardsDef.Active = true;
     }
-    const setPropertyCallback = Callbacks["set-property"];
-    if (setPropertyCallback && typeof setPropertyCallback.fire === "function") {
-      // Called as a METHOD so the callback keeps its own `this`.
-      setPropertyCallback.fire(Constants["designer.property.standards"], next, options.sender as never);
-      options.onActivated?.(id);
-      notifyFormPreviewChanged();
-      refreshCodbiElementMarkers();
-      return true;
-    }
+    // The form-level standards editor is only CONSTRUCTED once the form's CodBi options were opened
+    // in this session, so `setStandardsValue` does not exist yet on most activations. Queue the new
+    // CSV in the very channel that editor consumes on construction (see `MultiSelect`'s
+    // constructor) — otherwise the configuration was activated for the element panel/preview but
+    // stayed UNCHECKED in the form-level listing (reported), and the next panel build cleared the
+    // `Active` flag again because the persisted CSV never contained the id.
+    queuePendingStandards(next);
+    // NOTE: `Callbacks["set-property"]` is deliberately NOT fired here any more. The callback acts on
+    // the SENDER editor (`sender.config.property` / `sender.getValue()`), and every internal caller
+    // passes an editor bound to the edited property. Firing it with the ELEMENT panel as sender never
+    // persisted the standards CSV (reported: the configuration stayed unchecked in the form-level
+    // listing even after a reload) — it could even target the element's own property. The two paths
+    // above plus the queue below are the reliable ones.
     // Last resort: tick the form-level tree's checkbox; its `change` handler persists the selection.
     const checkbox = document.getElementById(`CodBi-StandardConfigSelector_${id}`);
     if (checkbox instanceof HTMLInputElement && !checkbox.checked) {
       checkbox.checked = true;
       checkbox.dispatchEvent(new Event("change", { bubbles: true }));
       options.onActivated?.(id);
+      notifyFormPreviewChanged();
+      refreshCodbiElementMarkers();
       return true;
     }
-    console.warn(
-      `[CodBi] Standard configuration "${id}" is not active for this form and could not be activated automatically.`,
+    // Neither an editor instance nor a rendered checkbox: the QUEUE written above is still the
+    // authoritative hand-over (the form-level list applies it when it is constructed). The
+    // configuration is flagged ACTIVE for this session, so the panel row and the canvas badge stop
+    // marking it — reported as "activation does nothing" while it was actually queued.
+    console.info(
+      `[CodBi] Standard configuration "${id}" was queued for the form's standard-configuration list and is applied as soon as that list is built.`,
     );
-    return false;
+    options.onActivated?.(id);
+    notifyFormPreviewChanged();
+    refreshCodbiElementMarkers();
+    return true;
   } catch (x) {
     console.warn("[CodBi] Could not activate the standard configuration", x);
     return false;

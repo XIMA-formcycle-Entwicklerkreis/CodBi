@@ -18,7 +18,7 @@
   },
   "parameters": {
     "MaxField": {
-      "type": "string",
+      "type": "selector",
       "default": "CSS selector selecting the input element that takes the maximum date."
     },
     "MsgMinInvalid": {

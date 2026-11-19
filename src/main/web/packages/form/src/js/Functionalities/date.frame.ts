@@ -39,7 +39,7 @@ export class Date_Frame {
   @DBC.ParamvalueProvider
   @SupportedFormelementtype({ XTextField: { datatype: "date*" } })
   @ParameterTypes({
-    MaxField: { type: "string", default: "CSS selector selecting the input element that takes the maximum date." },
+    MaxField: { type: "selector", default: "CSS selector selecting the input element that takes the maximum date." },
     MsgMinInvalid: {
       type: "string",
       default: "The error message shown when the minimum field's value is after the one in the maximum field.",

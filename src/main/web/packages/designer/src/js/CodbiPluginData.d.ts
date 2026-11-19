@@ -64,6 +64,12 @@ interface Window {
                 descriptionDe?: string;
                 descriptionIt?: string;
                 formelementtypes?: Array<string>;
+                /**
+                 * The literal parameter values this class's `loadConfig` applies. Published by the
+                 * config generator for BUILT-IN configs; for LOCAL/manager configs it is derived at
+                 * render time from the config's `Code`. Drives the PRE-FILLED value inputs of the
+                 * per-element standard-config parameter panel. */
+                params?: { [key: string]: string };
               }
             | string;
         };

@@ -10,8 +10,21 @@
 /**
  * The editor/type of a **CodBi Functionality** parameter. `string` is the free-text default used
  * whenever no type is declared; `number` and `integer` differ only in the editor's step.
+ *
+ * `css` opens the CSS editor (see the designer's `CssEditor`); `selector` is the same editor in
+ * selector-only mode. Which of the four CSS flavours applies is declared via
+ * {@link IParameterSpec.cssKind }.
  */
-export type TParameterType = "string" | "integer" | "number" | "boolean" | "enum" | "csv";
+export type TParameterType = "string" | "integer" | "number" | "boolean" | "enum" | "csv" | "css" | "selector";
+
+/**
+ * The four meanings a `type: "css"` parameter can have:
+ * - `stylesheet` — a whole rule list injected as a `<style>` element (`HTML.CSS.CSS`).
+ * - `declarations` — a bare `property: value;` list applied to one element (`HTML.Panel.CSSHeaderUnfolded`).
+ * - `classes` — space separated CSS CLASS names (`DQ.Table.View.CSS`).
+ * - `selector` — a CSS selector, not a style at all (`Print.Remove.DocumentSelector`).
+ */
+export type TCssParameterKind = "stylesheet" | "declarations" | "classes" | "selector";
 
 /**
  * The type of ONE **subpart** (grid column) of a `csv` parameter. Mirrors {@link TParameterType }
@@ -57,6 +70,13 @@ export interface IParameterSpec {
   itemSeparator?: string;
   /** For `type: "csv"`: the separator between the subparts (fields) of one element. Defaults to `;`. */
   fieldSeparator?: string;
+  /**
+   * For `type: "css"`: which of the four CSS meanings the parameter has. Absent means `"stylesheet"`.
+   * `type: "selector"` implies `"selector"`.
+   */
+  cssKind?: TCssParameterKind;
+  /** For `type: "css"`: optional per-parameter snippets offered by the editor. */
+  snippets?: ReadonlyArray<string>;
   /** The default value (always expressed as a string, exactly as the runtime receives it). */
   default?: string;
   /** A short, human-readable description of the parameter. */
@@ -86,7 +106,16 @@ export interface IParameterMeta {
 const PARAM_SPEC_KEY = Symbol.for("codbi.functionality.parameterTypes");
 
 /** Every valid {@link TParameterType }, used to validate/normalize incoming specs. */
-const VALID_PARAMETER_TYPES: ReadonlyArray<TParameterType> = ["string", "integer", "number", "boolean", "enum", "csv"];
+const VALID_PARAMETER_TYPES: ReadonlyArray<TParameterType> = [
+  "string",
+  "integer",
+  "number",
+  "boolean",
+  "enum",
+  "csv",
+  "css",
+  "selector",
+];
 
 /** Every valid {@link TCsvSubpartType }, used to validate/normalize csv subpart specs. */
 const VALID_CSV_SUBPART_TYPES: ReadonlyArray<TCsvSubpartType> = ["string", "integer", "number", "boolean", "enum"];
@@ -197,6 +226,20 @@ export function normalizeParameterSpec(input: IParameterSpec | TParameterType | 
     }
     if (input.fieldSeparator !== undefined) {
       spec.fieldSeparator = String(input.fieldSeparator);
+    }
+  }
+  if (type === "css" || type === "selector") {
+    const kind = String(input.cssKind ?? "")
+      .trim()
+      .toLowerCase();
+    if (kind === "stylesheet" || kind === "declarations" || kind === "classes" || kind === "selector") {
+      spec.cssKind = kind;
+    }
+    if (Array.isArray(input.snippets)) {
+      const snippets = input.snippets.map((snippet) => String(snippet)).filter((snippet) => snippet.trim().length > 0);
+      if (snippets.length > 0) {
+        spec.snippets = snippets;
+      }
     }
   }
   if (input.default !== undefined) {

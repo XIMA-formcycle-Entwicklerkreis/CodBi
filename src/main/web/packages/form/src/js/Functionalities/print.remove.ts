@@ -49,7 +49,7 @@ export class Print_Remove {
       default: "The number of elements to climb up the parentElement-Tree to get to the element to remove.",
     },
     DocumentSelector: {
-      type: "string",
+      type: "selector",
       default: "The CSS-Selector specifying the element to remove. This parameter takes precedence over ParentalLevel.",
     },
     Invert: {

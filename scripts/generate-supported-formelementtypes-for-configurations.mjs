@@ -301,6 +301,47 @@ function findObjectEnd(content, start) {
 }
 
 /**
+ * Reads the LITERAL properties (`name: "…" | 12 | true`) of a config object body, so the designer can
+ * pre-fill the parameter rows of a standard configuration with the values it actually applies.
+ *
+ * Non-literal values (identifiers, function calls, object literals) are skipped — they cannot be
+ * reproduced outside the runtime.
+ *
+ * @param content The raw text of an object literal (starting right after the `{`).
+ * @returns A map of the literal property values (all as strings).
+ */
+function readLiteralProperties(content) {
+  const props = {};
+  let i = 0;
+
+  while (i < content.length) {
+    while (i < content.length && /[\s,;]/.test(content[i])) {
+      i++;
+    }
+    const nameStart = i;
+    while (i < content.length && content[i] !== ":" && content[i] !== "}") {
+      i++;
+    }
+    if (i >= content.length || content[i] !== ":") {
+      break;
+    }
+    const name = content
+      .slice(nameStart, i)
+      .trim()
+      .replace(/^["'`]|["'`]$/g, "");
+    i++; // skip the `:`
+    const value = readValue(content, i);
+    const text = String(value.text ?? "").trim();
+    if (name !== "" && text !== "") {
+      props[name] = text;
+    }
+    i = value.end;
+  }
+
+  return props;
+}
+
+/**
  * Scans the source of a configuration for every config object literal passed to `loadConfig({
  * ... })` or `loadConfigs([ ... ])`. Returns an array of objects describing each config object:
  * `{ startIndex, endIndex (exclusive of closing brace), indentation, alreadyHasKey, hasTargets }`.
@@ -434,6 +475,36 @@ for (const file of readdirSync(configurationsDir)) {
 
   const objectInfos = scanConfigObjects(source);
 
+  // The literal parameter values each config object applies, keyed by the CSS-standard class it
+  // targets (`targets: ".Some_Class"`). Published into the `.json` so the element CodBi panel can
+  // PRE-FILL the parameter rows of a standard configuration and let the author override single values.
+  const PARAM_METADATA_KEYS = new Set([
+    "targets",
+    "FUNC",
+    "func",
+    KEY,
+    "parameters",
+    "supportedFormelementtypes",
+  ]);
+  const paramsByClass = {};
+  for (const info of objectInfos) {
+    const props = readLiteralProperties(source.slice(info.bodyStart, info.close));
+    const targets = String(props.targets ?? "");
+    const params = {};
+    for (const [name, value] of Object.entries(props)) {
+      if (!PARAM_METADATA_KEYS.has(name)) {
+        params[name] = value;
+      }
+    }
+    for (const rawTarget of targets.split(",")) {
+      const cssClass = rawTarget.trim().replace(/^\./, "");
+      if (cssClass === "" || cssClass === "head" || cssClass === "body") {
+        continue;
+      }
+      paramsByClass[cssClass] = { ...(paramsByClass[cssClass] ?? {}), ...params };
+    }
+  }
+
   // Holistic → the literal `["Holistic"]` keyword (fixed). Regular → EVERY call derives its OWN
   // `supportedFormelementtypes` from the FUNC(s) referenced by THAT call only (a configuration's
   // `FUNC`/`func` is what actually applies — a config targeting an XTextField via `HTML.Input.Regex`
@@ -543,6 +614,12 @@ for (const file of readdirSync(configurationsDir)) {
       mergedClasses[cls] = { description, ...localized };
       if (types.length > 0) {
         mergedClasses[cls].formelementtypes = types;
+      }
+      // The literal values the class's config object applies (see `paramsByClass`). Omitted when the
+      // class's config object declares none (or only non-literal ones).
+      const classParams = paramsByClass[cls];
+      if (classParams != null && Object.keys(classParams).length > 0) {
+        mergedClasses[cls].params = classParams;
       }
     }
     if (Object.keys(mergedClasses).length > 0) {

@@ -161,6 +161,70 @@ function buildFileList(serializedFiles: string): string {
     })
     .join(",");
 }
+/**
+ * Drops LOCAL entries of one live registry that the stored documentation no longer contains.
+ *
+ * The live `CodbiPluginData.det*` registries are MERGED on every local-doc reload — entries are only
+ * ever added. An element that was DELETED in the local API-doc manager therefore stayed in the
+ * designer forever (reported: the per-element standard-configuration listing kept offering deleted
+ * configurations). Built-in entries are untouched: only entries carrying `local === true` (i.e.
+ * written by the manager/assistant) may be pruned, and only when the stored doc does not have them.
+ *
+ * @param registry The live registry (`detFunctionalities` / `detElementplaceholder` / `detStandards`).
+ * @param stored   The corresponding map of the stored documentation.
+ * @returns The removed keys (lowercased), so their `.js` listings can be pruned too.
+ */
+function pruneRemovedLocalEntries(
+  registry: Record<string, { local?: boolean } | undefined>,
+  stored: Record<string, unknown> | undefined,
+): string[] {
+  const present = new Set(Object.keys(stored ?? {}).map((key) => key.toLowerCase()));
+  const removed: string[] = [];
+  for (const key of Object.keys(registry)) {
+    const entry = registry[key];
+    if (entry?.local !== true) {
+      continue;
+    }
+    if (!present.has(key.toLowerCase())) {
+      delete registry[key];
+      removed.push(key.toLowerCase());
+    }
+  }
+  return removed;
+}
+
+/**
+ * Removes `<key>.js` from the three serialized file listings of `CodbiPluginData`.
+ *
+ * The listings are merged (never replaced) the same way, so a deleted local element's file name kept
+ * the form-level standards editor (which builds its tree from `fileListing`) offering it.
+ *
+ * @param keys The lowercased element keys whose file entries are removed.
+ */
+function pruneLocalFileListings(keys: readonly string[]): void {
+  if (keys.length === 0) {
+    return;
+  }
+  const wanted = new Set(keys.map((key) => `${key}.js`));
+  const prune = (serialized: string | undefined): string => {
+    let files: string[];
+    try {
+      files = JSON.parse(String(serialized ?? "[]"));
+    } catch {
+      return String(serialized ?? "[]");
+    }
+    if (!Array.isArray(files)) {
+      return String(serialized ?? "[]");
+    }
+    const kept = files.filter((file) => !wanted.has(String(file).toLowerCase()));
+    return JSON.stringify(kept);
+  };
+  const data = window.CodbiPluginData;
+  data.fileListing = prune(data.fileListing);
+  data.fslFunctionalities = prune(data.fslFunctionalities);
+  data.fslElementplaceholder = prune(data.fslElementplaceholder);
+}
+
 /** Parses a file-list value from a server response, handling both JSON array strings and legacy CSV.
  *
  * @param raw The raw value from the response (may be a JSON array string or a CSV string).
@@ -395,6 +459,15 @@ export function enableLocalDocInterface(): void {
   for (const key in window.CodbiPluginData.detFunctionalities) {
     builtinFunctionalities[key] = JSON.parse(JSON.stringify(window.CodbiPluginData.detFunctionalities[key]));
   }
+
+  // Snapshots of the BUILT-IN file listings (functionalities, EPs and standard configurations), taken
+  // before the stored local documentation is merged in. They are the base every reload rebuilds from —
+  // merging on top of the PREVIOUS merged state is what kept DELETED local elements in the listings
+  // forever (reported: `Paul.Saul` / `Peter.Hase` stayed in the form's standard-configuration
+  // listing long after they had been removed in the local API-doc manager).
+  const builtinFileListing: string = String(window.CodbiPluginData.fileListing ?? "[]");
+  const builtinFslFunctionalities: string = String(window.CodbiPluginData.fslFunctionalities ?? "[]");
+  const builtinFslElementplaceholder: string = String(window.CodbiPluginData.fslElementplaceholder ?? "[]");
 
   const builtinElementplaceholder: { [key: string]: (typeof window.CodbiPluginData.detElementplaceholder)[string] } =
     {};
@@ -1075,11 +1148,11 @@ export function enableLocalDocInterface(): void {
           }
 
           for (const functionality in response.detFunctionalities) {
+            const stored = response.detFunctionalities[functionality];
             // Merge OVER the freshly restored built-in entry instead of replacing it wholesale, so the
             // build-time metadata the stored doc does not carry — the parameter TYPE map (`parameters`)
             // and the supported form-element types — survives. Otherwise a stored API-doc entry would
             // strip `parameters` and turn every typed editor back into a plain text input.
-            const stored = response.detFunctionalities[functionality];
             const builtin = window.CodbiPluginData.detFunctionalities[functionality];
 
             window.CodbiPluginData.detFunctionalities[functionality] = {
@@ -1105,16 +1178,27 @@ export function enableLocalDocInterface(): void {
                     (window.CodbiPluginData.detFunctionalities[functionality] as unknown as { Code: string }).Code =
                       response.result.replaceAll("<|>", '"');
                   }
+                  return;
+                }
+                // No code body in the database: this is a parent path-segment node (e.g. the `Lokaler`
+                // of `Lokaler.Rechner`) — applying it to a form element is senseless, so drop it from
+                // the registry. Only LOCAL entries reach here; built-ins are never part of the stored
+                // response. Do not touch the registry while the document is still being parsed.
+                if (document.readyState === "complete") {
+                  delete window.CodbiPluginData.detFunctionalities[functionality];
+                  window.CodbiPluginData?.refreshElementConfig?.();
                 }
               },
             });
           }
 
           if (response.fslFunctionalities) {
-            const existingFsl: string[] = JSON.parse(window.CodbiPluginData.fslFunctionalities);
+            // Rebuilt from the BUILT-IN listing + the STORED one (never from the previously merged
+            // state) — a deleted local functionality/EP must disappear instead of lingering.
             const newFsl = parseFileListResponse(response.fslFunctionalities);
-            const merged = [...new Set([...existingFsl, ...newFsl])];
-            window.CodbiPluginData.fslFunctionalities = JSON.stringify(merged);
+            window.CodbiPluginData.fslFunctionalities = JSON.stringify([
+              ...new Set([...parseFileListResponse(builtinFslFunctionalities), ...newFsl]),
+            ]);
           }
 
           for (const placeholder in response.detElementplaceholder) {
@@ -1140,10 +1224,10 @@ export function enableLocalDocInterface(): void {
           }
 
           if (response.fslElementplaceholder) {
-            const existingEp: string[] = JSON.parse(window.CodbiPluginData.fslElementplaceholder);
             const newEp = parseFileListResponse(response.fslElementplaceholder);
-            const merged = [...new Set([...existingEp, ...newEp])];
-            window.CodbiPluginData.fslElementplaceholder = JSON.stringify(merged);
+            window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
+              ...new Set([...parseFileListResponse(builtinFslElementplaceholder), ...newEp]),
+            ]);
           }
 
           if (response.detStandards) {
@@ -1171,11 +1255,91 @@ export function enableLocalDocInterface(): void {
           }
 
           if (response.fileListing) {
-            const existingFl: string[] = JSON.parse(window.CodbiPluginData.fileListing);
-            const newFl = parseFileListResponse(response.fileListing);
-            const merged = [...new Set([...existingFl, ...newFl])];
-            window.CodbiPluginData.fileListing = JSON.stringify(merged);
+            // THE form-level standard-configuration listing is built from this array, so it must be
+            // rebuilt (built-ins + stored) rather than merged: a deleted local configuration kept its
+            // `.js` here and therefore stayed offered in the form's CodBi panel forever (reported).
+            //
+            // The STORED list itself can carry such a leftover too (the manager removes the entry from
+            // `detStandards` but a `.js` name that was added in an earlier session survives in the
+            // documentation JSON). A name is therefore only kept when the stored documentation really
+            // defines that standard configuration — a `.js` without an entry can never be activated,
+            // it can only show up as a dead row.
+            // Two conditions, both mirroring what the local API-doc MANAGER itself treats as a real
+            // entry: (1) the stored documentation must define that key at all, and (2) its
+            // `Description` must be non-empty — an empty one marks a bare tree PATH SEGMENT, which the
+            // manager never lists. Assistant-generated entries that were deleted (or written with a
+            // casing the manager lowercases) survived as such stubs: invisible in the manager, yet
+            // listed here and impossible to remove there (reported).
+            const storedStandards = new Set(
+              Object.entries(response.detStandards ?? {})
+                .filter(([, def]) => String((def as { Description?: string } | null)?.Description ?? "").trim() !== "")
+                .map(([key]) => key.toLowerCase()),
+            );
+            const baseName = (file: string): string =>
+              file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+            // The plugin's own (built-in) standards are ALWAYS legitimate, even though the stored
+            // documentation never mentions them — only a name that is neither built-in nor backed by a
+            // stored entry can be a leftover of a deleted local configuration.
+            const builtinNames = new Set(
+              parseFileListResponse(builtinFileListing).map((file) => baseName(file).toLowerCase()),
+            );
+            const isReal = (file: string): boolean => {
+              const name = baseName(file).toLowerCase();
+              return builtinNames.has(name) || storedStandards.has(name);
+            };
+            const storedEntries = parseFileListResponse(response.fileListing);
+            const newFl = storedEntries.filter(isReal);
+            const dropped = storedEntries.filter((file) => !isReal(file));
+            if (dropped.length > 0) {
+              console.info(
+                "[[ CodBi ] ignored standard-configuration file(s) of deleted local elements " +
+                  "(no matching entry in the local API doc):",
+                dropped,
+              );
+            }
+            window.CodbiPluginData.fileListing = JSON.stringify([
+              ...new Set([...parseFileListResponse(builtinFileListing), ...newFl]),
+            ]);
+          } else {
+            // No stored standards at all: the listing is the pure built-in one. Ghosts of deleted
+            // local configurations must not survive here either.
+            window.CodbiPluginData.fileListing = JSON.stringify(parseFileListResponse(builtinFileListing));
           }
+
+          // #region Prune LOCAL entries the stored documentation no longer contains
+          // A deleted local element is simply absent from the response, but the merges above only ADD
+          // — so the per-element listings (and the form-level standards tree, which is built from
+          // `fileListing`) kept offering it until the page was reloaded (reported). Only entries the
+          // local API doc itself created (`local === true`) are pruned; built-ins are never touched.
+          const removedLocals = [
+            ...pruneRemovedLocalEntries(
+              window.CodbiPluginData.detFunctionalities as unknown as Record<string, { local?: boolean }>,
+              response.detFunctionalities,
+            ),
+            ...pruneRemovedLocalEntries(
+              window.CodbiPluginData.detElementplaceholder as unknown as Record<string, { local?: boolean }>,
+              response.detElementplaceholder,
+            ),
+            ...pruneRemovedLocalEntries(
+              window.CodbiPluginData.detStandards as unknown as Record<string, { local?: boolean }>,
+              response.detStandards,
+            ),
+          ];
+          // LOCAL standard configurations WITHOUT a description are only tree path segments for the
+          // manager (it hides and never offers them), but the per-element panel offered them as dead
+          // rows. Drop them here so both surfaces agree.
+          for (const key of Object.keys(window.CodbiPluginData.detStandards)) {
+            const entry = window.CodbiPluginData.detStandards[key] as { local?: boolean; Description?: string };
+            if (entry?.local === true && String(entry?.Description ?? "").trim() === "") {
+              delete (window.CodbiPluginData.detStandards as Record<string, unknown>)[key];
+              removedLocals.push(key.toLowerCase());
+            }
+          }
+          if (removedLocals.length > 0) {
+            pruneLocalFileListings(removedLocals);
+            console.info("[[ CodBi ] removed deleted local API-doc element(s):", removedLocals);
+          }
+          // #endregion
 
           setTimeout(() => {
             window.CodbiPluginData.populateStandards();

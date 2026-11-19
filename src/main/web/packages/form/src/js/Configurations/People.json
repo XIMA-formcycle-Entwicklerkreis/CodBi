@@ -3,11 +3,26 @@
   "classes": {
     "CodBi_People_Alphanumeric": {
       "description": "Apply to an XTextField that should only accept alphanumeric characters (letters and numbers, no special chars). Useful for IDs, usernames, alphanumeric codes.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Expression": "°[-0-9A-za-zÄÜÖäüöß/:# ]*[0-9A-za-z]$",
+        "KeyExpression": "[-0-9A-za-zÄÜÖäüöß/:# ]",
+        "Flags": "i",
+        "ErrorPrefix": "Der Name muss dem regulären Ausdruck",
+        "ErrorPostfix": "entsprechen.",
+        "ExposeExpression": "TRUE"
+      }
     },
     "CodBi_People_Name": {
       "description": "Apply to any XTextField or XTextArea that represents a person's name (e.g. Vorname, Nachname, full name). When you create such a field, you MUST also ensure the 'People' standard configuration is checked/active in the form properties (codbi-prop-standards).",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Expression": "°[-A-za-zÄÜÖäüößà-ÿ' ]*[a-zà-ÿ']$",
+        "KeyExpression": "[ A-Za-zÄÜÖäüößà-ÿ'-]",
+        "ErrorPrefix": "Der Name muss dem regulären Ausdruck",
+        "ErrorPostfix": "entsprechen.",
+        "ExposeExpression": "TRUE"
+      }
     },
     "CodBi_People_BuildingNumber": {
       "description": "Apply to an XTextField that represents a building/house number in an address. Accepts digits, letters and slashes.",
@@ -15,27 +30,57 @@
     },
     "CodBi_People_Mail": {
       "description": "Apply to an XTextField that represents an email address. Validates email format.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Expression": "°[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z][a-zA-Z]?$",
+        "KeyExpression": "[a-zA-Z0-9._%+-@]",
+        "Flags": "i",
+        "ErrorPrefix": "Die Mailadresse muss dem regulären Ausdruck",
+        "ErrorPostfix": "entsprechen.",
+        "ExposeExpression": "TRUE"
+      }
     },
     "CodBi_People_18plus": {
       "description": "Apply to an XTextField with datatype='dateDE' for date-of-birth fields. Enforces minimum age of 18 years.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Minimum": "18",
+        "MsgHigher": "18 Jahre ist das erforderliche Mindestalter."
+      }
     },
     "CodBi_People_16plus": {
       "description": "Apply to an XTextField with datatype='dateDE' for date fields. Enforces minimum age of 16 years.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Minimum": "16",
+        "MsgHigher": "16 Jahre ist das erforderliche Mindestalter."
+      }
     },
     "CodBi_People_Phone": {
       "description": "Apply to an XTextField that represents a phone number. Formats input using Cleave with German phone format.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n      phone: true,\n      phoneRegionCode: \"DE\",\n    })\n      .replace(\"{\", \"<\")\n      .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_People_PLZ": {
       "description": "Apply to an XTextField representing a German postal code (PLZ). Formats input using Cleave with 5-digit numeral format.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "config": "^${JSON.stringify({\n      numeral: true,\n      numeralIntegerScale: 5,\n      delimiter: \"\",\n    })\n      .replace(\"{\", \"<\")\n      .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_Fotocropper": {
       "description": "Apply to the container element of a photo cropper setup. Use together with Fotocropper_Board, Fotocropper_Uploader, Fotocropper_Update, Fotocropper_ImageURL and Fotocropper_Foto.",
-      "formelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"]
+      "formelementtypes": ["XContainer", "XContainerInvisible", "XFieldSet"],
+      "params": {
+        "Container": ".CodBi_Fotocropper_Board",
+        "File": ".CodBi_Fotocropper_Uploader",
+        "Updater": ".CodBi_Fotocropper_Update",
+        "ImageURL": ".CodBi_Fotocropper_ImageURL",
+        "Target": ".CodBi_Fotocropper_Foto",
+        "AspectRatio": "4 / 3"
+      }
     },
     "CodBi_Fotocropper_Board": {
       "description": "Apply to the container element that holds the cropper preview board.",
@@ -69,15 +114,48 @@
     },
     "CodBi_People_OpenPLZ_AC_SET_PLZ": {
       "description": "Apply to the postal code input in an OpenPLZ address autocomplete set within a People context.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Country": "{ V > CodBi_OpenPLZ_Country }",
+        "TargetData": "PostalCodes",
+        "Dependent": ".CodBi_People_OpenPLZ_AC_SET_Locality",
+        "FocusOnAutocomplete": ".CodBi_People_OpenPLZ_AC_SET_Street",
+        "MsgNotKnown": "Nur bekannte Postleitzahlen sind zulässig.",
+        "config": "^${JSON.stringify({\n        numeral: true,\n        numeralIntegerScale: 5,\n        delimiter: \"\",\n      })\n        .replace(\"{\", \"<\")\n        .replace(\"}\", \">\")}"
+      }
     },
     "CodBi_People_OpenPLZ_AC_SET_Locality": {
       "description": "Apply to the locality/city input in an OpenPLZ address autocomplete set within a People context.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Country": "{ V > CodBi_OpenPLZ_Country }",
+        "TargetData": "Localities",
+        "Dependent": ".CodBi_People_OpenPLZ_AC_SET_PLZ",
+        "FocusOnAutocomplete": ".CodBi_People_OpenPLZ_AC_SET_Street",
+        "MsgNotKnown": "Nur bekannte Örtlichkeiten sind zulässig.",
+        "Expression": "°[-A-za-zÄÜÖäüößà-ÿ' ]*[a-zà-ÿ']$",
+        "KeyExpression": "[ A-Za-zÄÜÖäüößà-ÿ'-]",
+        "ErrorPrefix": "Der Name muss dem regulären Ausdruck",
+        "ErrorPostfix": "entsprechen.",
+        "ExposeExpression": "TRUE"
+      }
     },
     "CodBi_People_OpenPLZ_AC_SET_Street": {
       "description": "Apply to the street input in an OpenPLZ address autocomplete set within a People context.",
-      "formelementtypes": ["XTextField"]
+      "formelementtypes": ["XTextField"],
+      "params": {
+        "Country": "{ V > CodBi_OpenPLZ_Country }",
+        "TargetData": "Streets",
+        "DependentLocality": ".CodBi_People_OpenPLZ_AC_SET_Locality",
+        "DependentPLZ": ".CodBi_People_OpenPLZ_AC_SET_PLZ",
+        "FocusOnAutocomplete": ".CodBi_People_OpenPLZ_AC_SET_BuildingNumber",
+        "MsgNotKnown": "Nur bekannte Straßen sind zulässig.",
+        "Expression": "°[-A-za-zÄÜÖäüößà-ÿ' ]*[a-zà-ÿ']$",
+        "KeyExpression": "[ A-Za-zÄÜÖäüößà-ÿ'-]",
+        "ErrorPrefix": "Der Name muss dem regulären Ausdruck",
+        "ErrorPostfix": "entsprechen.",
+        "ExposeExpression": "TRUE"
+      }
     },
     "CodBi_People_OpenPLZ_AC_SET_BuildingNumber": {
       "description": "Apply to the building number input in an OpenPLZ address autocomplete set within a People context.",

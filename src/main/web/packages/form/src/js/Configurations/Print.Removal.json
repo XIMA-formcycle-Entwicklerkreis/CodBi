@@ -5,10 +5,16 @@
       "description": "Apply to any form element that should be removed/hidden when the form is printed."
     },
     "CodBi_Print_Remove_Parent": {
-      "description": "Apply to any form element whose parent container should be removed when printing."
+      "description": "Apply to any form element whose parent container should be removed when printing.",
+      "params": {
+        "ParentalLevel": "1"
+      }
     },
     "CodBi_Print_Remove_PrintOnly": {
-      "description": "Apply to any form element that should ONLY be visible when printing (hidden on screen)."
+      "description": "Apply to any form element that should ONLY be visible when printing (hidden on screen).",
+      "params": {
+        "Invert": "TRUE"
+      }
     }
   },
   "funcs": {

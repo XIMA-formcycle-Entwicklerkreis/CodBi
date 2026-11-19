@@ -1,5 +1,7 @@
 import { describe, expect, it, afterEach } from "@jest/globals";
 
+import { getJQuery } from "@de-xima/fc-form-renderer";
+
 import { SV } from "../../src/js/Functionalities/sv.js";
 
 const setSearch = (search: string): void => {
@@ -164,5 +166,40 @@ describe("SV.functionality", () => {
 
     // The value is readable back through the same data-name lookup used by the V EP.
     expect(document.querySelector('[data-name="destName"]')?.getAttribute("value")).toBe("John");
+  });
+
+  it("re-asserts the URL value when Formcycle re-hydrates the form data via afterLoadFormData", () => {
+    setSearch("?name=John");
+    const target = document.createElement("input");
+    target.setAttribute("data-name", "reassertDest");
+    document.body.appendChild(target);
+
+    SV.functionality({ destinations: "reassertDest", sources: "name" }, target);
+    expect(target.value).toBe("John");
+
+    // Simulate Formcycle's c.xutil.load(XM_FORM_SAVEVALUES) overwriting the variable with the original value.
+    target.value = "OriginalPersistedValue";
+    target.setAttribute("value", "OriginalPersistedValue");
+
+    // Formcycle fires afterLoadFormData synchronously at the end of every load — SV must win the race.
+    getJQuery().xutil.trigger("afterLoadFormData", [{ fileStore: {}, formData: {}, form: null }]);
+
+    expect(target.value).toBe("John");
+    expect(target.getAttribute("value")).toBe("John");
+  });
+
+  it("re-asserts silently when the destination element has vanished (no ERROR log)", () => {
+    setSearch("?name=John");
+    const logSpy = jest.spyOn(window.codbi, "log");
+
+    SV.functionality({ destinations: "vanishedDest", sources: "name" }, document.body);
+    expect(document.querySelector('[data-name="vanishedDest"]')).toBeNull();
+
+    // The destination was never declared, so the re-assert path must not spam ERROR logs.
+    getJQuery().xutil.trigger("afterLoadFormData", [{ fileStore: {}, formData: {}, form: null }]);
+
+    expect(logSpy.mock.calls.some(([level]) => level === "ERROR")).toBe(true);
+    // The ERROR comes from the initial SV.functionality run only — re-assertion adds no further errors.
+    expect(logSpy.mock.calls.filter(([level]) => level === "ERROR").length).toBe(1);
   });
 });

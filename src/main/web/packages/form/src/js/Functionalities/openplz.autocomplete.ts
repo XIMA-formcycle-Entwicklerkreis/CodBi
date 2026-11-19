@@ -95,30 +95,31 @@ export class OpenPLZ_Autocomplete {
         "The optional country to retrieve the data of (if not provided either the country specified in the CodBi's Configuration OpenPLZ_Country will be used or, if not specified, de).",
     },
     CSSProposals: {
-      type: "string",
+      type: "css",
       default: "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+      cssKind: "declarations",
     },
     MsgNotKnown: {
       type: "string",
       default: "The message to show when trying to set a value that can't be found in OpenPLZ.",
     },
     Dependent: {
-      type: "string",
+      type: "selector",
       default:
         "The CSS-Selector of the field whose value restricts the search results. Prefer DependentPLZ / DependentLocality for streets.",
     },
     DependentPLZ: {
-      type: "string",
+      type: "selector",
       default:
         "The CSS-Selector of the field that restricts the search of streets by its value resembling a postal-code, only if DependentLocality is undefined.",
     },
     DependentLocality: {
-      type: "string",
+      type: "selector",
       default:
         "The CSS-Selector of the field that restricts the search of streets by its value resembling a locality (overwrites DependentPLZ).",
     },
     FocusOnAutocomplete: {
-      type: "string",
+      type: "selector",
       default: "The CSS-Selector of the field to focus when an autocomplete has occurred.",
     },
     AllowEmpty: { type: "boolean", default: "if set to true an empty input value won't trigger an error message." },

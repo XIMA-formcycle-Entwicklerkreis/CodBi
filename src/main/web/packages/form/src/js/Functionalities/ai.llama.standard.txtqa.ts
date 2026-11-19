@@ -132,7 +132,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
       default: "if set to 'true', enables pii filtering on brave search queries for this instance.",
     },
     QuestionRoot: {
-      type: "string",
+      type: "selector",
       default:
         "Optional CSS selector specifying an alternate root element from which to search for question and source elements.",
     },

@@ -27,8 +27,21 @@ import org.w3c.dom.Node
  * verbatim instead of being guessed from pixels.
  */
 internal sealed interface IngestedPart {
-  /** A raster page, ready to be sent to the vision model (any format [ImageIO] can read). */
-  data class Image(val name: String, val bytes: ByteArray) : IngestedPart {
+  /** The attachment/page name this part came from (e.g. `report_page_2.png`). */
+  val name: String
+
+  /**
+   * A raster page, ready to be sent to the vision model (any format [ImageIO] can read).
+   *
+   * [graphics] are the artwork printed on that page (a logo, an icon, an illustration) taken out of
+   * the PDF EXACTLY - see [DocumentGraphics]. A graphic is not a printed "entry", so it has to be
+   * handed to the build separately.
+   */
+  data class Image(
+      override val name: String,
+      val bytes: ByteArray,
+      val graphics: List<DocumentGraphic> = emptyList()
+  ) : IngestedPart {
     // The bytes are compared by identity on purpose: a data class would compare array CONTENT and
     // walk the whole image on every equality check.
     override fun equals(other: Any?) = this === other
@@ -37,10 +50,14 @@ internal sealed interface IngestedPart {
   }
 
   /** A text page/section (paragraphs, table rows, HTML, CSV, office document text). */
-  data class Text(val name: String, val text: String) : IngestedPart
+  data class Text(
+      override val name: String,
+      val text: String,
+      val graphics: List<DocumentGraphic> = emptyList()
+  ) : IngestedPart
 
   /** A file that cannot be used (with the reason, so the user gets an actionable message). */
-  data class Unsupported(val name: String, val reason: String) : IngestedPart
+  data class Unsupported(override val name: String, val reason: String) : IngestedPart
 }
 
 /**
@@ -126,7 +143,16 @@ internal object DocumentIngestion {
   fun ingestAll(files: Map<String, ByteArray>, log: (String) -> Unit = {}): List<IngestedPart> {
     val budget = Budget()
     val out = mutableListOf<IngestedPart>()
-    for ((name, bytes) in files) {
+    // The attachment map comes from the servlet's request parameters and has NO stable order, so a
+    // rasterised multi-page document arrived as page 2, page 1, page 3 - and the form's pages were
+    // built in exactly that order (reported: "the 2nd pdf page became the first form page"). Sort
+    // by the page number the browser puts in the name (`…_page_2.png`), then by name, so the build
+    // always sees the document's OWN order.
+    val ordered =
+        files.entries
+            .sortedWith(compareBy({ pageNumberOf(it.key) ?: Int.MAX_VALUE }, { it.key }))
+            .associate { it.key to it.value }
+    for ((name, bytes) in ordered) {
       out += ingest(name, bytes, 0, budget, log)
       if (budget.exceeded) {
         log("Attachment budget exhausted - the remaining files are ignored")
@@ -135,6 +161,22 @@ internal object DocumentIngestion {
     }
     return out
   }
+
+  /**
+   * The printed PAGE number an attachment name carries (`report_page_2.png` -> 2), or `null` when
+   * the name has none.
+   *
+   * The client rasterises a document page by page and names the images `<base>_page_<n>.<ext>`
+   * (1-based, in document order), so the name is the only reliable carrier of the page order across
+   * the unordered request parameters.
+   */
+  internal fun pageNumberOf(name: String): Int? =
+      Regex("_page_(\\d{1,4})\\.[A-Za-z0-9]{2,5}$")
+          .find(name.trim())
+          ?.groupValues
+          ?.get(1)
+          ?.toIntOrNull()
+          ?.takeIf { it >= 1 }
 
   /** Ingests ONE file, recursing into archives while the budget allows. */
   internal fun ingest(
@@ -352,7 +394,18 @@ internal object DocumentIngestion {
     PDDocument.load(bytes).use { document ->
       val pages = document.numberOfPages
       val renderer by lazy { PDFRenderer(document) }
+      // The ARTWORK of every page, taken out of the PDF exactly (vectors -> inline SVG, bitmaps ->
+      // PNG data URI). A graphic is not a printed entry, so it is handed to the build separately -
+      // otherwise a logo / illustration on the page never reaches the generated form.
+      val graphicsByPage =
+          runCatching { DocumentGraphics.extract(document) }.getOrDefault(emptyMap())
+      if (graphicsByPage.isNotEmpty()) {
+        log(
+            "PDF '$name': ${graphicsByPage.values.sumOf { it.size }} graphic(s) extracted from " +
+                "${graphicsByPage.size} page(s)")
+      }
       for (index in 0 until pages) {
+        val graphics = graphicsByPage[index + 1].orEmpty()
         val text =
             runCatching {
                   val stripper = PDFTextStripper()
@@ -362,14 +415,16 @@ internal object DocumentIngestion {
                 }
                 .getOrDefault("")
         if (text.isNotEmpty()) {
-          parts += IngestedPart.Text(pageName(name, index + 1, pages), cap(text))
+          parts += IngestedPart.Text(pageName(name, index + 1, pages), cap(text), graphics)
         } else {
           val image =
               runCatching {
                     toPng(renderer.renderImageWithDPI(index, PDF_RENDER_DPI, ImageType.RGB))
                   }
                   .getOrNull()
-          if (image != null) parts += IngestedPart.Image(pageName(name, index + 1, pages), image)
+          if (image != null) {
+            parts += IngestedPart.Image(pageName(name, index + 1, pages), image, graphics)
+          }
         }
       }
       if (parts.size > 1) log("PDF '$name' split into ${parts.size} page(s)")

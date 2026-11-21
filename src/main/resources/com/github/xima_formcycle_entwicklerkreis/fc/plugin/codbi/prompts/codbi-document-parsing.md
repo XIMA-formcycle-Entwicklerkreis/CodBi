@@ -39,6 +39,17 @@ Whenever a signature area, signature line, or closing salutation appears anywher
 ### DOCUMENT HEADER
 When the attached document has a header with an organization name, update the form's existing XHeader item.
 
+### GRAPHICS (logos, icons, illustrations, drawings)
+A graphic printed on a page is part of the form's DESIGN, not a field and not a printed "entry": a logo, an icon, an illustration, a seal, a decorative shape. Every graphic the document shows MUST appear in the form, otherwise the form loses part of its design.
+
+The attachment gives you the graphics of each page as ASSETS - an id, whether it is a vector graphic or a bitmap, its size and where it sits on the page (see the "GRAPHICS PRINTED IN THE ATTACHED DOCUMENT" list of THIS message; a page built on its own lists them in its own instructions). Reproduce a graphic with ONE `XSpan` per graphic whose `properties.rtevalue` is EXACTLY the asset's token - `{{GRAPHIC:<id>}}` and nothing else - and place that XSpan in the page/container where the graphic is printed, in the order it appears relative to the other elements. The server replaces the token with the ORIGINAL artwork (inline SVG for a vector graphic, the embedded image for a bitmap), so the drawing stays exact and stays vector where it is vector.
+
+NEVER redraw, trace, approximate or describe a graphic, never write it as text, and never turn it into a field. NEVER omit a graphic: a logo or illustration that is visible on a page and missing in the form is a FAIL. Each token is used EXACTLY ONCE.
+
+THE XSPAN IS ADDITIONAL, NEVER A REPLACEMENT: place it where the listing says it sits — between the printed lines it names ("directly BELOW the printed line '…' and directly ABOVE the printed line '…'"), or in the page region given — and transcribe the printed lines around it EXACTLY as usual, in their order. Never merge the token into a heading/paragraph's `rtevalue`, never replace a text element with it, and never move, shorten or drop the text above or below it: a graphic that is placed correctly but costs the surrounding text is a FAIL.
+
+NO ASSET FOR A VISIBLE GRAPHIC? DRAW IT YOURSELF: when a page shows a graphic and NO token for it is listed (its artwork could not be extracted - e.g. the document arrived only as page images), NEVER create an empty `XImage`, an upload or a placeholder box for it. Recreate the drawing as an inline `<svg viewBox='…'>…</svg>` INSIDE the `rtevalue` of ONE `XSpan`, at the position where it is printed, with real shapes and its colours; a grey rectangle, a bare circle or the word written as `<text>` instead of the artwork is a FAIL.
+
 ### GROUPED SUB-FIELDS
 When a field label specifies more than one individual data point, create an XFieldSet with one XTextField per sub-item.
 

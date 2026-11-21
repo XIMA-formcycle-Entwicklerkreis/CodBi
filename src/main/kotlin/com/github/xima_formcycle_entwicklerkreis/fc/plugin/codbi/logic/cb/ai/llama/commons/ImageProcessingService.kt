@@ -39,6 +39,17 @@ internal class ImageProcessingService(
      * content analysis on the server.
      */
     const val CLARIFICATION_IMAGE_PREFIX = "clarification:"
+
+    /**
+     * Param-name prefix for the ORIGINAL document the frontend sends IN ADDITION to its rasterised
+     * page images (`codbi-base64:graphics-source:<name>`).
+     *
+     * Rasterising replaces the document with one image per page, so the server would lose the
+     * artwork embedded in it - and a graphic is not visible to text extraction either. The original
+     * file is therefore sent along under this prefix and used ONLY to extract the page graphics
+     * (see [DocumentGraphics]); it never becomes a page of its own.
+     */
+    const val GRAPHICS_SOURCE_PREFIX = "graphics-source:"
   }
 
   /**

@@ -3377,16 +3377,33 @@ export class AiAssistant implements OnInit, OnDestroy {
     return results;
   }
 
+  /**
+   * Param-name prefix of the ORIGINAL document sent along with its rasterised page images. The
+   * server uses it ONLY to extract the artwork printed on the pages (a logo, an icon, an
+   * illustration - see DocumentGraphics), never as a page of its own.
+   */
+  private static readonly GRAPHICS_SOURCE_PREFIX = "graphics-source:";
+
   /** Converts a file to a list of {name, dataUrl} entries ready for codbi-base64 params. */
   private async fileToImageParams(file: File | null): Promise<Array<{ name: string; dataUrl: string }>> {
     if (!file) return [];
+    const dataUrl = await this.blobToDataUrl(file);
     if (this.rasterizeAttachment && AiAssistant.isRasterizable(file)) {
       const rasterized = await this.rasterizeFile(file);
       // A failed render falls through: the document is sent unchanged and the SERVER extracts its
       // pages, so an attachment is never lost because of a browser problem.
-      if (rasterized.length > 0) return rasterized;
+      if (rasterized.length > 0) {
+        // The page images carry the LAYOUT, but not the artwork embedded in the PDF - so the
+        // original document is sent along under the reserved prefix and the server extracts a
+        // logo or illustration from it EXACTLY (vector paths as inline SVG). Skipped for very
+        // large files, where the extra upload would cost more than the artwork is worth.
+        const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+        if (isPdf && file.size <= 8 * 1024 * 1024) {
+          return [...rasterized, { name: `${AiAssistant.GRAPHICS_SOURCE_PREFIX}${file.name}`, dataUrl }];
+        }
+        return rasterized;
+      }
     }
-    const dataUrl = await this.blobToDataUrl(file);
     return [{ name: file.name, dataUrl }];
   }
 

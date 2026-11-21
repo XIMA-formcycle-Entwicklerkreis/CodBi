@@ -11,6 +11,8 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.localize
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.DocumentGraphic
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.DocumentGraphics
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.DocumentIngestion
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
@@ -3572,27 +3574,66 @@ class AICodBiAssistant : IPluginServletAction {
               }
             })
     val imageFileMap = imageService.collectAttachmentData(params)
-    val documentPages =
-        DocumentIngestion.ingestAll(imageFileMap) { msg ->
+    // RASTERISED DOCUMENTS: the frontend sends the ORIGINAL file along with its page images
+    // (`graphics-source:<name>`), because rasterising would otherwise lose the artwork embedded in
+    // it. That file is used ONLY for the graphics - it must never become pages of its own, the
+    // images already are those pages.
+    val graphicsSourceFiles =
+        imageFileMap.filterKeys { it.startsWith(ImageProcessingService.GRAPHICS_SOURCE_PREFIX) }
+    val pageFiles = imageFileMap - graphicsSourceFiles.keys
+    val rasterisedGraphics: Map<Int, List<DocumentGraphic>> =
+        graphicsSourceFiles.values
+            .flatMap { bytes -> DocumentGraphics.extract(bytes).entries }
+            .groupBy({ it.key }, { it.value })
+            .mapValues { (_, lists) -> lists.flatten() }
+    // Every ingested page keeps the PAGE NUMBER its attachment name carries (`…_page_2.png`), so
+    // the extracted artwork is joined to its page by NUMBER - never by position in a list whose
+    // order came from an unordered request map.
+    val ingestedPages =
+        DocumentIngestion.ingestAll(pageFiles) { msg ->
               logger.warn("[AICodBiAssistant] Attachment: {}", msg)
             }
             .mapNotNull { part ->
-              when (part) {
-                is IngestedPart.Image ->
-                    imageService
-                        .prepareImageParts(mapOf(part.name to part.bytes), null)
-                        .firstOrNull()
-                        ?.let { DocumentPageInput(it, null) }
-                is IngestedPart.Text -> DocumentPageInput(null, part.text)
-                is IngestedPart.Unsupported -> {
-                  logger.warn(
-                      "[AICodBiAssistant] Attachment '{}' cannot be used: {}",
-                      part.name,
-                      part.reason)
-                  null
-                }
-              }
+              val page =
+                  when (part) {
+                    is IngestedPart.Image ->
+                        imageService
+                            .prepareImageParts(mapOf(part.name to part.bytes), null)
+                            .firstOrNull()
+                            ?.let { DocumentPageInput(it, null, part.graphics) }
+                    is IngestedPart.Text -> DocumentPageInput(null, part.text, part.graphics)
+                    is IngestedPart.Unsupported -> {
+                      logger.warn(
+                          "[AICodBiAssistant] Attachment '{}' cannot be used: {}",
+                          part.name,
+                          part.reason)
+                      null
+                    }
+                  } ?: return@mapNotNull null
+              DocumentIngestion.pageNumberOf(part.name) to page
             }
+    // The artwork belongs to the page with the SAME number the browser printed into the image name,
+    // so it is attached to the page it is actually on.
+    val documentPages =
+        ingestedPages.map { (pageNo, page) ->
+          val extra = pageNo?.let { rasterisedGraphics[it] }.orEmpty()
+          if (extra.isEmpty()) page else page.copy(graphics = page.graphics + extra)
+        }
+    if (rasterisedGraphics.isNotEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Graphics extracted from the rasterised document: {} on {} page(s)",
+          rasterisedGraphics.values.sumOf { it.size },
+          rasterisedGraphics.size)
+    } else if (graphicsSourceFiles.isEmpty() && documentPages.any { it.image != null }) {
+      // The pages arrived as RASTERISED images, so the server never saw the document itself - and
+      // without it the artwork printed on the pages cannot be extracted. The usual cause is a
+      // client bundle that predates the `graphics-source:` upload (its URLs are cache-busted, so a
+      // hard reload of the designer is needed) or a file above the upload limit.
+      logger.warn(
+          "[AICodBiAssistant] The document was rasterised by the client but its ORIGINAL file was " +
+              "not uploaded - the artwork printed on the pages (logos, illustrations) cannot be " +
+              "extracted. Reload the designer (the manager bundle is cached) or attach a smaller file.")
+    }
     if (documentPages.isNotEmpty()) {
       logger.info(
           "[AICodBiAssistant] Attachment pages: {} ({} with an image, {} as text)",
@@ -3626,6 +3667,34 @@ class AICodBiAssistant : IPluginServletAction {
     // The vision parts of the same pages - every existing pass (pass-1, clarification, repair)
     // keeps working unchanged.
     val imageParts = documentPages.mapNotNull { it.image }
+    // The ARTWORK printed on the pages, keyed by the id used in the prompt token
+    // `{{GRAPHIC:<id>}}`. The build only PLACES a graphic (it references the id); the server writes
+    // the exact inline SVG / image data URI into that element, so a logo or an illustration in the
+    // document reaches the form unchanged instead of being approximated or dropped. This is a
+    // mechanical substitution, never a semantic decision.
+    val documentGraphicsAssets: Map<String, DocumentGraphic> =
+        documentPages.flatMap { it.graphics }.associateBy { it.id }
+    if (documentGraphicsAssets.isNotEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Document graphics available to the build: {} ({})",
+          documentGraphicsAssets.size,
+          documentGraphicsAssets.values.joinToString(", ") {
+            it.id + "[" + it.kind.name.lowercase() + "]"
+          })
+      // The placement anchor of every graphic, so a wrong position can be traced to the line the
+      // model was actually given instead of guessed at.
+      documentGraphicsAssets.values.forEach { graphic ->
+        logger.info(
+            "[AICodBiAssistant]   graphic {} on page {} ({}): {}x{} pt, anchorAbove='{}', anchorBelow='{}'",
+            graphic.id,
+            graphic.pageNo,
+            graphic.kind.name.lowercase(),
+            graphic.widthPt.toInt(),
+            graphic.heightPt.toInt(),
+            graphic.anchorAbove ?: "-",
+            graphic.anchorBelow ?: "-")
+      }
+    }
     // BUILD DOCUMENT vs. CLARIFICATION ATTACHMENT: a document the user attaches to a CLARIFICATION
     // ANSWER only answers a question - it is not the document the form is built from. The frontend
     // marks those attachments with [ImageProcessingService.CLARIFICATION_IMAGE_PREFIX], and only a
@@ -4466,7 +4535,7 @@ class AICodBiAssistant : IPluginServletAction {
       // languages).
       val repeatTranslationNoop =
           translationPlan.first && plannedNewLangs.isEmpty() && existingFormLangs.size >= 2
-      val (formJson, applicabilityReport, formTokenUsage) =
+      val (rawFormJson, applicabilityReport, formTokenUsage) =
           try {
             if (sequentialFormLanguages != null) {
               // Translation DELTA protocol (plan §6B): one slim base-language-only view + N small
@@ -4514,6 +4583,10 @@ class AICodBiAssistant : IPluginServletAction {
             return jsonResponse(
                 """{"error":${gson.toJson("Form modification failed: ${e.message}")}}""")
           }
+      // The build referenced the document's artwork by token (`{{GRAPHIC:<id>}}`); the exact SVG /
+      // image data is written into the element here, so a logo or illustration printed on the page
+      // really appears in the form.
+      val formJson = applyDocumentGraphics(rawFormJson, documentGraphicsAssets)
       tokensIn += formTokenUsage.input
       tokensOut += formTokenUsage.output
       runTokens = tokensIn + tokensOut
@@ -6340,6 +6413,37 @@ class AICodBiAssistant : IPluginServletAction {
                       "labels verbatim and treat a printed tick/box glyph as the checkbox or upload " +
                       "decision it marks.")
             }
+    // The ARTWORK printed on the pages (logos, icons, illustrations, seals). The build never sees
+    // the drawing itself - it only places the token, and the server writes the exact vector SVG or
+    // the embedded image into that element (see [applyDocumentGraphics]).
+    val documentGraphicsBlock =
+        if (documentPages.none { it.graphics.isNotEmpty() }) ""
+        else
+            buildString {
+              append(
+                  "\n\n## GRAPHICS PRINTED IN THE ATTACHED DOCUMENT - they are part of the form design, " +
+                      "NOT form fields\n")
+              documentPages.forEachIndexed { index, page ->
+                if (page.graphics.isEmpty()) return@forEachIndexed
+                append("Page ")
+                append((index + 1).toString())
+                append(":\n")
+                page.graphics.forEach { append(it.describe()).append('\n') }
+              }
+              append(
+                  "EVERY graphic listed above MUST appear in the form: create ONE XSpan per graphic " +
+                      "whose \"properties.rtevalue\" is EXACTLY the listed token (e.g. " +
+                      "\"{{GRAPHIC:g1_1}}\" and nothing else) and place it in the page/container " +
+                      "EXACTLY where the listing says it sits - between the printed lines it names, or " +
+                      "in the page region given - in the order it appears relative to the other " +
+                      "elements. The server replaces that token with the ORIGINAL artwork (inline SVG " +
+                      "for a vector graphic, the embedded image otherwise). The XSpan is an ADDITIONAL " +
+                      "element: NEVER merge it into a text element, and NEVER replace, move, shorten " +
+                      "or drop the printed lines around it - transcribe those EXACTLY as usual. So " +
+                      "NEVER redraw, trace, approximate or describe a graphic, NEVER turn it into a " +
+                      "field, a label or a text element, and use each token EXACTLY ONCE. A graphic " +
+                      "printed on a page and missing in the form is a FAIL.\n")
+            }
     val clarificationInstruction =
         if (clarificationContext.isNullOrBlank()) ""
         else
@@ -6349,7 +6453,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "\n\nRESOLVE CROSS-ANSWER REFERENCES: an answer that refers to another answer (e.g. \"same address as 1.\", \"gleiche Adresse wie bei Frage 1\", \"wie in Antwort 1\") means USE that referenced answer's value verbatim — copy it, do not ask again and do not leave it empty." +
                 "\n\nAnswers:\n$clarificationContext"
     val userContent =
-        "Instruction: $prompt$foreignCopyContext$imageHint$documentTextBlock$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
+        "Instruction: $prompt$foreignCopyContext$imageHint$documentTextBlock$documentGraphicsBlock$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
             "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt.\n" +
             "REMINDER 2: when the request is a WHOLE-FORM TRANSLATION that adds another language, your JSON MUST ALSO end with the " +
             "top-level \"_workflowMailLanguages\": [\"<baseLanguageCode>\", \"<addedLanguageCode>\", ...] marker (base language first) " +
@@ -7057,7 +7161,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val pass2UserContent =
-            "Original user request: $prompt$foreignCopyContext$clarificationLine2$buildImageHint$documentTextBlock\n\n" +
+            "Original user request: $prompt$foreignCopyContext$clarificationLine2$buildImageHint$documentTextBlock$documentGraphicsBlock\n\n" +
                 "Complete current form (IPersistJson):\n$pass2FormDump\n\n" +
                 pass2SlicingNote +
                 (if (candidateClause.isNotBlank())
@@ -7489,7 +7593,7 @@ class AICodBiAssistant : IPluginServletAction {
                     "full items (modified or new) and any containers you re-shape, so a stub is never " +
                     "substituted for a real element.\n"
         val finalUserContent =
-            "Original user request: $prompt$foreignCopyContext$buildImageHint$documentTextBlock\n\n" +
+            "Original user request: $prompt$foreignCopyContext$buildImageHint$documentTextBlock$documentGraphicsBlock\n\n" +
                 "Complete current form (IPersistJson):\n$finalFormDump\n\n" +
                 finalSlicingNote +
                 // The previous rerun requested details and then re-requested the SAME set (a
@@ -9240,6 +9344,336 @@ class AICodBiAssistant : IPluginServletAction {
   private val PEOPLE_CLEAVE_REQUEST = Regex("(?i)\\bcleave\\b|eingabemaske|input\\s*mask")
 
   /**
+   * Writes the artwork of an attached document into the form, where the build referenced it, and
+   * puts it back next to the printed line it belongs to.
+   *
+   * A graphic on a page is not a printed "entry", so the build cannot transcribe it, and a vision
+   * model can only APPROXIMATE it. [DocumentGraphics] therefore takes the artwork out of the PDF
+   * exactly (vector paths as inline SVG, embedded bitmaps as PNG data URIs) and the build only
+   * names it: `{{GRAPHIC:<id>}}` inside an element's `rtevalue`. This replaces every such token
+   * with the artwork - a mechanical substitution of a placeholder, never an interpretation of the
+   * request.
+   *
+   * PLACEMENT IS THEN ENFORCED, not trusted: a form is a flow, so the position of the XSpan inside
+   * its container's `elements` array decides where it renders - and a live run placed the graphic
+   * "one text line and one section too low" although the prompt named the printed line it belongs
+   * to. Every graphic therefore carries the printed line above/below it (see [DocumentGraphic]) and
+   * the element is MOVED inside its own container to sit directly after (or before) the element
+   * whose visible text is that line - the text comes from the build's own transcription, so this is
+   * a string comparison, not a semantic guess. When no sibling matches, nothing is moved.
+   *
+   * @return the form JSON with the tokens expanded and the graphics re-anchored (the input
+   *   unchanged when nothing was referenced).
+   */
+  private fun applyDocumentGraphics(
+      formJson: String,
+      assets: Map<String, DocumentGraphic>
+  ): String {
+    if (assets.isEmpty() || !formJson.contains("{{GRAPHIC:")) return formJson
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items")
+      var replaced = 0
+      // The element that received each graphic, so it can be re-anchored afterwards.
+      val placed = mutableListOf<Pair<String, DocumentGraphic>>()
+      if (items != null) {
+        for (el in items) {
+          val item = el.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+          val props = item.getAsJsonObject("properties") ?: continue
+          val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+          var received: DocumentGraphic? = null
+          for (key in props.keySet().toList()) {
+            val value = props.get(key)
+            if (value == null || !value.isJsonPrimitive || !value.asJsonPrimitive.isString) continue
+            var text = value.asString
+            var hit = false
+            for ((id, asset) in assets) {
+              val token = "{{GRAPHIC:$id}}"
+              if (!text.contains(token)) continue
+              text = text.replace(token, asset.html)
+              hit = true
+              received = asset
+            }
+            if (hit) {
+              props.addProperty(key, text)
+              replaced++
+            }
+          }
+          if (received != null) placed += name to received
+        }
+      }
+      var reanchored = 0
+      for ((elementName, asset) in placed) {
+        if (relocateGraphic(root, elementName, asset)) reanchored++
+      }
+      val referenced = assets.keys.count { formJson.contains("{{GRAPHIC:$it}}") }
+      logger.info(
+          "[AICodBiAssistant] Document graphics (placement enforcement active): {} element(s) " +
+              "filled, {} re-anchored next to their printed line, {} of {} graphic(s) referenced",
+          replaced,
+          reanchored,
+          referenced,
+          assets.size)
+      if (referenced < assets.size) {
+        logger.warn(
+            "[AICodBiAssistant] The build did not place {} of {} document graphic(s) - that page " +
+                "artwork is missing from the form",
+            assets.size - referenced,
+            assets.size)
+      }
+      root.toString()
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Placing document graphics failed: {}", e.message)
+      formJson
+    }
+  }
+
+  /**
+   * Moves the element [elementName] so it renders where the graphic is PRINTED: directly after the
+   * element whose visible text is the graphic's `anchorAbove` line (or directly before the one
+   * matching `anchorBelow`). The form is FLAT (`items` + each container's `elements` NAME list), so
+   * moving a name in that array is the whole repositioning.
+   *
+   * TWO things used to make this a no-op, i.e. the graphic stayed wherever the build had parked it
+   * ("the apple is still not where it is in the PDF"):
+   * 1. the container was looked up by `parentid` compared against the container's NAME — but
+   *    Formcycle's `parentid` holds the parent's `id` (`xi-…`), so no container was ever found and
+   *    the method returned before doing anything. Ownership is therefore resolved from the
+   *    containers' `elements` arrays (the single source of truth) and only then from `parentid`,
+   *    accepting BOTH an id and a name.
+   * 2. the printed line was only searched among the graphic's direct SIBLINGS. In a real build the
+   *    line above a drawing often lives in a nested block (fieldset, row, container). The anchor is
+   *    now searched document-wide, and the graphic is moved after (or before) the BLOCK that
+   *    contains that line — still inside its own container, so it never lands inside a two-column
+   *    row. A match on another page is rejected (its block never resolves inside this container).
+   *
+   * @return true when the order actually changed.
+   */
+  private fun relocateGraphic(
+      root: JsonObject,
+      elementName: String,
+      asset: DocumentGraphic
+  ): Boolean {
+    if (asset.anchorAbove.isNullOrBlank() && asset.anchorBelow.isNullOrBlank()) return false
+    val items = root.getAsJsonArray("items") ?: return false
+    fun propsOf(el: JsonElement): JsonObject? =
+        el.takeIf { it.isJsonObject }?.asJsonObject?.getAsJsonObject("properties")
+    fun nameOf(el: JsonElement): String? =
+        propsOf(el)?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+    fun idOf(el: JsonElement): String? =
+        propsOf(el)?.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+    fun itemOf(name: String): JsonElement? = items.firstOrNull { nameOf(it) == name }
+    fun propsByName(name: String): JsonObject? = itemOf(name)?.let(::propsOf)
+    fun declaredParent(name: String): String? =
+        propsByName(name)
+            ?.get("parentid")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+    fun refNames(name: String): List<String> =
+        propsByName(name)
+            ?.get("elements")
+            ?.takeIf { it.isJsonArray }
+            ?.asJsonArray
+            ?.mapNotNull { ref -> ref.takeIf { it.isJsonPrimitive }?.asString } ?: emptyList()
+    // Ownership from the containers' `elements` arrays: Formcycle renders a child only when its
+    // container lists it, so these arrays — not `parentid` — are authoritative.
+    val owners = LinkedHashMap<String, String>()
+    for (el in items) {
+      val containerName = nameOf(el) ?: continue
+      for (ref in refNames(containerName)) owners.putIfAbsent(ref, containerName)
+    }
+    fun containerOf(name: String): String? {
+      owners[name]?.let {
+        return it
+      }
+      // `parentid` references the parent's ID (xi-…); a model sometimes writes the parent's NAME.
+      val declared = declaredParent(name) ?: return null
+      items
+          .firstOrNull { nameOf(it) == declared }
+          ?.let {
+            return nameOf(it)
+          }
+      items
+          .firstOrNull { idOf(it) == declared }
+          ?.let {
+            return nameOf(it)
+          }
+      return null
+    }
+    val containerName = containerOf(elementName)
+    if (containerName == null) {
+      // No container lists it AND `parentid` resolves to nothing: Formcycle renders such an element
+      // nowhere, so there is no slot to correct. Say so instead of failing silently again.
+      logger.warn(
+          "[AICodBiAssistant] Graphic element '{}' has no resolvable container (parentid='{}') - " +
+              "its position cannot be enforced",
+          elementName,
+          declaredParent(elementName) ?: "-")
+      return false
+    }
+    if (propsByName(containerName) == null) return false
+    if (elementName !in refNames(containerName)) return false
+    fun visibleText(name: String): String {
+      val props = propsByName(name) ?: return ""
+      val raw =
+          listOf("rtevalue", "label", "title", "legend", "placeholder")
+              .mapNotNull { key -> props.get(key)?.takeIf { it.isJsonPrimitive }?.asString }
+              .joinToString(" ")
+      return normalizeVisibleText(raw)
+    }
+    // A printed line above `MAX_LINE_CHARS` is stored truncated ("…"), and the build's own
+    // transcription may hyphenate or pad differently — so the anchor is compared on its head.
+    fun anchorKey(raw: String?): String? {
+      val normalized = normalizeVisibleText(raw ?: return null)
+      val trimmed = normalized.removeSuffix("...").removeSuffix("…").trim()
+      return trimmed.takeIf { it.length >= 4 }
+    }
+    fun matchScore(text: String, wanted: String): Int =
+        when {
+          text.isEmpty() -> 0
+          text == wanted -> 4
+          text.contains(wanted) -> 3
+          wanted.contains(text) && text.length >= 4 -> 2
+          wanted.length >= 12 && text.startsWith(wanted.take(12)) -> 1
+          else -> 0
+        }
+    fun bestMatch(anchor: String?): String? {
+      val wanted = anchorKey(anchor) ?: return null
+      var best: String? = null
+      var bestScore = 0
+      for (el in items) {
+        val name = nameOf(el) ?: continue
+        if (name == elementName) continue
+        var score = matchScore(visibleText(name), wanted)
+        if (score == 0) continue
+        // Same container wins a tie: the sibling IS the printed line in the normal case.
+        if (containerOf(name) == containerName) score += 2
+        if (score > bestScore) {
+          bestScore = score
+          best = name
+        }
+      }
+      return best
+    }
+    /** Ancestors of the graphic, nearest first: its own container, then that container's, … */
+    val ancestors = mutableListOf(containerName)
+    var ancestorCursor: String? = containerOf(containerName)
+    var ancestorHops = 0
+    while (ancestorCursor != null && ancestorHops++ < 24 && ancestorCursor !in ancestors) {
+      ancestors += ancestorCursor
+      ancestorCursor = containerOf(ancestorCursor)
+    }
+    /**
+     * The DEEPEST container the graphic SHARES with [name], together with the block inside it -
+     * i.e. where the graphic has to go. The printed line above a drawing often sits in a nested
+     * block (a fieldset, a row), while the build parked the XSpan in a container of its own choice:
+     * then the shared container is the PAGE and the block is that fieldset. Placing the graphic
+     * behind that block reproduces the document's flow WITHOUT dropping the artwork into the
+     * fieldset's two-column layout, and a match on another page resolves to nothing (no shared
+     * ancestor).
+     */
+    fun blockInAncestors(name: String): Pair<String, String>? {
+      var current = name
+      var hops = 0
+      while (hops++ < 24) {
+        val owner = containerOf(current) ?: return null
+        if (owner in ancestors) return owner to current
+        if (owner == current) return null
+        current = owner
+      }
+      return null
+    }
+    fun setElements(container: String, order: List<String>) {
+      val props = propsByName(container) ?: return
+      val rebuilt = JsonArray()
+      order.forEach { rebuilt.add(it) }
+      props.add("elements", rebuilt)
+    }
+    /**
+     * Inserts the graphic next to [block] inside [block]'s container, also when that is a parent.
+     */
+    fun placeAt(where: Pair<String, String>?, after: Boolean): Boolean {
+      if (where == null) return false
+      val targetContainer = where.first
+      val block = where.second
+      val currentOrder = refNames(containerName)
+      if (elementName !in currentOrder) return false
+      var changed = true
+      if (targetContainer == containerName) {
+        val without = currentOrder.filter { it != elementName }.toMutableList()
+        val index = without.indexOf(block)
+        if (index < 0) return false
+        without.add(if (after) index + 1 else index, elementName)
+        // Already exactly where it belongs: that is a SUCCESS, not "no anchor matched" - the old
+        // code returned false here, which reported a correctly placed graphic as unmatched.
+        changed = without != currentOrder
+        if (changed) setElements(containerName, without)
+      } else {
+        // Move the graphic OUT of the container the build chose and INTO the one that prints the
+        // line: remove it from the old `elements` array first, so it is never listed twice.
+        setElements(containerName, currentOrder.filter { it != elementName })
+        val targetOrder = refNames(targetContainer).toMutableList()
+        val index = targetOrder.indexOf(block)
+        if (index < 0) return false
+        targetOrder.add(if (after) index + 1 else index, elementName)
+        setElements(targetContainer, targetOrder)
+      }
+      // `parentid` must name the container that now lists the element: Formcycle renders through
+      // `elements`, but a stale parentid pointing at the OLD container would orphan it on the next
+      // save (the codebase re-derives parentid from `elements` for exactly that reason).
+      val containerId = itemOf(targetContainer)?.let(::idOf)
+      val graphicProps = propsByName(elementName)
+      if (containerId != null &&
+          graphicProps != null &&
+          graphicProps.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString != containerId) {
+        graphicProps.addProperty("parentid", containerId)
+      }
+      logger.info(
+          "[AICodBiAssistant] Placed graphic '{}' in '{}' {} the printed line '{}'{}{}",
+          elementName,
+          targetContainer,
+          if (after) "after" else "before",
+          block,
+          if (targetContainer == containerName) "" else " (moved out of '$containerName')",
+          if (changed) "" else " (already in place)")
+      return true
+    }
+    val afterName = bestMatch(asset.anchorAbove)
+    val afterBlock = afterName?.let(::blockInAncestors)
+    if (afterBlock != null && placeAt(afterBlock, after = true)) return true
+    val beforeName = bestMatch(asset.anchorBelow)
+    val beforeBlock = beforeName?.let(::blockInAncestors)
+    if (beforeBlock != null && placeAt(beforeBlock, after = false)) return true
+    // Nothing matched: the graphic keeps the slot the build chose, but the log names both the
+    // matched element (if any) and the texts that WERE around it - a wrong position is then
+    // diagnosable from the run's log alone, instead of looking like "the feature did nothing".
+    logger.warn(
+        "[AICodBiAssistant] Graphic '{}': nothing to anchor to - anchorAbove='{}' (match: {}), " +
+            "anchorBelow='{}' (match: {}). The build's slot is kept. Texts in container '{}': {}",
+        elementName,
+        asset.anchorAbove ?: "-",
+        afterName ?: (if (afterBlock == null) "none" else "block not in this container"),
+        asset.anchorBelow ?: "-",
+        beforeName ?: (if (beforeBlock == null) "none" else "block not in this container"),
+        containerName,
+        refNames(containerName)
+            .filter { it != elementName }
+            .take(6)
+            .joinToString(" | ") { name -> name + "='" + visibleText(name).take(48) + "'" })
+    return false
+  }
+
+  /** Visible text of an element's properties: HTML tags and the usual entities stripped. */
+  private fun normalizeVisibleText(raw: String): String =
+      raw.replace(Regex("<[^>]*>"), " ")
+          .replace("&nbsp;", " ")
+          .replace("&", "&")
+          .replace(Regex("\\s+"), " ")
+          .trim()
+          .lowercase()
+
+  /**
    * Deterministic safety net for the People standard configuration classes.
    *
    * WHICH class a field needs is the AI's decision — the prompts (always-sent build instruction,
@@ -9486,6 +9920,40 @@ class AICodBiAssistant : IPluginServletAction {
                   else
                       "- at the END of this page add the SUBMIT XButtonList: a single button whose action is exactly {\"page\":\"submit\",\"check\":true,\"customAction\":\"\",\"customClassNames\":\"\",\"displayName\":\"\",\"optionId\":\"submit + check\",\"value\":\"\"}, labelled with the word THIS DOCUMENT'S LANGUAGE uses for sending / submitting the form.\n") +
                   "- NEVER write a page NAME into action.page (use the logical keyword) and never leave it empty. List each of these button lists in this page's \"elements\" array at the position it belongs (start / end).\n"
+      // The ARTWORK printed on THIS page. It is not a printed "entry", so the transcription rules
+      // never produced it; the model only PLACES the token and the server writes the exact artwork
+      // (inline SVG for a vector graphic, the embedded image for a bitmap) into the element.
+      val graphicsRule =
+          if (pages[index].graphics.isEmpty()) ""
+          else
+              "(2b) GRAPHICS ARE PART OF THE FORM, NOT FIELDS: this page prints " +
+                  pages[index].graphics.size +
+                  " graphic(s) - a logo, icon, illustration or drawing:\n" +
+                  pages[index].graphics.joinToString("\n") { it.describe() } +
+                  "\nCreate ONE XSpan per graphic whose \"properties.rtevalue\" is EXACTLY the listed " +
+                  "token (\"{{GRAPHIC:<id>}}\" and nothing else) and place it in the page/container " +
+                  "EXACTLY where the listing says it sits - between the printed lines it names, or in " +
+                  "the page region given - in the order it appears relative to the other elements. " +
+                  "The server replaces the token with the ORIGINAL artwork (inline SVG for a vector " +
+                  "graphic, the embedded image otherwise). The XSpan is an ADDITIONAL element: NEVER " +
+                  "merge it into a text element, and NEVER replace, move, shorten or drop the printed " +
+                  "lines around it - transcribe those EXACTLY as usual and in their order. NEVER " +
+                  "redraw, trace, approximate or describe a graphic, never turn it into a field, a " +
+                  "label or a text element, and use each token EXACTLY ONCE. A printed graphic " +
+                  "missing from the form is a FAIL.\n"
+      // Fallback for a graphic that could NOT be extracted (the original document was not
+      // available, e.g. a rasterised upload from an older client): an empty image element would be
+      // pointless, so the model draws the artwork itself as inline SVG - a real vector recreation
+      // instead of an empty XImage.
+      val graphicFallbackRule =
+          if (pages[index].image == null) ""
+          else
+              "(2c) A VISIBLE GRAPHIC WITH NO ASSET TOKEN: if this page shows a graphic (logo, icon, " +
+                  "illustration, drawing) and NO {{GRAPHIC:...}} token is listed for it, NEVER create an " +
+                  "empty XImage, an upload or a placeholder div for it - recreate the drawing yourself " +
+                  "as an inline <svg viewBox='...'>...</svg> INSIDE the rtevalue of ONE XSpan, at the " +
+                  "position where it is printed (real shapes with its colours; a grey rectangle, a bare " +
+                  "circle or the word as text is a FAIL).\n"
       val pageInstruction =
           "Instruction: $prompt\n\n" +
               (if (pages[index].image != null)
@@ -9522,6 +9990,8 @@ class AICodBiAssistant : IPluginServletAction {
               "\n(3) DECISION vs ARTEFACT: for every tick/checkbox line decide whether it asks the applicant to DECIDE something or to HAND OVER a document (a photo, image, scan, copy, certificate, proof, plan, or any other file). DECISION -> XCheckbox. ARTEFACT -> XUpload whose label is that whole line (never a checkbox, and never an extra text element beside it).\n" +
               "(3b) SEVERAL FILES = THE MULTIPLE-UPLOAD FUNCTIONALITY, WIRED COMPLETELY: when such a line asks for MORE THAN ONE file, that ONE XUpload must carry all three parts - (i) in its \"attributes\" array {\"text\":\"data-cb-func\",\"value\":\"Media.MultipleUpload\"}, (ii) in the same array {\"text\":\"data-cb-Maximum\",\"value\":\"<N>\"}, and (iii) the DIRECT property \"uploadMultiple\":\"1\". Choose N yourself when the line states no number. An upload that should take several files but carries no Media.MultipleUpload wiring is a FAIL, and so is dropping the functionality to avoid choosing N.\n" +
               "(4) ORDER AND OWNERSHIP: list every element you create in the page's \"elements\" array in document order and set its parentid.\n" +
+              graphicsRule +
+              graphicFallbackRule +
               usedNamesRule +
               navigationRule +
               // Every CodBi detail this page can need is ALREADY in the system prompt (the full
@@ -9716,7 +10186,14 @@ class AICodBiAssistant : IPluginServletAction {
    * page's EXTRACTED TEXT (a Word/Excel/HTML/CSV page or a PDF page with a text layer - cheaper and
    * exact), or both.
    */
-  private data class DocumentPageInput(val image: String?, val text: String?)
+  private data class DocumentPageInput(
+      val image: String?,
+      val text: String?,
+      /**
+       * Artwork printed on THIS page (see [DocumentGraphic]) - not a field, but part of the design.
+       */
+      val graphics: List<DocumentGraphic> = emptyList()
+  )
 
   /**
    * The result of the per-page document build: the merged pages, the page names in document order,

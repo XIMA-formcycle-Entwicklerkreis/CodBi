@@ -8,6 +8,7 @@ import java.util.zip.ZipOutputStream
 import javax.imageio.ImageIO
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -46,6 +47,37 @@ class DocumentIngestionTest {
     assertEquals(1, parts.size)
     val part = assertInstanceOf(IngestedPart.Text::class.java, parts[0])
     assertTrue(part.text.contains("Vorname"))
+  }
+
+  @Test
+  fun `rasterised page images are ingested in the document's page order`() {
+    // The servlet's attachment map has NO stable order (observed: page 2, page 1, page 3), so the
+    // pages of a rasterised document must be ordered by the number the browser writes into the
+    // name.
+    val files =
+        linkedMapOf(
+            "xApple_page_2.png" to png(),
+            "xApple_page_1.png" to png(),
+            "xApple_page_3.png" to png())
+
+    val names =
+        DocumentIngestion.ingestAll(files).map {
+          when (it) {
+            is IngestedPart.Image -> it.name
+            is IngestedPart.Text -> it.name
+            is IngestedPart.Unsupported -> it.name
+          }
+        }
+
+    assertEquals(listOf("xApple_page_1.png", "xApple_page_2.png", "xApple_page_3.png"), names)
+  }
+
+  @Test
+  fun `the page number is read from the attachment name`() {
+    assertEquals(2, DocumentIngestion.pageNumberOf("xApple_page_2.png"))
+    assertEquals(10, DocumentIngestion.pageNumberOf("/tmp/scan_page_10.jpg"))
+    assertNull(DocumentIngestion.pageNumberOf("report.pdf"))
+    assertNull(DocumentIngestion.pageNumberOf("report_page_x.png"))
   }
 
   @Test

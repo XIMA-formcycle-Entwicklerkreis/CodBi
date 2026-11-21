@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>MirrorMaterializedStore</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            fc-plugin-codbi
+                    </a>
+            </div>
+            <div class="library-version">
+            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter="fc-plugin-codbi/JVM">JVM</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="fc-plugin-codbi::com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror/MirrorMaterializedStore///PointingToDeclaration//967027945">
+  <div class="breadcrumbs"><a href="../../../index.html">fc-plugin-codbi</a><span class="delimiter">/</span><a href="../index.html">com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.mirror</a><span class="delimiter">/</span><span class="current">MirrorMaterializedStore</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Mirror</span><wbr></wbr><span>Materialized</span><wbr></wbr><span><span>Store</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">object </span><a href="index.html">MirrorMaterializedStore</a></div><p class="paragraph">Persistenter Phase-2-Speicher für die <strong>letzte materialisierte Quellrevision</strong> jedes Spiegels (Ziel). Workflow-Version + Quellpfad). Verwendet die generische Schlüsselwerttabelle „codbi_local_apidoc“ des Plugins wieder (Entität <a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.LocalAPIDoc/-codbi-local-apidoc/index.html">CodbiLocalApidoc</a>), damit die verzögerte Neusynchronisierung entscheiden kann, <i>ob</i> sich die Quelle ohne geändert hat Berühren der reflektierenden Spur, wenn dies nicht der Fall ist.</p><p class="paragraph">Schlüsselformat: <code class="lang-kotlin">codbi.mirror.materialized.&lt;targetVersionId&gt;.&lt;sourceFormKey&gt;.&lt;sourcePathId&gt;</code> Wert: die Inhaltsrevision des Quellpfads (ein <a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a>) als Zeichenfolge. Wenn der Wert fehlt, war die Spur nie zustande gekommen -> eine erneute Synchronisierung ist erforderlich.</p><p class="paragraph">Alle Lese-/Schreibvorgänge verwenden ihren eigenen EntityManager + Transaktion über <a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic/-codbi-entities/-companion/entity-manager-factory.html">CodbiEntities.entityManagerFactory</a> (von Formcycle verwaltetes Schema), genau wie das lokale API-Dokument / AI-Protokollspeicher, sodass sie niemals die Sitzung des Workflow-Ausführers berühren.</p><span class="kdoc-tag"><h4 class="">Since</h4><p class="paragraph">1.1.0</p></span><h4 class="">See also</h4><div class="table"><div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><span>com.</span><wbr></wbr><span>github.</span><wbr></wbr><span>xima_formcycle_entwicklerkreis.</span><wbr></wbr><span>fc.</span><wbr></wbr><span>plugin.</span><wbr></wbr><span>codbi.</span><wbr></wbr><span>logic.</span><wbr></wbr><span>Workflow</span><wbr></wbr><span>Lane</span><wbr></wbr><span><span>Materializer</span></span></div></span></div><div></div></div></div></div></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="TYPE">
+        <h2 class="">Types</h2>
+        <div class="table"><a data-name="-1071430954%2FClasslikes%2F967027945" anchor-label="PendingRebuild" id="-1071430954%2FClasslikes%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-pending-rebuild/index.html"><span>Pending</span><wbr></wbr><span><span>Rebuild</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1071430954%2FClasslikes%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">data </span><span class="token keyword">class </span><a href="-pending-rebuild/index.html">PendingRebuild</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>revision<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>recordedAtMillis<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Ein bevorstehender struktureller Umbau der Fahrspur: die Quelle Revision, die umgebaut wurde, plus die Wanduhr Zeitpunkt der Aufnahme.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-435438823%2FClasslikes%2F967027945" anchor-label="ReflectorDescriptor" id="-435438823%2FClasslikes%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-reflector-descriptor/index.html"><span>Reflector</span><wbr></wbr><span><span>Descriptor</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-435438823%2FClasslikes%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">data </span><span class="token keyword">class </span><a href="-reflector-descriptor/index.html">ReflectorDescriptor</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>reflectingProjectId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>sourceProjectId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>targetWorkflowVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>taskId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>laneParentNodeId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>childNodeIds<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">&gt;</span><span class="token operator"> = </span>emptyList()<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>syncEndpoint<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Ein dauerhafter Datensatz, der eine <strong>reflektierende</strong> Spiegelspur beschreibt, aus der erneut materialisiert werden muss der Quellpfad. Wird vom Spiegelknoten auf der reflektierenden Seite erzeugt und von der Quellenseite verbraucht Spiegelknoten (Option A1 proaktiver Push).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1937333738%2FClasslikes%2F967027945" anchor-label="RegisteredReflector" id="1937333738%2FClasslikes%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-registered-reflector/index.html"><span>Registered</span><wbr></wbr><span><span>Reflector</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1937333738%2FClasslikes%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">data </span><span class="token keyword">class </span><a href="-registered-reflector/index.html">RegisteredReflector</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>descriptor<span class="token operator">: </span><a href="-reflector-descriptor/index.html">MirrorMaterializedStore.ReflectorDescriptor</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Ein Reflektor gepaart mit der Quelle „(sourceFormKey, sourcePathId)“, zu der seine Registrierungszeile gehört.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="-1471400532%2FFunctions%2F967027945" anchor-label="clearRebuildPending" id="-1471400532%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="clear-rebuild-pending.html"><span>clear</span><wbr></wbr><span>Rebuild</span><wbr></wbr><span><span>Pending</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1471400532%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="clear-rebuild-pending.html"><span class="token function">clearRebuildPending</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">targetVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Clears the pending-rebuild marker for this mirror.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1980040613%2FFunctions%2F967027945" anchor-label="lastMaterializedRevision" id="-1980040613%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="last-materialized-revision.html"><span>last</span><wbr></wbr><span>Materialized</span><wbr></wbr><span><span>Revision</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1980040613%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="last-materialized-revision.html"><span class="token function">lastMaterializedRevision</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">targetVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Gibt die letzte materialisierte Quellrevision für den Spiegel zurück oder „null“, wenn der Spiegel vorhanden war nie zustande gekommen (oder die Datenbank ist nicht bereit).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1150109175%2FFunctions%2F967027945" anchor-label="pendingRebuild" id="1150109175%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="pending-rebuild.html"><span>pending</span><wbr></wbr><span><span>Rebuild</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1150109175%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="pending-rebuild.html"><span class="token function">pendingRebuild</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">targetVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Convenience: the source revision of the pending rebuild, or <code class="lang-kotlin">null</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1054309743%2FFunctions%2F967027945" anchor-label="pendingRebuildEntry" id="-1054309743%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="pending-rebuild-entry.html"><span>pending</span><wbr></wbr><span>Rebuild</span><wbr></wbr><span><span>Entry</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1054309743%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="pending-rebuild-entry.html"><span class="token function">pendingRebuildEntry</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">targetVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="-pending-rebuild/index.html">MirrorMaterializedStore.PendingRebuild</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Gibt die ausstehende strukturelle Neuerstellung dieses Spiegels zurück oder „null“, wenn keine aufgezeichnet wird.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="644883550%2FFunctions%2F967027945" anchor-label="reflectorsOfSource" id="644883550%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="reflectors-of-source.html"><span>reflectors</span><wbr></wbr><span>Of</span><wbr></wbr><span><span>Source</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="644883550%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="reflectors-of-source.html"><span class="token function">reflectorsOfSource</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="-reflector-descriptor/index.html">MirrorMaterializedStore.ReflectorDescriptor</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Gibt die aktuell für die Quelle registrierten reflektierenden Spuren zurück „(sourceFormKey, sourcePathId).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2052288856%2FFunctions%2F967027945" anchor-label="reflectorsOfSourceProject" id="2052288856%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="reflectors-of-source-project.html"><span>reflectors</span><wbr></wbr><span>Of</span><wbr></wbr><span>Source</span><wbr></wbr><span><span>Project</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2052288856%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="reflectors-of-source-project.html"><span class="token function">reflectorsOfSourceProject</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">sourceProjectId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="-registered-reflector/index.html">MirrorMaterializedStore.RegisteredReflector</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Reverse-Lookup, das vom Back-End-Handler „MirrorPush“ verwendet wird: Es wird nur die Projekt-ID eines gerade angegebenen Gespeicherte Quelle „WorkflowVersion“, scannt jede Registrierungszeile und gibt die Reflektoren zurück, deren <a href="-reflector-descriptor/source-project-id.html">ReflectorDescriptor.sourceProjectId</a> stimmt überein. Registrierungszeilenschlüssel sind <code class="lang-kotlin">codbi.mirror.registry.&lt;key&gt;.&lt;pathId&gt;</code>, also <code class="lang-kotlin">(sourceFormKey, sourcePathId)</code> werden wiederhergestellt der Schlüssel selbst und wird zusammen mit jedem Deskriptor zurückgegeben.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1264821568%2FFunctions%2F967027945" anchor-label="registerReflector" id="-1264821568%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="register-reflector.html"><span>register</span><wbr></wbr><span><span>Reflector</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1264821568%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="register-reflector.html"><span class="token function">registerReflector</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">descriptor<span class="token operator">: </span><a href="-reflector-descriptor/index.html">MirrorMaterializedStore.ReflectorDescriptor</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Fügt Deskriptor in die Registrierung der Quelle „(sourceFormKey, sourcePathId)“ ein, sodass die Der quellseitige Spiegelknoten weiß, in welche reflektierenden Spuren er schieben muss. Reflektoren sind dedupliziert durch <a href="-reflector-descriptor/target-workflow-version-id.html">ReflectorDescriptor.targetWorkflowVersionId</a> (eine einzelne reflektierende Spur pro Version).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1174650727%2FFunctions%2F967027945" anchor-label="storeMaterializedRevision" id="1174650727%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="store-materialized-revision.html"><span>store</span><wbr></wbr><span>Materialized</span><wbr></wbr><span><span>Revision</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1174650727%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="store-materialized-revision.html"><span class="token function">storeMaterializedRevision</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">targetVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">revision<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Zeichnet auf, dass die Spur des Spiegels aus Revision materialisiert wurde. Idempotenter Upsert, eingegeben von (Zielversion, Quellform, Quellpfad).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1796072675%2FFunctions%2F967027945" anchor-label="storeRebuildPending" id="-1796072675%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="store-rebuild-pending.html"><span>store</span><wbr></wbr><span>Rebuild</span><wbr></wbr><span><span>Pending</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1796072675%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="store-rebuild-pending.html"><span class="token function">storeRebuildPending</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">targetVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">revision<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Zeichnet auf, dass ein struktureller Umbau für Revision aussteht.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-838905273%2FFunctions%2F967027945" anchor-label="unregisterReflector" id="-838905273%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="unregister-reflector.html"><span>unregister</span><wbr></wbr><span><span>Reflector</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-838905273%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="unregister-reflector.html"><span class="token function">unregisterReflector</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">sourceFormKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">sourcePathId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token punctuation">, </span></span><span class="parameter ">targetWorkflowVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Removes a reflector from the registry of <code class="lang-kotlin">(sourceFormKey, sourcePathId)</code> if present.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
